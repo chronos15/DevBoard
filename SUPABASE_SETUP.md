@@ -271,3 +271,15 @@ supabase/migrations/003_devboard_chat_audio.sql
 Essa migration é incremental: mantém as mensagens existentes, adiciona os metadados de áudio em `chat_messages`, cria a RPC `send_chat_audio_message` e o bucket privado `devboard-chat-media`.
 
 O áudio do chat nunca é público. Somente usuários que pertencem à conversa podem gerar URL assinada/leitura pelo Storage.
+
+## Chat · mídias e anexos
+
+Depois da migration de áudio, execute também:
+
+```text
+supabase/migrations/004_devboard_chat_media_attachments.sql
+```
+
+A migration 004 é incremental e não remove mensagens existentes. Ela amplia `chat_messages` para mensagens de mídia/anexo, mantém o bucket `devboard-chat-media` privado e aumenta o limite desse bucket para 50 MB por arquivo. O acesso continua restrito aos membros da conversa pelas policies existentes de Storage/RLS.
+
+No Chat, o botão de clipe permite múltiplos arquivos. `Ctrl+V` intercepta arquivos/imagens disponíveis no clipboard e abre o preview; texto puro continua sendo colado no campo da mensagem normalmente. Nenhum arquivo é enviado antes da confirmação no preview.

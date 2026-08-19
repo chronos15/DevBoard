@@ -203,11 +203,13 @@ export type ChatMessage = {
   id: string
   senderId: string
   content: string
-  type?: "text" | "audio"
+  type?: "text" | "audio" | "media"
   mediaPath?: string
   mediaMimeType?: string
   mediaDurationMs?: number
   mediaSizeBytes?: number
+  mediaName?: string
+  mediaKind?: AttachmentKind
   createdAt: string
 }
 

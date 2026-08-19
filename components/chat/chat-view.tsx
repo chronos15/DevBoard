@@ -6,6 +6,7 @@ import {
   Clock3,
   Headphones,
   MessageCircleMore,
+  Paperclip,
   Phone,
   Radio,
   Search,
@@ -22,6 +23,8 @@ import { MeetingDialog } from "@/components/chat/meeting-dialog"
 import { CallRoom } from "@/components/chat/call-room"
 import { AudioMessage } from "@/components/chat/audio-message"
 import { AudioRecordButton } from "@/components/chat/audio-record-button"
+import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
+import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { Button } from "@/components/ui/button"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { cn } from "@/lib/utils"
@@ -139,6 +142,7 @@ export function ChatView() {
     ensureDirectConversation,
     sendChatMessage,
     sendChatAudio,
+    sendChatMedia,
     createMeeting,
     answerMeetingInvite,
     joinMeeting,
@@ -152,7 +156,11 @@ export function ChatView() {
   const [sending, setSending] = React.useState(false)
   const [startingMeetingMode, setStartingMeetingMode] = React.useState<MeetingMode | null>(null)
   const [openingMeetingId, setOpeningMeetingId] = React.useState<string | null>(null)
+  const [stagedFiles, setStagedFiles] = React.useState<File[]>([])
+  const [attachmentPreviewOpen, setAttachmentPreviewOpen] = React.useState(false)
+  const [sendingMedia, setSendingMedia] = React.useState(false)
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
+  const attachmentInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const myConversations = React.useMemo(
     () =>
@@ -193,6 +201,38 @@ export function ChatView() {
   }, [myConversations, selectedId])
 
   React.useEffect(() => {
+    setStagedFiles([])
+    setAttachmentPreviewOpen(false)
+  }, [selectedId])
+
+  React.useEffect(() => {
+    if (!selected) return
+    function handlePaste(event: ClipboardEvent) {
+      const clipboard = event.clipboardData
+      if (!clipboard) return
+      const directFiles = Array.from(clipboard.files ?? [])
+      const itemFiles = Array.from(clipboard.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file))
+      const seen = new Set<string>()
+      const files = [...directFiles, ...itemFiles].filter((file) => {
+        if (!file.size) return false
+        const key = `${file.name}:${file.type}:${file.size}:${file.lastModified}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      if (!files.length) return
+      event.preventDefault()
+      setStagedFiles((current) => attachmentPreviewOpen ? [...current, ...files] : files)
+      setAttachmentPreviewOpen(true)
+    }
+    document.addEventListener("paste", handlePaste)
+    return () => document.removeEventListener("paste", handlePaste)
+  }, [attachmentPreviewOpen, selected])
+
+  React.useEffect(() => {
     if (activeMeetingId && (!activeMeeting || activeMeeting.endedAt)) {
       setActiveMeetingId(null)
     }
@@ -227,6 +267,27 @@ export function ChatView() {
       if (await sendChatMessage(selected.id, message)) setMessage("")
     } finally {
       setSending(false)
+    }
+  }
+
+  function stageChatFiles(files: FileList | File[]) {
+    const next = Array.from(files).filter((file) => file.size > 0)
+    if (!next.length) return
+    setStagedFiles(next)
+    setAttachmentPreviewOpen(true)
+  }
+
+  async function submitMedia(caption: string) {
+    if (!selected || !stagedFiles.length || sendingMedia) return
+    setSendingMedia(true)
+    try {
+      const sent = await sendChatMedia(selected.id, stagedFiles, caption)
+      if (sent) {
+        setStagedFiles([])
+        setAttachmentPreviewOpen(false)
+      }
+    } finally {
+      setSendingMedia(false)
     }
   }
 
@@ -556,6 +617,15 @@ export function ChatView() {
                               >
                                 {item.type === "audio" ? (
                                   <AudioMessage storagePath={item.mediaPath} durationMs={item.mediaDurationMs} own={own} />
+                                ) : item.type === "media" ? (
+                                  <ChatMediaMessage
+                                    storagePath={item.mediaPath}
+                                    name={item.mediaName}
+                                    mimeType={item.mediaMimeType}
+                                    sizeBytes={item.mediaSizeBytes}
+                                    kind={item.mediaKind}
+                                    caption={item.content}
+                                  />
                                 ) : (
                                   <p className="whitespace-pre-wrap break-words">{item.content}</p>
                                 )}
@@ -593,16 +663,36 @@ export function ChatView() {
                       placeholder={`Mensagem para ${selectedTitle}...`}
                       className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                     />
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => {
+                        if (event.target.files?.length) stageChatFiles(event.target.files)
+                        event.currentTarget.value = ""
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="icon-lg"
+                      variant="outline"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={sending || sendingMedia}
+                    >
+                      <Paperclip className="size-4" />
+                      <span className="sr-only">Anexar arquivos</span>
+                    </Button>
                     <AudioRecordButton
-                      disabled={sending}
+                      disabled={sending || sendingMedia}
                       onRecorded={(audio, durationMs) => selected ? sendChatAudio(selected.id, audio, durationMs) : Promise.resolve(false)}
                     />
-                    <Button type="button" size="icon-lg" onClick={() => void submitMessage()} disabled={!message.trim()} loading={sending}>
+                    <Button type="button" size="icon-lg" onClick={() => void submitMessage()} disabled={!message.trim() || sendingMedia} loading={sending}>
                       <Send className="size-4" />
                       <span className="sr-only">Enviar mensagem</span>
                     </Button>
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra a linha · Segure o microfone por 1s para gravar</p>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · Segure o microfone por 1s para gravar</p>
                 </footer>
               </>
             ) : (
@@ -711,6 +801,18 @@ export function ChatView() {
           </aside>
         </div>
       </div>
+
+      <ChatAttachmentPreviewDialog
+        files={stagedFiles}
+        open={attachmentPreviewOpen}
+        sending={sendingMedia}
+        onOpenChange={(open) => {
+          setAttachmentPreviewOpen(open)
+          if (!open && !sendingMedia) setStagedFiles([])
+        }}
+        onFilesChange={setStagedFiles}
+        onSend={submitMedia}
+      />
 
       <CallRoom
         meeting={activeMeeting}

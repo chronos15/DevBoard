@@ -18,6 +18,8 @@ import {
   AVATARS_BUCKET,
   CHAT_MEDIA_BUCKET,
   chatAudioStoragePath,
+  chatMediaKind,
+  chatMediaStoragePath,
   attachmentStoragePath,
   dataUrlToBlob,
   safeFileName,
@@ -102,6 +104,7 @@ export type StoreContextValue = {
   ensureDirectConversation: (memberId: string) => Promise<string | null>
   sendChatMessage: (conversationId: string, content: string) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
+  sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
   createChatGroup: (name: string, memberIds: string[]) => Promise<string | null>
   updateChatGroup: (conversationId: string, data: { name: string; memberIds: string[] }) => Promise<boolean>
   deleteChatGroup: (conversationId: string) => Promise<boolean>
@@ -729,6 +732,52 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [callRpc, currentUserId, fail, refreshChat, supabase, workspaceId])
 
+  const sendChatMedia = React.useCallback(async (conversationId: string, files: File[], caption = "") => {
+    if (!workspaceId || !currentUserId || !files.length) return false
+    const MAX_FILE_SIZE = 50 * 1024 * 1024
+    const invalid = files.find((file) => !file.size || file.size > MAX_FILE_SIZE)
+    if (invalid) {
+      fail(new Error(`“${invalid.name}” excede o limite de 50 MB ou está vazio.`), "Arquivo inválido")
+      return false
+    }
+
+    const uploaded: string[] = []
+    const registered = new Set<string>()
+    try {
+      setLastError(null)
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        const mimeType = (file.type || "application/octet-stream").split(";", 1)[0] || "application/octet-stream"
+        const storagePath = chatMediaStoragePath(workspaceId, conversationId, currentUserId, file.name)
+        const { error: uploadError } = await supabase.storage
+          .from(CHAT_MEDIA_BUCKET)
+          .upload(storagePath, file, { contentType: mimeType, upsert: false })
+        if (uploadError) throw uploadError
+        uploaded.push(storagePath)
+
+        const id = await callRpc<string>("send_chat_media_message", {
+          p_conversation_id: conversationId,
+          p_media_path: storagePath,
+          p_file_name: file.name,
+          p_mime_type: mimeType,
+          p_size_bytes: file.size,
+          p_media_kind: chatMediaKind(file),
+          p_caption: index === 0 ? caption.trim() || null : null,
+        }, "Não foi possível enviar o arquivo")
+        if (!id) throw new Error(`Não foi possível registrar “${file.name}” no chat.`)
+        registered.add(storagePath)
+      }
+      await refreshChat()
+      return true
+    } catch (error) {
+      const rollback = uploaded.filter((path) => !registered.has(path))
+      if (rollback.length) await supabase.storage.from(CHAT_MEDIA_BUCKET).remove(rollback).catch(() => undefined)
+      fail(error, "Não foi possível enviar os arquivos")
+      await refreshChat().catch(() => undefined)
+      return false
+    }
+  }, [callRpc, currentUserId, fail, refreshChat, supabase, workspaceId])
+
   const createChatGroup = React.useCallback(async (name: string, memberIds: string[]) => {
     const id = await callRpc<string>("create_chat_group", { p_name: name, p_member_ids: memberIds }, "Não foi possível criar o grupo")
     if (!id) return null
@@ -909,6 +958,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     ensureDirectConversation,
     sendChatMessage,
     sendChatAudio,
+    sendChatMedia,
     createChatGroup,
     updateChatGroup,
     deleteChatGroup,
@@ -927,7 +977,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting,
     markAllNotificationsRead, markNotificationRead,
-    members, notifications, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMessage, setMemberRole,
+    members, notifications, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
   ])

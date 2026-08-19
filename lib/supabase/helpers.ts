@@ -69,15 +69,36 @@ export function isAttachmentKind(value: unknown): value is AttachmentKind {
 }
 
 
+export function chatMediaStoragePath(
+  workspaceId: string,
+  conversationId: string,
+  uploaderId: string,
+  fileName: string,
+) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${workspaceId}/${conversationId}/${uploaderId}/${random}-${safeFileName(fileName)}`
+}
+
 export function chatAudioStoragePath(
   workspaceId: string,
   conversationId: string,
   uploaderId: string,
   mimeType: string,
 ) {
-  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm'
-  return `${workspaceId}/${conversationId}/${uploaderId}/${random}.${ext}`
+  return chatMediaStoragePath(workspaceId, conversationId, uploaderId, `audio.${ext}`)
+}
+
+export function chatMediaKind(file: Pick<File, 'name' | 'type'>): AttachmentKind {
+  const mime = (file.type || '').toLowerCase()
+  const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? '' : ''
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
+  if (mime.startsWith('text/') || ['sql','txt','md','json','xml','yaml','yml','csv','log','ts','tsx','js','jsx','css','scss','html','dart','pas','kt','java','py','sh','ps1'].includes(ext)) return 'text'
+  if (['doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','rtf'].includes(ext) || /officedocument|msword|ms-excel|ms-powerpoint/.test(mime)) return 'document'
+  return 'other'
 }

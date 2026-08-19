@@ -201,7 +201,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
 export async function loadChatConversations(supabase: SupabaseClient, workspaceId: string): Promise<ChatConversation[]> {
   const { data, error } = await supabase
     .from('chat_conversations')
-    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id),chat_messages(id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,created_at)')
+    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id),chat_messages(id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,created_at)')
     .eq('workspace_id', workspaceId)
     .order('updated_at', { ascending: false })
   assertNoError(error, 'Não foi possível carregar o chat')
@@ -216,7 +216,19 @@ export async function loadChatConversations(supabase: SupabaseClient, workspaceI
     updatedAt: row.updated_at,
     messages: (row.chat_messages ?? [])
       .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
-      .map((message: any) => ({ id: message.id, senderId: message.sender_id, content: message.content, type: message.message_type === 'audio' ? 'audio' : 'text', mediaPath: message.media_path ?? undefined, mediaMimeType: message.media_mime_type ?? undefined, mediaDurationMs: message.media_duration_ms == null ? undefined : Number(message.media_duration_ms), mediaSizeBytes: message.media_size_bytes == null ? undefined : Number(message.media_size_bytes), createdAt: message.created_at })),
+      .map((message: any) => ({
+        id: message.id,
+        senderId: message.sender_id,
+        content: message.content,
+        type: message.message_type === 'audio' ? 'audio' : message.message_type === 'media' ? 'media' : 'text',
+        mediaPath: message.media_path ?? undefined,
+        mediaMimeType: message.media_mime_type ?? undefined,
+        mediaDurationMs: message.media_duration_ms == null ? undefined : Number(message.media_duration_ms),
+        mediaSizeBytes: message.media_size_bytes == null ? undefined : Number(message.media_size_bytes),
+        mediaName: message.media_name ?? undefined,
+        mediaKind: isAttachmentKind(message.media_kind) ? message.media_kind : undefined,
+        createdAt: message.created_at,
+      })),
   })) as ChatConversation[]
 }
 

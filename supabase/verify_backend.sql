@@ -176,3 +176,11 @@ select
   exists(select 1 from information_schema.columns where table_schema='public' and table_name='chat_messages' and column_name='media_path') as chat_media_path_ok,
   to_regprocedure('public.send_chat_audio_message(uuid,text,text,integer,bigint)') is not null as send_chat_audio_rpc_ok,
   exists(select 1 from storage.buckets where id='devboard-chat-media' and public=false) as chat_audio_bucket_ok;
+
+-- 004 · Chat com mídias e anexos
+select
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='chat_messages' and column_name='media_name') as chat_media_name_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='chat_messages' and column_name='media_kind') as chat_media_kind_ok,
+  to_regprocedure('public.send_chat_media_message(uuid,text,text,text,bigint,text,text)') is not null as send_chat_media_rpc_ok,
+  has_function_privilege('authenticated','public.send_chat_media_message(uuid,text,text,text,bigint,text,text)','EXECUTE') as send_chat_media_execute_ok,
+  exists(select 1 from storage.buckets where id='devboard-chat-media' and public=false and file_size_limit=52428800) as chat_media_bucket_50mb_ok;

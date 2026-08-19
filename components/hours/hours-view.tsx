@@ -232,7 +232,7 @@ export function HoursView() {
                           : "bg-muted text-foreground hover:bg-primary/12 hover:text-primary",
                     )}
                     aria-label={!canManage ? "Subatividade protegida" : running ? "Parar timer" : "Iniciar timer"}
-                    title={!canManage ? "Somente o responsável ou um administrador pode controlar esta subatividade" : undefined}
+                    title={!canManage ? "Somente o Desenvolvedor responsável ou um Administrador pode controlar esta subatividade" : undefined}
                   >
                     {running ? (
                       <Square className="size-4 fill-current" />

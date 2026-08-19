@@ -64,7 +64,7 @@ export function SubactivityStatusConfirmDialog({
         {(enteringTerminal || leavingTerminal) && (
           <div className="rounded-xl border border-border bg-muted/45 px-3 py-2.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">Regra de segurança:</span>{" "}
-            status concluído ou cancelado é terminal para membros comuns. Administradores podem alterá-lo somente após nova confirmação.
+            status concluído ou cancelado é terminal para usuários não administradores. Administradores podem alterá-lo somente após nova confirmação.
           </div>
         )}
 

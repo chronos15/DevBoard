@@ -53,6 +53,7 @@ export function statusCounts(projects: Project[]) {
   const counts: Record<Status, number> = {
     backlog: 0,
     waiting: 0,
+    "waiting-aqs": 0,
     "in-progress": 0,
     paused: 0,
     done: 0,
@@ -67,6 +68,7 @@ export function statusCounts(projects: Project[]) {
 export const statusOrder: Status[] = [
   "backlog",
   "waiting",
+  "waiting-aqs",
   "in-progress",
   "paused",
   "done",
@@ -88,6 +90,12 @@ export const statusMeta: Record<
     dot: "bg-chart-2",
     className: "bg-chart-2/15 text-chart-2",
     columnClassName: "bg-chart-2",
+  },
+  "waiting-aqs": {
+    label: "Aguardando AQS",
+    dot: "bg-chart-5",
+    className: "bg-chart-5/15 text-chart-5",
+    columnClassName: "bg-chart-5",
   },
   "in-progress": {
     label: "Em execução",
@@ -119,6 +127,7 @@ export const activityFilters: { key: ActivityFilter; label: string }[] = [
   { key: "all", label: "Todos" },
   { key: "open", label: "Aberta" },
   { key: "waiting", label: "Aguardando" },
+  { key: "waiting-aqs", label: "Aguardando AQS" },
   { key: "in-progress", label: "Executando" },
   { key: "done", label: "Finalizadas" },
 ]
@@ -127,6 +136,7 @@ export function matchesActivityFilter(status: Status, filter: ActivityFilter): b
   if (filter === "all") return true
   if (filter === "open") return status === "backlog" || status === "paused"
   if (filter === "waiting") return status === "waiting"
+  if (filter === "waiting-aqs") return status === "waiting-aqs"
   if (filter === "in-progress") return status === "in-progress"
   return status === "done" || status === "cancelled"
 }

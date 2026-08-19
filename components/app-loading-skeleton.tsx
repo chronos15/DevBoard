@@ -194,6 +194,33 @@ function GenericSkeleton() {
   )
 }
 
+function WorkflowKanbanSkeleton({ label = "Carregando fluxo" }: { label?: string }) {
+  return (
+    <div className="min-w-0 space-y-6" aria-label={label}>
+      <HeadingSkeleton />
+      <CardGridSkeleton count={4} />
+      <div className="w-full min-w-0 overflow-hidden">
+        <div className="flex gap-3">
+          {Array.from({ length: 4 }).map((_, column) => (
+            <div key={column} className="min-h-[500px] min-w-0 flex-1 rounded-2xl border border-border bg-muted/25 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-5 w-7 rounded-full" />
+              </div>
+              <Skeleton className="mt-2 h-3 w-36 max-w-full" />
+              <div className="mt-4 space-y-2">
+                {Array.from({ length: column === 0 ? 4 : 2 }).map((__, row) => (
+                  <Skeleton key={row} className="h-32 w-full rounded-xl" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ChatSkeleton() {
   return (
     <div className="mx-auto max-w-7xl space-y-4" aria-label="Carregando chat">
@@ -222,5 +249,7 @@ export function AppLoadingSkeleton() {
   if (pathname === "/projetos/novo" || /\/projetos\/[^/]+\/editar$/.test(pathname)) return <FormSkeleton />
   if (/^\/projetos\/[^/]+$/.test(pathname)) return <ProjectDetailSkeleton />
   if (pathname.startsWith("/chat")) return <ChatSkeleton />
+  if (pathname.startsWith("/analise")) return <WorkflowKanbanSkeleton label="Carregando análise AQS" />
+  if (pathname.startsWith("/topicos")) return <WorkflowKanbanSkeleton label="Carregando tópicos" />
   return <GenericSkeleton />
 }

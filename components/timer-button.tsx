@@ -39,14 +39,14 @@ export function TimerButton({
           ? running
             ? "Pausar cronômetro"
             : "Iniciar cronômetro"
-          : "Somente o responsável ou um administrador pode controlar esta subatividade"
+          : "Somente o Desenvolvedor responsável ou um Administrador pode controlar esta subatividade"
       }
       title={
         canManage
           ? running
             ? "Pausar cronômetro"
             : "Iniciar cronômetro"
-          : "Somente o responsável ou um administrador pode alterar esta subatividade"
+          : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"
       }
       className={cn(
         "flex items-center justify-center rounded-full transition-all",

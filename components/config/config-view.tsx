@@ -5,7 +5,7 @@ import { Bell, Loader2, Palette, ShieldCheck, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar } from "@/components/member-avatar"
-import type { AccessRole, Member, UserPreferences } from "@/lib/types"
+import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
 
 const sections = [
   { id: "perfil", label: "Perfil", icon: User },
@@ -15,6 +15,14 @@ const sections = [
 ] as const
 
 type SectionId = (typeof sections)[number]["id"]
+
+const roleDescriptions: Record<AccessRole, string> = {
+  admin: "Acesso total: projetos, execução, AQS, tópicos, equipe e administração.",
+  developer: "Acesso ao sistema e projetos; executa somente atividades e subatividades sob sua responsabilidade.",
+  aqs: "Valida tarefas em Aguardando AQS, registra evidências e atua na triagem de tópicos.",
+  support: "Abre e acompanha tópicos da operação, com ordem, descrição e evidências.",
+  member: "Acompanha o workspace, Chat e os próprios tópicos enviados para análise.",
+}
 
 export function ConfigView() {
   const { members, currentUserId } = useStore()
@@ -130,7 +138,7 @@ function ProfileSection({ me }: { me?: Member }) {
           <span className="text-sm font-medium">Nível de acesso</span>
           <div className="flex h-10 items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 text-sm">
             <ShieldCheck className="size-4 text-muted-foreground" />
-            {currentUserRole === "admin" ? "Administrador" : "Membro"}
+            {ACCESS_ROLE_LABELS[currentUserRole]}
           </div>
         </label>
       </div>
@@ -184,21 +192,37 @@ function TeamSection() {
                   onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)}
                   className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60"
                 >
-                  <option value="member">Membro</option>
                   <option value="admin">Administrador</option>
+                  <option value="developer">Desenvolvedor</option>
+                  <option value="aqs">AQS</option>
+                  <option value="support">Suporte</option>
+                  <option value="member">Membro</option>
                 </select>
                 {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
               </div>
             ) : (
               <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                {member.role === "admin" ? "Administrador" : "Membro"}
+                {ACCESS_ROLE_LABELS[member.role ?? "member"]}
               </span>
             )}
           </li>
         ))}
       </ul>
+
+      <div className="mt-5">
+        <p className="mb-2 text-xs font-semibold">Perfis de acesso</p>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          {(Object.keys(ACCESS_ROLE_LABELS) as AccessRole[]).map((role) => (
+            <div key={role} className="rounded-xl bg-muted/35 p-3 ring-1 ring-foreground/6">
+              <p className="text-xs font-semibold">{ACCESS_ROLE_LABELS[role]}</p>
+              <p className="mt-1.5 text-[0.68rem] leading-relaxed text-muted-foreground">{roleDescriptions[role]}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        Novos usuários são criados pelo Supabase Auth e entram no workspace conforme a política definida na migration. Em produção, mantenha o cadastro público desabilitado se o ambiente for interno.
+        Novos usuários são criados pelo Supabase Auth e entram inicialmente como Membro. Apenas Administradores podem alterar roles. Em produção, mantenha o cadastro público desabilitado se o ambiente for interno.
       </p>
     </div>
   )

@@ -10,7 +10,7 @@ declare
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members',
     'activities','activity_assignees','subactivities','work_sessions','project_comments','subactivity_comments',
     'attachments','project_logs','project_versions','notifications','chat_conversations','chat_members',
-    'chat_messages','meetings','meeting_members'
+    'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments'
   ];
   v_functions text[] := array[
     'public.update_my_profile(text,text)',
@@ -39,7 +39,15 @@ declare
     'public.join_meeting(uuid)',
     'public.heartbeat_meeting(uuid)',
     'public.leave_meeting(uuid)',
-    'public.end_meeting(uuid)'
+    'public.end_meeting(uuid)',
+    'public.start_aqs_review(uuid)',
+    'public.complete_aqs_review(uuid)',
+    'public.revoke_aqs_review(uuid,text)',
+    'public.create_support_topic(text,text,text)',
+    'public.add_topic_attachment(uuid,text,text,bigint,text,text)',
+    'public.start_topic_analysis(uuid)',
+    'public.revoke_support_topic(uuid,text)',
+    'public.send_topic_to_activity(uuid,uuid,uuid)'
   ];
 begin
   foreach v_table in array v_tables loop
@@ -61,6 +69,12 @@ begin
   end if;
   if not exists(select 1 from storage.buckets where id='cadence-avatars' and public=true) then
     v_missing := array_append(v_missing, 'public bucket cadence-avatars');
+  end if;
+  if not exists(select 1 from storage.buckets where id='devboard-chat-media' and public=false) then
+    v_missing := array_append(v_missing, 'private bucket devboard-chat-media');
+  end if;
+  if not exists(select 1 from storage.buckets where id='devboard-topic-media' and public=false and file_size_limit=52428800) then
+    v_missing := array_append(v_missing, 'private bucket devboard-topic-media (50 MB)');
   end if;
 
   if not exists(select 1 from pg_trigger where tgname='on_auth_user_created' and not tgisinternal) then
@@ -132,6 +146,38 @@ begin
     v_missing := array_append(v_missing, 'meeting_members status constraint');
   end if;
 
+  if not exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace
+    where n.nspname='public' and t.typname='workspace_role' and e.enumlabel='developer') then
+    v_missing := array_append(v_missing, 'workspace_role developer');
+  end if;
+  if not exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace
+    where n.nspname='public' and t.typname='workspace_role' and e.enumlabel='aqs') then
+    v_missing := array_append(v_missing, 'workspace_role aqs');
+  end if;
+  if not exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace
+    where n.nspname='public' and t.typname='workspace_role' and e.enumlabel='support') then
+    v_missing := array_append(v_missing, 'workspace_role support');
+  end if;
+  if not exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace
+    where n.nspname='public' and t.typname='subactivity_status' and e.enumlabel='waiting-aqs') then
+    v_missing := array_append(v_missing, 'subactivity_status waiting-aqs');
+  end if;
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='subactivities' and column_name='needs_attention') then
+    v_missing := array_append(v_missing, 'subactivities.needs_attention');
+  end if;
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='subactivities' and column_name='attention_message') then
+    v_missing := array_append(v_missing, 'subactivities.attention_message');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='aqs_reviews' and policyname='devboard_aqs_reviews_select') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_aqs_reviews_select');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='support_topics' and policyname='devboard_support_topics_select') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_support_topics_select');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='topic_attachments' and policyname='devboard_topic_attachments_select') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_topic_attachments_select');
+  end if;
+
   if not exists(select 1 from pg_policies where schemaname='realtime' and tablename='messages' and policyname='cadence_meeting_realtime_select') then
     v_missing := array_append(v_missing, 'realtime meeting SELECT policy');
   end if;
@@ -142,7 +188,8 @@ begin
   foreach v_table in array array[
     'profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
-    'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members'
+    'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
+    'aqs_reviews','support_topics','topic_attachments'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -156,7 +203,7 @@ begin
     raise exception 'Backend Devboard incompleto: %', array_to_string(v_missing, ', ');
   end if;
 
-  raise notice 'Devboard backend OK: 21 tabelas, RPCs críticas, Storage, Auth trigger, índices e Realtime verificados.';
+  raise notice 'Devboard backend OK: 24 tabelas, roles, AQS, Tópicos, RPCs críticas, Storage, Auth trigger, índices e Realtime verificados.';
 end $$;
 
 -- Resumo visual adicional
@@ -164,10 +211,11 @@ select
   (select count(*) from information_schema.tables where table_schema='public' and table_name in (
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
-    'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members'
+    'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
+    'aqs_reviews','support_topics','topic_attachments'
   )) as devboard_tables,
-  (select count(*) from pg_policies where schemaname='public' and policyname like 'cadence_%') as public_rls_policies,
-  (select count(*) from storage.buckets where id in ('cadence-attachments','cadence-avatars')) as devboard_buckets;
+  (select count(*) from pg_policies where schemaname='public' and (policyname like 'cadence_%' or policyname like 'devboard_%')) as public_rls_policies,
+  (select count(*) from storage.buckets where id in ('cadence-attachments','cadence-avatars','devboard-chat-media','devboard-topic-media')) as devboard_buckets;
 
 -- 003 · Chat com áudio
 select
@@ -184,3 +232,17 @@ select
   to_regprocedure('public.send_chat_media_message(uuid,text,text,text,bigint,text,text)') is not null as send_chat_media_rpc_ok,
   has_function_privilege('authenticated','public.send_chat_media_message(uuid,text,text,text,bigint,text,text)','EXECUTE') as send_chat_media_execute_ok,
   exists(select 1 from storage.buckets where id='devboard-chat-media' and public=false and file_size_limit=52428800) as chat_media_bucket_50mb_ok;
+
+
+-- 005 · Roles avançadas, AQS e Tópicos
+select
+  (select array_agg(e.enumlabel order by e.enumsortorder) from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typname='workspace_role') as workspace_roles,
+  exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='subactivity_status' and e.enumlabel='waiting-aqs') as waiting_aqs_status_ok,
+  to_regclass('public.aqs_reviews') is not null as aqs_reviews_ok,
+  to_regclass('public.support_topics') is not null as support_topics_ok,
+  to_regclass('public.topic_attachments') is not null as topic_attachments_ok,
+  to_regprocedure('public.start_aqs_review(uuid)') is not null as start_aqs_review_ok,
+  to_regprocedure('public.complete_aqs_review(uuid)') is not null as complete_aqs_review_ok,
+  to_regprocedure('public.revoke_aqs_review(uuid,text)') is not null as revoke_aqs_review_ok,
+  to_regprocedure('public.send_topic_to_activity(uuid,uuid,uuid)') is not null as send_topic_to_activity_ok,
+  exists(select 1 from storage.buckets where id='devboard-topic-media' and public=false) as topic_media_bucket_ok;

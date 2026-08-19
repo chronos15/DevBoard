@@ -9,6 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  ClipboardCheck,
+  ClipboardList,
   FolderKanban,
   LayoutDashboard,
   LifeBuoy,
@@ -25,13 +27,15 @@ const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
 
 const nav = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projetos", label: "Projetos", icon: FolderKanban },
-  { href: "/horas", label: "Controle de horas", icon: Clock3 },
-  { href: "/agenda", label: "Agenda", icon: CalendarDays },
-  { href: "/chat", label: "Chat", icon: MessagesSquare },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
-]
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/projetos", label: "Projetos", icon: FolderKanban, roles: ["admin","developer"] },
+  { href: "/analise", label: "Análise", icon: ClipboardCheck, roles: ["admin","developer","aqs"] },
+  { href: "/topicos", label: "Tópicos", icon: ClipboardList, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"] },
+  { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"] },
+  { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin","developer"] },
+] as const
 
 const secondary = [
   { href: "/config", label: "Configurações", icon: Settings },
@@ -46,7 +50,7 @@ export function Sidebar({
   onClose: () => void
 }) {
   const pathname = usePathname()
-  const { signOut } = useStore()
+  const { signOut, currentUserRole } = useStore()
   const [collapsed, setCollapsed] = React.useState(false)
 
   React.useEffect(() => {
@@ -142,7 +146,7 @@ export function Sidebar({
           >
             Workspace
           </p>
-          {nav.map((item) => {
+          {nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole)).map((item) => {
             const active = isActive(item.href)
             return (
               <Link

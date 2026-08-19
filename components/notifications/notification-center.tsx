@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation"
 import {
   Bell,
   CheckCheck,
+  ClipboardCheck,
+  ClipboardList,
   FolderKanban,
   ListTodo,
   LoaderCircle,
   MessageSquareText,
   PhoneIncoming,
   UserPlus,
+  TriangleAlert,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import type { NotificationEntry } from "@/lib/types"
@@ -22,6 +25,12 @@ const iconByType = {
   "subactivity-assigned": UserPlus,
   "subactivity-comment": MessageSquareText,
   "meeting-invite": PhoneIncoming,
+  "aqs-awaiting": ClipboardCheck,
+  "aqs-approved": ClipboardCheck,
+  "aqs-revoked": TriangleAlert,
+  "topic-created": ClipboardList,
+  "topic-status": ClipboardList,
+  "topic-sent": ClipboardList,
 } satisfies Record<NotificationEntry["type"], React.ComponentType<{ className?: string }>>
 
 function formatNotificationDate(value: string) {
@@ -81,6 +90,15 @@ export function NotificationCenter() {
     }
 
     void markNotificationRead(notification.id)
+    if (notification.type === "aqs-awaiting") {
+      const suffix = notification.subactivityId ? `?sub=${encodeURIComponent(notification.subactivityId)}` : ""
+      router.push(`/analise${suffix}`)
+      return
+    }
+    if (notification.type === "topic-created" || notification.type === "topic-status") {
+      router.push("/topicos")
+      return
+    }
     if (!notification.projectId) return
     const hash = notification.subactivityId
       ? `#sub-${notification.subactivityId}`

@@ -8,17 +8,19 @@ import { MemberAvatar } from "@/components/member-avatar"
 import { RunningTimerChip } from "@/components/running-timer-chip"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NotificationCenter } from "@/components/notifications/notification-center"
+import { ACCESS_ROLE_LABELS } from "@/lib/types"
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter()
   const { members, projects, currentUserId, currentUserRole } = useStore()
   const me = members.find((member) => member.id === currentUserId)
+  const canBrowseProjects = currentUserRole === "admin" || currentUserRole === "developer"
   const [query, setQuery] = React.useState("")
   const [focused, setFocused] = React.useState(false)
 
   const results = React.useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return []
+    if (!q || !canBrowseProjects) return []
     return projects
       .filter((project) => {
         const content = [
@@ -35,7 +37,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         return content.includes(q)
       })
       .slice(0, 5)
-  }, [projects, query])
+  }, [canBrowseProjects, projects, query])
 
   function openProject(id: string) {
     setQuery("")
@@ -49,7 +51,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         <Menu className="size-5" />
       </button>
 
-      <div className="relative hidden max-w-md flex-1 md:block">
+      {canBrowseProjects ? <div className="relative hidden max-w-md flex-1 md:block">
         <Search className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
@@ -88,7 +90,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             )}
           </div>
         )}
-      </div>
+      </div> : <div className="hidden flex-1 md:block" />}
 
       <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
         <RunningTimerChip />
@@ -103,7 +105,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           <MemberAvatar member={me} className="size-8 rounded-lg ring-0" />
           <span className="hidden leading-tight sm:block">
             <span className="block text-xs font-semibold">{me?.name ?? "Conta"}</span>
-            <span className="block text-[0.7rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : "Membro"}</span>
+            <span className="block text-[0.7rem] text-muted-foreground">{ACCESS_ROLE_LABELS[currentUserRole]}</span>
           </span>
         </button>
       </div>

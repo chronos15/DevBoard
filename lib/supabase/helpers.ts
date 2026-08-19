@@ -3,6 +3,7 @@ import type { AttachmentKind, AttachmentUploadInput, Member } from '@/lib/types'
 export const ATTACHMENTS_BUCKET = 'cadence-attachments'
 export const AVATARS_BUCKET = 'cadence-avatars'
 export const CHAT_MEDIA_BUCKET = 'devboard-chat-media'
+export const TOPIC_MEDIA_BUCKET = 'devboard-topic-media'
 
 export function colorForUser(id: string) {
   const palette = [
@@ -32,7 +33,7 @@ export function mapMember(row: any, role?: string): Member {
     color: row.color || colorForUser(row.id),
     email: row.email || undefined,
     avatarUrl,
-    role: role === 'admin' ? 'admin' : 'member',
+    role: ['admin','developer','aqs','support','member'].includes(String(role)) ? role as Member['role'] : 'member',
   }
 }
 
@@ -101,4 +102,17 @@ export function chatMediaKind(file: Pick<File, 'name' | 'type'>): AttachmentKind
   if (mime.startsWith('text/') || ['sql','txt','md','json','xml','yaml','yml','csv','log','ts','tsx','js','jsx','css','scss','html','dart','pas','kt','java','py','sh','ps1'].includes(ext)) return 'text'
   if (['doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','rtf'].includes(ext) || /officedocument|msword|ms-excel|ms-powerpoint/.test(mime)) return 'document'
   return 'other'
+}
+
+
+export function topicMediaStoragePath(
+  workspaceId: string,
+  topicId: string,
+  uploaderId: string,
+  fileName: string,
+) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${workspaceId}/${topicId}/${uploaderId}/${random}-${safeFileName(fileName)}`
 }

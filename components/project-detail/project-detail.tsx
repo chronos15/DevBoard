@@ -110,6 +110,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const estimated = projectEstimated(project)
 
   const currentMember = members.find((member) => member.id === currentUserId)
+  const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
   const personalDone = personalSubs.filter((sub) => sub.status === "done").length
   const personalCancelled = personalSubs.filter((sub) => sub.status === "cancelled").length
@@ -434,7 +435,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                     className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
                     aria-label="Responsável pela nova atividade"
                   >
-                    {members.map((member) => (
+                    {executionMembers.map((member) => (
                       <option key={member.id} value={member.id}>{member.name}</option>
                     ))}
                   </select>

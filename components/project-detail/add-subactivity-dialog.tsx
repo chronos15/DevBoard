@@ -24,17 +24,18 @@ export function AddSubactivityDialog({
   activityId: string
 }) {
   const { members, addSubactivity, currentUserId, currentUserRole } = useStore()
+  const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("4")
-  const [assignee, setAssignee] = React.useState(currentUserId || members[0]?.id || "")
+  const [assignee, setAssignee] = React.useState(currentUserId || executionMembers[0]?.id || "")
   const [status, setStatus] = React.useState<Status>("backlog")
   const [terminalConfirmOpen, setTerminalConfirmOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (!assignee && currentUserId) setAssignee(currentUserId)
-    if (assignee && assignee !== currentUserId && currentUserRole !== "admin" && status === "in-progress") {
+    if (assignee && assignee !== currentUserId && currentUserRole !== "admin" && (status === "in-progress" || status === "waiting-aqs")) {
       setStatus("backlog")
     }
   }, [assignee, currentUserId, currentUserRole, status])
@@ -76,7 +77,7 @@ export function AddSubactivityDialog({
       open={open}
       onOpenChange={(value) => {
         setOpen(value)
-        if (value) setAssignee(currentUserId || members[0]?.id || "")
+        if (value) setAssignee(currentUserId || executionMembers[0]?.id || "")
       }}
     >
       <button
@@ -130,7 +131,7 @@ export function AddSubactivityDialog({
                   <option
                     key={item}
                     value={item}
-                    disabled={item === "in-progress" && assignee !== currentUserId && currentUserRole !== "admin"}
+                    disabled={(item === "in-progress" || item === "waiting-aqs") && assignee !== currentUserId && currentUserRole !== "admin"}
                   >
                     {statusMeta[item].label}
                   </option>
@@ -151,13 +152,13 @@ export function AddSubactivityDialog({
               onChange={(e) => setAssignee(e.target.value)}
               className="h-10 rounded-xl border border-border bg-card px-2 text-sm outline-none focus:border-ring"
             >
-              {members.map((m) => (
+              {executionMembers.map((m) => (
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
             {assignee && assignee !== currentUserId && (
               <span className="text-[0.68rem] leading-relaxed text-primary">
-                O usuário selecionado receberá uma notificação. Como membro, você não pode iniciar o cronômetro dele; apenas o próprio responsável ou um administrador pode colocar a tarefa em execução.
+                O usuário selecionado receberá uma notificação. Como Desenvolvedor, você só pode iniciar suas próprias tarefas; um Administrador pode iniciar tarefas de qualquer responsável.
               </span>
             )}
           </div>
@@ -179,7 +180,7 @@ export function AddSubactivityDialog({
           <DialogDescription>
             A nova subatividade “{title.trim()}” será criada diretamente com status final {statusMeta[status].label}. {currentUserRole === "admin"
               ? "Como administrador, alterações posteriores continuarão exigindo confirmação."
-              : "Depois de salvar, um membro comum não poderá mudar esse status. Somente um administrador poderá alterá-lo."}
+              : "Depois de salvar, um Desenvolvedor não poderá reabrir esse status final. Somente um Administrador poderá alterá-lo."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

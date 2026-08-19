@@ -1,12 +1,14 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import type {
   AccessRole,
+  AqsReview,
   AttachmentEntry,
   ChatConversation,
   ChatMeeting,
   NotificationEntry,
   Project,
   Status,
+  SupportTopic,
   UserPreferences,
   WorkSession,
 } from '@/lib/types'
@@ -87,7 +89,7 @@ export async function loadIdentity(supabase: SupabaseClient) {
   return {
     user: userData.user,
     workspaceId: membership.workspace_id as string,
-    role: (membership.role === 'admin' ? 'admin' : 'member') as AccessRole,
+    role: (['admin','developer','aqs','support','member'].includes(String(membership.role)) ? membership.role : 'member') as AccessRole,
   }
 }
 
@@ -124,7 +126,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         id,title,created_at,
         activity_assignees(user_id),
         subactivities(
-          id,title,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,created_at,
+          id,title,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
           subactivity_comments(id,author_id,content,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
         )
@@ -152,6 +154,8 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             trackedSeconds: liveTrackedSeconds(sub),
             timerStartedAt: sub.timer_started_at ?? undefined,
             assigneeId: sub.assignee_id,
+            needsAttention: sub.needs_attention === true,
+            attentionMessage: sub.attention_message ?? undefined,
             comments: (sub.subactivity_comments ?? [])
               .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
               .map((comment: any) => ({
@@ -337,4 +341,71 @@ export async function loadBackendSnapshot(supabase: SupabaseClient): Promise<Bac
     loadWorkSessions(supabase),
   ])
   return { ...identity, members, projects, chatConversations, chatMeetings, notifications, preferences, workSessions }
+}
+
+
+export async function loadAqsReviews(supabase: SupabaseClient, workspaceId: string): Promise<AqsReview[]> {
+  const { data, error } = await supabase
+    .from('aqs_reviews')
+    .select('id,workspace_id,project_id,activity_id,subactivity_id,status,assigned_aqs_id,created_by,created_at,started_at,completed_at,revoked_at,revoked_reason')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+  assertNoError(error, 'Não foi possível carregar a fila de AQS')
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    projectId: row.project_id,
+    activityId: row.activity_id,
+    subactivityId: row.subactivity_id,
+    status: row.status,
+    assignedAqsId: row.assigned_aqs_id ?? undefined,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    startedAt: row.started_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    revokedAt: row.revoked_at ?? undefined,
+    revokedReason: row.revoked_reason ?? undefined,
+  })) as AqsReview[]
+}
+
+export async function loadSupportTopics(supabase: SupabaseClient, workspaceId: string): Promise<SupportTopic[]> {
+  const { data, error } = await supabase
+    .from('support_topics')
+    .select(`
+      id,workspace_id,order_number,title,description,status,created_by,assigned_analyst_id,
+      project_id,activity_id,developer_id,revoked_reason,created_at,updated_at,
+      topic_attachments(id,topic_id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,created_at)
+    `)
+    .eq('workspace_id', workspaceId)
+    .order('updated_at', { ascending: false })
+  assertNoError(error, 'Não foi possível carregar os tópicos')
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    orderNumber: row.order_number,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    createdBy: row.created_by,
+    assignedAnalystId: row.assigned_analyst_id ?? undefined,
+    projectId: row.project_id ?? undefined,
+    activityId: row.activity_id ?? undefined,
+    developerId: row.developer_id ?? undefined,
+    revokedReason: row.revoked_reason ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    attachments: (row.topic_attachments ?? []).map((item: any) => ({
+      id: item.id,
+      topicId: item.topic_id,
+      name: item.name,
+      mimeType: item.mime_type || 'application/octet-stream',
+      size: Number(item.size_bytes || 0),
+      kind: isAttachmentKind(item.kind) ? item.kind : 'other',
+      storagePath: item.storage_path,
+      uploadedBy: item.uploaded_by,
+      createdAt: item.created_at,
+    })),
+  })) as SupportTopic[]
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square } from "lucide-react"
+import { AlertTriangle, Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square } from "lucide-react"
 import type { ActivityFilter, Project, Status, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -199,7 +199,7 @@ export function SubactivityKanban({
                               : undefined
                             : terminal
                               ? "Status final. Membros comuns não podem alterar uma subatividade concluída ou cancelada."
-                              : "Somente o responsável ou um administrador pode alterar status e cronômetro; comentários continuam liberados"
+                              : "Somente o Desenvolvedor responsável ou um Administrador pode alterar status e cronômetro; comentários continuam liberados"
                         }
                         className={cn(
                           "group rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/8 transition-all",
@@ -224,6 +224,12 @@ export function SubactivityKanban({
                             <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">
                               {item.activityTitle}
                             </p>
+                            {item.sub.needsAttention && (
+                              <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.65rem] font-medium text-chart-4">
+                                <AlertTriangle className="size-3.5 shrink-0" />
+                                <span className="line-clamp-2">Ajustes solicitados pelo AQS</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -255,7 +261,7 @@ export function SubactivityKanban({
                               buttonLabel="Arquivos"
                             />
                           </div>
-                          {!terminal && (
+                          {!terminal && item.sub.status !== "waiting-aqs" && (
                             <button
                               type="button"
                               disabled={!canManage || pending}

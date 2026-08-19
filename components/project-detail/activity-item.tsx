@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronDown, LoaderCircle, LockKeyhole, Trash2, X } from "lucide-react"
+import Link from "next/link"
+import { AlertTriangle, Check, ChevronDown, ClipboardList, LoaderCircle, LockKeyhole, Paperclip, Trash2, X } from "lucide-react"
 import type { Activity, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -114,7 +115,7 @@ function SubactivityRow({ sub, focused = false }: { sub: Subactivity; focused?: 
               ? "Reabrir subatividade cancelada"
               : "Concluir subatividade"
         }
-        title={canManage ? undefined : "Somente o responsável ou um administrador pode alterar esta subatividade"}
+        title={canManage ? undefined : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"}
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
           !canManage && "cursor-not-allowed opacity-45",
@@ -138,6 +139,12 @@ function SubactivityRow({ sub, focused = false }: { sub: Subactivity; focused?: 
         >
           {sub.title}
         </p>
+        {sub.needsAttention && (
+          <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.68rem] font-medium text-chart-4">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            <span className="truncate">AQS solicitou ajustes{sub.attentionMessage ? ` · ${sub.attentionMessage}` : ""}</span>
+          </div>
+        )}
         <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted sm:w-24">
             <div
@@ -210,7 +217,7 @@ function SubactivityRow({ sub, focused = false }: { sub: Subactivity; focused?: 
           <MemberAvatar member={assignee} className="inline-flex" />
         </div>
 
-        {!terminal && <TimerButton subId={sub.id} size="sm" />}
+        {!terminal && sub.status !== "waiting-aqs" && <TimerButton subId={sub.id} size="sm" />}
       </div>
     </div>
 
@@ -250,7 +257,7 @@ export function ActivityItem({
   focusActivityId?: string | null
   focusSubactivityId?: string | null
 }) {
-  const { deleteActivity } = useStore()
+  const { deleteActivity, supportTopics } = useStore()
   const activityRef = React.useRef<HTMLDivElement>(null)
   const hasFocusedSubactivity = Boolean(
     focusSubactivityId && activity.subactivities.some((sub) => sub.id === focusSubactivityId),
@@ -279,6 +286,7 @@ export function ActivityItem({
   const tracked = activityTracked(activity)
   const canDelete = allSubs.length === 0
   const filtering = visibleSubactivities !== undefined
+  const sourceTopic = supportTopics.find((topic) => topic.activityId === activity.id)
 
   async function confirmDelete() {
     if (!canDelete || deleting) return
@@ -361,6 +369,19 @@ export function ActivityItem({
 
         {open && (
           <div className="border-t border-border px-2 pb-2">
+            {sourceTopic && (
+              <Link
+                href={`/topicos?topic=${sourceTopic.id}`}
+                className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-primary/[0.07]"
+              >
+                <ClipboardList className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">Originada do tópico · Ordem {sourceTopic.orderNumber}</span>
+                  <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{sourceTopic.title}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-[0.65rem] text-muted-foreground"><Paperclip className="size-3" />{sourceTopic.attachments.length}</span>
+              </Link>
+            )}
             <div className="flex flex-col divide-y divide-border/60">
               {visibleSubs.map((sub) => (
                 <SubactivityRow key={sub.id} sub={sub} focused={focusSubactivityId === sub.id} />

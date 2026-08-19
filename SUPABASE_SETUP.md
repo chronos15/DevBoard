@@ -36,7 +36,10 @@ Nunca coloque `service_role`/secret key no front-end.
 3. Cole o conteúdo de `supabase/migrations/001_devboard_full_backend.sql`.
 4. Execute a query inteira.
 5. Depois execute `supabase/migrations/002_devboard_call_invites.sql`.
-6. As migrations usam transação (`BEGIN`/`COMMIT`): se uma etapa falhar, não devem ficar parcialmente aplicadas.
+6. Execute `supabase/migrations/003_devboard_chat_audio.sql`.
+7. Execute `supabase/migrations/004_devboard_chat_media_attachments.sql`.
+8. Execute `supabase/migrations/005_devboard_roles_aqs_topics.sql`.
+9. As migrations são incrementais. A migration 005 adiciona valores de enum antes do bloco transacional e, em seguida, aplica tabelas/RPCs/policies dentro de `BEGIN`/`COMMIT`.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -101,10 +104,37 @@ após configurar o provider Google no Supabase Auth e as URLs OAuth corresponden
 Esta fase do produto usa **um workspace Devboard**.
 
 - o primeiro usuário cadastrado é criado como `admin`;
-- os demais entram como `member`;
-- administradores podem promover/rebaixar membros em Configurações;
+- os demais entram inicialmente como `member`;
+- administradores podem alterar a role da equipe em Configurações;
+- roles disponíveis: `admin`, `developer`, `aqs`, `support`, `member`;
 - a migration serializa o primeiro cadastro para evitar dois administradores iniciais por condição de corrida;
 - se o sistema for interno, depois de cadastrar/provisionar a equipe, desabilite cadastro público no Supabase Auth.
+
+## 5.1. Matriz de roles
+
+| Role | Projetos | Execução DEV | Análise AQS | Tópicos | Administração |
+|---|---|---|---|---|---|
+| **Administrador** | Total | Qualquer atividade/subatividade | Total | Total | Total |
+| **Desenvolvedor** | Total | Somente próprias atividades/subatividades | Visualização da fila | Pode analisar/encaminhar | Não altera roles |
+| **AQS** | Sem edição estrutural | Não executa tarefas DEV | Avalia apenas fila AQS | Pode analisar/encaminhar | Não |
+| **Suporte** | Sem edição estrutural | Não | Não | Abre e acompanha tópicos; vê fila de tópicos | Não |
+| **Membro** | Sem edição estrutural | Não | Não | Abre e acompanha os próprios tópicos | Não |
+
+### Fluxo AQS
+
+1. O Desenvolvedor conclui sua implementação e move a subatividade para **Aguardando AQS**.
+2. O banco cria uma revisão em `aqs_reviews` e notifica AQS/Administradores.
+3. Em **Análise**, AQS/Admin move para **Avaliando**.
+4. **Concluída** aprova a revisão e conclui a subatividade original.
+5. **Revogada** devolve a subatividade para **Aguardando**, marca `needs_attention`, grava o motivo e notifica o Desenvolvedor responsável.
+6. O AQS pode anexar evidências e comentar usando os mesmos componentes de anexos/comentários já usados nas subatividades.
+
+### Fluxo de Tópicos
+
+- Suporte e Membro podem abrir tópicos com número da ordem, descrição e evidências (imagem, vídeo, documento etc.).
+- Administrador, Desenvolvedor e AQS podem iniciar análise, revogar ou usar **Enviar Atividade**.
+- Ao enviar para desenvolvimento, o usuário escolhe o projeto e opcionalmente um Desenvolvedor. A atividade é criada no projeto com a ordem no título e as notificações são disparadas para administradores, Desenvolvedor associado e solicitante.
+- Evidências ficam no bucket privado `devboard-topic-media`, com limite de 50 MB por arquivo.
 
 ## 6. Regras garantidas pelo banco
 
@@ -254,7 +284,13 @@ pnpm dev
 18. Recuse uma chamada e confirme `meeting_members.status = 'declined'`.
 19. Atenda e depois saia com os dois usuários; confirme que `meetings.ended_at` foi preenchido ao sair o último participante.
 20. Conceda permissão de notificação no Chrome e valide a notificação nativa de chamada.
-21. Rode **Database > Security Advisor** e **Performance Advisor** no Dashboard antes de produção.
+21. Como Admin, atribua as roles Desenvolvedor, AQS, Suporte e Membro em Configurações.
+22. Como Desenvolvedor, mova uma subatividade própria para **Aguardando AQS** e confirme a criação em `aqs_reviews`.
+23. Como AQS, inicie a análise, anexe uma evidência e conclua; confirme que a subatividade original fica `done`.
+24. Repita e revogue a análise; confirme que a subatividade volta para `waiting` com alerta e que o Desenvolvedor recebe notificação.
+25. Como Suporte/Membro, abra um Tópico com ordem + evidência e confirme Storage em `devboard-topic-media`.
+26. Como AQS/Desenvolvedor/Admin, encaminhe o Tópico com **Enviar Atividade** e confirme criação + notificações.
+27. Rode **Database > Security Advisor** e **Performance Advisor** no Dashboard antes de produção.
 
 ## 12. Observação sobre build neste pacote
 
@@ -283,3 +319,26 @@ supabase/migrations/004_devboard_chat_media_attachments.sql
 A migration 004 é incremental e não remove mensagens existentes. Ela amplia `chat_messages` para mensagens de mídia/anexo, mantém o bucket `devboard-chat-media` privado e aumenta o limite desse bucket para 50 MB por arquivo. O acesso continua restrito aos membros da conversa pelas policies existentes de Storage/RLS.
 
 No Chat, o botão de clipe permite múltiplos arquivos. `Ctrl+V` intercepta arquivos/imagens disponíveis no clipboard e abre o preview; texto puro continua sendo colado no campo da mensagem normalmente. Nenhum arquivo é enviado antes da confirmação no preview.
+
+
+## Roles, AQS e Tópicos · migration 005
+
+Depois da migration 004, execute:
+
+```text
+supabase/migrations/005_devboard_roles_aqs_topics.sql
+```
+
+Ela é incremental e não remove projetos, atividades, subatividades, mensagens ou anexos existentes. Adiciona:
+
+- roles `developer`, `aqs` e `support`;
+- status `waiting-aqs` / **Aguardando AQS**;
+- `aqs_reviews`;
+- `support_topics`;
+- `topic_attachments`;
+- alerta de retorno AQS em `subactivities`;
+- RPCs com validação de role no PostgreSQL;
+- bucket privado `devboard-topic-media`;
+- RLS e Realtime das novas filas.
+
+Após aplicar a 005, rode novamente `supabase/verify_backend.sql`.

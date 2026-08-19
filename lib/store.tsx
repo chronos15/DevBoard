@@ -5,27 +5,32 @@ import { createClient } from "@/lib/supabase/client"
 import {
   DEFAULT_PREFERENCES,
   loadIdentity,
+  loadAqsReviews,
   loadChatConversations,
   loadMeetings,
   loadMembers,
   loadNotifications,
   loadProjects,
   loadPreferences,
+  loadSupportTopics,
   loadWorkSessions,
 } from "@/lib/supabase/data"
 import {
   ATTACHMENTS_BUCKET,
   AVATARS_BUCKET,
   CHAT_MEDIA_BUCKET,
+  TOPIC_MEDIA_BUCKET,
   chatAudioStoragePath,
   chatMediaKind,
   chatMediaStoragePath,
   attachmentStoragePath,
   dataUrlToBlob,
   safeFileName,
+  topicMediaStoragePath,
 } from "@/lib/supabase/helpers"
 import type {
   AccessRole,
+  AqsReview,
   AttachmentUploadInput,
   ChatConversation,
   ChatMeeting,
@@ -35,6 +40,8 @@ import type {
   Project,
   ProjectInput,
   Status,
+  SupportTopic,
+  SupportTopicInput,
   Subactivity,
   UserPreferences,
   WorkSession,
@@ -57,6 +64,8 @@ const PREFERENCE_TABLES = new Set(["user_preferences"])
 const TIME_TABLES = new Set(["work_sessions"])
 const CHAT_TABLES = new Set(["chat_conversations", "chat_members", "chat_messages"])
 const MEETING_TABLES = new Set(["meetings", "meeting_members"])
+const AQS_TABLES = new Set(["aqs_reviews"])
+const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 
 export type StoreContextValue = {
   projects: Project[]
@@ -64,6 +73,8 @@ export type StoreContextValue = {
   chatConversations: ChatConversation[]
   chatMeetings: ChatMeeting[]
   notifications: NotificationEntry[]
+  aqsReviews: AqsReview[]
+  supportTopics: SupportTopic[]
   preferences: UserPreferences
   workSessions: WorkSession[]
   workspaceId: string | null
@@ -80,6 +91,14 @@ export type StoreContextValue = {
   signOut: () => Promise<void>
   updateMyProfile: (data: { name: string; avatarFile?: File | null }) => Promise<boolean>
   setMemberRole: (memberId: string, role: AccessRole) => Promise<boolean>
+  startAqsReview: (reviewId: string) => Promise<boolean>
+  completeAqsReview: (reviewId: string) => Promise<boolean>
+  revokeAqsReview: (reviewId: string, reason: string) => Promise<boolean>
+  createSupportTopic: (data: SupportTopicInput) => Promise<string | null>
+  addSupportTopicAttachments: (topicId: string, files: File[]) => Promise<boolean>
+  startSupportTopicAnalysis: (topicId: string) => Promise<boolean>
+  revokeSupportTopic: (topicId: string, reason: string) => Promise<boolean>
+  sendSupportTopicToActivity: (topicId: string, projectId: string, developerId?: string) => Promise<string | null>
   updatePreferences: (preferences: UserPreferences) => Promise<boolean>
   canManageSubactivity: (sub: Subactivity) => boolean
   startTimer: (subId: string) => Promise<boolean>
@@ -221,6 +240,8 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         trackedSeconds: live,
         timerStartedAt: row.timer_started_at ?? undefined,
         assigneeId: row.assignee_id ?? sub.assigneeId,
+        needsAttention: row.needs_attention === true,
+        attentionMessage: row.attention_message ?? undefined,
       } : sub),
     })),
   }))
@@ -255,6 +276,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [chatConversations, setChatConversations] = React.useState<ChatConversation[]>([])
   const [chatMeetings, setChatMeetings] = React.useState<ChatMeeting[]>([])
   const [notifications, setNotifications] = React.useState<NotificationEntry[]>([])
+  const [aqsReviews, setAqsReviews] = React.useState<AqsReview[]>([])
+  const [supportTopics, setSupportTopics] = React.useState<SupportTopic[]>([])
   const [preferences, setPreferences] = React.useState<UserPreferences>(DEFAULT_PREFERENCES)
   const [workSessions, setWorkSessions] = React.useState<WorkSession[]>([])
   const [hydrated, setHydrated] = React.useState(false)
@@ -336,6 +359,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fail, supabase, workspaceId])
 
+  const refreshAqsReviews = React.useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      setAqsReviews(await loadAqsReviews(supabase, workspaceId))
+    } catch (error) {
+      fail(error, "Não foi possível atualizar a fila de AQS")
+    }
+  }, [fail, supabase, workspaceId])
+
+  const refreshSupportTopics = React.useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      setSupportTopics(await loadSupportTopics(supabase, workspaceId))
+    } catch (error) {
+      fail(error, "Não foi possível atualizar os tópicos")
+    }
+  }, [fail, supabase, workspaceId])
+
   const refreshAll = React.useCallback(async () => {
     setRefreshing(true)
     setChatHydrated(false)
@@ -348,12 +389,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Carrega primeiro apenas o que é necessário para Dashboard, Projetos,
       // Horas, Agenda e Configurações. Chat/reuniões não bloqueiam mais a
       // abertura do restante do sistema.
-      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions] = await Promise.all([
+      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics] = await Promise.all([
         loadMembers(supabase, identity.workspaceId),
         loadProjects(supabase, identity.workspaceId),
         loadNotifications(supabase, identity.user.id),
         loadPreferences(supabase, identity.user.id),
         loadWorkSessions(supabase),
+        loadAqsReviews(supabase, identity.workspaceId),
+        loadSupportTopics(supabase, identity.workspaceId),
       ])
 
       setMembers(nextMembers)
@@ -361,6 +404,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setNotifications(nextNotifications)
       setPreferences(nextPreferences)
       setWorkSessions(nextWorkSessions)
+      setAqsReviews(nextAqsReviews)
+      setSupportTopics(nextSupportTopics)
       setLastError(null)
       setHydrated(true)
       setRefreshing(false)
@@ -406,6 +451,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...MEETING_TABLES,
       ...PREFERENCE_TABLES,
       ...TIME_TABLES,
+      ...AQS_TABLES,
+      ...TOPIC_TABLES,
       "notifications",
     ]
 
@@ -430,6 +477,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           if (table === "notifications") schedule("notifications", refreshNotifications)
           if (PREFERENCE_TABLES.has(table)) schedule("preferences", refreshPreferences)
           if (TIME_TABLES.has(table)) schedule("work-sessions", refreshWorkSessions)
+          if (AQS_TABLES.has(table)) schedule("aqs-reviews", refreshAqsReviews)
+          if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
         },
       )
     }
@@ -442,7 +491,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       Object.values(refreshTimers.current).forEach((timer) => window.clearTimeout(timer))
       void supabase.removeChannel(channel)
     }
-  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, schedule, supabase, workspaceId])
+  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, schedule, supabase, workspaceId])
 
   React.useEffect(() => {
     if (typeof document === "undefined") return
@@ -480,9 +529,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, runningSubIds.length])
 
   const canManageSubactivity = React.useCallback((sub: Subactivity) => {
-    const terminal = sub.status === "done" || sub.status === "cancelled"
-    if (terminal && currentUserRole !== "admin") return false
-    return currentUserRole === "admin" || sub.assigneeId === currentUserId
+    if (currentUserRole === "admin") return true
+    if (currentUserRole !== "developer") return false
+    if (sub.assigneeId !== currentUserId) return false
+    if (sub.status === "done" || sub.status === "cancelled" || sub.status === "waiting-aqs") return false
+    return true
   }, [currentUserId, currentUserRole])
 
   const callRpc = React.useCallback(async <T,>(name: string, args: Record<string, unknown>, fallback: string): Promise<T | null | undefined> => {
@@ -911,6 +962,100 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshMembers])
 
+  const startAqsReview = React.useCallback(async (reviewId: string) => {
+    const result = await callRpc<unknown>("start_aqs_review", { p_review_id: reviewId }, "Não foi possível iniciar a análise AQS")
+    if (result === undefined) return false
+    await Promise.all([refreshAqsReviews(), refreshProjects()])
+    return true
+  }, [callRpc, refreshAqsReviews, refreshProjects])
+
+  const completeAqsReview = React.useCallback(async (reviewId: string) => {
+    const result = await callRpc<unknown>("complete_aqs_review", { p_review_id: reviewId }, "Não foi possível concluir a análise AQS")
+    if (result === undefined) return false
+    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects])
+
+  const revokeAqsReview = React.useCallback(async (reviewId: string, reason: string) => {
+    const result = await callRpc<unknown>("revoke_aqs_review", { p_review_id: reviewId, p_reason: reason }, "Não foi possível revogar a análise AQS")
+    if (result === undefined) return false
+    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects])
+
+  const addSupportTopicAttachments = React.useCallback(async (topicId: string, files: File[]) => {
+    if (!workspaceId || files.length === 0) return false
+    const uploaded: string[] = []
+    const registered = new Set<string>()
+    try {
+      for (const file of files) {
+        const path = topicMediaStoragePath(workspaceId, topicId, currentUserId, file.name)
+        const mimeType = file.type || "application/octet-stream"
+        const { error: uploadError } = await supabase.storage.from(TOPIC_MEDIA_BUCKET).upload(path, file, {
+          contentType: mimeType,
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
+        uploaded.push(path)
+
+        const id = await callRpc<string>("add_topic_attachment", {
+          p_topic_id: topicId,
+          p_name: file.name,
+          p_mime_type: mimeType,
+          p_size_bytes: file.size,
+          p_kind: chatMediaKind(file),
+          p_storage_path: path,
+        }, "Não foi possível registrar o anexo do tópico")
+        if (!id) throw new Error(`Não foi possível registrar “${file.name}”.`)
+        registered.add(path)
+      }
+      await refreshSupportTopics()
+      return true
+    } catch (error) {
+      const rollback = uploaded.filter((path) => !registered.has(path))
+      if (rollback.length) await supabase.storage.from(TOPIC_MEDIA_BUCKET).remove(rollback).catch(() => undefined)
+      fail(error, "Não foi possível enviar as mídias do tópico")
+      return false
+    }
+  }, [callRpc, currentUserId, fail, refreshSupportTopics, supabase, workspaceId])
+
+  const createSupportTopic = React.useCallback(async (data: SupportTopicInput) => {
+    const id = await callRpc<string>("create_support_topic", {
+      p_order_number: data.orderNumber,
+      p_title: data.title,
+      p_description: data.description,
+    }, "Não foi possível abrir o tópico")
+    if (!id) return null
+    if (data.files.length) await addSupportTopicAttachments(id, data.files)
+    await Promise.all([refreshSupportTopics(), refreshNotifications()])
+    return id
+  }, [addSupportTopicAttachments, callRpc, refreshNotifications, refreshSupportTopics])
+
+  const startSupportTopicAnalysis = React.useCallback(async (topicId: string) => {
+    const result = await callRpc<unknown>("start_topic_analysis", { p_topic_id: topicId }, "Não foi possível iniciar a análise do tópico")
+    if (result === undefined) return false
+    await Promise.all([refreshSupportTopics(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshSupportTopics])
+
+  const revokeSupportTopic = React.useCallback(async (topicId: string, reason: string) => {
+    const result = await callRpc<unknown>("revoke_support_topic", { p_topic_id: topicId, p_reason: reason }, "Não foi possível revogar o tópico")
+    if (result === undefined) return false
+    await Promise.all([refreshSupportTopics(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshSupportTopics])
+
+  const sendSupportTopicToActivity = React.useCallback(async (topicId: string, projectId: string, developerId?: string) => {
+    const activityId = await callRpc<string>("send_topic_to_activity", {
+      p_topic_id: topicId,
+      p_project_id: projectId,
+      p_developer_id: developerId || null,
+    }, "Não foi possível enviar o tópico para desenvolvimento")
+    if (!activityId) return null
+    await Promise.all([refreshSupportTopics(), refreshProjects(), refreshNotifications()])
+    return activityId
+  }, [callRpc, refreshNotifications, refreshProjects, refreshSupportTopics])
+
   const signOut = React.useCallback(async () => {
     await supabase.auth.signOut()
     window.location.assign("/login")
@@ -922,6 +1067,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     chatConversations,
     chatMeetings,
     notifications,
+    aqsReviews,
+    supportTopics,
     preferences,
     workSessions,
     workspaceId,
@@ -938,6 +1085,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     signOut,
     updateMyProfile,
     setMemberRole,
+    startAqsReview,
+    completeAqsReview,
+    revokeAqsReview,
+    createSupportTopic,
+    addSupportTopicAttachments,
+    startSupportTopicAnalysis,
+    revokeSupportTopic,
+    sendSupportTopicToActivity,
     updatePreferences,
     canManageSubactivity,
     startTimer,
@@ -977,8 +1132,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting,
     markAllNotificationsRead, markNotificationRead,
-    members, notifications, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
-    setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer,
+    members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
   ])
 

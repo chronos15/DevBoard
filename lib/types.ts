@@ -1,13 +1,14 @@
 export type Status =
   | "backlog"
   | "waiting"
+  | "waiting-aqs"
   | "in-progress"
   | "paused"
   | "done"
   | "cancelled"
 
 export type Priority = "low" | "medium" | "high"
-export type AccessRole = "member" | "admin"
+export type AccessRole = "admin" | "developer" | "aqs" | "support" | "member"
 
 export type UserPreferences = {
   notifyAssignments: boolean
@@ -18,7 +19,7 @@ export type UserPreferences = {
   reducedMotion: boolean
   density: "comfortable" | "compact"
 }
-export type ActivityFilter = "all" | "open" | "waiting" | "in-progress" | "done"
+export type ActivityFilter = "all" | "open" | "waiting" | "waiting-aqs" | "in-progress" | "done"
 
 export type Member = {
   id: string
@@ -86,6 +87,8 @@ export type Subactivity = {
   trackedSeconds: number
   timerStartedAt?: string
   assigneeId: string
+  needsAttention?: boolean
+  attentionMessage?: string
   comments?: CommentEntry[]
   attachments?: AttachmentEntry[]
 }
@@ -108,6 +111,11 @@ export type ProjectLogType =
   | "comment-added"
   | "attachment-added"
   | "attachment-status"
+  | "aqs-submitted"
+  | "aqs-started"
+  | "aqs-completed"
+  | "aqs-revoked"
+  | "topic-to-activity"
 
 export type ProjectLogEntry = {
   id: string
@@ -157,6 +165,12 @@ export type NotificationType =
   | "subactivity-assigned"
   | "subactivity-comment"
   | "meeting-invite"
+  | "aqs-awaiting"
+  | "aqs-approved"
+  | "aqs-revoked"
+  | "topic-created"
+  | "topic-status"
+  | "topic-sent"
 
 export type NotificationEntry = {
   id: string
@@ -222,4 +236,70 @@ export type ChatConversation = {
   createdAt: string
   updatedAt: string
   messages: ChatMessage[]
+}
+
+
+export type AqsReviewStatus = "awaiting" | "evaluating" | "completed" | "revoked"
+
+export type AqsReview = {
+  id: string
+  workspaceId: string
+  projectId: string
+  activityId: string
+  subactivityId: string
+  status: AqsReviewStatus
+  assignedAqsId?: string
+  createdBy: string
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  revokedAt?: string
+  revokedReason?: string
+}
+
+export type SupportTopicStatus = "open" | "analyzing" | "sent-to-dev" | "revoked"
+
+export type TopicAttachment = {
+  id: string
+  topicId: string
+  name: string
+  mimeType: string
+  size: number
+  kind: AttachmentKind
+  storagePath: string
+  uploadedBy: string
+  createdAt: string
+}
+
+export type SupportTopic = {
+  id: string
+  workspaceId: string
+  orderNumber: string
+  title: string
+  description: string
+  status: SupportTopicStatus
+  createdBy: string
+  assignedAnalystId?: string
+  projectId?: string
+  activityId?: string
+  developerId?: string
+  revokedReason?: string
+  createdAt: string
+  updatedAt: string
+  attachments: TopicAttachment[]
+}
+
+export type SupportTopicInput = {
+  orderNumber: string
+  title: string
+  description: string
+  files: File[]
+}
+
+export const ACCESS_ROLE_LABELS: Record<AccessRole, string> = {
+  admin: "Administrador",
+  developer: "Desenvolvedor",
+  aqs: "AQS",
+  support: "Suporte",
+  member: "Membro",
 }

@@ -28,7 +28,8 @@ export function ActiveTimerHero({
     (sub) =>
       sub.assigneeId === currentUserId &&
       sub.status !== "done" &&
-      sub.status !== "cancelled",
+      sub.status !== "cancelled" &&
+      sub.status !== "waiting-aqs",
   )
 
   const displaySeconds = activeInProject?.sub.trackedSeconds ?? 0

@@ -12,9 +12,11 @@ export function StatusDonut() {
   const data = [
     { name: "Concluídas", value: counts.done, color: "var(--chart-5)" },
     { name: "Em execução", value: counts["in-progress"], color: "var(--chart-3)" },
+    { name: "Aguardando AQS", value: counts["waiting-aqs"], color: "var(--chart-1)" },
     { name: "Pausadas", value: counts.paused, color: "var(--chart-4)" },
     { name: "Aguardando", value: counts.waiting, color: "var(--chart-2)" },
     { name: "Backlog", value: counts.backlog, color: "var(--muted-foreground)" },
+    { name: "Canceladas", value: counts.cancelled, color: "var(--destructive)" },
   ]
 
   return (

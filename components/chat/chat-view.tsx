@@ -1308,7 +1308,6 @@ export function ChatView() {
                     )}
                     </div>
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Segure uma mensagem para responder</p>
                 </footer>
               </>
             ) : (

@@ -497,7 +497,7 @@ export function TopicsView() {
       <NewTopicDialog open={newOpen} onOpenChange={setNewOpen} />
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null) }}>
-        <DialogContent className="flex max-h-[95dvh] w-[calc(100vw-1rem)] max-w-[1480px] flex-col overflow-hidden p-0 sm:w-[calc(100vw-2rem)] xl:w-[calc(100vw-4rem)] lg:h-[min(88dvh,860px)]">
+        <DialogContent className="flex max-h-[96dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 sm:w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] lg:h-[min(90dvh,880px)] xl:w-[calc(100vw-4rem)] xl:max-w-[1480px]">
           {selected && (
             <>
               <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-12 sm:px-5 lg:px-6">
@@ -514,9 +514,9 @@ export function TopicsView() {
                 </div>
               </DialogHeader>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-background/20">
+              <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-background/20">
                 <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5 lg:p-6">
-                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_320px]">
+                  <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_300px]">
                     <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
                       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Solicitante</p>
                       <div className="mt-4 flex items-center gap-3">
@@ -587,7 +587,7 @@ export function TopicsView() {
                     </section>
 
                     {selected.revokedReason ? (
-                      <div className="xl:col-span-3">
+                      <div className="md:col-span-2 xl:col-span-3">
                         <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/10 p-3.5 text-xs leading-relaxed text-destructive">
                           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                           <span>{selected.revokedReason}</span>
@@ -617,7 +617,7 @@ export function TopicsView() {
 
                     {selected.attachments.length > 0 ? (
                       <div className="max-h-[54dvh] overflow-y-auto px-4 py-4 sm:px-5 lg:px-5">
-                        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                        <div className="grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3">
                           {selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
                         </div>
                       </div>

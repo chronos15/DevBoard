@@ -26,6 +26,7 @@ import { useStore } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { TOPIC_MEDIA_BUCKET, chatMediaKind } from "@/lib/supabase/helpers"
 import type { SupportTopic, SupportTopicStatus, TopicAttachment } from "@/lib/types"
+import { supportTopicDisplayStatus, type SupportTopicDisplayStatus } from "@/lib/project-utils"
 import { PageHeading } from "@/components/page-heading"
 import { MemberAvatar } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
@@ -39,10 +40,11 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
-const columns: Array<{ status: SupportTopicStatus; label: string; tone: string; helper: string }> = [
+const columns: Array<{ status: SupportTopicDisplayStatus; label: string; tone: string; helper: string }> = [
   { status: "open", label: "Aberto", tone: "bg-chart-2", helper: "Aguardando triagem" },
   { status: "analyzing", label: "Em análise", tone: "bg-chart-3", helper: "AQS / DEV / Admin" },
-  { status: "sent-to-dev", label: "Enviado ao DEV", tone: "bg-success", helper: "Convertido em atividade" },
+  { status: "sent-to-dev", label: "Enviado ao DEV", tone: "bg-chart-5", helper: "Convertido em atividade" },
+  { status: "completed-dev", label: "Concluído Dev.", tone: "bg-success", helper: "Atividade concluída pelo desenvolvimento" },
   { status: "revoked", label: "Revogado", tone: "bg-destructive", helper: "Devolvido ao solicitante" },
 ]
 
@@ -67,15 +69,24 @@ function dateKey(value: string) {
   return `${year}-${month}-${day}`
 }
 
-function statusClass(status: SupportTopicStatus) {
-  if (status === "sent-to-dev") return "bg-success/15 text-success"
+function statusClass(status: SupportTopicDisplayStatus) {
+  if (status === "completed-dev") return "bg-success/15 text-success"
+  if (status === "sent-to-dev") return "bg-chart-5/15 text-chart-5"
   if (status === "revoked") return "bg-destructive/10 text-destructive"
   if (status === "analyzing") return "bg-chart-3/15 text-chart-3"
   return "bg-chart-2/15 text-chart-2"
 }
 
 function selectClassName() {
-  return "h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring"
+  return "h-10 w-full min-w-0 rounded-xl border border-border bg-card pl-3 pr-10 text-sm outline-none transition-colors focus:border-ring"
+}
+
+function todayDateKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
 
 function AttachmentPreview({ attachment }: { attachment: TopicAttachment }) {
@@ -191,11 +202,11 @@ export function TopicsView() {
   const [newOpen, setNewOpen] = React.useState(false)
   const [selected, setSelected] = React.useState<SupportTopic | null>(null)
   const [search, setSearch] = React.useState("")
-  const [viewMode, setViewMode] = React.useState<"kanban" | "list">("kanban")
+  const [viewMode, setViewMode] = React.useState<"kanban" | "list">("list")
   const [filtersOpen, setFiltersOpen] = React.useState(false)
-  const [statusFilter, setStatusFilter] = React.useState<"all" | SupportTopicStatus>("all")
-  const [dateFrom, setDateFrom] = React.useState("")
-  const [dateTo, setDateTo] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState<"all" | SupportTopicDisplayStatus>("all")
+  const [dateFrom, setDateFrom] = React.useState(() => todayDateKey())
+  const [dateTo, setDateTo] = React.useState(() => todayDateKey())
   const [creatorFilter, setCreatorFilter] = React.useState("all")
   const [analystFilter, setAnalystFilter] = React.useState("all")
   const [projectFilter, setProjectFilter] = React.useState("all")
@@ -210,6 +221,7 @@ export function TopicsView() {
   const canCreate = currentUserRole === "admin" || currentUserRole === "support" || currentUserRole === "member"
   const canAnalyze = currentUserRole === "admin" || currentUserRole === "developer" || currentUserRole === "aqs"
   const developers = members.filter((member) => member.role === "developer")
+  const topicStatus = React.useCallback((topic: SupportTopic) => supportTopicDisplayStatus(topic, projects), [projects])
 
   const creatorOptions = React.useMemo(() => {
     const ids = new Set(supportTopics.map((topic) => topic.createdBy))
@@ -229,7 +241,7 @@ export function TopicsView() {
   const normalized = search.trim().toLowerCase()
   const visibleTopics = React.useMemo(() => supportTopics.filter((topic) => {
     if (normalized && !`${topic.orderNumber} ${topic.title} ${topic.description}`.toLowerCase().includes(normalized)) return false
-    if (statusFilter !== "all" && topic.status !== statusFilter) return false
+    if (statusFilter !== "all" && topicStatus(topic) !== statusFilter) return false
     if (creatorFilter !== "all" && topic.createdBy !== creatorFilter) return false
     if (analystFilter !== "all" && topic.assignedAnalystId !== analystFilter) return false
     if (projectFilter !== "all" && topic.projectId !== projectFilter) return false
@@ -237,9 +249,10 @@ export function TopicsView() {
     if (dateFrom && created < dateFrom) return false
     if (dateTo && created > dateTo) return false
     return true
-  }), [analystFilter, creatorFilter, dateFrom, dateTo, normalized, projectFilter, statusFilter, supportTopics])
+  }), [analystFilter, creatorFilter, dateFrom, dateTo, normalized, projectFilter, statusFilter, supportTopics, topicStatus])
 
-  const activeFilterCount = [dateFrom, dateTo, statusFilter !== "all", creatorFilter !== "all", analystFilter !== "all", projectFilter !== "all"].filter(Boolean).length
+  const today = todayDateKey()
+  const activeFilterCount = [dateFrom !== today, dateTo !== today, statusFilter !== "all", creatorFilter !== "all", analystFilter !== "all", projectFilter !== "all"].filter(Boolean).length
   const hasFilters = activeFilterCount > 0
 
   React.useEffect(() => {
@@ -285,8 +298,9 @@ export function TopicsView() {
 
   function clearFilters() {
     setStatusFilter("all")
-    setDateFrom("")
-    setDateTo("")
+    const today = todayDateKey()
+    setDateFrom(today)
+    setDateTo(today)
     setCreatorFilter("all")
     setAnalystFilter("all")
     setProjectFilter("all")
@@ -306,8 +320,8 @@ export function TopicsView() {
 
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center rounded-xl bg-muted p-1 sm:flex-none">
-              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
               <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
+              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
             </div>
             <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
               <SlidersHorizontal className="size-4" />
@@ -325,7 +339,7 @@ export function TopicsView() {
             <DialogDescription>Refine a fila por status, período, solicitante, analista e projeto.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicDisplayStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
             <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
             <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
             <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={analystFilter} onChange={(event) => setAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
@@ -348,7 +362,7 @@ export function TopicsView() {
         <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain pb-3">
           <div className="flex w-max min-w-full flex-nowrap items-stretch gap-3">
             {columns.map((column) => {
-              const topics = visibleTopics.filter((topic) => topic.status === column.status)
+              const topics = visibleTopics.filter((topic) => topicStatus(topic) === column.status)
               return (
                 <section key={column.status} className="flex min-h-[500px] w-[285px] min-w-[285px] flex-col rounded-2xl border border-border bg-muted/25 p-2.5 xl:w-[310px] xl:min-w-[310px]">
                   <header className="px-1 py-1.5"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className={cn("size-2 rounded-full", column.tone)} /><h2 className="text-xs font-semibold">{column.label}</h2></div><span className="rounded-full bg-card px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground ring-1 ring-foreground/8">{topics.length}</span></div><p className="mt-1 text-[0.65rem] text-muted-foreground">{column.helper}</p></header>
@@ -372,14 +386,15 @@ export function TopicsView() {
             {visibleTopics.map((topic) => {
               const creator = members.find((member) => member.id === topic.createdBy)
               const analyst = members.find((member) => member.id === topic.assignedAnalystId)
-              const status = columns.find((item) => item.status === topic.status)
+              const displayStatus = topicStatus(topic)
+              const status = columns.find((item) => item.status === displayStatus)
               return (
                 <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="grid w-full min-w-0 gap-3 p-3 text-left transition-colors hover:bg-muted/35 sm:p-4 lg:grid-cols-[110px_minmax(200px,1.5fr)_150px_150px_140px_90px] lg:items-center">
                   <span className="font-mono text-[0.68rem] font-semibold text-primary">{topic.orderNumber}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-semibold">{topic.title}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{topic.description} · {formatDateTime(topic.createdAt)}</span></span>
                   <span className="flex min-w-0 items-center gap-2"><MemberAvatar member={creator} className="size-7" /><span className="truncate text-xs">{creator?.name ?? "Usuário"}</span></span>
                   <span className="flex min-w-0 items-center gap-2">{analyst ? <MemberAvatar member={analyst} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<span className="truncate text-xs">{analyst?.name ?? "Não atribuído"}</span></span>
-                  <span><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", statusClass(topic.status))}><span className={cn("size-1.5 rounded-full", status?.tone)} />{status?.label}</span></span>
+                  <span><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", statusClass(displayStatus))}><span className={cn("size-1.5 rounded-full", status?.tone)} />{status?.label}</span></span>
                   <span className="flex items-center gap-1 text-xs text-muted-foreground lg:justify-end"><Paperclip className="size-3.5" />{topic.attachments.length}</span>
                 </button>
               )
@@ -396,7 +411,7 @@ export function TopicsView() {
           {selected && (
             <>
               <DialogHeader><div className="pr-8"><p className="font-mono text-[0.68rem] font-semibold text-primary">ORDEM {selected.orderNumber}</p><DialogTitle className="mt-1 leading-snug">{selected.title}</DialogTitle></div><DialogDescription>{selected.description}</DialogDescription></DialogHeader>
-              <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Solicitante</p><div className="mt-2 flex items-center gap-2"><MemberAvatar member={members.find((m) => m.id === selected.createdBy)} /><span className="truncate text-xs font-medium">{members.find((m) => m.id === selected.createdBy)?.name}</span></div></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Analista</p><p className="mt-2 truncate text-xs font-medium">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Status</p><p className="mt-2 text-xs font-medium">{columns.find((column) => column.status === selected.status)?.label}</p></div></div>
+              <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Solicitante</p><div className="mt-2 flex items-center gap-2"><MemberAvatar member={members.find((m) => m.id === selected.createdBy)} /><span className="truncate text-xs font-medium">{members.find((m) => m.id === selected.createdBy)?.name}</span></div></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Analista</p><p className="mt-2 truncate text-xs font-medium">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Status</p><p className="mt-2 text-xs font-medium">{columns.find((column) => column.status === topicStatus(selected))?.label}</p></div></div>
               {selected.revokedReason && <div className="flex gap-2 rounded-xl bg-destructive/10 p-3 text-xs leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{selected.revokedReason}</div>}
               <section><div className="mb-2 flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Evidências</h3><p className="text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s)</p></div><Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button></div><input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} /><div className="grid gap-2 sm:grid-cols-2">{selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}</div></section>
               {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold">Atividade criada</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Abrir no projeto associado</span></span><ArrowRight className="size-4 text-muted-foreground" /></button>}

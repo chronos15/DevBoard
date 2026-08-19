@@ -20,6 +20,7 @@ import { FocusPanel } from "@/components/dashboard/focus-panel"
 import { HoursByProject } from "@/components/dashboard/hours-by-project"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { supportTopicDisplayStatus } from "@/lib/project-utils"
 
 function StatCard({ label, value, Icon }: { label: string; value: number; Icon: typeof ClipboardCheck }) {
   return (
@@ -88,15 +89,18 @@ const topicLabels = {
   open: "Aberto",
   analyzing: "Em análise",
   "sent-to-dev": "Enviado ao DEV",
+  "completed-dev": "Concluído Dev.",
   revoked: "Revogado",
 } as const
 
 function TopicsDashboard({ firstName }: { firstName: string }) {
-  const { supportTopics, currentUserRole } = useStore()
-  const open = supportTopics.filter((item) => item.status === "open").length
-  const analyzing = supportTopics.filter((item) => item.status === "analyzing").length
-  const sent = supportTopics.filter((item) => item.status === "sent-to-dev").length
-  const revoked = supportTopics.filter((item) => item.status === "revoked").length
+  const { supportTopics, currentUserRole, projects } = useStore()
+  const topicStatuses = supportTopics.map((item) => supportTopicDisplayStatus(item, projects))
+  const open = topicStatuses.filter((status) => status === "open").length
+  const analyzing = topicStatuses.filter((status) => status === "analyzing").length
+  const sent = topicStatuses.filter((status) => status === "sent-to-dev").length
+  const completedDev = topicStatuses.filter((status) => status === "completed-dev").length
+  const revoked = topicStatuses.filter((status) => status === "revoked").length
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -110,21 +114,25 @@ function TopicsDashboard({ firstName }: { firstName: string }) {
           </Link>
         }
       />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard label="Abertos" value={open} Icon={ClipboardList} />
         <StatCard label="Em análise" value={analyzing} Icon={SearchCheck} />
-        <StatCard label="Enviados ao DEV" value={sent} Icon={CheckCircle2} />
+        <StatCard label="Enviados ao DEV" value={sent} Icon={ArrowRight} />
+        <StatCard label="Concluídos Dev." value={completedDev} Icon={CheckCircle2} />
         <StatCard label="Revogados" value={revoked} Icon={RotateCcw} />
       </div>
       <section className="rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5">
         <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Tópicos recentes</h2><p className="mt-0.5 text-xs text-muted-foreground">Últimas solicitações visíveis para sua role.</p></div><Link href="/topicos" className="flex items-center gap-1 text-xs font-medium text-primary">Abrir fila <ArrowRight className="size-3.5" /></Link></div>
         <div className="mt-4 space-y-2">
-          {supportTopics.slice(0, 6).map((topic) => (
-            <Link key={topic.id} href="/topicos" className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
-              <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{topic.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">ORDEM {topic.orderNumber}</p></div>
-              <span className={cn("shrink-0 rounded-full bg-muted px-2 py-1 text-[0.65rem] font-medium text-muted-foreground", topic.status === "revoked" && "bg-destructive/10 text-destructive")}>{topicLabels[topic.status]}</span>
-            </Link>
-          ))}
+          {supportTopics.slice(0, 6).map((topic) => {
+            const displayStatus = supportTopicDisplayStatus(topic, projects)
+            return (
+              <Link key={topic.id} href="/topicos" className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{topic.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">ORDEM {topic.orderNumber}</p></div>
+                <span className={cn("shrink-0 rounded-full bg-muted px-2 py-1 text-[0.65rem] font-medium text-muted-foreground", displayStatus === "completed-dev" && "bg-success/15 text-success", displayStatus === "revoked" && "bg-destructive/10 text-destructive")}>{topicLabels[displayStatus]}</span>
+              </Link>
+            )
+          })}
           {supportTopics.length === 0 && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nenhum tópico aberto ainda.</div>}
         </div>
       </section>

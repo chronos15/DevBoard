@@ -65,7 +65,15 @@ function dateKey(value: string) {
 }
 
 function selectClassName() {
-  return "h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring"
+  return "h-10 w-full min-w-0 rounded-xl border border-border bg-card pl-3 pr-10 text-sm outline-none transition-colors focus:border-ring"
+}
+
+function todayDateKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
 
 export function AnalysisView() {
@@ -89,11 +97,11 @@ export function AnalysisView() {
     addSubactivityComment,
   } = useStore()
 
-  const [viewMode, setViewMode] = React.useState<"kanban" | "list">("kanban")
+  const [viewMode, setViewMode] = React.useState<"kanban" | "list">("list")
   const [filtersOpen, setFiltersOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
-  const [dateFrom, setDateFrom] = React.useState("")
-  const [dateTo, setDateTo] = React.useState("")
+  const [dateFrom, setDateFrom] = React.useState(() => todayDateKey())
+  const [dateTo, setDateTo] = React.useState(() => todayDateKey())
   const [projectFilter, setProjectFilter] = React.useState("all")
   const [developerFilter, setDeveloperFilter] = React.useState("all")
   const [responsibleFilter, setResponsibleFilter] = React.useState("all")
@@ -148,7 +156,8 @@ export function AnalysisView() {
     return true
   }), [aqsReviews, dateFrom, dateTo, developerFilter, locate, normalizedSearch, projectFilter, responsibleFilter])
 
-  const activeFilterCount = [dateFrom, dateTo, projectFilter !== "all", developerFilter !== "all", responsibleFilter !== "all"].filter(Boolean).length
+  const today = todayDateKey()
+  const activeFilterCount = [dateFrom !== today, dateTo !== today, projectFilter !== "all", developerFilter !== "all", responsibleFilter !== "all"].filter(Boolean).length
   const hasFilters = activeFilterCount > 0
   const active = filteredReviews.filter((item) => item.status === "awaiting" || item.status === "evaluating").length
   const evaluating = filteredReviews.filter((item) => item.status === "evaluating").length
@@ -203,8 +212,9 @@ export function AnalysisView() {
   }
 
   function clearFilters() {
-    setDateFrom("")
-    setDateTo("")
+    const today = todayDateKey()
+    setDateFrom(today)
+    setDateTo(today)
     setProjectFilter("all")
     setDeveloperFilter("all")
     setResponsibleFilter("all")
@@ -277,8 +287,8 @@ export function AnalysisView() {
 
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center rounded-xl bg-muted p-1 sm:flex-none">
-              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
               <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
+              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
             </div>
             <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
               <SlidersHorizontal className="size-4" />

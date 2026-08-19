@@ -5,6 +5,8 @@ import type {
   Project,
   Status,
   Subactivity,
+  SupportTopic,
+  SupportTopicStatus,
 } from "./types"
 
 export function formatHMS(totalSeconds: number): string {
@@ -139,6 +141,27 @@ export function matchesActivityFilter(status: Status, filter: ActivityFilter): b
   if (filter === "waiting-aqs") return status === "waiting-aqs"
   if (filter === "in-progress") return status === "in-progress"
   return status === "done" || status === "cancelled"
+}
+
+
+export type SupportTopicDisplayStatus = SupportTopicStatus | "completed-dev"
+
+export function activityIsCompleted(activity: Activity | undefined): boolean {
+  if (!activity || activity.subactivities.length === 0) return false
+  return activity.subactivities.every((sub) => sub.status === "done")
+}
+
+export function supportTopicDisplayStatus(
+  topic: SupportTopic,
+  projects: Project[],
+): SupportTopicDisplayStatus {
+  if (topic.status !== "sent-to-dev" || !topic.projectId || !topic.activityId) {
+    return topic.status
+  }
+
+  const project = projects.find((item) => item.id === topic.projectId)
+  const activity = project?.activities.find((item) => item.id === topic.activityId)
+  return activityIsCompleted(activity) ? "completed-dev" : topic.status
 }
 
 export function projectHasPendingWork(project: Project): boolean {

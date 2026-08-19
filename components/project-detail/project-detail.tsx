@@ -358,6 +358,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[178px]">
                 <UserRound className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
                 <select
+                  data-select-chevron="custom"
                   value={assigneeFilter}
                   onChange={(event) => setAssigneeFilter(event.target.value)}
                   aria-label="Filtrar atividades por usuário"

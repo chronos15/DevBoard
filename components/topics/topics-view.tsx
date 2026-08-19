@@ -112,52 +112,48 @@ function AttachmentPreview({ attachment }: { attachment: TopicAttachment }) {
     return () => { active = false }
   }, [attachment.storagePath, supabase])
 
-  if (loading) return <div className="h-64 animate-pulse rounded-2xl border border-border bg-muted/40" />
-  if (!url) return <div className="rounded-2xl border border-dashed border-border bg-card/60 p-5 text-xs text-muted-foreground">Não foi possível abrir este arquivo.</div>
+  if (loading) return <div className="h-52 animate-pulse rounded-2xl border border-border bg-muted/40" />
+  if (!url) return <div className="flex h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card/60 p-5 text-center text-xs text-muted-foreground">Não foi possível abrir este arquivo.</div>
 
   const label = attachmentKindLabel(attachment.kind)
   const media = attachment.kind === "image"
-    ? <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full items-center justify-center p-3"><img src={url} alt={attachment.name} className="h-full w-full rounded-xl object-contain" /></a>
+    ? <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full items-center justify-center p-2.5"><img src={url} alt={attachment.name} className="h-full w-full rounded-lg object-contain" /></a>
     : attachment.kind === "video"
-      ? <video src={url} controls className="h-full w-full rounded-xl bg-black object-contain" />
+      ? <video src={url} controls className="h-full w-full rounded-lg bg-black object-contain" />
       : (
-        <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/70 bg-background/70 p-5 text-center transition-colors hover:bg-muted/40">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><FileText className="size-5" /></span>
-          <div>
-            <p className="truncate text-sm font-medium text-foreground">{attachment.name}</p>
-            <p className="mt-1 text-[0.7rem] text-muted-foreground">Abrir arquivo</p>
+        <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full flex-col items-center justify-center gap-2.5 rounded-lg border border-dashed border-border/70 bg-background/60 p-4 text-center transition-colors hover:bg-muted/40">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground"><FileText className="size-4" /></span>
+          <div className="min-w-0 max-w-full">
+            <p className="truncate text-sm font-semibold text-foreground">{attachment.name}</p>
+            <p className="mt-1 text-[0.66rem] text-muted-foreground">Clique para abrir</p>
           </div>
         </a>
       )
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-border bg-card/70 shadow-sm transition-colors hover:border-primary/25 hover:bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
+    <article className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/70 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md">
+      <div className="flex items-center justify-between gap-2.5 border-b border-border/70 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-            {attachment.kind === "image" ? <ImageIcon className="size-4" /> : attachment.kind === "video" ? <Video className="size-4" /> : <FileText className="size-4" />}
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            {attachment.kind === "image" ? <ImageIcon className="size-3.5" /> : attachment.kind === "video" ? <Video className="size-3.5" /> : <FileText className="size-3.5" />}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{attachment.name}</p>
-            <p className="text-[0.68rem] text-muted-foreground">{attachment.mimeType || label}</p>
+            <p className="truncate text-xs font-semibold">{attachment.name}</p>
+            <p className="truncate text-[0.62rem] text-muted-foreground">{attachment.mimeType || label}</p>
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <span className="inline-flex rounded-full bg-muted px-2 py-1 text-[0.62rem] font-medium text-muted-foreground">{label}</span>
-          <p className="mt-1 text-[0.68rem] text-muted-foreground">{formatBytes(attachment.size)}</p>
-        </div>
+        <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.58rem] font-medium text-muted-foreground">{formatBytes(attachment.size)}</span>
       </div>
-      <div className="bg-muted/25 p-3">
-        <div className="flex h-52 items-center justify-center overflow-hidden rounded-xl bg-background/70">
+      <div className="bg-muted/20 p-2.5">
+        <div className="flex h-40 items-center justify-center overflow-hidden rounded-xl bg-background/65 lg:h-36 xl:h-40">
           {media}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <div className="min-w-0">
-          <p className="text-[0.68rem] font-medium text-muted-foreground">Enviado em {formatDateTime(attachment.createdAt)}</p>
+          <p className="truncate text-[0.62rem] font-medium text-muted-foreground">{label} · {formatDateTime(attachment.createdAt)}</p>
         </div>
-        <a href={url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-          Abrir
+        <a href={url} target="_blank" rel="noreferrer" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Abrir arquivo">
           <ArrowRight className="size-3.5" />
         </a>
       </div>
@@ -501,53 +497,150 @@ export function TopicsView() {
       <NewTopicDialog open={newOpen} onOpenChange={setNewOpen} />
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null) }}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="flex max-h-[95dvh] w-[calc(100vw-1rem)] max-w-[1480px] flex-col overflow-hidden p-0 sm:w-[calc(100vw-2rem)] xl:w-[calc(100vw-4rem)] lg:h-[min(88dvh,860px)]">
           {selected && (
             <>
-              <DialogHeader><div className="pr-8"><p className="font-mono text-[0.68rem] font-semibold text-primary">ORDEM {selected.orderNumber}</p><DialogTitle className="mt-1 leading-snug">{selected.title}</DialogTitle></div><DialogDescription>{selected.description}</DialogDescription></DialogHeader>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
-                  <p className="text-[0.68rem] font-medium text-muted-foreground">Solicitante</p>
-                  <div className="mt-3 flex items-center gap-3">
-                    <MemberAvatar member={members.find((m) => m.id === selected.createdBy)} className="size-10" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.createdBy)?.name ?? "Usuário"}</p>
-                      <p className="text-[0.68rem] text-muted-foreground">Abriu o tópico</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
-                  <p className="text-[0.68rem] font-medium text-muted-foreground">Analista</p>
-                  <p className="mt-3 truncate text-sm font-semibold">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p>
-                  <p className="mt-1 text-[0.68rem] text-muted-foreground">Responsável atual pela triagem</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
-                  <p className="text-[0.68rem] font-medium text-muted-foreground">Status</p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.68rem] font-medium", statusClass(topicStatus(selected)))}>
+              <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-12 sm:px-5 lg:px-6">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-mono text-[0.66rem] font-semibold tracking-[0.12em] text-primary">ORDEM {selected.orderNumber}</p>
+                    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.62rem] font-medium", statusClass(topicStatus(selected)))}>
                       <span className={cn("size-1.5 rounded-full", columns.find((column) => column.status === topicStatus(selected))?.tone)} />
                       {columns.find((column) => column.status === topicStatus(selected))?.label}
                     </span>
                   </div>
-                  <p className="mt-2 text-[0.68rem] text-muted-foreground">Última atualização em {formatDateTime(selected.updatedAt)}</p>
+                  <DialogTitle className="mt-1.5 truncate text-lg leading-snug sm:text-xl">{selected.title}</DialogTitle>
+                  <DialogDescription className="mt-1 line-clamp-2 max-w-4xl text-xs leading-relaxed sm:text-sm">{selected.description}</DialogDescription>
+                </div>
+              </DialogHeader>
+
+              <div className="min-h-0 flex-1 overflow-y-auto bg-background/20">
+                <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5 lg:p-6">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_320px]">
+                    <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
+                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Solicitante</p>
+                      <div className="mt-4 flex items-center gap-3">
+                        <MemberAvatar member={members.find((m) => m.id === selected.createdBy)} className="size-11" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.createdBy)?.name ?? "Usuário"}</p>
+                          <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Abriu o tópico e enviou as evidências iniciais.</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
+                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Analista</p>
+                      <div className="mt-4 min-w-0">
+                        <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p>
+                        <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Responsável atual pela triagem e pelo retorno do tópico.</p>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
+                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Status</p>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.68rem] font-medium", statusClass(topicStatus(selected)))}>
+                          <span className={cn("size-1.5 rounded-full", columns.find((column) => column.status === topicStatus(selected))?.tone)} />
+                          {columns.find((column) => column.status === topicStatus(selected))?.label}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-[0.62rem] text-muted-foreground">Criado</p>
+                          <p className="mt-1 text-xs font-medium">{formatDateTime(selected.createdAt)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[0.62rem] text-muted-foreground">Atualizado</p>
+                          <p className="mt-1 text-xs font-medium">{formatDateTime(selected.updatedAt)}</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm xl:row-span-2">
+                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ações</p>
+                      <div className="mt-4 grid gap-2">
+                        {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") ? (
+                          <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="group flex w-full items-center justify-between rounded-2xl border border-border bg-background/50 p-3 text-left transition-colors hover:bg-muted">
+                            <span className="min-w-0">
+                              <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Atividade vinculada</span>
+                              <span className="mt-1.5 block text-sm font-semibold">Abrir no projeto</span>
+                              <span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Acompanhar a execução do DEV</span>
+                            </span>
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><ArrowRight className="size-4" /></span>
+                          </button>
+                        ) : null}
+
+                        {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" ? (
+                          <>
+                            {selected.status === "open" ? <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button> : null}
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
+                              <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar</Button>
+                            </div>
+                          </>
+                        ) : null}
+
+                        <div className="rounded-2xl border border-dashed border-border/80 bg-background/40 p-3">
+                          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Resumo</p>
+                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                            <div className="rounded-xl bg-muted/40 p-3">
+                              <p className="text-[0.62rem] text-muted-foreground">Evidências</p>
+                              <p className="mt-1 text-base font-semibold">{selected.attachments.length}</p>
+                            </div>
+                            <div className="rounded-xl bg-muted/40 p-3">
+                              <p className="text-[0.62rem] text-muted-foreground">Ordem</p>
+                              <p className="mt-1 font-mono text-base font-semibold">{selected.orderNumber}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {selected.revokedReason ? (
+                      <div className="xl:col-span-3">
+                        <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/10 p-3.5 text-xs leading-relaxed text-destructive">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                          <span>{selected.revokedReason}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <section className="rounded-2xl border border-border bg-card/50 shadow-sm">
+                    <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex size-9 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Paperclip className="size-4" /></span>
+                          <div>
+                            <h3 className="text-sm font-semibold">Evidências</h3>
+                            <p className="text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s) anexado(s) ao tópico</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="rounded-full border border-border bg-background/70 px-3 py-1 text-[0.68rem] text-muted-foreground">Preview rápido · imagens, vídeos e documentos</div>
+                        <Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button>
+                      </div>
+                    </div>
+
+                    <input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} />
+
+                    {selected.attachments.length > 0 ? (
+                      <div className="max-h-[54dvh] overflow-y-auto px-4 py-4 sm:px-5 lg:px-5">
+                        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                          {selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => addFilesRef.current?.click()} className="m-4 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/15 px-6 text-center transition-colors hover:bg-muted/25 sm:m-5">
+                        <Paperclip className="size-8 text-muted-foreground/60" />
+                        <p className="mt-3 text-sm font-semibold">Nenhuma evidência ainda</p>
+                        <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">Adicione imagens, vídeos, PDFs, documentos ou arquivos de apoio para manter o histórico completo do tópico.</p>
+                      </button>
+                    )}
+                  </section>
                 </div>
               </div>
-              {selected.revokedReason && <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/10 p-4 text-xs leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{selected.revokedReason}</div>}
-              <section className="rounded-2xl border border-border bg-card/40 p-4 shadow-sm">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold">Evidências</h3>
-                    <p className="mt-1 text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s) anexado(s) ao tópico</p>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button>
-                </div>
-                <input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} />
-                <div className={cn("grid gap-3", selected.attachments.length > 1 ? "xl:grid-cols-2" : "grid-cols-1")}>
-                  {selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
-                </div>
-              </section>
-              {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-2xl border border-border bg-card/60 p-4 text-left shadow-sm transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Atividade criada</span><span className="mt-2 block text-sm font-semibold">Abrir no projeto associado</span><span className="mt-1 block text-[0.68rem] text-muted-foreground">Ir para a atividade gerada a partir deste tópico</span></span><span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground"><ArrowRight className="size-4" /></span></button>}
-              {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" && <DialogFooter className="mx-0 mb-0 rounded-xl">{selected.status === "open" && <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button>}<Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button><Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar Atividade</Button></DialogFooter>}
             </>
           )}
         </DialogContent>

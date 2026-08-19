@@ -318,3 +318,51 @@ begin
   raise notice 'Migration 009 OK: histórico paginado e ações de conversa prontas.';
 end $$;
 
+
+-- 010 · Remoção local de conversas individuais
+select
+  exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_members'
+      and column_name='hidden_at'
+  ) as chat_members_hidden_at_ok,
+  to_regprocedure('public.is_conversation_visible(uuid,uuid)') is not null as conversation_visibility_rpc_ok,
+  exists(
+    select 1
+    from pg_trigger t
+    join pg_class c on c.oid=t.tgrelid
+    join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public'
+      and c.relname='chat_messages'
+      and t.tgname='chat_messages_reveal_direct_conversation'
+      and not t.tgisinternal
+  ) as direct_chat_reveal_trigger_ok;
+
+do $$
+begin
+  if not exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_members'
+      and column_name='hidden_at'
+  ) then
+    raise exception 'Backend Devboard incompleto: chat_members.hidden_at ausente (migration 010)';
+  end if;
+  if to_regprocedure('public.is_conversation_visible(uuid,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: is_conversation_visible(uuid,uuid) ausente (migration 010)';
+  end if;
+  if not exists(
+    select 1
+    from pg_trigger t
+    join pg_class c on c.oid=t.tgrelid
+    join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public'
+      and c.relname='chat_messages'
+      and t.tgname='chat_messages_reveal_direct_conversation'
+      and not t.tgisinternal
+  ) then
+    raise exception 'Backend Devboard incompleto: trigger de reexibição do chat ausente (migration 010)';
+  end if;
+  raise notice 'Migration 010 OK: exclusão individual é local e novas mensagens reexibem a conversa.';
+end $$;

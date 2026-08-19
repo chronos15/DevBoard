@@ -819,17 +819,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deleteDirectConversation = React.useCallback(async (conversationId: string) => {
     try {
       setLastError(null)
-      await removeConversationMedia(conversationId)
-      const result = await callRpc<unknown>("delete_direct_conversation", { p_conversation_id: conversationId }, "Não foi possível excluir a conversa")
+      // Conversa individual é removida somente da lista do usuário atual.
+      // O backend preserva mensagens/mídias e mantém o chat visível para o outro participante.
+      const result = await callRpc<unknown>("delete_direct_conversation", { p_conversation_id: conversationId }, "Não foi possível remover a conversa")
       if (result === undefined) return false
       loadedChatHistoryIdsRef.current.delete(conversationId)
       await refreshChat()
       return true
     } catch (error) {
-      fail(error, "Não foi possível remover as mídias da conversa")
+      fail(error, "Não foi possível remover a conversa da sua lista")
       return false
     }
-  }, [callRpc, fail, refreshChat, removeConversationMedia])
+  }, [callRpc, fail, refreshChat])
 
   const leaveChatGroup = React.useCallback(async (conversationId: string) => {
     const result = await callRpc<unknown>("leave_chat_group", { p_conversation_id: conversationId }, "Não foi possível sair do grupo")

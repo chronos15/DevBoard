@@ -846,7 +846,7 @@ export function ChatView() {
                       variant="ghost"
                       size="icon"
                       onClick={() => setConversationActionOpen(true)}
-                      title={selected.kind === "group" ? (selectedIsLastGroupMember ? "Excluir grupo" : "Sair do grupo") : "Excluir conversa"}
+                      title={selected.kind === "group" ? (selectedIsLastGroupMember ? "Excluir grupo" : "Sair do grupo") : "Remover conversa"}
                     >
                       {selected.kind === "group" && !selectedIsLastGroupMember ? <LogOut className="size-4" /> : <Trash2 className="size-4" />}
                     </Button>
@@ -1207,14 +1207,14 @@ export function ChatView() {
             <DialogTitle>
               {selected?.kind === "group"
                 ? selectedIsLastGroupMember ? "Excluir este grupo permanentemente?" : "Sair deste grupo?"
-                : "Excluir conversa permanentemente?"}
+                : "Remover esta conversa da sua lista?"}
             </DialogTitle>
             <DialogDescription>
               {selected?.kind === "group"
                 ? selectedIsLastGroupMember
                   ? "Você é o último participante. O grupo, as mensagens e as mídias serão removidos permanentemente. Esta ação não pode ser desfeita."
                   : "Você deixará de receber mensagens e reuniões deste grupo. O histórico continua disponível para os demais participantes."
-                : "Todas as mensagens e mídias desta conversa serão removidas para os dois participantes. Esta ação não pode ser desfeita."}
+                : "A conversa desaparecerá somente para você. O outro participante continuará vendo todo o histórico normalmente. Se ele enviar uma nova mensagem, a conversa aparecerá novamente na sua lista."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1222,7 +1222,9 @@ export function ChatView() {
             <Button type="button" variant="destructive" loading={conversationActionBusy} onClick={() => void confirmConversationAction()}>
               {selected?.kind === "group" && !selectedIsLastGroupMember
                 ? <><LogOut className="size-3.5" /> Sair do grupo</>
-                : <><Trash2 className="size-3.5" /> Excluir permanentemente</>}
+                : selected?.kind === "group"
+                  ? <><Trash2 className="size-3.5" /> Excluir permanentemente</>
+                  : <><Trash2 className="size-3.5" /> Remover da minha lista</>}
             </Button>
           </DialogFooter>
         </DialogContent>

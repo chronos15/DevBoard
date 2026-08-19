@@ -43,7 +43,8 @@ Nunca coloque `service_role`/secret key no front-end.
 10. Execute `supabase/migrations/007_devboard_new_accounts_member.sql`.
 11. Execute `supabase/migrations/008_devboard_deeplinks_chat_mentions.sql`.
 12. Execute `supabase/migrations/009_devboard_chat_history_profile_actions.sql`.
-13. As migrations são incrementais e devem ser aplicadas nessa ordem.
+13. Execute `supabase/migrations/010_devboard_chat_local_delete.sql`.
+14. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -374,7 +375,7 @@ supabase/migrations/009_devboard_chat_history_profile_actions.sql
 A 009 é incremental e preserva os chats existentes. Ela:
 
 - adiciona índice para buscar as mensagens mais recentes e carregar o histórico para trás com menor custo;
-- cria `delete_direct_conversation`, com validação de participação e exclusão permanente da conversa individual;
+- cria `delete_direct_conversation`; na migration 010 este RPC é redefinido para remover a conversa somente da lista do usuário atual, sem apagar histórico ou mídia;
 - adiciona uma policy de `DELETE` no bucket do chat para que o front-end remova as mídias pela Storage API antes de apagar a conversa;
 - atualiza `delete_chat_group` para exigir que as mídias já tenham sido removidas com segurança antes da exclusão do grupo;
 - cria `leave_chat_group`, removendo apenas o participante que saiu e transferindo a gestão quando o criador deixa um grupo ainda ativo.
@@ -383,3 +384,23 @@ No front-end, a lista de conversas passa a buscar apenas a última mensagem de c
 
 Depois de aplicar a 009, execute novamente `supabase/verify_backend.sql`.
 
+
+
+## 010 · Remoção local de conversas individuais
+
+Depois da 009, execute:
+
+```text
+supabase/migrations/010_devboard_chat_local_delete.sql
+```
+
+A 010 altera a semântica da ação de exclusão em chats individuais sem destruir dados:
+
+- adiciona `chat_members.hidden_at`, mantendo o participante vinculado ao chat, mas permitindo ocultá-lo somente para ele;
+- redefine `delete_direct_conversation` para apenas marcar a conversa como oculta para o usuário atual;
+- o outro participante continua vendo a conversa, mensagens e mídias normalmente;
+- ao iniciar novamente a conversa pelo perfil, ela volta apenas para quem a reabriu;
+- ao chegar qualquer nova mensagem em uma conversa individual, o chat reaparece automaticamente para quem o havia removido, evitando perda de mensagens;
+- restringe a exclusão física de mídias do bucket aos grupos que realmente forem excluídos. Conversas individuais não removem arquivos do Storage.
+
+Depois de aplicar a 010, execute novamente `supabase/verify_backend.sql`.

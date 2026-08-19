@@ -89,6 +89,14 @@ function todayDateKey() {
   return `${year}-${month}-${day}`
 }
 
+
+function attachmentKindLabel(kind: TopicAttachment["kind"]) {
+  if (kind === "image") return "Imagem"
+  if (kind === "video") return "Vídeo"
+  if (kind === "audio") return "Áudio"
+  return "Documento"
+}
+
 function AttachmentPreview({ attachment }: { attachment: TopicAttachment }) {
   const supabase = React.useMemo(() => createClient(), [])
   const [url, setUrl] = React.useState<string | null>(null)
@@ -104,20 +112,56 @@ function AttachmentPreview({ attachment }: { attachment: TopicAttachment }) {
     return () => { active = false }
   }, [attachment.storagePath, supabase])
 
-  if (loading) return <div className="h-28 animate-pulse rounded-xl bg-muted" />
-  if (!url) return <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">Não foi possível abrir este arquivo.</div>
+  if (loading) return <div className="h-64 animate-pulse rounded-2xl border border-border bg-muted/40" />
+  if (!url) return <div className="rounded-2xl border border-dashed border-border bg-card/60 p-5 text-xs text-muted-foreground">Não foi possível abrir este arquivo.</div>
 
-  if (attachment.kind === "image") {
-    return <a href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl bg-muted"><img src={url} alt={attachment.name} className="h-40 w-full object-contain" /></a>
-  }
-  if (attachment.kind === "video") {
-    return <video src={url} controls className="h-44 w-full rounded-xl bg-black object-contain" />
-  }
+  const label = attachmentKindLabel(attachment.kind)
+  const media = attachment.kind === "image"
+    ? <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full items-center justify-center p-3"><img src={url} alt={attachment.name} className="h-full w-full rounded-xl object-contain" /></a>
+    : attachment.kind === "video"
+      ? <video src={url} controls className="h-full w-full rounded-xl bg-black object-contain" />
+      : (
+        <a href={url} target="_blank" rel="noreferrer" className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/70 bg-background/70 p-5 text-center transition-colors hover:bg-muted/40">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><FileText className="size-5" /></span>
+          <div>
+            <p className="truncate text-sm font-medium text-foreground">{attachment.name}</p>
+            <p className="mt-1 text-[0.7rem] text-muted-foreground">Abrir arquivo</p>
+          </div>
+        </a>
+      )
+
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:bg-muted">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><FileText className="size-4" /></span>
-      <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{attachment.name}</span><span className="text-[0.65rem] text-muted-foreground">{formatBytes(attachment.size)}</span></span>
-    </a>
+    <article className="overflow-hidden rounded-2xl border border-border bg-card/70 shadow-sm transition-colors hover:border-primary/25 hover:bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            {attachment.kind === "image" ? <ImageIcon className="size-4" /> : attachment.kind === "video" ? <Video className="size-4" /> : <FileText className="size-4" />}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{attachment.name}</p>
+            <p className="text-[0.68rem] text-muted-foreground">{attachment.mimeType || label}</p>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="inline-flex rounded-full bg-muted px-2 py-1 text-[0.62rem] font-medium text-muted-foreground">{label}</span>
+          <p className="mt-1 text-[0.68rem] text-muted-foreground">{formatBytes(attachment.size)}</p>
+        </div>
+      </div>
+      <div className="bg-muted/25 p-3">
+        <div className="flex h-52 items-center justify-center overflow-hidden rounded-xl bg-background/70">
+          {media}
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[0.68rem] font-medium text-muted-foreground">Enviado em {formatDateTime(attachment.createdAt)}</p>
+        </div>
+        <a href={url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          Abrir
+          <ArrowRight className="size-3.5" />
+        </a>
+      </div>
+    </article>
   )
 }
 
@@ -461,10 +505,48 @@ export function TopicsView() {
           {selected && (
             <>
               <DialogHeader><div className="pr-8"><p className="font-mono text-[0.68rem] font-semibold text-primary">ORDEM {selected.orderNumber}</p><DialogTitle className="mt-1 leading-snug">{selected.title}</DialogTitle></div><DialogDescription>{selected.description}</DialogDescription></DialogHeader>
-              <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Solicitante</p><div className="mt-2 flex items-center gap-2"><MemberAvatar member={members.find((m) => m.id === selected.createdBy)} /><span className="truncate text-xs font-medium">{members.find((m) => m.id === selected.createdBy)?.name}</span></div></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Analista</p><p className="mt-2 truncate text-xs font-medium">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Status</p><p className="mt-2 text-xs font-medium">{columns.find((column) => column.status === topicStatus(selected))?.label}</p></div></div>
-              {selected.revokedReason && <div className="flex gap-2 rounded-xl bg-destructive/10 p-3 text-xs leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{selected.revokedReason}</div>}
-              <section><div className="mb-2 flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Evidências</h3><p className="text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s)</p></div><Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button></div><input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} /><div className="grid gap-2 sm:grid-cols-2">{selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}</div></section>
-              {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold">Atividade criada</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Abrir no projeto associado</span></span><ArrowRight className="size-4 text-muted-foreground" /></button>}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
+                  <p className="text-[0.68rem] font-medium text-muted-foreground">Solicitante</p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <MemberAvatar member={members.find((m) => m.id === selected.createdBy)} className="size-10" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.createdBy)?.name ?? "Usuário"}</p>
+                      <p className="text-[0.68rem] text-muted-foreground">Abriu o tópico</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
+                  <p className="text-[0.68rem] font-medium text-muted-foreground">Analista</p>
+                  <p className="mt-3 truncate text-sm font-semibold">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p>
+                  <p className="mt-1 text-[0.68rem] text-muted-foreground">Responsável atual pela triagem</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/60 p-4 shadow-sm">
+                  <p className="text-[0.68rem] font-medium text-muted-foreground">Status</p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.68rem] font-medium", statusClass(topicStatus(selected)))}>
+                      <span className={cn("size-1.5 rounded-full", columns.find((column) => column.status === topicStatus(selected))?.tone)} />
+                      {columns.find((column) => column.status === topicStatus(selected))?.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[0.68rem] text-muted-foreground">Última atualização em {formatDateTime(selected.updatedAt)}</p>
+                </div>
+              </div>
+              {selected.revokedReason && <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/10 p-4 text-xs leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{selected.revokedReason}</div>}
+              <section className="rounded-2xl border border-border bg-card/40 p-4 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Evidências</h3>
+                    <p className="mt-1 text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s) anexado(s) ao tópico</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button>
+                </div>
+                <input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} />
+                <div className={cn("grid gap-3", selected.attachments.length > 1 ? "xl:grid-cols-2" : "grid-cols-1")}>
+                  {selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
+                </div>
+              </section>
+              {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-2xl border border-border bg-card/60 p-4 text-left shadow-sm transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Atividade criada</span><span className="mt-2 block text-sm font-semibold">Abrir no projeto associado</span><span className="mt-1 block text-[0.68rem] text-muted-foreground">Ir para a atividade gerada a partir deste tópico</span></span><span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground"><ArrowRight className="size-4" /></span></button>}
               {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" && <DialogFooter className="mx-0 mb-0 rounded-xl">{selected.status === "open" && <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button>}<Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button><Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar Atividade</Button></DialogFooter>}
             </>
           )}

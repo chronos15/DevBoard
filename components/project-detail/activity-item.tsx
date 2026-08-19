@@ -19,6 +19,7 @@ import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { Button } from "@/components/ui/button"
+import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
-function SubactivityRow({ sub, focused = false }: { sub: Subactivity; focused?: boolean }) {
+function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity; projectId: string; focused?: boolean }) {
   const {
     members,
     setSubStatus,
@@ -167,6 +168,10 @@ function SubactivityRow({ sub, focused = false }: { sub: Subactivity; focused?: 
       </div>
 
       <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
+        <CopyEntityLinkButton
+          href={`/projetos/${projectId}#sub-${sub.id}`}
+          label={`Copiar link da subatividade ${sub.title}`}
+        />
         <CommentDialog
           title={`Comentários · ${sub.title}`}
           description="Discussão da subatividade. Todos os usuários podem comentar, mesmo quando a tarefa pertence a outro responsável."
@@ -354,6 +359,14 @@ export function ActivityItem({
             </span>
           </button>
 
+          <div className="flex shrink-0 items-stretch border-l border-border">
+            <CopyEntityLinkButton
+              href={`/projetos/${projectId}#activity-${activity.id}`}
+              label={`Copiar link da atividade ${activity.title}`}
+              className="m-auto size-10 rounded-none sm:size-11"
+            />
+          </div>
+
           {canDelete && (
             <button
               type="button"
@@ -384,7 +397,7 @@ export function ActivityItem({
             )}
             <div className="flex flex-col divide-y divide-border/60">
               {visibleSubs.map((sub) => (
-                <SubactivityRow key={sub.id} sub={sub} focused={focusSubactivityId === sub.id} />
+                <SubactivityRow key={sub.id} sub={sub} projectId={projectId} focused={focusSubactivityId === sub.id} />
               ))}
               {visibleSubs.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">

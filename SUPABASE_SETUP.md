@@ -343,3 +343,19 @@ Ela é incremental e não remove projetos, atividades, subatividades, mensagens 
 - RLS e Realtime das novas filas.
 
 Após aplicar a 005, rode novamente `supabase/verify_backend.sql`.
+
+## 008 · Links diretos e menções no Chat
+
+Depois das migrations anteriores, execute:
+
+```text
+supabase/migrations/008_devboard_deeplinks_chat_mentions.sql
+```
+
+A 008 é incremental e não remove mensagens nem notificações existentes. Ela:
+
+- adiciona `mentions` em `chat_messages` para persistir menções selecionadas no autocomplete;
+- adiciona `conversation_id` em `notifications` para abrir a conversa exata ao clicar numa notificação de menção;
+- substitui `send_chat_message` pela versão que valida menções em grupos e notifica cada usuário marcado uma única vez.
+
+Os links copiados de atividade/subatividade usam as rotas já existentes do Devboard e não exigem alteração no banco.

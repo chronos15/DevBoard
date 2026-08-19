@@ -1,9 +1,12 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   ArrowLeft,
+  AtSign,
   Clock3,
+  FolderKanban,
   Headphones,
   MessageCircleMore,
   Paperclip,
@@ -15,7 +18,7 @@ import {
   UsersRound,
   Video,
 } from "lucide-react"
-import type { ChatConversation, ChatMeeting, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
+import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
@@ -49,6 +52,90 @@ function conversationTitle(
   if (conversation.kind === "group") return conversation.name || "Grupo"
   const otherId = conversation.memberIds.find((id) => id !== currentUserId)
   return members.find((member) => member.id === otherId)?.name ?? "Conversa"
+}
+
+type MentionCandidate = ChatMention & {
+  subtitle: string
+}
+
+type MentionRange = {
+  start: number
+  end: number
+  query: string
+}
+
+function mentionToken(mention: ChatMention) {
+  return `@${mention.label}`
+}
+
+function findMentionRange(value: string, caret: number): MentionRange | null {
+  const before = value.slice(0, caret)
+  const match = before.match(/(?:^|\s)@([^\s@]*)$/)
+  if (!match) return null
+  const start = before.lastIndexOf("@")
+  if (start < 0) return null
+  return { start, end: caret, query: match[1] ?? "" }
+}
+
+function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
+  const mentions = React.useMemo(() => {
+    const unique = new Map<string, ChatMention>()
+    for (const mention of message.mentions ?? []) {
+      unique.set(`${mention.kind}:${mention.id}`, mention)
+    }
+    return Array.from(unique.values()).sort((a, b) => mentionToken(b).length - mentionToken(a).length)
+  }, [message.mentions])
+
+  if (!mentions.length) {
+    return <p className="whitespace-pre-wrap break-words">{message.content}</p>
+  }
+
+  const parts: React.ReactNode[] = []
+  let cursor = 0
+  let key = 0
+
+  while (cursor < message.content.length) {
+    let nextIndex = -1
+    let nextMention: ChatMention | null = null
+
+    for (const mention of mentions) {
+      const token = mentionToken(mention)
+      const index = message.content.indexOf(token, cursor)
+      if (index >= 0 && (nextIndex < 0 || index < nextIndex)) {
+        nextIndex = index
+        nextMention = mention
+      }
+    }
+
+    if (!nextMention || nextIndex < 0) {
+      parts.push(message.content.slice(cursor))
+      break
+    }
+
+    if (nextIndex > cursor) parts.push(message.content.slice(cursor, nextIndex))
+    const token = mentionToken(nextMention)
+    const classes = cn(
+      "inline-flex max-w-full items-center rounded-md px-1 py-0.5 font-medium no-underline",
+      own
+        ? "bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/20"
+        : "bg-primary/12 text-primary hover:bg-primary/18",
+    )
+
+    parts.push(
+      nextMention.kind === "project" ? (
+        <Link key={`mention-${key++}`} href={`/projetos/${nextMention.id}`} className={classes} title={`Abrir projeto ${nextMention.label}`}>
+          {token}
+        </Link>
+      ) : (
+        <span key={`mention-${key++}`} className={classes} title={`Usuário mencionado: ${nextMention.label}`}>
+          {token}
+        </span>
+      ),
+    )
+    cursor = nextIndex + token.length
+  }
+
+  return <p className="whitespace-pre-wrap break-words">{parts}</p>
 }
 
 function ConversationAvatar({
@@ -134,6 +221,7 @@ function MeetingListItem({
 export function ChatView() {
   const {
     members,
+    projects,
     chatConversations,
     chatMeetings,
     currentUserId,
@@ -160,8 +248,12 @@ export function ChatView() {
   const [stagedFiles, setStagedFiles] = React.useState<File[]>([])
   const [attachmentPreviewOpen, setAttachmentPreviewOpen] = React.useState(false)
   const [sendingMedia, setSendingMedia] = React.useState(false)
+  const [mentionRange, setMentionRange] = React.useState<MentionRange | null>(null)
+  const [mentionIndex, setMentionIndex] = React.useState(0)
+  const [draftMentions, setDraftMentions] = React.useState<ChatMention[]>([])
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null)
+  const messageInputRef = React.useRef<HTMLTextAreaElement | null>(null)
 
   const myConversations = React.useMemo(
     () =>
@@ -181,6 +273,32 @@ export function ChatView() {
 
   const selected = myConversations.find((conversation) => conversation.id === selectedId) ?? null
   const activeMeeting = chatMeetings.find((meeting) => meeting.id === activeMeetingId) ?? null
+  const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
+    if (!selected || selected.kind !== "group" || !mentionRange) return []
+    const queryText = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
+    const userCandidates = selected.memberIds
+      .filter((id) => id !== currentUserId)
+      .map((id) => members.find((member) => member.id === id))
+      .filter((member): member is Member => Boolean(member))
+      .map((member) => ({ kind: "user" as const, id: member.id, label: member.name, subtitle: "Usuário do grupo" }))
+    const projectCandidates = projects.map((project) => ({
+      kind: "project" as const,
+      id: project.id,
+      label: project.name,
+      subtitle: "Projeto",
+    }))
+
+    return [...userCandidates, ...projectCandidates]
+      .filter((candidate) => !queryText || candidate.label.toLocaleLowerCase("pt-BR").includes(queryText))
+      .sort((a, b) => {
+        const aStarts = a.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
+        const bStarts = b.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
+        const aKind = a.kind === "user" ? 0 : 1
+        const bKind = b.kind === "user" ? 0 : 1
+        return aStarts - bStarts || aKind - bKind || a.label.localeCompare(b.label, "pt-BR")
+      })
+      .slice(0, 8)
+  }, [currentUserId, members, mentionRange, projects, selected])
   const q = query.trim().toLowerCase()
   const visibleConversations = myConversations.filter((conversation) =>
     conversationTitle(conversation, currentUserId, members).toLowerCase().includes(q),
@@ -204,6 +322,9 @@ export function ChatView() {
   React.useEffect(() => {
     setStagedFiles([])
     setAttachmentPreviewOpen(false)
+    setMentionRange(null)
+    setMentionIndex(0)
+    setDraftMentions([])
   }, [selectedId])
 
   React.useEffect(() => {
@@ -250,6 +371,19 @@ export function ChatView() {
     }
   }, [chatMeetings, currentUserId])
 
+  React.useEffect(() => {
+    if (typeof window === "undefined" || myConversations.length === 0) return
+    const url = new URL(window.location.href)
+    const conversationId = url.searchParams.get("conversation")
+    if (!conversationId) return
+    const conversation = myConversations.find((item) => item.id === conversationId)
+    if (!conversation) return
+    setSelectedId(conversation.id)
+    setTab(conversation.kind === "group" ? "groups" : "conversations")
+    url.searchParams.delete("conversation")
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+  }, [myConversations])
+
   async function openUser(memberId: string) {
     if (openingUserId) return
     setOpeningUserId(memberId)
@@ -261,11 +395,44 @@ export function ChatView() {
     }
   }
 
+  function syncMentionRange(value: string, caret: number | null) {
+    if (!selected || selected.kind !== "group" || caret == null) {
+      setMentionRange(null)
+      return
+    }
+    const range = findMentionRange(value, caret)
+    setMentionRange(range)
+    setMentionIndex(0)
+  }
+
+  function selectMention(candidate: MentionCandidate) {
+    if (!mentionRange) return
+    const token = mentionToken(candidate)
+    const next = `${message.slice(0, mentionRange.start)}${token} ${message.slice(mentionRange.end)}`
+    const caret = mentionRange.start + token.length + 1
+    setMessage(next)
+    setDraftMentions((current) => {
+      const exists = current.some((mention) => mention.kind === candidate.kind && mention.id === candidate.id)
+      return exists ? current : [...current, { kind: candidate.kind, id: candidate.id, label: candidate.label }]
+    })
+    setMentionRange(null)
+    setMentionIndex(0)
+    requestAnimationFrame(() => {
+      messageInputRef.current?.focus()
+      messageInputRef.current?.setSelectionRange(caret, caret)
+    })
+  }
+
   async function submitMessage() {
     if (!selected || !message.trim() || sending) return
+    const validMentions = draftMentions.filter((mention) => message.includes(mentionToken(mention)))
     setSending(true)
     try {
-      if (await sendChatMessage(selected.id, message)) setMessage("")
+      if (await sendChatMessage(selected.id, message, validMentions)) {
+        setMessage("")
+        setDraftMentions([])
+        setMentionRange(null)
+      }
     } finally {
       setSending(false)
     }
@@ -628,7 +795,7 @@ export function ChatView() {
                                     caption={item.content}
                                   />
                                 ) : (
-                                  <p className="whitespace-pre-wrap break-words">{item.content}</p>
+                                  <MessageText message={item} own={own} />
                                 )}
                               </div>
                               <time className="mt-1 block px-1 font-mono text-[0.55rem] text-muted-foreground">
@@ -649,13 +816,82 @@ export function ChatView() {
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
-                  <div className="mx-auto flex max-w-3xl items-end gap-2">
+                  <div className="relative mx-auto flex max-w-3xl items-end gap-2">
                     {!recordingAudio && (
                       <>
+                        {selected.kind === "group" && mentionRange && mentionCandidates.length > 0 && (
+                          <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-1.5 shadow-xl">
+                            <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[0.68rem] font-medium text-muted-foreground">
+                              <AtSign className="size-3.5" />
+                              Mencionar usuário ou projeto
+                            </div>
+                            <div className="max-h-64 overflow-y-auto py-1">
+                              {mentionCandidates.map((candidate, index) => {
+                                const member = candidate.kind === "user" ? members.find((item) => item.id === candidate.id) : undefined
+                                return (
+                                  <button
+                                    key={`${candidate.kind}-${candidate.id}`}
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => selectMention(candidate)}
+                                    className={cn(
+                                      "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors",
+                                      index === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-muted",
+                                    )}
+                                  >
+                                    {candidate.kind === "user" ? (
+                                      <MemberAvatar member={member} className="size-8 ring-0" />
+                                    ) : (
+                                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-3.5" /></span>
+                                    )}
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-xs font-semibold">@{candidate.label}</span>
+                                      <span className="mt-0.5 block text-[0.62rem] text-muted-foreground">{candidate.subtitle}</span>
+                                    </span>
+                                    <span className="text-[0.6rem] text-muted-foreground">{index === mentionIndex ? "Enter" : ""}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
                         <textarea
+                          ref={messageInputRef}
                           value={message}
-                          onChange={(event) => setMessage(event.target.value)}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setMessage(value)
+                            setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
+                            syncMentionRange(value, event.target.selectionStart)
+                          }}
+                          onClick={(event) => syncMentionRange(message, event.currentTarget.selectionStart)}
+                          onKeyUp={(event) => {
+                            if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return
+                            syncMentionRange(message, event.currentTarget.selectionStart)
+                          }}
                           onKeyDown={(event) => {
+                            if (mentionRange && mentionCandidates.length > 0) {
+                              if (event.key === "ArrowDown") {
+                                event.preventDefault()
+                                setMentionIndex((current) => (current + 1) % mentionCandidates.length)
+                                return
+                              }
+                              if (event.key === "ArrowUp") {
+                                event.preventDefault()
+                                setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length)
+                                return
+                              }
+                              if (event.key === "Enter" || event.key === "Tab") {
+                                event.preventDefault()
+                                selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0])
+                                return
+                              }
+                              if (event.key === "Escape") {
+                                event.preventDefault()
+                                setMentionRange(null)
+                                return
+                              }
+                            }
                             if (event.key === "Enter" && !event.shiftKey) {
                               event.preventDefault()
                               void submitMessage()
@@ -663,7 +899,7 @@ export function ChatView() {
                           }}
                           rows={2}
                           maxLength={2500}
-                          placeholder={`Mensagem para ${selectedTitle}...`}
+                          placeholder={selected.kind === "group" ? `Mensagem para ${selectedTitle}... Use @ para mencionar` : `Mensagem para ${selectedTitle}...`}
                           className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                         />
                         <input
@@ -700,7 +936,7 @@ export function ChatView() {
                       </Button>
                     )}
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · Clique no microfone para gravar</p>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Clique no microfone para gravar</p>
                 </footer>
               </>
             ) : (

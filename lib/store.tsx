@@ -34,6 +34,7 @@ import type {
   AttachmentUploadInput,
   ChatConversation,
   ChatMeeting,
+  ChatMention,
   MeetingMode,
   Member,
   NotificationEntry,
@@ -121,7 +122,7 @@ export type StoreContextValue = {
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
-  sendChatMessage: (conversationId: string, content: string) => Promise<boolean>
+  sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
   sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
   createChatGroup: (name: string, memberIds: string[]) => Promise<string | null>
@@ -746,8 +747,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [callRpc, refreshChat])
 
-  const sendChatMessage = React.useCallback(async (conversationId: string, content: string) => {
-    const id = await callRpc<string>("send_chat_message", { p_conversation_id: conversationId, p_content: content }, "Não foi possível enviar a mensagem")
+  const sendChatMessage = React.useCallback(async (conversationId: string, content: string, mentions: ChatMention[] = []) => {
+    const id = await callRpc<string>("send_chat_message", { p_conversation_id: conversationId, p_content: content, p_mentions: mentions }, "Não foi possível enviar a mensagem")
     if (!id) return false
     await refreshChat()
     return true

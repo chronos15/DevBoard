@@ -172,6 +172,7 @@ export type NotificationType =
   | "topic-created"
   | "topic-status"
   | "topic-sent"
+  | "chat-mention"
 
 export type NotificationEntry = {
   id: string
@@ -186,6 +187,7 @@ export type NotificationEntry = {
   activityId?: string
   subactivityId?: string
   meetingId?: string
+  conversationId?: string
 }
 
 export type MeetingMode = "audio" | "video"
@@ -214,6 +216,12 @@ export type ChatMeeting = {
   endedAt?: string
 }
 
+export type ChatMention = {
+  kind: "user" | "project"
+  id: string
+  label: string
+}
+
 export type ChatMessage = {
   id: string
   senderId: string
@@ -225,6 +233,7 @@ export type ChatMessage = {
   mediaSizeBytes?: number
   mediaName?: string
   mediaKind?: AttachmentKind
+  mentions?: ChatMention[]
   createdAt: string
 }
 

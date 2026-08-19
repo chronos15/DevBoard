@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
+  AtSign,
   Bell,
   CheckCheck,
   ClipboardCheck,
@@ -31,6 +32,7 @@ const iconByType = {
   "topic-created": ClipboardList,
   "topic-status": ClipboardList,
   "topic-sent": ClipboardList,
+  "chat-mention": AtSign,
 } satisfies Record<NotificationEntry["type"], React.ComponentType<{ className?: string }>>
 
 function formatNotificationDate(value: string) {
@@ -90,6 +92,10 @@ export function NotificationCenter() {
     }
 
     void markNotificationRead(notification.id)
+    if (notification.type === "chat-mention" && notification.conversationId) {
+      router.push(`/chat?conversation=${encodeURIComponent(notification.conversationId)}`)
+      return
+    }
     if (notification.type === "aqs-awaiting") {
       const suffix = notification.subactivityId ? `?sub=${encodeURIComponent(notification.subactivityId)}` : ""
       router.push(`/analise${suffix}`)

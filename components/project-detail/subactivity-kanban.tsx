@@ -14,6 +14,7 @@ import { MemberAvatar } from "@/components/member-avatar"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { cn } from "@/lib/utils"
 
 type KanbanItem = {
@@ -241,7 +242,16 @@ export function SubactivityKanban({
                               {formatHMS(item.sub.trackedSeconds)}
                             </span>
                           </div>
-                          <div className="flex items-center gap-0.5">
+                          <div
+                            className="flex items-center gap-0.5"
+                            draggable={false}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onDragStart={(event) => event.preventDefault()}
+                          >
+                            <CopyEntityLinkButton
+                              href={`/projetos/${project.id}#sub-${item.sub.id}`}
+                              label={`Copiar link da subatividade ${item.sub.title}`}
+                            />
                             <CommentDialog
                               title={`Comentários · ${item.sub.title}`}
                               description="Discussão da subatividade. Todos os usuários podem comentar."

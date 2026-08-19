@@ -246,3 +246,24 @@ select
   to_regprocedure('public.revoke_aqs_review(uuid,text)') is not null as revoke_aqs_review_ok,
   to_regprocedure('public.send_topic_to_activity(uuid,uuid,uuid)') is not null as send_topic_to_activity_ok,
   exists(select 1 from storage.buckets where id='devboard-topic-media' and public=false) as topic_media_bucket_ok;
+
+-- 008 · Links diretos + menções persistentes no Chat
+select
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='chat_messages' and column_name='mentions') as chat_mentions_column_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='notifications' and column_name='conversation_id') as notification_conversation_id_ok,
+  to_regprocedure('public.send_chat_message(uuid,text,jsonb)') is not null as send_chat_message_mentions_rpc_ok,
+  has_function_privilege('authenticated','public.send_chat_message(uuid,text,jsonb)','EXECUTE') as send_chat_message_mentions_execute_ok;
+
+do $$
+begin
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='chat_messages' and column_name='mentions') then
+    raise exception 'Backend Devboard incompleto: chat_messages.mentions ausente (migration 008)';
+  end if;
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='notifications' and column_name='conversation_id') then
+    raise exception 'Backend Devboard incompleto: notifications.conversation_id ausente (migration 008)';
+  end if;
+  if to_regprocedure('public.send_chat_message(uuid,text,jsonb)') is null then
+    raise exception 'Backend Devboard incompleto: send_chat_message(uuid,text,jsonb) ausente (migration 008)';
+  end if;
+  raise notice 'Migration 008 OK: links diretos client-side e menções persistentes do Chat prontas.';
+end $$;

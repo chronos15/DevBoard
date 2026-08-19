@@ -206,7 +206,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
 export async function loadChatConversations(supabase: SupabaseClient, workspaceId: string): Promise<ChatConversation[]> {
   const { data, error } = await supabase
     .from('chat_conversations')
-    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id),chat_messages(id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,created_at)')
+    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id),chat_messages(id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at)')
     .eq('workspace_id', workspaceId)
     .order('updated_at', { ascending: false })
   assertNoError(error, 'Não foi possível carregar o chat')
@@ -232,6 +232,11 @@ export async function loadChatConversations(supabase: SupabaseClient, workspaceI
         mediaSizeBytes: message.media_size_bytes == null ? undefined : Number(message.media_size_bytes),
         mediaName: message.media_name ?? undefined,
         mediaKind: isAttachmentKind(message.media_kind) ? message.media_kind : undefined,
+        mentions: Array.isArray(message.mentions)
+          ? message.mentions
+              .filter((mention: any) => mention && (mention.kind === 'user' || mention.kind === 'project') && typeof mention.id === 'string' && typeof mention.label === 'string')
+              .map((mention: any) => ({ kind: mention.kind, id: mention.id, label: mention.label }))
+          : [],
         createdAt: message.created_at,
       })),
   })) as ChatConversation[]
@@ -270,7 +275,7 @@ export async function loadMeetings(supabase: SupabaseClient, workspaceId: string
 export async function loadNotifications(supabase: SupabaseClient, userId: string): Promise<NotificationEntry[]> {
   const { data, error } = await supabase
     .from('notifications')
-    .select('id,recipient_id,actor_id,type,title,description,created_at,read_at,project_id,activity_id,subactivity_id,meeting_id')
+    .select('id,recipient_id,actor_id,type,title,description,created_at,read_at,project_id,activity_id,subactivity_id,meeting_id,conversation_id')
     .eq('recipient_id', userId)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -289,6 +294,7 @@ export async function loadNotifications(supabase: SupabaseClient, userId: string
     activityId: row.activity_id ?? undefined,
     subactivityId: row.subactivity_id ?? undefined,
     meetingId: row.meeting_id ?? undefined,
+    conversationId: row.conversation_id ?? undefined,
   })) as NotificationEntry[]
 }
 

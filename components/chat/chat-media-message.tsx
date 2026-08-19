@@ -5,7 +5,9 @@ import { Download, ExternalLink, FileCode2, FileText, Film, Image as ImageIcon, 
 import { createClient } from "@/lib/supabase/client"
 import { CHAT_MEDIA_BUCKET } from "@/lib/supabase/helpers"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
 import type { AttachmentKind } from "@/lib/types"
+import { useChatMediaActivation } from "@/components/chat/use-chat-media-activation"
 
 function formatBytes(bytes?: number) {
   if (!bytes || bytes <= 0) return ""
@@ -41,29 +43,77 @@ export function ChatMediaMessage({
   const supabase = React.useMemo(() => createClient(), [])
   const [url, setUrl] = React.useState<string | null>(null)
   const [failed, setFailed] = React.useState(false)
+  const [loadingUrl, setLoadingUrl] = React.useState(false)
+  const [mediaReady, setMediaReady] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [textPreview, setTextPreview] = React.useState<string | null>(null)
-
-  const ensureUrl = React.useCallback(async () => {
-    if (url) return url
-    if (!storagePath) {
-      setFailed(true)
-      return null
-    }
-    const { data, error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).createSignedUrl(storagePath, 60 * 60)
-    if (error || !data?.signedUrl) {
-      setFailed(true)
-      return null
-    }
-    setUrl(data.signedUrl)
-    return data.signedUrl
-  }, [storagePath, supabase, url])
+  const urlRef = React.useRef<string | null>(null)
+  const pendingUrlRef = React.useRef<Promise<string | null> | null>(null)
+  const mountedRef = React.useRef(true)
+  const isVisualMedia = kind === "image" || kind === "video"
+  const { targetRef, activated, activate } = useChatMediaActivation<HTMLDivElement>({ enabled: isVisualMedia })
 
   React.useEffect(() => {
-    if (kind === "image" || kind === "video") void ensureUrl()
-  }, [ensureUrl, kind])
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  React.useEffect(() => {
+    urlRef.current = url
+  }, [url])
+
+  React.useEffect(() => {
+    urlRef.current = null
+    pendingUrlRef.current = null
+    setUrl(null)
+    setFailed(false)
+    setLoadingUrl(false)
+    setMediaReady(false)
+    setTextPreview(null)
+  }, [storagePath])
+
+  const ensureUrl = React.useCallback(async () => {
+    if (urlRef.current) return urlRef.current
+    if (pendingUrlRef.current) return pendingUrlRef.current
+    if (!storagePath) {
+      if (mountedRef.current) setFailed(true)
+      return null
+    }
+
+    if (mountedRef.current) {
+      setLoadingUrl(true)
+      setFailed(false)
+    }
+
+    const request = (async () => {
+      const { data, error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).createSignedUrl(storagePath, 60 * 60)
+      if (error || !data?.signedUrl) {
+        if (mountedRef.current) setFailed(true)
+        return null
+      }
+      if (mountedRef.current) {
+        urlRef.current = data.signedUrl
+        setUrl(data.signedUrl)
+      }
+      return data.signedUrl
+    })().finally(() => {
+      pendingUrlRef.current = null
+      if (mountedRef.current) setLoadingUrl(false)
+    })
+
+    pendingUrlRef.current = request
+    return request
+  }, [storagePath, supabase])
+
+  React.useEffect(() => {
+    if (!isVisualMedia || !activated) return
+    void ensureUrl()
+  }, [activated, ensureUrl, isVisualMedia])
 
   async function openPreview() {
+    activate()
     const signedUrl = await ensureUrl()
     if (!signedUrl) return
     if (kind === "text" && textPreview === null) {
@@ -81,27 +131,80 @@ export function ChatMediaMessage({
   const fileName = name || "Arquivo"
   const info = [mimeType || "Arquivo", formatBytes(sizeBytes)].filter(Boolean).join(" · ")
 
-  if (kind === "image" && url) {
+  if (kind === "image") {
     return (
       <>
-        <button type="button" className="block max-w-sm overflow-hidden rounded-xl text-left" onClick={() => void openPreview()}>
-          <img src={url} alt={fileName} className="max-h-72 w-full object-contain" />
-          {caption && <span className="block px-1 pt-2 text-sm whitespace-pre-wrap break-words">{caption}</span>}
-        </button>
+        <div ref={targetRef} className="w-[clamp(11rem,58vw,18rem)] max-w-full">
+          <button type="button" className="block w-full text-left" onClick={() => void openPreview()}>
+            <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
+              {url && (
+                <img
+                  src={url}
+                  alt={fileName}
+                  loading="lazy"
+                  decoding="async"
+                  onLoad={() => setMediaReady(true)}
+                  onError={() => {
+                    setMediaReady(false)
+                    setFailed(true)
+                  }}
+                  className={cn(
+                    "absolute inset-0 h-full w-full object-contain transition-opacity duration-200",
+                    mediaReady ? "opacity-100" : "opacity-0",
+                  )}
+                />
+              )}
+
+              {!mediaReady && (
+                <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75">
+                  {failed ? <ImageIcon className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-6" />}
+                  <span>{failed ? "Imagem indisponível" : loadingUrl || activated ? "Carregando imagem..." : "Imagem"}</span>
+                </span>
+              )}
+            </span>
+            {caption && <span className="block px-1 pt-2 text-sm whitespace-pre-wrap break-words">{caption}</span>}
+          </button>
+        </div>
+
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="w-[min(96vw,1100px)] max-w-none bg-black/95 p-2" showCloseButton>
             <DialogHeader className="sr-only"><DialogTitle>{fileName}</DialogTitle></DialogHeader>
-            <img src={url} alt={fileName} className="max-h-[86dvh] w-full object-contain" />
+            {url && <img src={url} alt={fileName} className="max-h-[86dvh] w-full object-contain" />}
           </DialogContent>
         </Dialog>
       </>
     )
   }
 
-  if (kind === "video" && url) {
+  if (kind === "video") {
     return (
-      <div className="max-w-md">
-        <video src={url} controls playsInline preload="metadata" className="max-h-72 w-full rounded-xl object-contain" />
+      <div ref={targetRef} className="w-[clamp(13rem,62vw,22rem)] max-w-full">
+        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
+          {url && (
+            <video
+              src={url}
+              controls
+              playsInline
+              preload="metadata"
+              onLoadedMetadata={() => setMediaReady(true)}
+              onError={() => {
+                setMediaReady(false)
+                setFailed(true)
+              }}
+              className={cn(
+                "absolute inset-0 h-full w-full object-contain transition-opacity duration-200",
+                mediaReady ? "opacity-100" : "opacity-0",
+              )}
+            />
+          )}
+
+          {!mediaReady && (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75">
+              {failed ? <Film className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <Film className="size-6" />}
+              <span>{failed ? "Vídeo indisponível" : loadingUrl || activated ? "Carregando vídeo..." : "Vídeo"}</span>
+            </div>
+          )}
+        </div>
         {caption && <p className="mt-2 whitespace-pre-wrap break-words">{caption}</p>}
       </div>
     )
@@ -120,7 +223,7 @@ export function ChatMediaMessage({
           <span className="mt-0.5 block truncate text-[0.6rem] opacity-70">{info || "Abrir arquivo"}</span>
           {caption && <span className="mt-1 block line-clamp-2 text-xs">{caption}</span>}
         </span>
-        {!url && <Loader2 className="size-3.5 shrink-0 animate-spin opacity-50" />}
+        {loadingUrl && <Loader2 className="size-3.5 shrink-0 animate-spin opacity-50" />}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

@@ -268,12 +268,27 @@ export function TopicsView() {
   }, [selected?.id, supportTopics])
 
   React.useEffect(() => {
-    if (selected || supportTopics.length === 0) return
-    const topicId = new URLSearchParams(window.location.search).get("topic")
+    if (supportTopics.length === 0) return
+
+    const url = new URL(window.location.href)
+    const topicId = url.searchParams.get("topic")
     if (!topicId) return
+
     const target = supportTopics.find((topic) => topic.id === topicId)
-    if (target) setSelected(target)
-  }, [selected, supportTopics])
+    if (!target) return
+
+    // O parâmetro `topic` é apenas um comando de navegação para abrir o modal.
+    // Consumimos ele imediatamente para que, ao fechar o modal, o effect não
+    // leia a mesma URL e reabra o tópico em loop.
+    url.searchParams.delete("topic")
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    )
+
+    setSelected(target)
+  }, [supportTopics])
 
   async function startAnalysis(topic: SupportTopic) {
     setBusy(topic.id)

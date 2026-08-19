@@ -347,10 +347,10 @@ export function TopicsView() {
 
       <section className="rounded-2xl border border-border bg-card p-2.5 sm:p-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 focus-within:border-ring">
-            <Search className="size-4 shrink-0 text-muted-foreground" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ordem, título ou descrição..." className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
-            {search && <button type="button" onClick={() => setSearch("")} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Limpar busca"><X className="size-3.5" /></button>}
+          <div className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-border bg-background px-3.5 transition-colors focus-within:border-ring sm:h-10 sm:gap-2 sm:px-3">
+            <Search className="size-[18px] shrink-0 text-muted-foreground sm:size-4" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ordem, título ou descrição..." className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-sm" />
+            {search && <button type="button" onClick={() => setSearch("")} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:size-7" aria-label="Limpar busca"><X className="size-3.5" /></button>}
           </div>
 
           <div className="flex min-w-0 items-center gap-2">

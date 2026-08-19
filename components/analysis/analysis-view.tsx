@@ -435,8 +435,12 @@ export function AnalysisView() {
         </div>
       ) : (
         <section className="overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="hidden grid-cols-[minmax(180px,1.4fr)_minmax(140px,1fr)_minmax(140px,1fr)_120px_auto] gap-3 border-b border-border bg-muted/35 px-4 py-2.5 text-[0.68rem] font-medium text-muted-foreground lg:grid">
-            <span>Projeto / tarefa</span><span>Desenvolvedor</span><span>Responsável AQS</span><span>Status</span><span className="text-right">Ações</span>
+          <div className="hidden grid-cols-[minmax(0,2.35fr)_minmax(150px,0.95fr)_minmax(150px,0.95fr)_180px_220px] items-center gap-4 border-b border-border bg-muted/35 px-4 py-2.5 text-[0.68rem] font-medium text-muted-foreground xl:grid">
+            <span className="min-w-0">Projeto / tarefa</span>
+            <span className="min-w-0">Desenvolvedor</span>
+            <span className="min-w-0">Responsável AQS</span>
+            <span className="whitespace-nowrap">Status</span>
+            <span className="whitespace-nowrap text-right">Ações</span>
           </div>
           <div className="divide-y divide-border">
             {filteredReviews.map((review) => {
@@ -444,12 +448,33 @@ export function AnalysisView() {
               if (!project || !activity || !sub) return null
               const meta = columns.find((item) => item.status === review.status)
               return (
-                <article key={review.id} className={cn("grid min-w-0 gap-3 p-3 sm:p-4 lg:grid-cols-[minmax(180px,1.4fr)_minmax(140px,1fr)_minmax(140px,1fr)_120px_auto] lg:items-center", focusSubId === sub.id && "bg-primary/[0.035]")}>
-                  <div className="min-w-0"><p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p><h3 className="mt-0.5 truncate text-sm font-semibold">{sub.title}</h3><p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">{activity.title} · {elapsed(review.createdAt)}</p></div>
-                  <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={developer} className="size-7" /><div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Desenvolvedor</p><p className="truncate text-xs font-medium"><MemberName member={developer} fallback="Sem responsável" /></p></div></div>
-                  <div className="flex min-w-0 items-center gap-2">{aqs ? <MemberAvatar member={aqs} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Responsável AQS</p><p className="truncate text-xs font-medium"><MemberName member={aqs} fallback="Não atribuído" /></p></div></div>
-                  <div><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", review.status === "completed" ? "bg-success/15 text-success" : review.status === "revoked" ? "bg-destructive/10 text-destructive" : review.status === "evaluating" ? "bg-chart-3/15 text-chart-3" : "bg-chart-2/15 text-chart-2")}><span className={cn("size-1.5 rounded-full", meta?.tone)} />{meta?.label}</span></div>
-                  {renderReviewActions(review, true)}
+                <article key={review.id} className={cn("grid min-w-0 gap-3 p-3 sm:p-4 xl:grid-cols-[minmax(0,2.35fr)_minmax(150px,0.95fr)_minmax(150px,0.95fr)_180px_220px] xl:items-center xl:gap-4", focusSubId === sub.id && "bg-primary/[0.035]")}>
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p>
+                    <h3 className="mt-0.5 truncate text-sm font-semibold" title={sub.title}>{sub.title}</h3>
+                    <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground" title={activity.title}>{activity.title} · {elapsed(review.createdAt)}</p>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MemberAvatar member={developer} className="size-7 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.62rem] text-muted-foreground xl:hidden">Desenvolvedor</p>
+                      <p className="truncate text-xs font-medium"><MemberName member={developer} fallback="Sem responsável" /></p>
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {aqs ? <MemberAvatar member={aqs} className="size-7 shrink-0" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.62rem] text-muted-foreground xl:hidden">Responsável AQS</p>
+                      <p className="truncate text-xs font-medium"><MemberName member={aqs} fallback="Não atribuído" /></p>
+                    </div>
+                  </div>
+                  <div className="min-w-0 xl:justify-self-start">
+                    <span className={cn("inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.65rem] font-medium", review.status === "completed" ? "bg-success/15 text-success" : review.status === "revoked" ? "bg-destructive/10 text-destructive" : review.status === "evaluating" ? "bg-chart-3/15 text-chart-3" : "bg-chart-2/15 text-chart-2")}>
+                      <span className={cn("size-1.5 shrink-0 rounded-full", meta?.tone)} />
+                      <span className="truncate">{meta?.label}</span>
+                    </span>
+                  </div>
+                  <div className="min-w-0 xl:justify-self-end">{renderReviewActions(review, true)}</div>
                 </article>
               )
             })}

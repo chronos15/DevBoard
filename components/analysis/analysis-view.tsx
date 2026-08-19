@@ -21,7 +21,7 @@ import {
 import { useStore } from "@/lib/store"
 import type { AqsReview, AqsReviewStatus } from "@/lib/types"
 import { PageHeading } from "@/components/page-heading"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { Button } from "@/components/ui/button"
@@ -302,7 +302,7 @@ export function AnalysisView() {
             <Button size="sm" disabled={lockedByOther} loading={isBusy} onClick={() => void transition(review, "completed")}>Concluir</Button>
           </>
         )}
-        {lockedByOther && <span className="text-[0.65rem] text-muted-foreground">Com {aqs?.name ?? "outro AQS"}</span>}
+        {lockedByOther && <span className="text-[0.65rem] text-muted-foreground">Com <MemberName member={aqs} fallback="outro AQS" /></span>}
       </div>
     )
   }
@@ -420,7 +420,7 @@ export function AnalysisView() {
                           className={cn("rounded-xl bg-card p-3 ring-1 ring-foreground/8 transition-all", canDrag && "hover:-translate-y-0.5 hover:shadow-md", focused && "ring-2 ring-primary/35", dragging === review.id && "opacity-50")}
                         >
                           <div className="flex items-start gap-2"><GripVertical className={cn("mt-0.5 size-4 shrink-0", canDrag ? "cursor-grab text-muted-foreground/55" : "text-muted-foreground/20")} /><div className="min-w-0 flex-1"><p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p><h3 className="mt-1 text-sm font-semibold leading-snug">{sub.title}</h3><p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{activity.title}</p></div></div>
-                          <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/45 p-2 text-[0.65rem]"><div><p className="text-muted-foreground">Desenvolvedor</p><div className="mt-1 flex min-w-0 items-center gap-1.5"><MemberAvatar member={developer} className="size-6" /><span className="truncate font-medium">{developer?.name ?? "Sem responsável"}</span></div></div><div><p className="text-muted-foreground">AQS</p><div className="mt-1 flex min-w-0 items-center gap-1.5">{aqs ? <MemberAvatar member={aqs} className="size-6" /> : <span className="size-6 rounded-full border border-dashed border-border" />}<span className="truncate font-medium">{aqs?.name ?? "Não atribuído"}</span></div></div></div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/45 p-2 text-[0.65rem]"><div><p className="text-muted-foreground">Desenvolvedor</p><div className="mt-1 flex min-w-0 items-center gap-1.5"><MemberAvatar member={developer} className="size-6" /><MemberName member={developer} className="truncate font-medium" fallback="Sem responsável" /></div></div><div><p className="text-muted-foreground">AQS</p><div className="mt-1 flex min-w-0 items-center gap-1.5">{aqs ? <MemberAvatar member={aqs} className="size-6" /> : <span className="size-6 rounded-full border border-dashed border-border" />}<MemberName member={aqs} className="truncate font-medium" fallback="Não atribuído" /></div></div></div>
                           {review.revokedReason && <div className="mt-2 flex gap-2 rounded-lg bg-destructive/10 p-2 text-[0.68rem] leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><span>{review.revokedReason}</span></div>}
                           <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5"><span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground"><Clock3 className="size-3" /> {elapsed(review.createdAt)}</span>{renderReviewActions(review, true)}</div>
                         </article>
@@ -446,8 +446,8 @@ export function AnalysisView() {
               return (
                 <article key={review.id} className={cn("grid min-w-0 gap-3 p-3 sm:p-4 lg:grid-cols-[minmax(180px,1.4fr)_minmax(140px,1fr)_minmax(140px,1fr)_120px_auto] lg:items-center", focusSubId === sub.id && "bg-primary/[0.035]")}>
                   <div className="min-w-0"><p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p><h3 className="mt-0.5 truncate text-sm font-semibold">{sub.title}</h3><p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">{activity.title} · {elapsed(review.createdAt)}</p></div>
-                  <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={developer} className="size-7" /><div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Desenvolvedor</p><p className="truncate text-xs font-medium">{developer?.name ?? "Sem responsável"}</p></div></div>
-                  <div className="flex min-w-0 items-center gap-2">{aqs ? <MemberAvatar member={aqs} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Responsável AQS</p><p className="truncate text-xs font-medium">{aqs?.name ?? "Não atribuído"}</p></div></div>
+                  <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={developer} className="size-7" /><div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Desenvolvedor</p><p className="truncate text-xs font-medium"><MemberName member={developer} fallback="Sem responsável" /></p></div></div>
+                  <div className="flex min-w-0 items-center gap-2">{aqs ? <MemberAvatar member={aqs} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Responsável AQS</p><p className="truncate text-xs font-medium"><MemberName member={aqs} fallback="Não atribuído" /></p></div></div>
                   <div><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", review.status === "completed" ? "bg-success/15 text-success" : review.status === "revoked" ? "bg-destructive/10 text-destructive" : review.status === "evaluating" ? "bg-chart-3/15 text-chart-3" : "bg-chart-2/15 text-chart-2")}><span className={cn("size-1.5 rounded-full", meta?.tone)} />{meta?.label}</span></div>
                   {renderReviewActions(review, true)}
                 </article>

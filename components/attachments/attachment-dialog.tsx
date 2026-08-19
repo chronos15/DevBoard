@@ -25,7 +25,7 @@ import type {
 import { useStore } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -701,7 +701,7 @@ export function AttachmentDialog({
                           <span className="block truncate text-xs font-medium" title={attachment.name}>{attachment.name}</span>
                           <span className="mt-1 flex items-center gap-1.5 text-[0.6rem] text-muted-foreground">
                             {uploader && <MemberAvatar member={uploader} className="size-4 text-[0.4rem] ring-0" />}
-                            <span className="truncate">{uploader?.name ?? "Usuário"}</span>
+                            <MemberName member={uploader} className="truncate" fallback="Usuário" />
                             <span>·</span>
                             <span className="shrink-0">{formatBytes(attachment.size)}</span>
                           </span>
@@ -781,11 +781,11 @@ export function AttachmentDialog({
 
                   <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-[0.68rem] text-muted-foreground">
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      <span>Enviado por <strong className="font-medium text-foreground/80">{members.find((member) => member.id === selected.uploadedBy)?.name ?? "Usuário"}</strong></span>
+                      <span>Enviado por <strong className="font-medium text-foreground/80"><MemberName member={members.find((member) => member.id === selected.uploadedBy)} fallback="Usuário" /></strong></span>
                       <span>Estado atual: <strong className="font-medium text-foreground/80">{selected.active ? "Ativo" : "Inativo"}</strong></span>
                       {selected.statusChangedAt && (
                         <span>
-                          Última alteração por <strong className="font-medium text-foreground/80">{members.find((member) => member.id === selected.statusChangedBy)?.name ?? "Usuário"}</strong> · {formatDate(selected.statusChangedAt)}
+                          Última alteração por <strong className="font-medium text-foreground/80"><MemberName member={members.find((member) => member.id === selected.statusChangedBy)} fallback="Usuário" /></strong> · {formatDate(selected.statusChangedAt)}
                         </span>
                       )}
                     </div>

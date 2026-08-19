@@ -4,7 +4,7 @@ import * as React from "react"
 import { MessageSquare, Send } from "lucide-react"
 import type { CommentEntry } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -126,7 +126,7 @@ export function CommentDialog({
                       <MemberAvatar member={author} className="mt-0.5 size-8 ring-0" />
                       <div className={cn("min-w-0 max-w-[82%]", own && "text-right")}>
                         <div className={cn("mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5", own && "justify-end")}>
-                          <span className="text-[0.68rem] font-medium">{author?.name ?? "Usuário"}</span>
+                          <MemberName member={author} className="text-[0.68rem] font-medium" fallback="Usuário" />
                           <time className="font-mono text-[0.6rem] text-muted-foreground">
                             {formatCommentDate(comment.createdAt)}
                           </time>

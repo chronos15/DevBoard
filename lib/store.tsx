@@ -7,6 +7,7 @@ import {
   loadIdentity,
   loadAqsReviews,
   loadChatConversations,
+  loadChatMessagesPage,
   loadMeetings,
   loadMembers,
   loadNotifications,
@@ -125,6 +126,9 @@ export type StoreContextValue = {
   sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
   sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
+  loadChatHistory: (conversationId: string, beforeCreatedAt?: string) => Promise<{ count: number; hasMore: boolean } | null>
+  deleteDirectConversation: (conversationId: string) => Promise<boolean>
+  leaveChatGroup: (conversationId: string) => Promise<boolean>
   createChatGroup: (name: string, memberIds: string[]) => Promise<string | null>
   updateChatGroup: (conversationId: string, data: { name: string; memberIds: string[] }) => Promise<boolean>
   deleteChatGroup: (conversationId: string) => Promise<boolean>
@@ -286,6 +290,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [refreshing, setRefreshing] = React.useState(false)
   const [lastError, setLastError] = React.useState<string | null>(null)
   const refreshTimers = React.useRef<Record<string, number>>({})
+  const loadedChatHistoryIdsRef = React.useRef<Set<string>>(new Set())
 
   const fail = React.useCallback((error: unknown, fallback: string) => {
     const message = errorMessage(error, fallback)
@@ -318,7 +323,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refreshChat = React.useCallback(async () => {
     if (!workspaceId) return
     try {
-      setChatConversations(await loadChatConversations(supabase, workspaceId))
+      const next = await loadChatConversations(supabase, workspaceId)
+      setChatConversations((current) => next.map((conversation) => {
+        const previous = current.find((item) => item.id === conversation.id)
+        if (!previous || !loadedChatHistoryIdsRef.current.has(conversation.id)) return conversation
+
+        const merged = [...previous.messages]
+        for (const message of conversation.messages) {
+          if (!merged.some((item) => item.id === message.id)) merged.push(message)
+        }
+        merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        return { ...conversation, messages: merged }
+      }))
     } catch (error) {
       fail(error, "Não foi possível atualizar o chat")
     }
@@ -416,7 +432,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadMeetings(supabase, identity.workspaceId),
       ])
         .then(([nextChat, nextMeetings]) => {
-          setChatConversations(nextChat)
+          setChatConversations((current) => nextChat.map((conversation) => {
+            const previous = current.find((item) => item.id === conversation.id)
+            if (!previous || !loadedChatHistoryIdsRef.current.has(conversation.id)) return conversation
+            const merged = [...previous.messages]
+            for (const message of conversation.messages) {
+              if (!merged.some((item) => item.id === message.id)) merged.push(message)
+            }
+            merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            return { ...conversation, messages: merged }
+          }))
           setChatMeetings(nextMeetings)
         })
         .catch((error) => {
@@ -740,6 +765,80 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const setProjectAttachmentActive = React.useCallback(async (_projectId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
   const setSubactivityAttachmentActive = React.useCallback(async (_subId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
 
+  const removeConversationMedia = React.useCallback(async (conversationId: string) => {
+    const paths = new Set<string>()
+    const pageSize = 500
+    let from = 0
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("media_path")
+        .eq("conversation_id", conversationId)
+        .not("media_path", "is", null)
+        .order("created_at", { ascending: true })
+        .range(from, from + pageSize - 1)
+      if (error) throw error
+
+      const rows = data ?? []
+      for (const row of rows) {
+        if (typeof row.media_path === "string" && row.media_path.trim()) paths.add(row.media_path)
+      }
+      if (rows.length < pageSize) break
+      from += pageSize
+    }
+
+    const allPaths = Array.from(paths)
+    for (let index = 0; index < allPaths.length; index += 100) {
+      const { error } = await supabase.storage
+        .from(CHAT_MEDIA_BUCKET)
+        .remove(allPaths.slice(index, index + 100))
+      if (error) throw error
+    }
+  }, [supabase])
+
+  const loadChatHistory = React.useCallback(async (conversationId: string, beforeCreatedAt?: string) => {
+    try {
+      setLastError(null)
+      const page = await loadChatMessagesPage(supabase, conversationId, { beforeCreatedAt, limit: 20 })
+      loadedChatHistoryIdsRef.current.add(conversationId)
+      setChatConversations((current) => current.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation
+        const combined = beforeCreatedAt ? [...page.messages, ...conversation.messages] : page.messages
+        const unique = Array.from(new Map(combined.map((message) => [message.id, message])).values())
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        return { ...conversation, messages: unique }
+      }))
+      return { count: page.messages.length, hasMore: page.hasMore }
+    } catch (error) {
+      fail(error, "Não foi possível carregar o histórico da conversa")
+      return null
+    }
+  }, [fail, supabase])
+
+  const deleteDirectConversation = React.useCallback(async (conversationId: string) => {
+    try {
+      setLastError(null)
+      await removeConversationMedia(conversationId)
+      const result = await callRpc<unknown>("delete_direct_conversation", { p_conversation_id: conversationId }, "Não foi possível excluir a conversa")
+      if (result === undefined) return false
+      loadedChatHistoryIdsRef.current.delete(conversationId)
+      await refreshChat()
+      return true
+    } catch (error) {
+      fail(error, "Não foi possível remover as mídias da conversa")
+      return false
+    }
+  }, [callRpc, fail, refreshChat, removeConversationMedia])
+
+  const leaveChatGroup = React.useCallback(async (conversationId: string) => {
+    const result = await callRpc<unknown>("leave_chat_group", { p_conversation_id: conversationId }, "Não foi possível sair do grupo")
+    if (result === undefined) return false
+    loadedChatHistoryIdsRef.current.delete(conversationId)
+    await refreshChat()
+    return true
+  }, [callRpc, refreshChat])
+
   const ensureDirectConversation = React.useCallback(async (memberId: string) => {
     const id = await callRpc<string>("ensure_direct_conversation", { p_member_id: memberId }, "Não foi possível iniciar a conversa")
     if (!id) return null
@@ -847,11 +946,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshChat])
 
   const deleteChatGroup = React.useCallback(async (conversationId: string) => {
-    const result = await callRpc<unknown>("delete_chat_group", { p_conversation_id: conversationId }, "Não foi possível excluir o grupo")
-    if (result === undefined) return false
-    await refreshChat()
-    return true
-  }, [callRpc, refreshChat])
+    try {
+      setLastError(null)
+      await removeConversationMedia(conversationId)
+      const result = await callRpc<unknown>("delete_chat_group", { p_conversation_id: conversationId }, "Não foi possível excluir o grupo")
+      if (result === undefined) return false
+      loadedChatHistoryIdsRef.current.delete(conversationId)
+      await refreshChat()
+      return true
+    } catch (error) {
+      fail(error, "Não foi possível remover as mídias do grupo")
+      return false
+    }
+  }, [callRpc, fail, refreshChat, removeConversationMedia])
 
   const createMeeting = React.useCallback(async (data: { title: string; memberIds: string[]; mode: MeetingMode; conversationId?: string }) => {
     const id = await callRpc<string>("create_meeting", {
@@ -1117,6 +1224,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     sendChatMessage,
     sendChatAudio,
     sendChatMedia,
+    loadChatHistory,
+    deleteDirectConversation,
+    leaveChatGroup,
     createChatGroup,
     updateChatGroup,
     deleteChatGroup,
@@ -1133,7 +1243,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
     addSubactivityAttachments, addSubactivityComment, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
-    endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting,
+    endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,
     members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,

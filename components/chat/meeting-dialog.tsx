@@ -4,7 +4,7 @@ import * as React from "react"
 import { Headphones, Mic2, UserPlus, Video, UsersRound } from "lucide-react"
 import type { ChatConversation, MeetingMode, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -190,7 +190,7 @@ export function MeetingDialog({
                     >
                       <MemberAvatar member={member} className="size-8 ring-0" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{member.name}</span>
+                        <MemberName member={member} className="block truncate text-sm font-medium" />
                         <span className="block text-[0.65rem] text-muted-foreground">
                           {locked ? "Você · obrigatório" : checked ? "Convidado" : "Fora da reunião"}
                         </span>

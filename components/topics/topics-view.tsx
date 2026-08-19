@@ -28,7 +28,7 @@ import { TOPIC_MEDIA_BUCKET, chatMediaKind } from "@/lib/supabase/helpers"
 import type { SupportTopic, SupportTopicStatus, TopicAttachment } from "@/lib/types"
 import { supportTopicDisplayStatus, type SupportTopicDisplayStatus } from "@/lib/project-utils"
 import { PageHeading } from "@/components/page-heading"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -460,7 +460,7 @@ export function TopicsView() {
                     {topics.map((topic) => {
                       const creator = members.find((member) => member.id === topic.createdBy)
                       const analyst = members.find((member) => member.id === topic.assignedAnalystId)
-                      return <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="rounded-xl bg-card p-3 text-left shadow-sm ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[0.65rem] font-semibold text-primary">{topic.orderNumber}</span><span className="flex items-center gap-1 text-[0.62rem] text-muted-foreground"><Paperclip className="size-3" />{topic.attachments.length}</span></div><h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-snug">{topic.title}</h3><p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{topic.description}</p><div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5"><div className="flex min-w-0 items-center gap-1.5"><MemberAvatar member={creator} className="size-6" /><span className="truncate text-[0.65rem] text-muted-foreground">{creator?.name ?? "Usuário"}</span></div>{analyst && <MemberAvatar member={analyst} className="size-6" />}</div></button>
+                      return <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="rounded-xl bg-card p-3 text-left shadow-sm ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[0.65rem] font-semibold text-primary">{topic.orderNumber}</span><span className="flex items-center gap-1 text-[0.62rem] text-muted-foreground"><Paperclip className="size-3" />{topic.attachments.length}</span></div><h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-snug">{topic.title}</h3><p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{topic.description}</p><div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5"><div className="flex min-w-0 items-center gap-1.5"><MemberAvatar member={creator} className="size-6" /><MemberName member={creator} className="truncate text-[0.65rem] text-muted-foreground" fallback="Usuário" /></div>{analyst && <MemberAvatar member={analyst} className="size-6" />}</div></button>
                     })}
                     {topics.length === 0 && <div className="flex min-h-24 flex-1 items-center justify-center rounded-xl border border-dashed border-border px-4 text-center text-xs text-muted-foreground">Nenhum tópico nesta etapa.</div>}
                   </div>
@@ -482,8 +482,8 @@ export function TopicsView() {
                 <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="grid w-full min-w-0 gap-3 p-3 text-left transition-colors hover:bg-muted/35 sm:p-4 lg:grid-cols-[110px_minmax(200px,1.5fr)_150px_150px_140px_90px] lg:items-center">
                   <span className="font-mono text-[0.68rem] font-semibold text-primary">{topic.orderNumber}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-semibold">{topic.title}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{topic.description} · {formatDateTime(topic.createdAt)}</span></span>
-                  <span className="flex min-w-0 items-center gap-2"><MemberAvatar member={creator} className="size-7" /><span className="truncate text-xs">{creator?.name ?? "Usuário"}</span></span>
-                  <span className="flex min-w-0 items-center gap-2">{analyst ? <MemberAvatar member={analyst} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<span className="truncate text-xs">{analyst?.name ?? "Não atribuído"}</span></span>
+                  <span className="flex min-w-0 items-center gap-2"><MemberAvatar member={creator} className="size-7" /><MemberName member={creator} className="truncate text-xs" fallback="Usuário" /></span>
+                  <span className="flex min-w-0 items-center gap-2">{analyst ? <MemberAvatar member={analyst} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<MemberName member={analyst} className="truncate text-xs" fallback="Não atribuído" /></span>
                   <span><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", statusClass(displayStatus))}><span className={cn("size-1.5 rounded-full", status?.tone)} />{status?.label}</span></span>
                   <span className="flex items-center gap-1 text-xs text-muted-foreground lg:justify-end"><Paperclip className="size-3.5" />{topic.attachments.length}</span>
                 </button>
@@ -522,7 +522,7 @@ export function TopicsView() {
                       <div className="mt-4 flex items-center gap-3">
                         <MemberAvatar member={members.find((m) => m.id === selected.createdBy)} className="size-11" />
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.createdBy)?.name ?? "Usuário"}</p>
+                          <p className="truncate text-sm font-semibold"><MemberName member={members.find((m) => m.id === selected.createdBy)} fallback="Usuário" /></p>
                           <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Abriu o tópico e enviou as evidências iniciais.</p>
                         </div>
                       </div>
@@ -531,7 +531,7 @@ export function TopicsView() {
                     <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
                       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Analista</p>
                       <div className="mt-4 min-w-0">
-                        <p className="truncate text-sm font-semibold">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p>
+                        <p className="truncate text-sm font-semibold"><MemberName member={members.find((m) => m.id === selected.assignedAnalystId)} fallback="Não atribuído" /></p>
                         <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Responsável atual pela triagem e pelo retorno do tópico.</p>
                       </div>
                     </section>

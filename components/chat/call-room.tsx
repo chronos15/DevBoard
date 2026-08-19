@@ -21,7 +21,7 @@ import {
 import type { RealtimeChannel } from "@supabase/supabase-js"
 import type { ChatMeeting, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -402,7 +402,7 @@ function ParticipantTile({
           <div className="flex size-full flex-col items-center justify-center gap-3">
             <MemberAvatar member={member} className="size-16 text-base ring-0 sm:size-20" />
             <div className="text-center">
-              <p className="text-sm font-medium">{member.name} · Você</p>
+              <p className="text-sm font-medium"><MemberName member={member} suffix=" · Você" /></p>
               <p className="mt-0.5 text-[0.65rem] text-muted-foreground">Você</p>
             </div>
           </div>
@@ -438,7 +438,7 @@ function ParticipantTile({
             <div className="relative z-10 flex size-full flex-col items-center justify-center gap-3">
               <MemberAvatar member={member} className="size-16 text-base ring-0 sm:size-20" />
               <div className="text-center">
-                <p className="text-sm font-medium">{member.name}</p>
+                <p className="text-sm font-medium"><MemberName member={member} /></p>
                 <p className="mt-0.5 text-[0.65rem] text-muted-foreground">{connectionLabel}</p>
               </div>
             </div>
@@ -466,7 +466,7 @@ function ParticipantTile({
       )}
 
       <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between gap-2 bg-gradient-to-t from-black/65 to-transparent px-3 pb-3 pt-8 text-white">
-        <span className="min-w-0 truncate text-xs font-medium">{member.name}{own ? " · Você" : ""}</span>
+        <MemberName member={member} className="min-w-0 truncate text-xs font-medium" suffix={own ? " · Você" : ""} />
         <span className="flex shrink-0 items-center gap-1.5">
           {(screenSharing || presence?.screenSharing) && (
             <span className="rounded-md bg-black/45 px-1.5 py-1 text-[0.56rem]">Tela</span>
@@ -2131,7 +2131,7 @@ export function CallRoom({
                               <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card", connected ? "bg-success" : "bg-muted-foreground/40")} />
                             </div>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-medium">{member.name}{own ? " · Você" : ""}</span>
+                              <MemberName member={member} className="block truncate text-xs font-medium" suffix={own ? " · Você" : ""} />
                               <span className="block text-[0.58rem] text-muted-foreground">
                                 {connected
                                   ? own
@@ -2213,7 +2213,7 @@ export function CallRoom({
                             const route = presence ? peerRoutes[presence.sessionId] : undefined
                             return (
                               <div key={member.id} className="flex items-center justify-between gap-2">
-                                <span className="truncate">{member.name}</span>
+                                <MemberName member={member} className="truncate" />
                                 <span className="shrink-0 font-mono text-[0.58rem]">{route ?? state ?? "aguardando"}</span>
                               </div>
                             )

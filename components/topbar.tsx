@@ -4,7 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Menu, Search } from "lucide-react"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { RunningTimerChip } from "@/components/running-timer-chip"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { RecentSubactivities } from "@/components/recent-subactivities"
@@ -106,7 +106,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         >
           <MemberAvatar member={me} className="size-8 rounded-lg ring-0" />
           <span className="hidden leading-tight sm:block">
-            <span className="block text-xs font-semibold">{me?.name ?? "Conta"}</span>
+            <MemberName member={me} className="block text-xs font-semibold" fallback="Conta" />
             <span className="block text-[0.7rem] text-muted-foreground">{ACCESS_ROLE_LABELS[currentUserRole]}</span>
           </span>
         </button>

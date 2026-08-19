@@ -5,6 +5,7 @@ import type {
   AttachmentEntry,
   ChatConversation,
   ChatMeeting,
+  ChatMessage,
   NotificationEntry,
   Project,
   Status,
@@ -203,15 +204,69 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
   }))
 }
 
+function mapChatMessageRow(message: any): ChatMessage {
+  return {
+    id: message.id,
+    senderId: message.sender_id,
+    content: message.content,
+    type: message.message_type === 'audio' ? 'audio' : message.message_type === 'media' ? 'media' : 'text',
+    mediaPath: message.media_path ?? undefined,
+    mediaMimeType: message.media_mime_type ?? undefined,
+    mediaDurationMs: message.media_duration_ms == null ? undefined : Number(message.media_duration_ms),
+    mediaSizeBytes: message.media_size_bytes == null ? undefined : Number(message.media_size_bytes),
+    mediaName: message.media_name ?? undefined,
+    mediaKind: isAttachmentKind(message.media_kind) ? message.media_kind : undefined,
+    mentions: Array.isArray(message.mentions)
+      ? message.mentions
+          .filter((mention: any) => mention && (mention.kind === 'user' || mention.kind === 'project') && typeof mention.id === 'string' && typeof mention.label === 'string')
+          .map((mention: any) => ({ kind: mention.kind, id: mention.id, label: mention.label }))
+      : [],
+    createdAt: message.created_at,
+  }
+}
+
+const CHAT_MESSAGE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at'
+
+export async function loadChatMessagesPage(
+  supabase: SupabaseClient,
+  conversationId: string,
+  options: { beforeCreatedAt?: string; limit?: number } = {},
+): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
+  const pageSize = Math.max(1, Math.min(50, options.limit ?? 20))
+  let query = supabase
+    .from('chat_messages')
+    .select(CHAT_MESSAGE_COLUMNS)
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1)
+
+  if (options.beforeCreatedAt) {
+    query = query.lt('created_at', options.beforeCreatedAt)
+  }
+
+  const { data, error } = await query
+  assertNoError(error, 'Não foi possível carregar o histórico da conversa')
+
+  const rows = data ?? []
+  const hasMore = rows.length > pageSize
+  const messages = rows
+    .slice(0, pageSize)
+    .map(mapChatMessageRow)
+    .reverse()
+
+  return { messages, hasMore }
+}
+
 export async function loadChatConversations(supabase: SupabaseClient, workspaceId: string): Promise<ChatConversation[]> {
   const { data, error } = await supabase
     .from('chat_conversations')
-    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id),chat_messages(id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at)')
+    .select('id,kind,name,created_by,created_at,updated_at,chat_members(user_id)')
     .eq('workspace_id', workspaceId)
     .order('updated_at', { ascending: false })
   assertNoError(error, 'Não foi possível carregar o chat')
 
-  return (data ?? []).map((row: any) => ({
+  const conversations = (data ?? []).map((row: any) => ({
     id: row.id,
     kind: row.kind,
     name: row.name ?? undefined,
@@ -219,27 +274,26 @@ export async function loadChatConversations(supabase: SupabaseClient, workspaceI
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    messages: (row.chat_messages ?? [])
-      .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
-      .map((message: any) => ({
-        id: message.id,
-        senderId: message.sender_id,
-        content: message.content,
-        type: message.message_type === 'audio' ? 'audio' : message.message_type === 'media' ? 'media' : 'text',
-        mediaPath: message.media_path ?? undefined,
-        mediaMimeType: message.media_mime_type ?? undefined,
-        mediaDurationMs: message.media_duration_ms == null ? undefined : Number(message.media_duration_ms),
-        mediaSizeBytes: message.media_size_bytes == null ? undefined : Number(message.media_size_bytes),
-        mediaName: message.media_name ?? undefined,
-        mediaKind: isAttachmentKind(message.media_kind) ? message.media_kind : undefined,
-        mentions: Array.isArray(message.mentions)
-          ? message.mentions
-              .filter((mention: any) => mention && (mention.kind === 'user' || mention.kind === 'project') && typeof mention.id === 'string' && typeof mention.label === 'string')
-              .map((mention: any) => ({ kind: mention.kind, id: mention.id, label: mention.label }))
-          : [],
-        createdAt: message.created_at,
-      })),
-  })) as ChatConversation[]
+    messages: [],
+  } satisfies ChatConversation))
+
+  // A lista precisa apenas da última mensagem para preview. O histórico completo
+  // é buscado somente quando a conversa é aberta, em páginas de 20 mensagens.
+  const previews = await Promise.all(
+    conversations.map(async (conversation) => {
+      try {
+        const page = await loadChatMessagesPage(supabase, conversation.id, { limit: 1 })
+        return page.messages[0] ?? null
+      } catch {
+        return null
+      }
+    }),
+  )
+
+  return conversations.map((conversation, index) => ({
+    ...conversation,
+    messages: previews[index] ? [previews[index]!] : [],
+  }))
 }
 
 export async function loadMeetings(supabase: SupabaseClient, workspaceId: string): Promise<ChatMeeting[]> {

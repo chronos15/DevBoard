@@ -7,6 +7,7 @@ import { ArrowLeft, Check, FolderKanban, GitBranch, LoaderCircle, PackageCheck, 
 import { useStore } from "@/lib/store"
 import type { Priority } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { MemberName } from "@/components/member-avatar"
 
 export function ProjectForm({ projectId }: { projectId?: string }) {
   const router = useRouter()
@@ -223,7 +224,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.65rem] font-semibold text-white" style={{ backgroundColor: member.color }}>
                       {member.initials}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{member.name}</span>
+                    <MemberName member={member} className="min-w-0 flex-1 truncate text-sm font-medium" />
                     <span className={cn("flex size-5 items-center justify-center rounded-full border", selected ? "border-primary bg-primary text-primary-foreground" : "border-border")}>
                       {selected && <Check className="size-3" strokeWidth={3} />}
                     </span>

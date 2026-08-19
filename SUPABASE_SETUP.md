@@ -38,9 +38,12 @@ Nunca coloque `service_role`/secret key no front-end.
 5. Depois execute `supabase/migrations/002_devboard_call_invites.sql`.
 6. Execute `supabase/migrations/003_devboard_chat_audio.sql`.
 7. Execute `supabase/migrations/004_devboard_chat_media_attachments.sql`.
-8. Execute a migration de Roles/AQS/Tópicos conforme a sequência já aplicada no seu ambiente.
-9. Execute `supabase/migrations/006_devboard_notify_all_aqs.sql` para garantir que toda entrada em **Aguardando AQS** notifique todos os usuários ativos com role AQS.
-10. As migrations são incrementais. A migration 005 adiciona valores de enum antes do bloco transacional e, em seguida, aplica tabelas/RPCs/policies dentro de `BEGIN`/`COMMIT`.
+8. Execute `supabase/migrations/005_devboard_roles_aqs_topics.sql`.
+9. Execute `supabase/migrations/006_devboard_notify_all_aqs.sql`.
+10. Execute `supabase/migrations/007_devboard_new_accounts_member.sql`.
+11. Execute `supabase/migrations/008_devboard_deeplinks_chat_mentions.sql`.
+12. Execute `supabase/migrations/009_devboard_chat_history_profile_actions.sql`.
+13. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -359,3 +362,24 @@ A 008 é incremental e não remove mensagens nem notificações existentes. Ela:
 - substitui `send_chat_message` pela versão que valida menções em grupos e notifica cada usuário marcado uma única vez.
 
 Os links copiados de atividade/subatividade usam as rotas já existentes do Devboard e não exigem alteração no banco.
+
+## 009 · Histórico paginado e ações de conversa
+
+Depois da 008, execute:
+
+```text
+supabase/migrations/009_devboard_chat_history_profile_actions.sql
+```
+
+A 009 é incremental e preserva os chats existentes. Ela:
+
+- adiciona índice para buscar as mensagens mais recentes e carregar o histórico para trás com menor custo;
+- cria `delete_direct_conversation`, com validação de participação e exclusão permanente da conversa individual;
+- adiciona uma policy de `DELETE` no bucket do chat para que o front-end remova as mídias pela Storage API antes de apagar a conversa;
+- atualiza `delete_chat_group` para exigir que as mídias já tenham sido removidas com segurança antes da exclusão do grupo;
+- cria `leave_chat_group`, removendo apenas o participante que saiu e transferindo a gestão quando o criador deixa um grupo ainda ativo.
+
+No front-end, a lista de conversas passa a buscar apenas a última mensagem de cada chat. Ao abrir uma conversa, são carregadas as 20 mensagens mais recentes; ao subir pelo histórico, novas páginas de 20 mensagens são requisitadas sem deslocar a posição visual do usuário.
+
+Depois de aplicar a 009, execute novamente `supabase/verify_backend.sql`.
+

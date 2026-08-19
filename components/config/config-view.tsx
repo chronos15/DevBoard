@@ -4,7 +4,7 @@ import * as React from "react"
 import { Bell, Loader2, Palette, ShieldCheck, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
 
 const sections = [
@@ -180,7 +180,7 @@ function TeamSection() {
           <li key={member.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap">
             <MemberAvatar member={member} className="size-10 text-xs ring-0" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{member.name}{member.id === currentUserId ? " · você" : ""}</p>
+              <p className="truncate text-sm font-medium"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
               <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta Supabase"}</p>
             </div>
             {currentUserRole === "admin" ? (

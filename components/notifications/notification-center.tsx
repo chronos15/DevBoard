@@ -19,6 +19,7 @@ import {
 import { useStore } from "@/lib/store"
 import type { NotificationEntry } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { MemberName } from "@/components/member-avatar"
 
 const iconByType = {
   "project-assigned": FolderKanban,
@@ -196,7 +197,7 @@ export function NotificationCenter() {
                         </span>
                       )}
                       <span className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[0.65rem] text-muted-foreground">
-                        <span className="truncate">{actor?.name ?? "Usuário"}</span>
+                        <MemberName member={actor} className="truncate" fallback="Usuário" />
                         <span>·</span>
                         <span className="shrink-0">{formatNotificationDate(notification.createdAt)}</span>
                       </span>

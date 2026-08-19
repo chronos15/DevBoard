@@ -20,6 +20,7 @@ import {
   projectTracked,
 } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 
 const projectColors = [
   "var(--chart-1)",
@@ -148,13 +149,8 @@ export function ReportsView() {
               <li key={r.member.id} className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 font-medium">
-                    <span
-                      className="flex size-6 items-center justify-center rounded-md text-[0.6rem] font-semibold text-white"
-                      style={{ backgroundColor: r.member.color }}
-                    >
-                      {r.member.initials}
-                    </span>
-                    {r.member.name.split(" ")[0]}
+                    <MemberAvatar member={r.member} className="size-6 rounded-md text-[0.6rem] ring-0" />
+                    <MemberName member={r.member} label={r.member.name.split(" ")[0]} />
                   </span>
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">
                     {formatHours(r.tracked)}

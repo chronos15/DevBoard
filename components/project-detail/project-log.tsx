@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import type { Project, ProjectLogEntry, ProjectLogType } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -279,7 +279,7 @@ export function ProjectLogDialog({ project }: { project: Project }) {
                                   <UserRound className="size-3" />
                                 </span>
                               )}
-                              {actor?.name ?? "Usuário não identificado"}
+                              <MemberName member={actor} fallback="Usuário não identificado" />
                             </span>
                             <span className="flex items-center gap-1 font-mono">
                               <Clock3 className="size-3" />

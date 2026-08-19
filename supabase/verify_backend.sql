@@ -30,10 +30,12 @@ declare
     'public.add_attachment(uuid,uuid,text,text,bigint,text,text,text)',
     'public.set_attachment_active(uuid,boolean)',
     'public.ensure_direct_conversation(uuid)',
-    'public.send_chat_message(uuid,text)',
+    'public.send_chat_message(uuid,text,jsonb)',
     'public.create_chat_group(text,uuid[])',
     'public.update_chat_group(uuid,text,uuid[])',
     'public.delete_chat_group(uuid)',
+    'public.delete_direct_conversation(uuid)',
+    'public.leave_chat_group(uuid)',
     'public.create_meeting(text,uuid[],text,uuid)',
     'public.answer_meeting_invite(uuid,boolean)',
     'public.join_meeting(uuid)',
@@ -267,3 +269,52 @@ begin
   end if;
   raise notice 'Migration 008 OK: links diretos client-side e menções persistentes do Chat prontas.';
 end $$;
+
+-- 009 · Histórico paginado + exclusão/saída segura do Chat
+select
+  exists(
+    select 1
+    from pg_indexes
+    where schemaname='public'
+      and tablename='chat_messages'
+      and indexname='chat_messages_conversation_created_desc_idx'
+  ) as chat_history_index_ok,
+  to_regprocedure('public.delete_direct_conversation(uuid)') is not null as delete_direct_conversation_rpc_ok,
+  has_function_privilege('authenticated','public.delete_direct_conversation(uuid)','EXECUTE') as delete_direct_conversation_execute_ok,
+  to_regprocedure('public.leave_chat_group(uuid)') is not null as leave_chat_group_rpc_ok,
+  has_function_privilege('authenticated','public.leave_chat_group(uuid)','EXECUTE') as leave_chat_group_execute_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='storage'
+      and tablename='objects'
+      and policyname='devboard_chat_media_conversation_delete'
+  ) as chat_media_conversation_delete_policy_ok;
+
+do $$
+begin
+  if not exists(
+    select 1
+    from pg_indexes
+    where schemaname='public'
+      and tablename='chat_messages'
+      and indexname='chat_messages_conversation_created_desc_idx'
+  ) then
+    raise exception 'Backend Devboard incompleto: índice do histórico ausente (migration 009)';
+  end if;
+  if to_regprocedure('public.delete_direct_conversation(uuid)') is null then
+    raise exception 'Backend Devboard incompleto: delete_direct_conversation(uuid) ausente (migration 009)';
+  end if;
+  if to_regprocedure('public.leave_chat_group(uuid)') is null then
+    raise exception 'Backend Devboard incompleto: leave_chat_group(uuid) ausente (migration 009)';
+  end if;
+  if not exists(
+    select 1 from pg_policies
+    where schemaname='storage'
+      and tablename='objects'
+      and policyname='devboard_chat_media_conversation_delete'
+  ) then
+    raise exception 'Backend Devboard incompleto: policy de exclusão de mídia do Chat ausente (migration 009)';
+  end if;
+  raise notice 'Migration 009 OK: histórico paginado e ações de conversa prontas.';
+end $$;
+

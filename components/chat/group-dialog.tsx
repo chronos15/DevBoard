@@ -4,7 +4,7 @@ import * as React from "react"
 import { Settings2, Trash2, UserPlus, UsersRound } from "lucide-react"
 import type { ChatConversation } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -41,6 +41,7 @@ export function GroupDialog({
   const [selected, setSelected] = React.useState<string[]>(group?.memberIds ?? [currentUserId])
   const [saving, setSaving] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false)
 
   const editing = Boolean(group)
   const canManage = !group || currentUserRole === "admin" || group.createdBy === currentUserId
@@ -83,10 +84,10 @@ export function GroupDialog({
 
   async function removeGroup() {
     if (!group || deleting) return
-    if (!window.confirm(`Excluir o grupo “${group.name ?? "Grupo"}”? As mensagens também serão removidas.`)) return
     setDeleting(true)
     try {
       if (await deleteChatGroup(group.id)) {
+        setConfirmDeleteOpen(false)
         setOpen(false)
         onSaved?.(null)
       }
@@ -167,8 +168,10 @@ export function GroupDialog({
                         <button
                           key={member.id}
                           type="button"
-                          disabled={locked}
-                          onClick={() => toggleMember(member.id)}
+                          aria-disabled={locked}
+                          onClick={() => {
+                            if (!locked) toggleMember(member.id)
+                          }}
                           className={cn(
                             "flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left transition-colors last:border-b-0",
                             !locked && "hover:bg-muted/50",
@@ -176,7 +179,7 @@ export function GroupDialog({
                         >
                           <MemberAvatar member={member} className="size-8 ring-0" />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">{member.name}</span>
+                            <MemberName member={member} className="block truncate text-sm font-medium" />
                             <span className="block text-[0.65rem] text-muted-foreground">
                               {member.id === currentUserId
                                 ? "Você · obrigatório"
@@ -215,7 +218,7 @@ export function GroupDialog({
 
           <DialogFooter className="mx-0 mb-0 justify-between rounded-none sm:justify-between">
             {editing && canManage ? (
-              <Button type="button" variant="destructive" onClick={() => void removeGroup()} loading={deleting} loadingText="Excluindo..." className="gap-1.5">
+              <Button type="button" variant="destructive" onClick={() => setConfirmDeleteOpen(true)} loading={deleting} loadingText="Excluindo..." className="gap-1.5">
                 <Trash2 className="size-3.5" />
                 Excluir grupo
               </Button>
@@ -232,6 +235,23 @@ export function GroupDialog({
                 </Button>
               )}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteOpen} onOpenChange={(next) => !deleting && setConfirmDeleteOpen(next)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir grupo permanentemente?</DialogTitle>
+            <DialogDescription>
+              O grupo “{group?.name ?? "Grupo"}”, as mensagens e as mídias serão removidos para todos os participantes. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={deleting} onClick={() => setConfirmDeleteOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="destructive" loading={deleting} loadingText="Excluindo..." onClick={() => void removeGroup()}>
+              <Trash2 className="size-3.5" /> Excluir permanentemente
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

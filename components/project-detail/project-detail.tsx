@@ -29,7 +29,7 @@ import type { ActivityFilter } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { MemberAvatar, MemberStack } from "@/components/member-avatar"
+import { MemberAvatar, MemberName, MemberStack } from "@/components/member-avatar"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { ActivityItem } from "./activity-item"
@@ -206,7 +206,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             Progresso pessoal
           </p>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {currentMember?.name ?? "Usuário atual"}
+            <MemberName member={currentMember} fallback="Usuário atual" />
           </p>
         </div>
         <MemberAvatar member={currentMember} className="size-8 text-[0.65rem]" />

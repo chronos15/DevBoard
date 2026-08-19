@@ -8,19 +8,22 @@ import {
   Clock3,
   FolderKanban,
   Headphones,
+  LoaderCircle,
+  LogOut,
   MessageCircleMore,
   Paperclip,
   Phone,
   Radio,
   Search,
   Send,
+  Trash2,
   UserRound,
   UsersRound,
   Video,
 } from "lucide-react"
 import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
 import { MeetingDialog } from "@/components/chat/meeting-dialog"
 import { CallRoom } from "@/components/chat/call-room"
@@ -29,6 +32,7 @@ import { AudioRecordButton } from "@/components/chat/audio-record-button"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { cn } from "@/lib/utils"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -231,6 +235,10 @@ export function ChatView() {
     sendChatMessage,
     sendChatAudio,
     sendChatMedia,
+    loadChatHistory,
+    deleteDirectConversation,
+    leaveChatGroup,
+    deleteChatGroup,
     createMeeting,
     answerMeetingInvite,
     joinMeeting,
@@ -251,7 +259,15 @@ export function ChatView() {
   const [mentionRange, setMentionRange] = React.useState<MentionRange | null>(null)
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const [draftMentions, setDraftMentions] = React.useState<ChatMention[]>([])
-  const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
+  const [historyLoading, setHistoryLoading] = React.useState(false)
+  const [historyHasMore, setHistoryHasMore] = React.useState(true)
+  const [historyReady, setHistoryReady] = React.useState(false)
+  const [conversationActionOpen, setConversationActionOpen] = React.useState(false)
+  const [conversationActionBusy, setConversationActionBusy] = React.useState(false)
+  const messagesViewportRef = React.useRef<HTMLDivElement | null>(null)
+  const historyRequestRef = React.useRef(0)
+  const historyLoadingRef = React.useRef(false)
+  const stickToBottomRef = React.useRef(true)
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null)
   const messageInputRef = React.useRef<HTMLTextAreaElement | null>(null)
 
@@ -310,14 +326,54 @@ export function ChatView() {
   const visibleMeetings = myMeetings.filter((meeting) => meeting.title.toLowerCase().includes(q))
 
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [selected?.messages.length])
-
-  React.useEffect(() => {
     if (selectedId && !myConversations.some((conversation) => conversation.id === selectedId)) {
       setSelectedId(null)
     }
   }, [myConversations, selectedId])
+
+  React.useEffect(() => {
+    const requestId = ++historyRequestRef.current
+    setConversationActionOpen(false)
+    setHistoryHasMore(true)
+    setHistoryReady(false)
+    stickToBottomRef.current = true
+
+    if (!selectedId) {
+      historyLoadingRef.current = false
+      setHistoryLoading(false)
+      return
+    }
+
+    historyLoadingRef.current = true
+    setHistoryLoading(true)
+    void loadChatHistory(selectedId).then((result) => {
+      if (historyRequestRef.current !== requestId) return
+      setHistoryHasMore(result?.hasMore ?? false)
+      setHistoryReady(true)
+    }).finally(() => {
+      if (historyRequestRef.current !== requestId) return
+      historyLoadingRef.current = false
+      setHistoryLoading(false)
+    })
+  }, [loadChatHistory, selectedId])
+
+  React.useLayoutEffect(() => {
+    if (!historyReady || !selectedId) return
+    const viewport = messagesViewportRef.current
+    if (!viewport) return
+    viewport.scrollTop = viewport.scrollHeight
+    stickToBottomRef.current = true
+  }, [historyReady, selectedId])
+
+  const selectedLastMessageId = selected?.messages.at(-1)?.id
+
+  React.useEffect(() => {
+    if (!historyReady || !stickToBottomRef.current) return
+    requestAnimationFrame(() => {
+      const viewport = messagesViewportRef.current
+      if (viewport) viewport.scrollTop = viewport.scrollHeight
+    })
+  }, [historyReady, selectedLastMessageId])
 
   React.useEffect(() => {
     setStagedFiles([])
@@ -392,6 +448,53 @@ export function ChatView() {
       if (id) setSelectedId(id)
     } finally {
       setOpeningUserId(null)
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!selected || !historyReady || historyLoadingRef.current || !historyHasMore || selected.messages.length === 0) return
+    const viewport = messagesViewportRef.current
+    const oldest = selected.messages[0]
+    if (!viewport || !oldest) return
+
+    const requestId = historyRequestRef.current
+    const conversationId = selected.id
+    const previousHeight = viewport.scrollHeight
+    const previousTop = viewport.scrollTop
+    historyLoadingRef.current = true
+    setHistoryLoading(true)
+    try {
+      const result = await loadChatHistory(conversationId, oldest.createdAt)
+      if (!result || historyRequestRef.current !== requestId) return
+      setHistoryHasMore(result.hasMore)
+      requestAnimationFrame(() => {
+        if (historyRequestRef.current !== requestId) return
+        const currentViewport = messagesViewportRef.current
+        if (!currentViewport) return
+        currentViewport.scrollTop = previousTop + (currentViewport.scrollHeight - previousHeight)
+      })
+    } finally {
+      if (historyRequestRef.current === requestId) {
+        historyLoadingRef.current = false
+        setHistoryLoading(false)
+      }
+    }
+  }
+
+  async function confirmConversationAction() {
+    if (!selected || conversationActionBusy) return
+    setConversationActionBusy(true)
+    try {
+      const success = selected.kind === "group"
+        ? selectedIsLastGroupMember
+          ? await deleteChatGroup(selected.id)
+          : await leaveChatGroup(selected.id)
+        : await deleteDirectConversation(selected.id)
+      if (!success) return
+      setConversationActionOpen(false)
+      setSelectedId(null)
+    } finally {
+      setConversationActionBusy(false)
     }
   }
 
@@ -498,6 +601,9 @@ export function ChatView() {
   }
 
   const selectedTitle = selected ? conversationTitle(selected, currentUserId, members) : ""
+  const selectedDirectMember = selected?.kind === "direct"
+    ? members.find((member) => selected.memberIds.includes(member.id) && member.id !== currentUserId)
+    : undefined
   const selectedMembers = selected
     ? selected.memberIds
         .map((id) => members.find((member) => member.id === id))
@@ -507,6 +613,7 @@ export function ChatView() {
     selected?.kind === "group" &&
       (currentUserRole === "admin" || selected.createdBy === currentUserId),
   )
+  const selectedIsLastGroupMember = Boolean(selected?.kind === "group" && selected.memberIds.length <= 1)
   const conversationMeeting = selected
     ? myMeetings.find((meeting) => meeting.conversationId === selected.id && !meeting.endedAt)
     : null
@@ -585,7 +692,7 @@ export function ChatView() {
                         >
                           <MemberAvatar member={member} className="size-9 text-[0.65rem] ring-0" />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium">{member.name}</span>
+                            <MemberName member={member} className="block truncate text-xs font-medium" />
                             <span className="block text-[0.62rem] text-muted-foreground">
                               {existing ? "Abrir conversa" : "Iniciar conversa"}
                             </span>
@@ -643,7 +750,7 @@ export function ChatView() {
                         </div>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center justify-between gap-2">
-                            <span className="truncate text-xs font-semibold">{title}</span>
+                            <span className="truncate text-xs font-semibold">{conversation.kind === "direct" ? <MemberName member={members.find((member) => conversation.memberIds.includes(member.id) && member.id !== currentUserId)} fallback={title} /> : title}</span>
                             {last && (
                               <time className="shrink-0 font-mono text-[0.56rem] text-muted-foreground">
                                 {timeLabel(last.createdAt)}
@@ -683,7 +790,7 @@ export function ChatView() {
                   </button>
                   <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="size-9" />
                   <div className="min-w-0 flex-1">
-                    <h1 className="truncate text-sm font-semibold">{selectedTitle}</h1>
+                    <h1 className="truncate text-sm font-semibold">{selected.kind === "direct" ? <MemberName member={selectedDirectMember} fallback={selectedTitle} /> : selectedTitle}</h1>
                     <p className="truncate text-[0.65rem] text-muted-foreground">
                       {conversationMeeting
                         ? "Reunião em andamento"
@@ -732,6 +839,15 @@ export function ChatView() {
                     {selected.kind === "group" && (
                       <GroupDialog group={selected} compact onSaved={(id) => setSelectedId(id)} />
                     )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setConversationActionOpen(true)}
+                      title={selected.kind === "group" ? (selectedIsLastGroupMember ? "Excluir grupo" : "Sair do grupo") : "Excluir conversa"}
+                    >
+                      {selected.kind === "group" && !selectedIsLastGroupMember ? <LogOut className="size-4" /> : <Trash2 className="size-4" />}
+                    </Button>
                   </div>
                 </header>
 
@@ -752,8 +868,25 @@ export function ChatView() {
                   </button>
                 )}
 
-                <div className="min-h-0 flex-1 overflow-y-auto bg-muted/10 px-3 py-4 sm:px-5">
-                  {selected.messages.length === 0 ? (
+                <div
+                  ref={messagesViewportRef}
+                  onScroll={(event) => {
+                    const viewport = event.currentTarget
+                    stickToBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+                    if (!stickToBottomRef.current && viewport.scrollTop <= 72) void loadOlderMessages()
+                  }}
+                  onWheel={(event) => {
+                    if (event.deltaY < 0 && event.currentTarget.scrollTop <= 72) void loadOlderMessages()
+                  }}
+                  className="min-h-0 flex-1 overflow-y-auto bg-muted/10 px-3 py-4 [overflow-anchor:none] sm:px-5"
+                >
+                  {!historyReady ? (
+                    <div className="flex h-full min-h-80 items-center justify-center text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-card px-3 py-1.5 ring-1 ring-foreground/8">
+                        <LoaderCircle className="size-3.5 animate-spin" /> Carregando conversa...
+                      </span>
+                    </div>
+                  ) : selected.messages.length === 0 ? (
                     <div className="flex h-full min-h-80 flex-col items-center justify-center text-center">
                       <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                         {selected.kind === "group" ? <UsersRound className="size-5" /> : <MessageCircleMore className="size-5" />}
@@ -765,6 +898,15 @@ export function ChatView() {
                     </div>
                   ) : (
                     <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                      <div className="flex min-h-5 items-center justify-center">
+                        {historyLoading && historyReady ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-[0.6rem] text-muted-foreground ring-1 ring-foreground/8">
+                            <LoaderCircle className="size-3 animate-spin" /> Carregando mensagens anteriores...
+                          </span>
+                        ) : historyReady && !historyHasMore ? (
+                          <span className="text-[0.58rem] text-muted-foreground/70">Início da conversa</span>
+                        ) : null}
+                      </div>
                       {selected.messages.map((item) => {
                         const sender = members.find((member) => member.id === item.senderId)
                         const own = item.senderId === currentUserId
@@ -773,7 +915,7 @@ export function ChatView() {
                             {!own && <MemberAvatar member={sender} className="size-7 ring-0" />}
                             <div className={cn("max-w-[78%]", own && "text-right")}>
                               {!own && selected.kind === "group" && (
-                                <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground">{sender?.name}</p>
+                                <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>
                               )}
                               <div
                                 className={cn(
@@ -810,7 +952,6 @@ export function ChatView() {
                           </div>
                         )
                       })}
-                      <div ref={messagesEndRef} />
                     </div>
                   )}
                 </div>
@@ -960,7 +1101,7 @@ export function ChatView() {
               <>
                 <div className="border-b border-border px-4 py-4 text-center">
                   <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="mx-auto size-12" />
-                  <p className="mt-2 truncate text-sm font-semibold">{selectedTitle}</p>
+                  <p className="mt-2 truncate text-sm font-semibold">{selected.kind === "direct" ? <MemberName member={selectedDirectMember} fallback={selectedTitle} /> : selectedTitle}</p>
                   <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
                     {selected.kind === "group" ? `${selectedMembers.length} membros` : "Usuário da equipe"}
                   </p>
@@ -1002,7 +1143,7 @@ export function ChatView() {
                           <div key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
                             <MemberAvatar member={member} className="size-8 ring-0" />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-medium">{member.name}</span>
+                              <MemberName member={member} className="block truncate text-xs font-medium" />
                               <span className="block text-[0.6rem] text-muted-foreground">
                                 {member.id === selected.createdBy ? "Criador do grupo" : member.id === currentUserId ? "Você" : "Membro"}
                               </span>
@@ -1057,6 +1198,33 @@ export function ChatView() {
         onFilesChange={setStagedFiles}
         onSend={submitMedia}
       />
+
+      <Dialog open={conversationActionOpen} onOpenChange={(open) => !conversationActionBusy && setConversationActionOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selected?.kind === "group"
+                ? selectedIsLastGroupMember ? "Excluir este grupo permanentemente?" : "Sair deste grupo?"
+                : "Excluir conversa permanentemente?"}
+            </DialogTitle>
+            <DialogDescription>
+              {selected?.kind === "group"
+                ? selectedIsLastGroupMember
+                  ? "Você é o último participante. O grupo, as mensagens e as mídias serão removidos permanentemente. Esta ação não pode ser desfeita."
+                  : "Você deixará de receber mensagens e reuniões deste grupo. O histórico continua disponível para os demais participantes."
+                : "Todas as mensagens e mídias desta conversa serão removidas para os dois participantes. Esta ação não pode ser desfeita."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={conversationActionBusy} onClick={() => setConversationActionOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="destructive" loading={conversationActionBusy} onClick={() => void confirmConversationAction()}>
+              {selected?.kind === "group" && !selectedIsLastGroupMember
+                ? <><LogOut className="size-3.5" /> Sair do grupo</>
+                : <><Trash2 className="size-3.5" /> Excluir permanentemente</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CallRoom
         meeting={activeMeeting}

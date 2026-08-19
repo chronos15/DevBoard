@@ -12,6 +12,7 @@ import { ShieldAlert } from "lucide-react"
 import { ACCESS_ROLE_LABELS, type AccessRole } from "@/lib/types"
 import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { BrowserNotifications } from "@/components/notifications/browser-notifications"
+import { MemberProfileProvider } from "@/components/member-profile-popover"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -70,9 +71,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <StoreProvider>
-      <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
-        {children}
-      </AppShellContent>
+      <MemberProfileProvider>
+        <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
+          {children}
+        </AppShellContent>
+      </MemberProfileProvider>
     </StoreProvider>
   )
 }

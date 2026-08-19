@@ -4,7 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Phone, PhoneOff, Video } from "lucide-react"
 import { useStore } from "@/lib/store"
-import { MemberAvatar } from "@/components/member-avatar"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import {
@@ -78,7 +78,7 @@ export function IncomingCallCenter() {
               {incoming.mode === "video" ? "Chamada de vídeo" : "Chamada de áudio"}
             </DialogTitle>
             <DialogDescription className="max-w-sm text-center">
-              <strong className="font-medium text-foreground">{caller?.name ?? "Usuário"}</strong> está chamando você para
+              <strong className="font-medium text-foreground"><MemberName member={caller} fallback="Usuário" /></strong> está chamando você para
               {incoming.title ? ` “${incoming.title}”` : " uma reunião"}. Você só entra na sala depois de atender.
             </DialogDescription>
           </DialogHeader>

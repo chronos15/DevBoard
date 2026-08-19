@@ -11,6 +11,7 @@ import {
 } from "@/lib/project-utils"
 import type { Member, Project, Subactivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { MemberAvatar, MemberName } from "@/components/member-avatar"
 
 type Row = {
   sub: Subactivity
@@ -132,7 +133,7 @@ export function HoursView() {
                 active={memberFilter === m.id}
                 onClick={() => setMemberFilter(m.id)}
               >
-                {m.name.split(" ")[0]}
+                <MemberName member={m} label={m.name.split(" ")[0]} />
               </FilterChip>
             ))}
           </div>
@@ -160,13 +161,7 @@ export function HoursView() {
                 className="grid grid-cols-1 items-center gap-3 border-t border-border px-5 py-4 md:grid-cols-[1fr_auto_auto_auto_auto] md:gap-4"
               >
                 <div className="flex items-center gap-3">
-                  <span
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[0.7rem] font-semibold text-white"
-                    style={{ backgroundColor: r.member?.color }}
-                    title={r.member?.name}
-                  >
-                    {r.member?.initials}
-                  </span>
+                  <MemberAvatar member={r.member} className="size-8 rounded-lg text-[0.7rem] ring-0" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
                       {r.sub.title}

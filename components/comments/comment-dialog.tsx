@@ -94,25 +94,25 @@ export function CommentDialog({
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="grid max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-xl">
-          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
-            <div className="flex items-start gap-3">
+        <DialogContent className="grid min-w-0 max-h-[88dvh] w-[calc(100dvw-1.5rem)] max-w-[calc(100dvw-1.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-xl">
+          <DialogHeader className="min-w-0 overflow-hidden border-b border-border px-4 py-4 pr-12 sm:px-5">
+            <div className="flex min-w-0 items-start gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <MessageSquare className="size-4" />
               </span>
-              <div className="min-w-0">
-                <DialogTitle className="truncate">{title}</DialogTitle>
-                <DialogDescription className="mt-1">{description}</DialogDescription>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <DialogTitle className="line-clamp-2 max-w-full break-words leading-snug sm:line-clamp-1" title={title}>{title}</DialogTitle>
+                <DialogDescription className="mt-1 line-clamp-2 break-words">{description}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 overflow-y-auto bg-muted/15 px-4 py-4 sm:px-5">
+          <div className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto bg-muted/15 px-4 py-4 sm:px-5">
             {sortedComments.length === 0 ? (
-              <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card px-6 text-center">
+              <div className="flex min-h-52 min-w-0 max-w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-card px-4 text-center sm:px-6">
                 <MessageSquare className="size-5 text-muted-foreground/50" />
-                <p className="mt-3 text-sm font-medium">Nenhum comentário ainda</p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                <p className="mt-3 max-w-full break-words text-sm font-medium">Nenhum comentário ainda</p>
+                <p className="mt-1 max-w-sm break-words text-xs leading-relaxed text-muted-foreground">
                   Qualquer usuário pode participar desta conversa. O comentário fica identificado pelo autor e horário.
                 </p>
               </div>
@@ -147,8 +147,8 @@ export function CommentDialog({
             )}
           </div>
 
-          <div className="border-t border-border bg-card px-4 py-3 sm:px-5">
-            <div className="flex items-end gap-2">
+          <div className="min-w-0 border-t border-border bg-card px-4 py-3 sm:px-5">
+            <div className="flex min-w-0 items-end gap-2">
               <MemberAvatar member={currentUser} className="mb-1 size-8 ring-0" />
               <textarea
                 value={text}
@@ -162,7 +162,7 @@ export function CommentDialog({
                 rows={2}
                 maxLength={1200}
                 placeholder="Escreva um comentário..."
-                className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                className="min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
               />
               <Button type="button" size="icon-lg" onClick={() => { void submit() }} disabled={!text.trim()} loading={sending} title="Enviar comentário">
                 <Send className="size-4" />

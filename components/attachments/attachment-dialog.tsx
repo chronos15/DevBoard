@@ -516,21 +516,21 @@ export function AttachmentDialog({
       </button>
 
       <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving || nextOpen) setOpen(nextOpen) }}>
-        <DialogContent className="grid max-h-[92dvh] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-5xl">
-          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
-            <div className="flex items-start gap-3">
+        <DialogContent className="grid min-w-0 max-h-[92dvh] w-[calc(100dvw-1.5rem)] max-w-[calc(100dvw-1.5rem)] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-5xl">
+          <DialogHeader className="min-w-0 overflow-hidden border-b border-border px-4 py-4 pr-12 sm:px-5">
+            <div className="flex min-w-0 items-start gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Paperclip className="size-4" />
               </span>
-              <div className="min-w-0">
-                <DialogTitle className="truncate">{title}</DialogTitle>
-                <DialogDescription className="mt-1">{description}</DialogDescription>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <DialogTitle className="line-clamp-2 max-w-full break-words leading-snug sm:line-clamp-1" title={title}>{title}</DialogTitle>
+                <DialogDescription className="mt-1 line-clamp-2 break-words">{description}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 overflow-hidden border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-1.5">
                 {([
                   ["active", `Ativos ${activeCount}`],
@@ -553,7 +553,7 @@ export function AttachmentDialog({
                 ))}
               </div>
 
-              <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+              <div className="min-w-0 flex flex-col items-stretch gap-1.5 sm:items-end">
                 <div className="flex items-center gap-2">
                   <input
                     ref={inputRef}
@@ -576,13 +576,13 @@ export function AttachmentDialog({
                     {pendingUploads.length > 0 ? "Trocar seleção" : "Adicionar arquivos"}
                   </Button>
                 </div>
-                <span className="flex items-center justify-center gap-1 text-[0.62rem] text-muted-foreground sm:justify-end">
-                  <Clipboard className="size-3" />
+                <span className="flex min-w-0 items-start justify-center gap-1 break-words text-center text-[0.62rem] leading-relaxed text-muted-foreground sm:items-center sm:justify-end sm:text-right">
+                  <Clipboard className="mt-0.5 size-3 shrink-0 sm:mt-0" />
                   Com este modal aberto, use Ctrl+V para colar mídia, arquivo ou texto
                 </span>
               </div>
             </div>
-            <p className={cn("mt-2 text-[0.62rem]", error ? "text-destructive" : "text-muted-foreground") }>
+            <p className={cn("mt-2 max-w-full break-words text-[0.62rem] leading-relaxed", error ? "text-destructive" : "text-muted-foreground") }>
               {error || (pendingUploads.length > 0
                 ? "Revise o preview abaixo. Os anexos só serão adicionados após sua confirmação."
                 : "Arquivos ficam ativos por padrão e não podem ser excluídos; somente marcados como inativos. Limite do Supabase Storage: 50 MB por arquivo.")}
@@ -590,7 +590,7 @@ export function AttachmentDialog({
           </div>
 
           {pendingUploads.length > 0 ? (
-            <div className="min-h-0 overflow-y-auto">
+            <div className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto">
               <div className="border-b border-border bg-primary/[0.035] px-4 py-3 sm:px-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -643,8 +643,8 @@ export function AttachmentDialog({
                   {pendingSelected && (
                     <div className="space-y-4">
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="max-w-full truncate text-sm font-semibold" title={pendingSelected.name}>{pendingSelected.name}</h3>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <h3 className="min-w-0 max-w-full flex-1 truncate text-sm font-semibold" title={pendingSelected.name}>{pendingSelected.name}</h3>
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.62rem] font-medium text-primary">Aguardando confirmação</span>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -661,8 +661,8 @@ export function AttachmentDialog({
               </div>
             </div>
           ) : (
-          <div className="min-h-0 overflow-y-auto md:grid md:grid-cols-[285px_minmax(0,1fr)] md:overflow-hidden">
-            <div className="border-b border-border p-3 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
+          <div className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto md:grid md:grid-cols-[285px_minmax(0,1fr)] md:overflow-hidden">
+            <div className="min-w-0 border-b border-border p-3 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
               {filtered.length === 0 ? (
                 <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border px-5 text-center">
                   <Paperclip className="size-5 text-muted-foreground/45" />
@@ -699,7 +699,7 @@ export function AttachmentDialog({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-xs font-medium" title={attachment.name}>{attachment.name}</span>
-                          <span className="mt-1 flex items-center gap-1.5 text-[0.6rem] text-muted-foreground">
+                          <span className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden text-[0.6rem] text-muted-foreground">
                             {uploader && <MemberAvatar member={uploader} className="size-4 text-[0.4rem] ring-0" />}
                             <MemberName member={uploader} className="truncate" fallback="Usuário" />
                             <span>·</span>
@@ -720,13 +720,13 @@ export function AttachmentDialog({
               )}
             </div>
 
-            <div className="min-h-0 p-4 md:overflow-y-auto sm:p-5">
+            <div className="min-h-0 min-w-0 overflow-x-hidden p-4 md:overflow-y-auto sm:p-5">
               {selected ? (
                 <div className="space-y-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold" title={selected.name}>{selected.name}</h3>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 max-w-full flex-1 truncate text-sm font-semibold" title={selected.name}>{selected.name}</h3>
                         <span className={cn(
                           "rounded-full px-2 py-0.5 text-[0.62rem] font-medium",
                           selected.active ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground",
@@ -734,7 +734,7 @@ export function AttachmentDialog({
                           {selected.active ? "Ativo" : "Inativo"}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 max-w-full break-words text-xs leading-relaxed text-muted-foreground">
                         {kindLabel(selected.kind)} · {formatBytes(selected.size)} · enviado em {formatDate(selected.createdAt)}
                       </p>
                     </div>

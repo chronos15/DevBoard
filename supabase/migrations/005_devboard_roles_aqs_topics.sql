@@ -408,11 +408,27 @@ begin
     values(v_workspace,v_project,v_activity,p_subactivity_id,'awaiting',p_actor_id) returning id into v_review;
   end if;
   perform public.add_project_log(v_project,'aqs-submitted','Subatividade enviada para AQS',format('“%s” entrou na fila de análise.',v_sub_title),p_actor_id);
+  -- Notifica individualmente TODOS os usuários ativos com role AQS.
+  -- Administradores continuam com acesso à fila, mas não entram nesta distribuição
+  -- automática a menos que sua role efetiva seja AQS.
   for v_recipient in
-    select wm.user_id from public.workspace_members wm
-    where wm.workspace_id=v_workspace and wm.active and wm.role in ('aqs','admin') and wm.user_id<>p_actor_id
+    select wm.user_id
+    from public.workspace_members wm
+    where wm.workspace_id=v_workspace
+      and wm.active
+      and wm.role='aqs'::public.workspace_role
+      and wm.user_id<>p_actor_id
   loop
-    perform public.push_notification(v_recipient,p_actor_id,'aqs-awaiting','Nova tarefa aguardando AQS',v_sub_title,v_project,v_activity,p_subactivity_id);
+    perform public.push_notification(
+      v_recipient,
+      p_actor_id,
+      'aqs-awaiting',
+      'Nova tarefa aguardando AQS',
+      v_sub_title,
+      v_project,
+      v_activity,
+      p_subactivity_id
+    );
   end loop;
   return v_review;
 end;

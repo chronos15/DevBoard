@@ -38,8 +38,9 @@ Nunca coloque `service_role`/secret key no front-end.
 5. Depois execute `supabase/migrations/002_devboard_call_invites.sql`.
 6. Execute `supabase/migrations/003_devboard_chat_audio.sql`.
 7. Execute `supabase/migrations/004_devboard_chat_media_attachments.sql`.
-8. Execute `supabase/migrations/005_devboard_roles_aqs_topics.sql`.
-9. As migrations são incrementais. A migration 005 adiciona valores de enum antes do bloco transacional e, em seguida, aplica tabelas/RPCs/policies dentro de `BEGIN`/`COMMIT`.
+8. Execute a migration de Roles/AQS/Tópicos conforme a sequência já aplicada no seu ambiente.
+9. Execute `supabase/migrations/006_devboard_notify_all_aqs.sql` para garantir que toda entrada em **Aguardando AQS** notifique todos os usuários ativos com role AQS.
+10. As migrations são incrementais. A migration 005 adiciona valores de enum antes do bloco transacional e, em seguida, aplica tabelas/RPCs/policies dentro de `BEGIN`/`COMMIT`.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 

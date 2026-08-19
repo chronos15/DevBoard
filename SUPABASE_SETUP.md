@@ -1,0 +1,273 @@
+# Devboard — configuração do Supabase
+
+Esta versão remove os mocks de negócio e usa o Supabase como backend da aplicação.
+
+## O que está no backend
+
+A migration `supabase/migrations/001_devboard_full_backend.sql` provisiona:
+
+- Supabase Auth integrado ao perfil da aplicação;
+- 21 tabelas de domínio;
+- RLS em todas as tabelas acessadas pelo cliente;
+- RPCs transacionais para regras críticas;
+- Storage privado para anexos (`cadence-attachments`);
+- Storage público somente para avatares (`cadence-avatars`);
+- Realtime para sincronização de projetos, horas, notificações, chat e reuniões;
+- canais Realtime privados para sinalização WebRTC;
+- logs de auditoria com usuário/data/hora;
+- notificações persistentes;
+- sessões reais de trabalho (`work_sessions`) para histórico de horas.
+
+## 1. Criar/configurar o projeto Supabase
+
+Crie um projeto no Supabase e copie, em **Connect / API Keys**:
+
+- Project URL;
+- Publishable key (`sb_publishable_...`).
+
+Nunca coloque `service_role`/secret key no front-end.
+
+## 2. Executar a migration
+
+### Opção A — SQL Editor
+
+1. Abra **SQL Editor** no Supabase.
+2. Crie uma nova query.
+3. Cole o conteúdo de `supabase/migrations/001_devboard_full_backend.sql`.
+4. Execute a query inteira.
+5. Depois execute `supabase/migrations/002_devboard_call_invites.sql`.
+6. As migrations usam transação (`BEGIN`/`COMMIT`): se uma etapa falhar, não devem ficar parcialmente aplicadas.
+
+Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
+
+### Opção B — Supabase CLI
+
+Com o projeto vinculado:
+
+```bash
+supabase link --project-ref SEU_PROJECT_REF
+supabase db push
+```
+
+> **Compatibilidade:** os IDs internos dos buckets e algumas policies ainda usam o prefixo `cadence-` porque podem já existir em bancos provisionados anteriormente. Eles não aparecem na identidade visual e foram preservados para evitar quebrar anexos/avatares existentes.
+
+## Identidade Devboard
+
+O projeto usa o ícone oficial em `public/devboard-icon.svg` e versões PNG 32/64/180/192/512. Ele é aplicado como favicon, Apple Touch Icon, manifesto/PWA, notificações do navegador, sidebar e login.
+
+## 3. Configurar variáveis da aplicação
+
+Copie `.env.example` para `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://SEU-PROJETO.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_SEU_TOKEN
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=false
+```
+
+Em produção, `NEXT_PUBLIC_APP_URL` deve ser o domínio HTTPS real.
+
+## 4. Auth / URLs
+
+Em **Authentication > URL Configuration** configure o Site URL e permita, no mínimo:
+
+Desenvolvimento:
+
+```text
+http://localhost:3000/auth/callback
+```
+
+Produção:
+
+```text
+https://SEU-DOMINIO/auth/callback
+```
+
+Cadastro por e-mail, confirmação de e-mail, OAuth e recuperação de senha usam o callback SSR/PKCE.
+
+### Google OAuth
+
+Só ative:
+
+```env
+NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true
+```
+
+após configurar o provider Google no Supabase Auth e as URLs OAuth correspondentes. Caso contrário, o botão Google permanece oculto.
+
+## 5. Usuários e permissões
+
+Esta fase do produto usa **um workspace Devboard**.
+
+- o primeiro usuário cadastrado é criado como `admin`;
+- os demais entram como `member`;
+- administradores podem promover/rebaixar membros em Configurações;
+- a migration serializa o primeiro cadastro para evitar dois administradores iniciais por condição de corrida;
+- se o sistema for interno, depois de cadastrar/provisionar a equipe, desabilite cadastro público no Supabase Auth.
+
+## 6. Regras garantidas pelo banco
+
+As regras abaixo não dependem apenas da UI:
+
+- um usuário só pode ter **uma subatividade em execução**;
+- iniciar uma segunda subatividade do mesmo responsável pausa a anterior;
+- sessões de trabalho são abertas/fechadas no PostgreSQL;
+- membro comum só altera suas próprias subatividades;
+- `Concluída` e `Cancelada` são estados terminais para membro comum;
+- administrador pode reabrir um estado terminal;
+- atividade só pode ser excluída quando não possui subatividades;
+- versionamento com pendências exige confirmação explícita (`allow_pending`);
+- anexos não possuem operação de exclusão na API da aplicação: ficam Ativos/Inativos;
+- comentários e alterações de anexos entram no log do projeto;
+- conversas diretas usam uma chave canônica/única para evitar duplicidade em chamadas concorrentes;
+- somente criador do grupo ou administrador gerencia membros do grupo;
+- somente criador da reunião ou administrador encerra a reunião para todos.
+- convidado de chamada fica em `pending` e **não entra no WebRTC** até clicar em Atender/Entrar;
+- ao recusar, o membro passa para `declined`;
+- ao sair, o membro passa para `left`;
+- quando o último usuário sai, `leave_meeting` encerra a reunião atomicamente no PostgreSQL;
+- um heartbeat protege o estado da sala e o reconciliador via Supabase Cron encerra reuniões abandonadas após fechamento abrupto do navegador.
+
+## 7. Anexos / Storage
+
+O bucket `cadence-attachments` é privado e usa URLs assinadas para leitura.
+
+Caminho físico:
+
+```text
+<workspace>/<project>/<uploader>/<arquivo>
+```
+
+O cliente pode remover fisicamente um upload apenas enquanto a gravação do metadado falhou. Depois que o anexo existe na tabela `attachments`, a policy bloqueia exclusão física pela aplicação.
+
+Arquivos textuais/SQL colados podem ser armazenados como conteúdo textual; arquivos binários são enviados ao Storage.
+
+Limites configurados:
+
+- anexos: 50 MB por arquivo;
+- avatar: 5 MB e MIME de imagem.
+
+## 8. Realtime
+
+A migration adiciona as tabelas de uso geral à publication `supabase_realtime` para atualizar a UI entre usuários/dispositivos.
+
+As salas WebRTC usam canal privado:
+
+```text
+meeting:<meeting_uuid>
+```
+
+A policy de `realtime.messages` só permite Broadcast/Presence para participantes de uma reunião ativa cujo status em `meeting_members` seja `joined`.
+
+O Supabase faz a sinalização. A mídia continua WebRTC.
+
+### TURN obrigatório para confiabilidade entre dispositivos/redes
+
+STUN permite descobrir rotas diretas, mas não consegue atravessar todos os NATs/CGNATs/firewalls. O Devboard agora tenta obter credenciais TURN de curta duração pela Edge Function `webrtc-ice-servers`. Se a função não estiver implantada/configurada, a chamada continua com STUN público, porém a própria sala mostra o aviso **Somente STUN**.
+
+A implementação fornecida usa o serviço TURN gerenciado da Cloudflare, sem servidor próprio. O segredo fica somente na Supabase Edge Function; nunca coloque token TURN em `NEXT_PUBLIC_*`.
+
+1. Crie uma TURN key no Cloudflare Realtime TURN.
+2. Grave os segredos no Supabase:
+
+```bash
+supabase secrets set CLOUDFLARE_TURN_KEY_ID=SEU_KEY_ID
+supabase secrets set CLOUDFLARE_TURN_API_TOKEN=SEU_API_TOKEN
+supabase secrets set CLOUDFLARE_TURN_TTL=86400
+```
+
+3. Faça deploy da função:
+
+```bash
+supabase functions deploy webrtc-ice-servers
+```
+
+No Windows, você também pode usar o script incluído:
+
+```powershell
+.\scripts\deploy_webrtc_turn.ps1 -ProjectRef "SEU_PROJECT_REF" -TurnKeyId "SEU_KEY_ID" -TurnApiToken "SEU_API_TOKEN"
+```
+
+4. Abra uma reunião e confira em **Áudio e vídeo > Conectividade WebRTC** se aparece **TURN disponível**. Em uma conexão que precisou de relay, a rota do participante aparece como **TURN relay**.
+
+O cliente também chama `supabase.realtime.setAuth()` antes de entrar no canal privado, mantém candidatos ICE recebidos antes do SDP em fila e executa ICE restart quando a conexão falha/desconecta.
+
+## 9. Notificações de chamadas no navegador
+
+O Devboard registra `public/devboard-sw.js` como Service Worker e usa a Notifications API do navegador.
+
+- quando uma chamada é criada, o Supabase grava uma notificação `meeting-invite`;
+- o destinatário recebe o modal interno **Atender / Recusar**;
+- se ele concedeu permissão ao Chrome, recebe também a notificação nativa do navegador enquanto o Devboard estiver aberto ou em segundo plano;
+- clicar na notificação apenas abre o Devboard; a entrada na sala continua exigindo ação explícita do usuário;
+- notificações do navegador exigem HTTPS em produção (localhost funciona em desenvolvimento).
+
+A notificação nativa desta etapa não é Web Push com o navegador totalmente fechado. Para isso, futuramente pode-se adicionar Push API + VAPID/Edge Function sem alterar o fluxo de convite do banco.
+
+## 10. Dependências
+
+A versão está preparada para:
+
+```text
+@supabase/ssr ^0.12.4
+@supabase/supabase-js ^2.112.3
+```
+
+O `pnpm-lock.yaml` antigo foi removido porque não continha as dependências Supabase e faria instalações com `--frozen-lockfile` falharem. Depois de restaurar acesso ao registry, gere um lock novo com seu gerenciador escolhido.
+
+Por exemplo:
+
+```bash
+npm install
+npm run build
+npm run dev
+```
+
+ou, se a equipe usa pnpm:
+
+```bash
+pnpm install
+pnpm build
+pnpm dev
+```
+
+## 11. Checklist pós-migration
+
+1. Execute `supabase/verify_backend.sql`.
+2. Crie o primeiro usuário e confirme que aparece como Administrador.
+3. Crie um segundo usuário e confirme que aparece como Membro.
+4. Em duas sessões/navegadores, atribua um projeto/atividade/subatividade e confirme a notificação em tempo real.
+5. Inicie uma subatividade e confira uma linha aberta em `work_sessions`.
+6. Pause-a e confira `ended_at` e `duration_seconds` preenchidos.
+7. Tente iniciar duas subatividades do mesmo responsável; somente uma deve permanecer `in-progress`.
+8. Envie um anexo e confirme que existe em Storage + `attachments`.
+9. Marque o anexo como inativo; ele deve permanecer armazenado.
+10. Teste comentário e confira o registro em `project_logs`.
+11. Abra duas sessões no Chat e valide mensagens em tempo real.
+12. Configure/deploy a Edge Function TURN e confirme **TURN disponível** dentro da sala.
+13. Crie uma chamada entre dois usuários: o destinatário deve permanecer fora da sala até clicar em **Atender**.
+14. Teste desktop em Wi‑Fi ↔ celular em 4G/5G; vídeo e áudio devem atingir `connected`. Se a rede exigir relay, confirme **TURN relay** no diagnóstico.
+15. Ligue/desligue a câmera depois da conexão e confirme que o vídeo aparece no outro dispositivo sem nova entrada na sala.
+16. Fale dos dois lados; se o Chrome bloquear autoplay no mobile, deve aparecer o botão **Ativar áudio** e o clique deve liberar a reprodução.
+17. Desative Wi‑Fi do celular durante a chamada, aguarde a troca para rede móvel e confirme tentativa automática de ICE restart.
+18. Recuse uma chamada e confirme `meeting_members.status = 'declined'`.
+19. Atenda e depois saia com os dois usuários; confirme que `meetings.ended_at` foi preenchido ao sair o último participante.
+20. Conceda permissão de notificação no Chrome e valide a notificação nativa de chamada.
+21. Rode **Database > Security Advisor** e **Performance Advisor** no Dashboard antes de produção.
+
+## 12. Observação sobre build neste pacote
+
+O código foi validado estaticamente no ambiente de geração, mas o registry npm não estava acessível (`EAI_AGAIN registry.npmjs.org`). Por isso não foi possível instalar as novas dependências e executar um `next build` real aqui. O lock antigo foi removido para não mascarar esse problema. Faça `npm install && npm run build` no ambiente com internet antes do deploy.
+
+## Chat · mensagens de áudio
+
+Se o backend Devboard já está provisionado com as migrations anteriores, execute também:
+
+```text
+supabase/migrations/003_devboard_chat_audio.sql
+```
+
+Essa migration é incremental: mantém as mensagens existentes, adiciona os metadados de áudio em `chat_messages`, cria a RPC `send_chat_audio_message` e o bucket privado `devboard-chat-media`.
+
+O áudio do chat nunca é público. Somente usuários que pertencem à conversa podem gerar URL assinada/leitura pelo Storage.

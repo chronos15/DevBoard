@@ -11,6 +11,8 @@ import {
   FolderKanban,
   GripVertical,
   List,
+  Search,
+  SlidersHorizontal,
   RotateCcw,
   ShieldCheck,
   UserRound,
@@ -88,6 +90,8 @@ export function AnalysisView() {
   } = useStore()
 
   const [viewMode, setViewMode] = React.useState<"kanban" | "list">("kanban")
+  const [filtersOpen, setFiltersOpen] = React.useState(false)
+  const [search, setSearch] = React.useState("")
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
   const [projectFilter, setProjectFilter] = React.useState("all")
@@ -129,9 +133,12 @@ export function AnalysisView() {
     return members.filter((member) => ids.has(member.id)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
   }, [aqsReviews, members])
 
+  const normalizedSearch = search.trim().toLowerCase()
+
   const filteredReviews = React.useMemo(() => aqsReviews.filter((review) => {
-    const { sub } = locate(review)
+    const { project, activity, sub, developer, aqs } = locate(review)
     if (!sub) return false
+    if (normalizedSearch && !`${project?.name ?? ""} ${activity?.title ?? ""} ${sub.title} ${developer?.name ?? ""} ${aqs?.name ?? ""}`.toLowerCase().includes(normalizedSearch)) return false
     if (projectFilter !== "all" && review.projectId !== projectFilter) return false
     if (developerFilter !== "all" && sub.assigneeId !== developerFilter) return false
     if (responsibleFilter !== "all" && review.assignedAqsId !== responsibleFilter) return false
@@ -139,9 +146,10 @@ export function AnalysisView() {
     if (dateFrom && created < dateFrom) return false
     if (dateTo && created > dateTo) return false
     return true
-  }), [aqsReviews, dateFrom, dateTo, developerFilter, locate, projectFilter, responsibleFilter])
+  }), [aqsReviews, dateFrom, dateTo, developerFilter, locate, normalizedSearch, projectFilter, responsibleFilter])
 
-  const hasFilters = Boolean(dateFrom || dateTo || projectFilter !== "all" || developerFilter !== "all" || responsibleFilter !== "all")
+  const activeFilterCount = [dateFrom, dateTo, projectFilter !== "all", developerFilter !== "all", responsibleFilter !== "all"].filter(Boolean).length
+  const hasFilters = activeFilterCount > 0
   const active = filteredReviews.filter((item) => item.status === "awaiting" || item.status === "evaluating").length
   const evaluating = filteredReviews.filter((item) => item.status === "evaluating").length
   const completed = filteredReviews.filter((item) => item.status === "completed").length
@@ -254,43 +262,57 @@ export function AnalysisView() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-border bg-card p-3 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="sm:col-span-2 lg:col-span-1">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Data</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <input aria-label="Data inicial" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-2 text-xs outline-none focus:border-ring" />
-                <input aria-label="Data final" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-2 text-xs outline-none focus:border-ring" />
-              </div>
-            </div>
-            <label className="min-w-0">
-              <span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span>
-              <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os projetos</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-            </label>
-            <label className="min-w-0">
-              <span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><UserRound className="size-3.5" />Desenvolvedor</span>
-              <select value={developerFilter} onChange={(event) => setDeveloperFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{developerOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
-            </label>
-            <label className="min-w-0">
-              <span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><ShieldCheck className="size-3.5" />Responsável AQS</span>
-              <select value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os responsáveis</option>{responsibleOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
-            </label>
-            <div className="flex items-end">
-              {hasFilters ? <Button variant="ghost" className="w-full" onClick={clearFilters}><X className="size-3.5" />Limpar filtros</Button> : <div className="hidden lg:block" />}
-            </div>
+      <section className="rounded-2xl border border-border bg-card p-2.5 sm:p-3">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 focus-within:border-ring">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar projeto, atividade, subatividade ou usuário..."
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {search && <button type="button" onClick={() => setSearch("")} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Limpar busca"><X className="size-3.5" /></button>}
           </div>
 
-          <div className="flex shrink-0 items-center rounded-xl bg-muted p-1">
-            <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
-            <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center rounded-xl bg-muted p-1 sm:flex-none">
+              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
+              <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
+            </div>
+            <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
+              <SlidersHorizontal className="size-4" />
+              {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.58rem] font-semibold text-primary-foreground">{activeFilterCount}</span>}
+            </button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/70 pt-3 text-[0.68rem] text-muted-foreground">
-          <span><strong className="font-semibold text-foreground">{filteredReviews.length}</strong> análise(s) encontrada(s)</span>
-          {responsibleFilter !== "all" && <span>Responsável já atribuído</span>}
-        </div>
+        <p className="mt-2 px-0.5 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{filteredReviews.length}</strong> análise(s) encontrada(s)</p>
       </section>
+
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Filtros da análise</DialogTitle>
+            <DialogDescription>Refine a fila por período, projeto, desenvolvedor e responsável AQS.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Período</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input aria-label="Data inicial" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data final" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+              </div>
+            </div>
+            <label className="min-w-0 sm:col-span-2"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os projetos</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Desenvolvedor</span><select value={developerFilter} onChange={(event) => setDeveloperFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{developerOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ShieldCheck className="size-3.5" />Responsável AQS</span><select value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os responsáveis</option>{responsibleOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>Limpar filtros</Button>
+            <Button type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         {[

@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Send,
+  SlidersHorizontal,
   UserRound,
   Video,
   X,
@@ -191,6 +192,7 @@ export function TopicsView() {
   const [selected, setSelected] = React.useState<SupportTopic | null>(null)
   const [search, setSearch] = React.useState("")
   const [viewMode, setViewMode] = React.useState<"kanban" | "list">("kanban")
+  const [filtersOpen, setFiltersOpen] = React.useState(false)
   const [statusFilter, setStatusFilter] = React.useState<"all" | SupportTopicStatus>("all")
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
@@ -237,7 +239,8 @@ export function TopicsView() {
     return true
   }), [analystFilter, creatorFilter, dateFrom, dateTo, normalized, projectFilter, statusFilter, supportTopics])
 
-  const hasFilters = Boolean(search || dateFrom || dateTo || statusFilter !== "all" || creatorFilter !== "all" || analystFilter !== "all" || projectFilter !== "all")
+  const activeFilterCount = [dateFrom, dateTo, statusFilter !== "all", creatorFilter !== "all", analystFilter !== "all", projectFilter !== "all"].filter(Boolean).length
+  const hasFilters = activeFilterCount > 0
 
   React.useEffect(() => {
     if (!selected) return
@@ -281,7 +284,6 @@ export function TopicsView() {
   }
 
   function clearFilters() {
-    setSearch("")
     setStatusFilter("all")
     setDateFrom("")
     setDateTo("")
@@ -294,29 +296,53 @@ export function TopicsView() {
     <div className="min-w-0 space-y-5 sm:space-y-6">
       <PageHeading eyebrow="Suporte e demandas" title="Tópicos" subtitle="Central de solicitações com evidências, triagem e conversão direta em atividade de desenvolvimento." action={canCreate ? <Button onClick={() => setNewOpen(true)}><Plus className="size-4" /> Novo tópico</Button> : undefined} />
 
-      <section className="rounded-2xl border border-border bg-card p-3 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <label className="min-w-0 sm:col-span-2 lg:col-span-1 xl:col-span-2">
-              <span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><Search className="size-3.5" />Buscar</span>
-              <div className="flex h-10 min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 focus-within:border-ring"><Search className="size-3.5 shrink-0 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ordem, título ou descrição..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
-            </label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={analystFilter} onChange={(event) => setAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+      <section className="rounded-2xl border border-border bg-card p-2.5 sm:p-3">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 focus-within:border-ring">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ordem, título ou descrição..." className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+            {search && <button type="button" onClick={() => setSearch("")} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Limpar busca"><X className="size-3.5" /></button>}
           </div>
 
-          <div className="flex shrink-0 items-center rounded-xl bg-muted p-1"><button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button><button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button></div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center rounded-xl bg-muted p-1 sm:flex-none">
+              <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
+              <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
+            </div>
+            <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
+              <SlidersHorizontal className="size-4" />
+              {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.58rem] font-semibold text-primary-foreground">{activeFilterCount}</span>}
+            </button>
+          </div>
         </div>
-
-        <div className="mt-3 grid grid-cols-1 gap-2 border-t border-border/70 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:max-w-2xl">
-          <div><div className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Data inicial</div><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></div>
-          <div><div className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Data final</div><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></div>
-          <div className="flex items-end">{hasFilters && <Button variant="ghost" className="w-full sm:w-auto" onClick={clearFilters}><X className="size-3.5" />Limpar</Button>}</div>
-        </div>
-        <p className="mt-3 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{visibleTopics.length}</strong> tópico(s) encontrado(s)</p>
+        <p className="mt-2 px-0.5 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{visibleTopics.length}</strong> tópico(s) encontrado(s)</p>
       </section>
+
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Filtros dos tópicos</DialogTitle>
+            <DialogDescription>Refine a fila por status, período, solicitante, analista e projeto.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={analystFilter} onChange={(event) => setAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <div className="sm:col-span-2">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Período</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input aria-label="Data inicial" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data final" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>Limpar filtros</Button>
+            <Button type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {viewMode === "kanban" ? (
         <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain pb-3">

@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils"
 const columns: Array<{ status: SupportTopicDisplayStatus; label: string; tone: string; helper: string }> = [
   { status: "open", label: "Aberto", tone: "bg-chart-2", helper: "Aguardando triagem" },
   { status: "analyzing", label: "Em análise", tone: "bg-chart-3", helper: "AQS / DEV / Admin" },
-  { status: "sent-to-dev", label: "Enviado ao DEV", tone: "bg-chart-5", helper: "Convertido em atividade" },
+  { status: "sent-to-dev", label: "Enviado ao DEV", tone: "bg-primary", helper: "Convertido em atividade" },
   { status: "completed-dev", label: "Concluído Dev.", tone: "bg-success", helper: "Atividade concluída pelo desenvolvimento" },
   { status: "revoked", label: "Revogado", tone: "bg-destructive", helper: "Devolvido ao solicitante" },
 ]
@@ -71,7 +71,7 @@ function dateKey(value: string) {
 
 function statusClass(status: SupportTopicDisplayStatus) {
   if (status === "completed-dev") return "bg-success/15 text-success"
-  if (status === "sent-to-dev") return "bg-chart-5/15 text-chart-5"
+  if (status === "sent-to-dev") return "border border-primary/25 bg-primary/10 text-foreground"
   if (status === "revoked") return "bg-destructive/10 text-destructive"
   if (status === "analyzing") return "bg-chart-3/15 text-chart-3"
   return "bg-chart-2/15 text-chart-2"
@@ -497,7 +497,7 @@ export function TopicsView() {
       <NewTopicDialog open={newOpen} onOpenChange={setNewOpen} />
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null) }}>
-        <DialogContent className="flex max-h-[96dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 sm:w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] lg:h-[min(90dvh,880px)] lg:w-[94vw] lg:max-w-[1480px]">
+        <DialogContent className="flex max-h-[95dvh] w-[calc(100vw-1rem)] max-w-[1480px] flex-col overflow-hidden p-0 sm:w-[calc(100vw-2rem)] xl:w-[calc(100vw-4rem)] lg:h-[min(88dvh,860px)]">
           {selected && (
             <>
               <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-12 sm:px-5 lg:px-6">
@@ -509,14 +509,14 @@ export function TopicsView() {
                       {columns.find((column) => column.status === topicStatus(selected))?.label}
                     </span>
                   </div>
-                  <DialogTitle className="mt-1.5 break-words text-lg leading-snug sm:text-xl">{selected.title}</DialogTitle>
-                  <DialogDescription className="mt-1 max-w-4xl break-words text-xs leading-relaxed sm:line-clamp-2 sm:text-sm">{selected.description}</DialogDescription>
+                  <DialogTitle className="mt-1.5 truncate text-lg leading-snug sm:text-xl">{selected.title}</DialogTitle>
+                  <DialogDescription className="mt-1 line-clamp-2 max-w-4xl text-xs leading-relaxed sm:text-sm">{selected.description}</DialogDescription>
                 </div>
               </DialogHeader>
 
-              <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-background/20 lg:overflow-y-hidden">
-                <div className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-col gap-4 p-3 sm:p-5 lg:h-full lg:p-6">
-                  <div className="grid min-w-0 shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_320px]">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-background/20">
+                <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5 lg:p-6">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_320px]">
                     <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
                       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Solicitante</p>
                       <div className="mt-4 flex items-center gap-3">
@@ -544,7 +544,7 @@ export function TopicsView() {
                           {columns.find((column) => column.status === topicStatus(selected))?.label}
                         </span>
                       </div>
-                      <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                      <div className="mt-4 grid grid-cols-2 gap-3">
                         <div>
                           <p className="text-[0.62rem] text-muted-foreground">Criado</p>
                           <p className="mt-1 text-xs font-medium">{formatDateTime(selected.createdAt)}</p>
@@ -556,48 +556,38 @@ export function TopicsView() {
                       </div>
                     </section>
 
-                    <section className="min-w-0 rounded-2xl border border-border bg-card/65 p-4 shadow-sm md:col-span-2 xl:col-span-1 xl:row-span-2">
-                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ações</p>
-                      <div className="mt-4 grid gap-2">
+                    <section className="rounded-2xl border border-border bg-card/65 p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ações</p>
+                        <span className="text-[0.62rem] text-muted-foreground">{selected.attachments.length} evidência{selected.attachments.length === 1 ? "" : "s"}</span>
+                      </div>
+                      <div className="mt-3 grid gap-2">
                         {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") ? (
-                          <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="group flex w-full items-center justify-between rounded-2xl border border-border bg-background/50 p-3 text-left transition-colors hover:bg-muted">
+                          <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="group flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5 text-left transition-colors hover:bg-muted">
                             <span className="min-w-0">
-                              <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Atividade vinculada</span>
-                              <span className="mt-1.5 block text-sm font-semibold">Abrir no projeto</span>
-                              <span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Acompanhar a execução do DEV</span>
+                              <span className="block truncate text-sm font-semibold">Abrir atividade vinculada</span>
+                              <span className="mt-0.5 block truncate text-[0.66rem] text-muted-foreground">Acompanhar execução no projeto</span>
                             </span>
-                            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><ArrowRight className="size-4" /></span>
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><ArrowRight className="size-3.5" /></span>
                           </button>
                         ) : null}
 
                         {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" ? (
-                          <>
-                            {selected.status === "open" ? <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button> : null}
-                            <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-                              <Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
-                              <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar</Button>
-                            </div>
-                          </>
+                          <div className="grid grid-cols-2 gap-2">
+                            {selected.status === "open" ? <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)} className="col-span-2">Iniciar análise</Button> : null}
+                            <Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
+                            <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar</Button>
+                          </div>
                         ) : null}
 
-                        <div className="rounded-2xl border border-dashed border-border/80 bg-background/40 p-3">
-                          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Resumo</p>
-                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                            <div className="rounded-xl bg-muted/40 p-3">
-                              <p className="text-[0.62rem] text-muted-foreground">Evidências</p>
-                              <p className="mt-1 text-base font-semibold">{selected.attachments.length}</p>
-                            </div>
-                            <div className="rounded-xl bg-muted/40 p-3">
-                              <p className="text-[0.62rem] text-muted-foreground">Ordem</p>
-                              <p className="mt-1 font-mono text-base font-semibold">{selected.orderNumber}</p>
-                            </div>
-                          </div>
-                        </div>
+                        {selected.status === "revoked" ? (
+                          <p className="rounded-xl bg-muted/35 px-3 py-2.5 text-[0.68rem] leading-relaxed text-muted-foreground">Tópico finalizado como revogado. Consulte o motivo informado abaixo.</p>
+                        ) : null}
                       </div>
                     </section>
 
                     {selected.revokedReason ? (
-                      <div className="md:col-span-2 xl:col-span-3">
+                      <div className="xl:col-span-3">
                         <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/10 p-3.5 text-xs leading-relaxed text-destructive">
                           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                           <span>{selected.revokedReason}</span>
@@ -606,7 +596,7 @@ export function TopicsView() {
                     ) : null}
                   </div>
 
-                  <section className="flex min-h-0 min-w-0 flex-col rounded-2xl border border-border bg-card/50 shadow-sm lg:flex-1">
+                  <section className="rounded-2xl border border-border bg-card/50 shadow-sm">
                     <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -626,8 +616,8 @@ export function TopicsView() {
                     <input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} />
 
                     {selected.attachments.length > 0 ? (
-                      <div className="min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-5 sm:py-4 lg:flex-1 lg:pr-4">
-                        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+                      <div className="max-h-[54dvh] overflow-y-auto px-4 py-4 sm:px-5 lg:px-5">
+                        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                           {selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
                         </div>
                       </div>

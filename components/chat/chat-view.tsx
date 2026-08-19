@@ -149,6 +149,7 @@ export function ChatView() {
   } = useStore()
   const [tab, setTab] = React.useState<ChatTab>("conversations")
   const [query, setQuery] = React.useState("")
+  const [recordingAudio, setRecordingAudio] = React.useState(false)
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [message, setMessage] = React.useState("")
   const [activeMeetingId, setActiveMeetingId] = React.useState<string | null>(null)
@@ -649,50 +650,57 @@ export function ChatView() {
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
                   <div className="mx-auto flex max-w-3xl items-end gap-2">
-                    <textarea
-                      value={message}
-                      onChange={(event) => setMessage(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault()
-                          void submitMessage()
-                        }
-                      }}
-                      rows={2}
-                      maxLength={2500}
-                      placeholder={`Mensagem para ${selectedTitle}...`}
-                      className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                    />
-                    <input
-                      ref={attachmentInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(event) => {
-                        if (event.target.files?.length) stageChatFiles(event.target.files)
-                        event.currentTarget.value = ""
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      size="icon-lg"
-                      variant="outline"
-                      onClick={() => attachmentInputRef.current?.click()}
-                      disabled={sending || sendingMedia}
-                    >
-                      <Paperclip className="size-4" />
-                      <span className="sr-only">Anexar arquivos</span>
-                    </Button>
+                    {!recordingAudio && (
+                      <>
+                        <textarea
+                          value={message}
+                          onChange={(event) => setMessage(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.shiftKey) {
+                              event.preventDefault()
+                              void submitMessage()
+                            }
+                          }}
+                          rows={2}
+                          maxLength={2500}
+                          placeholder={`Mensagem para ${selectedTitle}...`}
+                          className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                        />
+                        <input
+                          ref={attachmentInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(event) => {
+                            if (event.target.files?.length) stageChatFiles(event.target.files)
+                            event.currentTarget.value = ""
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          size="icon-lg"
+                          variant="outline"
+                          onClick={() => attachmentInputRef.current?.click()}
+                          disabled={sending || sendingMedia}
+                        >
+                          <Paperclip className="size-4" />
+                          <span className="sr-only">Anexar arquivos</span>
+                        </Button>
+                      </>
+                    )}
                     <AudioRecordButton
                       disabled={sending || sendingMedia}
+                      onRecordingChange={setRecordingAudio}
                       onRecorded={(audio, durationMs) => selected ? sendChatAudio(selected.id, audio, durationMs) : Promise.resolve(false)}
                     />
-                    <Button type="button" size="icon-lg" onClick={() => void submitMessage()} disabled={!message.trim() || sendingMedia} loading={sending}>
-                      <Send className="size-4" />
-                      <span className="sr-only">Enviar mensagem</span>
-                    </Button>
+                    {!recordingAudio && (
+                      <Button type="button" size="icon-lg" onClick={() => void submitMessage()} disabled={!message.trim() || sendingMedia} loading={sending}>
+                        <Send className="size-4" />
+                        <span className="sr-only">Enviar mensagem</span>
+                      </Button>
+                    )}
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · Segure o microfone por 1s para gravar</p>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · Clique no microfone para gravar</p>
                 </footer>
               </>
             ) : (

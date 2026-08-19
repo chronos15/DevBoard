@@ -44,7 +44,8 @@ Nunca coloque `service_role`/secret key no front-end.
 11. Execute `supabase/migrations/008_devboard_deeplinks_chat_mentions.sql`.
 12. Execute `supabase/migrations/009_devboard_chat_history_profile_actions.sql`.
 13. Execute `supabase/migrations/010_devboard_chat_local_delete.sql`.
-14. As migrations são incrementais e devem ser aplicadas nessa ordem.
+14. Execute `supabase/migrations/011_devboard_chat_personal_history_cutoff.sql`.
+15. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -404,3 +405,26 @@ A 010 altera a semântica da ação de exclusão em chats individuais sem destru
 - restringe a exclusão física de mídias do bucket aos grupos que realmente forem excluídos. Conversas individuais não removem arquivos do Storage.
 
 Depois de aplicar a 010, execute novamente `supabase/verify_backend.sql`.
+
+## 011 · Corte individual do histórico do chat
+
+Depois da 010, execute:
+
+```text
+supabase/migrations/011_devboard_chat_personal_history_cutoff.sql
+```
+
+A 011 corrige o comportamento de reabrir uma conversa individual depois de removê-la da própria lista:
+
+- adiciona `chat_members.cleared_at`, um corte de histórico independente para cada participante;
+- ao remover uma conversa individual, `hidden_at` e `cleared_at` recebem o instante da remoção;
+- ao iniciar novamente uma conversa com o mesmo usuário, a conversa física é reutilizada, mas **as mensagens anteriores ao corte não voltam para quem removeu**;
+- o outro participante continua vendo normalmente todo o histórico dele;
+- se uma nova mensagem chegar depois da remoção, o chat reaparece e o usuário vê somente as mensagens posteriores ao seu corte;
+- paginação, refresh, Realtime e acesso direto à tabela respeitam a mesma regra por RLS;
+- mídias pertencentes a mensagens anteriores ao corte também deixam de ser legíveis por quem removeu, sem apagar o arquivo do outro participante.
+
+A migration faz backfill de `cleared_at = hidden_at` para conversas que ainda estavam ocultas ao ser aplicada. Se uma conversa já havia sido removida e reaberta **antes** da 011, o instante antigo não existe mais no banco; nesse caso, remova essa conversa uma vez após aplicar a 011 para criar o novo corte.
+
+Depois de aplicar a 011, execute novamente `supabase/verify_backend.sql`.
+

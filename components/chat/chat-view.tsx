@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   ArrowLeft,
   AtSign,
+  CircleAlert,
   Clock3,
   FolderKanban,
   Headphones,
@@ -235,6 +236,7 @@ export function ChatView() {
     chatHydrated,
     ensureDirectConversation,
     sendChatMessage,
+    retryChatMessage,
     sendChatAudio,
     sendChatMedia,
     loadChatHistory,
@@ -252,7 +254,6 @@ export function ChatView() {
   const [message, setMessage] = React.useState("")
   const [activeMeetingId, setActiveMeetingId] = React.useState<string | null>(null)
   const [openingUserId, setOpeningUserId] = React.useState<string | null>(null)
-  const [sending, setSending] = React.useState(false)
   const [startingMeetingMode, setStartingMeetingMode] = React.useState<MeetingMode | null>(null)
   const [openingMeetingId, setOpeningMeetingId] = React.useState<string | null>(null)
   const [stagedFiles, setStagedFiles] = React.useState<File[]>([])
@@ -528,19 +529,19 @@ export function ChatView() {
     })
   }
 
-  async function submitMessage() {
-    if (!selected || !message.trim() || sending) return
-    const validMentions = draftMentions.filter((mention) => message.includes(mentionToken(mention)))
-    setSending(true)
-    try {
-      if (await sendChatMessage(selected.id, message, validMentions)) {
-        setMessage("")
-        setDraftMentions([])
-        setMentionRange(null)
-      }
-    } finally {
-      setSending(false)
-    }
+  function submitMessage() {
+    if (!selected || !message.trim()) return
+    const content = message
+    const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
+
+    // UX otimista: a mensagem entra no histórico no mesmo frame do clique/Enter.
+    // A confirmação do Supabase acontece em paralelo; em caso de falha, a própria
+    // mensagem ganha a ação de tentar novamente sem devolver o texto ao composer.
+    setMessage("")
+    setDraftMentions([])
+    setMentionRange(null)
+    stickToBottomRef.current = true
+    void sendChatMessage(selected.id, content, validMentions)
   }
 
   function stageChatFiles(files: FileList | File[]) {
@@ -950,6 +951,22 @@ export function ChatView() {
                                   minute: "2-digit",
                                 })}
                               </time>
+                              {own && item.deliveryStatus === "sending" && (
+                                <span className="mt-0.5 flex items-center justify-end gap-1 px-1 text-[0.56rem] text-muted-foreground/75">
+                                  <Clock3 className="size-2.5" /> Enviando...
+                                </span>
+                              )}
+                              {own && item.deliveryStatus === "failed" && (
+                                <button
+                                  type="button"
+                                  onClick={() => void retryChatMessage(selected.id, item.id)}
+                                  className="mt-0.5 flex max-w-full items-center justify-end gap-1 px-1 text-right text-[0.56rem] font-medium text-destructive transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
+                                  title="Tentar enviar novamente"
+                                >
+                                  <CircleAlert className="size-2.5 shrink-0" />
+                                  <span>Falha ao entregar mensagem. Clique para tentar novamente.</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         )
@@ -1060,7 +1077,7 @@ export function ChatView() {
                           size="icon-lg"
                           variant="outline"
                           onClick={() => attachmentInputRef.current?.click()}
-                          disabled={sending || sendingMedia}
+                          disabled={sendingMedia}
                         >
                           <Paperclip className="size-4" />
                           <span className="sr-only">Anexar arquivos</span>
@@ -1068,12 +1085,12 @@ export function ChatView() {
                       </>
                     )}
                     <AudioRecordButton
-                      disabled={sending || sendingMedia}
+                      disabled={sendingMedia}
                       onRecordingChange={setRecordingAudio}
                       onRecorded={(audio, durationMs) => selected ? sendChatAudio(selected.id, audio, durationMs) : Promise.resolve(false)}
                     />
                     {!recordingAudio && (
-                      <Button type="button" size="icon-lg" onClick={() => void submitMessage()} disabled={!message.trim() || sendingMedia} loading={sending}>
+                      <Button type="button" size="icon-lg" onClick={submitMessage} disabled={!message.trim() || sendingMedia}>
                         <Send className="size-4" />
                         <span className="sr-only">Enviar mensagem</span>
                       </Button>
@@ -1214,7 +1231,7 @@ export function ChatView() {
                 ? selectedIsLastGroupMember
                   ? "Você é o último participante. O grupo, as mensagens e as mídias serão removidos permanentemente. Esta ação não pode ser desfeita."
                   : "Você deixará de receber mensagens e reuniões deste grupo. O histórico continua disponível para os demais participantes."
-                : "A conversa desaparecerá somente para você. O outro participante continuará vendo todo o histórico normalmente. Se ele enviar uma nova mensagem, a conversa aparecerá novamente na sua lista."}
+                : "A conversa e o histórico atual desaparecerão somente para você. O outro participante continuará vendo tudo normalmente. Se vocês conversarem novamente, o chat reaparecerá para você somente com as mensagens novas."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

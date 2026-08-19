@@ -366,3 +366,48 @@ begin
   end if;
   raise notice 'Migration 010 OK: exclusão individual é local e novas mensagens reexibem a conversa.';
 end $$;
+
+
+-- 011 · Corte individual do histórico em chats diretos
+select
+  exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_members'
+      and column_name='cleared_at'
+  ) as chat_members_cleared_at_ok,
+  to_regprocedure('public.can_read_chat_message(uuid,timestamptz)') is not null as chat_message_visibility_rpc_ok,
+  has_function_privilege('authenticated','public.can_read_chat_message(uuid,timestamptz)','EXECUTE') as chat_message_visibility_execute_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='public'
+      and tablename='chat_messages'
+      and policyname='cadence_chat_messages_select'
+      and qual like '%can_read_chat_message%'
+  ) as chat_message_cutoff_policy_ok;
+
+do $$
+begin
+  if not exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_members'
+      and column_name='cleared_at'
+  ) then
+    raise exception 'Backend Devboard incompleto: chat_members.cleared_at ausente (migration 011)';
+  end if;
+  if to_regprocedure('public.can_read_chat_message(uuid,timestamptz)') is null then
+    raise exception 'Backend Devboard incompleto: can_read_chat_message(uuid,timestamptz) ausente (migration 011)';
+  end if;
+  if not exists(
+    select 1 from pg_policies
+    where schemaname='public'
+      and tablename='chat_messages'
+      and policyname='cadence_chat_messages_select'
+      and qual like '%can_read_chat_message%'
+  ) then
+    raise exception 'Backend Devboard incompleto: policy de corte individual do histórico ausente (migration 011)';
+  end if;
+  raise notice 'Migration 011 OK: histórico direto respeita o corte individual de cada participante.';
+end $$;
+

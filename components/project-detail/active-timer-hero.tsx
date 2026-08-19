@@ -109,7 +109,7 @@ export function ActiveTimerHero({
         )}
       </div>
 
-      <div>
+      <div className="min-w-0">
         <p
           className={cn(
             "font-mono text-5xl font-bold tabular-nums md:text-6xl",
@@ -119,16 +119,28 @@ export function ActiveTimerHero({
           {formatHMS(displaySeconds)}
         </p>
         <p
+          title={
+            running
+              ? activeInProject!.sub.title
+              : suggestion
+                ? `Pronto para iniciar: ${suggestion.title}`
+                : "Nenhuma subatividade sua disponível neste projeto"
+          }
           className={cn(
-            "mt-2 truncate text-sm",
+            "mt-2 block w-full max-w-[18rem] truncate whitespace-nowrap text-xs sm:max-w-[26rem] sm:text-sm lg:max-w-full",
             running ? "text-sidebar-foreground" : "text-muted-foreground",
           )}
         >
-          {running
-            ? activeInProject!.sub.title
-            : suggestion
-              ? `Pronto para iniciar: ${suggestion.title}`
-              : "Nenhuma subatividade sua disponível neste projeto"}
+          {running ? (
+            activeInProject!.sub.title
+          ) : suggestion ? (
+            `Pronto para iniciar: ${suggestion.title}`
+          ) : (
+            <>
+              <span className="sm:hidden">Nenhuma subatividade disponível</span>
+              <span className="hidden sm:inline">Nenhuma subatividade sua disponível neste projeto</span>
+            </>
+          )}
         </p>
       </div>
 

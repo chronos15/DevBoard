@@ -78,10 +78,6 @@ function todayDateKey() {
 
 export function AnalysisView() {
   const [focusSubId, setFocusSubId] = React.useState<string | null>(null)
-  React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setFocusSubId(params.get("sub"))
-  }, [])
 
   const {
     aqsReviews,
@@ -117,6 +113,54 @@ export function AnalysisView() {
   const [revokeTarget, setRevokeTarget] = React.useState<AqsReview | null>(null)
   const [reason, setReason] = React.useState("")
   const canReview = currentUserRole === "admin" || currentUserRole === "aqs"
+
+  const focusAnalysisFromNavigation = React.useCallback((subactivityId: string) => {
+    if (!subactivityId) return
+    setFocusSubId(subactivityId)
+    setViewMode("list")
+    setSearch("")
+    setProjectFilter("all")
+    setDeveloperFilter("all")
+    setResponsibleFilter("all")
+    setDraftProjectFilter("all")
+    setDraftDeveloperFilter("all")
+    setDraftResponsibleFilter("all")
+
+    const review = aqsReviews.find((item) => item.subactivityId === subactivityId)
+    if (review) {
+      const reviewDate = dateKey(review.createdAt)
+      setDateFrom(reviewDate)
+      setDateTo(reviewDate)
+      setDraftDateFrom(reviewDate)
+      setDraftDateTo(reviewDate)
+
+      const url = new URL(window.location.href)
+      if (url.searchParams.get("sub") === subactivityId) {
+        url.searchParams.delete("sub")
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+      }
+    }
+
+    window.setTimeout(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-aqs-sub-id]"))
+        .find((element) => element.dataset.aqsSubId === subactivityId)
+      target?.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 80)
+  }, [aqsReviews])
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const subactivityId = params.get("sub")
+    if (subactivityId) focusAnalysisFromNavigation(subactivityId)
+
+    function handleFocusAnalysis(event: Event) {
+      const targetId = (event as CustomEvent<{ subactivityId?: string }>).detail?.subactivityId
+      if (targetId) focusAnalysisFromNavigation(targetId)
+    }
+
+    window.addEventListener("devboard:focus-analysis", handleFocusAnalysis)
+    return () => window.removeEventListener("devboard:focus-analysis", handleFocusAnalysis)
+  }, [focusAnalysisFromNavigation])
 
   const locate = React.useCallback((review: AqsReview) => {
     const project = projects.find((item) => item.id === review.projectId)
@@ -406,6 +450,7 @@ export function AnalysisView() {
                       return (
                         <article
                           key={review.id}
+                          data-aqs-sub-id={sub.id}
                           draggable={canDrag}
                           onDragStart={(event) => {
                             if (suppressCardDragRef.current) {
@@ -448,7 +493,7 @@ export function AnalysisView() {
               if (!project || !activity || !sub) return null
               const meta = columns.find((item) => item.status === review.status)
               return (
-                <article key={review.id} className={cn("grid min-w-0 gap-3 p-3 sm:p-4 xl:grid-cols-[minmax(0,2.35fr)_minmax(150px,0.95fr)_minmax(150px,0.95fr)_180px_220px] xl:items-center xl:gap-4", focusSubId === sub.id && "bg-primary/[0.035]")}>
+                <article key={review.id} data-aqs-sub-id={sub.id} className={cn("grid min-w-0 gap-3 p-3 sm:p-4 xl:grid-cols-[minmax(0,2.35fr)_minmax(150px,0.95fr)_minmax(150px,0.95fr)_180px_220px] xl:items-center xl:gap-4", focusSubId === sub.id && "bg-primary/[0.035]")}>
                   <div className="min-w-0">
                     <p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p>
                     <h3 className="mt-0.5 truncate text-sm font-semibold" title={sub.title}>{sub.title}</h3>

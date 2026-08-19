@@ -304,6 +304,7 @@ export function ChatView() {
   const messageHoldStartRef = React.useRef<{ x: number; y: number; messageId: string } | null>(null)
   const replyFocusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedMessagesRef = React.useRef<ChatMessage[]>([])
+  const navigationUserRef = React.useRef<string | null>(null)
 
   const myConversations = React.useMemo(
     () =>
@@ -460,6 +461,51 @@ export function ChatView() {
       setActiveMeetingId(null)
     }
   }, [activeMeeting, activeMeetingId])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !currentUserId) return
+    let active = true
+
+    async function openMemberFromGlobalSearch(memberId: string) {
+      if (!memberId || memberId === currentUserId || navigationUserRef.current === memberId) return
+      if (!members.some((member) => member.id === memberId)) return
+
+      navigationUserRef.current = memberId
+      setOpeningUserId(memberId)
+      try {
+        const conversationId = await ensureDirectConversation(memberId)
+        if (!active) return
+        if (conversationId) {
+          setSelectedId(conversationId)
+          setTab("conversations")
+        }
+      } finally {
+        if (active) {
+          setOpeningUserId((current) => current === memberId ? null : current)
+          const url = new URL(window.location.href)
+          if (url.searchParams.get("user") === memberId) {
+            url.searchParams.delete("user")
+            window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+          }
+        }
+        if (navigationUserRef.current === memberId) navigationUserRef.current = null
+      }
+    }
+
+    const memberIdFromUrl = new URLSearchParams(window.location.search).get("user")
+    if (memberIdFromUrl) void openMemberFromGlobalSearch(memberIdFromUrl)
+
+    function handleOpenChatUser(event: Event) {
+      const memberId = (event as CustomEvent<{ memberId?: string }>).detail?.memberId
+      if (memberId) void openMemberFromGlobalSearch(memberId)
+    }
+
+    window.addEventListener("devboard:open-chat-user", handleOpenChatUser)
+    return () => {
+      active = false
+      window.removeEventListener("devboard:open-chat-user", handleOpenChatUser)
+    }
+  }, [currentUserId, ensureDirectConversation, members])
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -1308,6 +1354,7 @@ export function ChatView() {
                     )}
                     </div>
                   </div>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Segure uma mensagem para responder</p>
                 </footer>
               </>
             ) : (

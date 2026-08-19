@@ -330,6 +330,25 @@ export function TopicsView() {
     setSelected(target)
   }, [supportTopics])
 
+  React.useEffect(() => {
+    function handleOpenTopic(event: Event) {
+      const topicId = (event as CustomEvent<{ topicId?: string }>).detail?.topicId
+      if (!topicId) return
+      const target = supportTopics.find((topic) => topic.id === topicId)
+      if (!target) return
+
+      const url = new URL(window.location.href)
+      if (url.searchParams.get("topic") === topicId) {
+        url.searchParams.delete("topic")
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+      }
+      setSelected(target)
+    }
+
+    window.addEventListener("devboard:open-topic", handleOpenTopic)
+    return () => window.removeEventListener("devboard:open-topic", handleOpenTopic)
+  }, [supportTopics])
+
   async function startAnalysis(topic: SupportTopic) {
     setBusy(topic.id)
     try { await startSupportTopicAnalysis(topic.id) } finally { setBusy(null) }

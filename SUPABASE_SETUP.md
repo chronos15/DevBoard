@@ -104,11 +104,11 @@ após configurar o provider Google no Supabase Auth e as URLs OAuth corresponden
 
 Esta fase do produto usa **um workspace Devboard**.
 
-- o primeiro usuário cadastrado é criado como `admin`;
+- todo novo usuário cadastrado entra como `member`;
 - os demais entram inicialmente como `member`;
 - administradores podem alterar a role da equipe em Configurações;
 - roles disponíveis: `admin`, `developer`, `aqs`, `support`, `member`;
-- a migration serializa o primeiro cadastro para evitar dois administradores iniciais por condição de corrida;
+- Administradores, Desenvolvedores, AQS e Suporte são definidos posteriormente por um Administrador;
 - se o sistema for interno, depois de cadastrar/provisionar a equipe, desabilite cadastro público no Supabase Auth.
 
 ## 5.1. Matriz de roles
@@ -266,7 +266,7 @@ pnpm dev
 ## 11. Checklist pós-migration
 
 1. Execute `supabase/verify_backend.sql`.
-2. Crie o primeiro usuário e confirme que aparece como Administrador.
+2. Crie um novo usuário e confirme que aparece inicialmente como Membro.
 3. Crie um segundo usuário e confirme que aparece como Membro.
 4. Em duas sessões/navegadores, atribua um projeto/atividade/subatividade e confirme a notificação em tempo real.
 5. Inicie uma subatividade e confira uma linha aberta em `work_sessions`.

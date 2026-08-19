@@ -37,7 +37,7 @@ export default function SignUpPage() {
   return <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10"><div className="w-full max-w-md rounded-2xl bg-card p-6 ring-1 ring-foreground/8 md:p-8">
     <Link href="/login" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Voltar ao login</Link>
     <h1 className="mt-6 text-2xl font-semibold tracking-tight">Criar conta</h1>
-    <p className="mt-1 text-sm text-muted-foreground">Crie seu usuário. O perfil será registrado automaticamente no workspace pelo Supabase.</p>
+    <p className="mt-1 text-sm text-muted-foreground">Crie sua conta para começar a usar o Devboard. Suas permissões poderão ser ajustadas depois por um administrador.</p>
     {message && <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">{message}</div>}
     {error && <div className="mt-5 rounded-xl border border-destructive/25 bg-destructive/8 p-3 text-sm text-destructive">{error}</div>}
     <form onSubmit={submit} className="mt-6 space-y-4">

@@ -560,7 +560,6 @@ set search_path = public, auth, pg_temp
 as $$
 declare
   v_name text;
-  v_role public.workspace_role;
 begin
   v_name := coalesce(
     nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
@@ -576,16 +575,10 @@ begin
         initials = excluded.initials,
         updated_at = now();
 
-  -- Serializa o primeiro cadastro para garantir um único administrador inicial.
-  perform 1 from public.workspaces where id='00000000-0000-0000-0000-000000000001' for update;
-
-  select case when exists (
-    select 1 from public.workspace_members where workspace_id = '00000000-0000-0000-0000-000000000001'
-  ) then 'member'::public.workspace_role else 'admin'::public.workspace_role end
-  into v_role;
-
+  -- Todo novo cadastro entra sempre como Membro.
+  -- Roles superiores são atribuídas posteriormente por um Administrador.
   insert into public.workspace_members(workspace_id, user_id, role)
-  values ('00000000-0000-0000-0000-000000000001', new.id, v_role)
+  values ('00000000-0000-0000-0000-000000000001', new.id, 'member'::public.workspace_role)
   on conflict (workspace_id, user_id) do nothing;
 
   insert into public.user_preferences(user_id) values(new.id) on conflict(user_id) do nothing;
@@ -613,15 +606,9 @@ select
 from auth.users u
 on conflict (id) do update set email = excluded.email;
 
-with ranked as (
-  select p.id, row_number() over (order by u.created_at, p.id) as rn
-  from public.profiles p
-  join auth.users u on u.id = p.id
-)
 insert into public.workspace_members(workspace_id, user_id, role)
-select '00000000-0000-0000-0000-000000000001', id,
-       case when rn = 1 then 'admin'::public.workspace_role else 'member'::public.workspace_role end
-from ranked
+select '00000000-0000-0000-0000-000000000001', p.id, 'member'::public.workspace_role
+from public.profiles p
 on conflict (workspace_id, user_id) do nothing;
 
 insert into public.user_preferences(user_id)

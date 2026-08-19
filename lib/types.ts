@@ -222,6 +222,15 @@ export type ChatMention = {
   label: string
 }
 
+export type ChatReplyReference = {
+  messageId: string
+  senderId?: string
+  content?: string
+  type?: "text" | "audio" | "media"
+  mediaName?: string
+  unavailable?: boolean
+}
+
 export type ChatMessage = {
   id: string
   senderId: string
@@ -234,6 +243,9 @@ export type ChatMessage = {
   mediaName?: string
   mediaKind?: AttachmentKind
   mentions?: ChatMention[]
+  replyTo?: ChatReplyReference
+  /** Estado local de entrega usado para envio otimista no chat. Mensagens vindas do backend deixam este campo indefinido. */
+  deliveryStatus?: "sending" | "failed"
   createdAt: string
 }
 

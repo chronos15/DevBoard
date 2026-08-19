@@ -31,6 +31,7 @@ declare
     'public.set_attachment_active(uuid,boolean)',
     'public.ensure_direct_conversation(uuid)',
     'public.send_chat_message(uuid,text,jsonb)',
+    'public.send_chat_message(uuid,text,jsonb,uuid)',
     'public.create_chat_group(text,uuid[])',
     'public.update_chat_group(uuid,text,uuid[])',
     'public.delete_chat_group(uuid)',
@@ -409,5 +410,41 @@ begin
     raise exception 'Backend Devboard incompleto: policy de corte individual do histórico ausente (migration 011)';
   end if;
   raise notice 'Migration 011 OK: histórico direto respeita o corte individual de cada participante.';
+end $$;
+
+-- 012 · Respostas a mensagens no Chat
+select
+  exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_messages'
+      and column_name='reply_to_message_id'
+  ) as chat_reply_column_ok,
+  to_regprocedure('public.send_chat_message(uuid,text,jsonb,uuid)') is not null as send_chat_message_reply_rpc_ok,
+  has_function_privilege('authenticated','public.send_chat_message(uuid,text,jsonb,uuid)','EXECUTE') as send_chat_message_reply_execute_ok,
+  exists(
+    select 1 from pg_indexes
+    where schemaname='public'
+      and tablename='chat_messages'
+      and indexname='chat_messages_reply_to_idx'
+  ) as chat_reply_index_ok;
+
+do $$
+begin
+  if not exists(
+    select 1 from information_schema.columns
+    where table_schema='public'
+      and table_name='chat_messages'
+      and column_name='reply_to_message_id'
+  ) then
+    raise exception 'Backend Devboard incompleto: chat_messages.reply_to_message_id ausente (migration 012)';
+  end if;
+  if to_regprocedure('public.send_chat_message(uuid,text,jsonb,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: send_chat_message(uuid,text,jsonb,uuid) ausente (migration 012)';
+  end if;
+  if not has_function_privilege('authenticated','public.send_chat_message(uuid,text,jsonb,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em send_chat_message de reply (migration 012)';
+  end if;
+  raise notice 'Migration 012 OK: respostas a mensagens do Chat prontas.';
 end $$;
 

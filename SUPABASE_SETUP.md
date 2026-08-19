@@ -45,7 +45,8 @@ Nunca coloque `service_role`/secret key no front-end.
 12. Execute `supabase/migrations/009_devboard_chat_history_profile_actions.sql`.
 13. Execute `supabase/migrations/010_devboard_chat_local_delete.sql`.
 14. Execute `supabase/migrations/011_devboard_chat_personal_history_cutoff.sql`.
-15. As migrations são incrementais e devem ser aplicadas nessa ordem.
+15. Execute `supabase/migrations/012_devboard_chat_message_replies.sql`.
+16. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -427,4 +428,24 @@ A 011 corrige o comportamento de reabrir uma conversa individual depois de remov
 A migration faz backfill de `cleared_at = hidden_at` para conversas que ainda estavam ocultas ao ser aplicada. Se uma conversa já havia sido removida e reaberta **antes** da 011, o instante antigo não existe mais no banco; nesse caso, remova essa conversa uma vez após aplicar a 011 para criar o novo corte.
 
 Depois de aplicar a 011, execute novamente `supabase/verify_backend.sql`.
+
+## 012 · Respostas a mensagens no chat
+
+Depois da 011, execute:
+
+```text
+supabase/migrations/012_devboard_chat_message_replies.sql
+```
+
+A 012 adiciona resposta persistente a qualquer mensagem visível da conversa:
+
+- adiciona `chat_messages.reply_to_message_id` com referência segura para a mensagem original;
+- preserva a assinatura antiga de `send_chat_message` para compatibilidade e adiciona uma assinatura nova com a referência de reply;
+- valida no backend que a mensagem respondida pertence à mesma conversa e está disponível para o usuário;
+- permite que o front mostre autor e prévia da mensagem respondida mesmo depois de recarregar a página;
+- adiciona índice parcial para leitura eficiente das referências.
+
+O front-end possui fallback de leitura para um rollout seguro: se ele for publicado antes da 012, o chat continua abrindo e enviando mensagens comuns normalmente; somente o envio de respostas depende da migration nova.
+
+Depois de aplicar a 012, execute novamente `supabase/verify_backend.sql`.
 

@@ -204,12 +204,20 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
   }))
 }
 
+function chatMessageType(value: unknown): ChatMessage['type'] {
+  return value === 'audio' ? 'audio' : value === 'media' ? 'media' : 'text'
+}
+
 function mapChatMessageRow(message: any): ChatMessage {
+  const replyMessageId = typeof message.reply_to_message_id === 'string' && message.reply_to_message_id
+    ? message.reply_to_message_id
+    : undefined
+
   return {
     id: message.id,
     senderId: message.sender_id,
     content: message.content,
-    type: message.message_type === 'audio' ? 'audio' : message.message_type === 'media' ? 'media' : 'text',
+    type: chatMessageType(message.message_type),
     mediaPath: message.media_path ?? undefined,
     mediaMimeType: message.media_mime_type ?? undefined,
     mediaDurationMs: message.media_duration_ms == null ? undefined : Number(message.media_duration_ms),
@@ -221,11 +229,49 @@ function mapChatMessageRow(message: any): ChatMessage {
           .filter((mention: any) => mention && (mention.kind === 'user' || mention.kind === 'project') && typeof mention.id === 'string' && typeof mention.label === 'string')
           .map((mention: any) => ({ kind: mention.kind, id: mention.id, label: mention.label }))
       : [],
+    replyTo: replyMessageId ? { messageId: replyMessageId, unavailable: true } : undefined,
     createdAt: message.created_at,
   }
 }
 
-const CHAT_MESSAGE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at'
+async function hydrateChatReplyReferences(supabase: SupabaseClient, messages: ChatMessage[]): Promise<ChatMessage[]> {
+  const replyIds = Array.from(new Set(
+    messages
+      .map((message) => message.replyTo?.messageId)
+      .filter((id): id is string => Boolean(id)),
+  ))
+  if (!replyIds.length) return messages
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('id,sender_id,content,message_type,media_name')
+    .in('id', replyIds)
+
+  // O reply continua renderizável mesmo quando a mensagem original ficou fora do
+  // corte individual de histórico ou não pode mais ser lida pelo participante.
+  if (error) return messages
+
+  const references = new Map((data ?? []).map((row: any) => [row.id, row]))
+  return messages.map((message) => {
+    const replyMessageId = message.replyTo?.messageId
+    if (!replyMessageId) return message
+    const row: any = references.get(replyMessageId)
+    if (!row) return message
+    return {
+      ...message,
+      replyTo: {
+        messageId: row.id,
+        senderId: row.sender_id,
+        content: row.content ?? '',
+        type: chatMessageType(row.message_type),
+        mediaName: row.media_name ?? undefined,
+      },
+    }
+  })
+}
+
+const CHAT_MESSAGE_BASE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at'
+const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS},reply_to_message_id`
 
 export async function loadChatMessagesPage(
   supabase: SupabaseClient,
@@ -233,27 +279,35 @@ export async function loadChatMessagesPage(
   options: { beforeCreatedAt?: string; limit?: number } = {},
 ): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
   const pageSize = Math.max(1, Math.min(50, options.limit ?? 20))
-  let query = supabase
-    .from('chat_messages')
-    .select(CHAT_MESSAGE_COLUMNS)
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(pageSize + 1)
+  const buildQuery = (columns: string) => {
+    let query = supabase
+      .from('chat_messages')
+      .select(columns)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(pageSize + 1)
 
-  if (options.beforeCreatedAt) {
-    query = query.lt('created_at', options.beforeCreatedAt)
+    if (options.beforeCreatedAt) query = query.lt('created_at', options.beforeCreatedAt)
+    return query
   }
 
-  const { data, error } = await query
-  assertNoError(error, 'Não foi possível carregar o histórico da conversa')
+  // Compatibilidade de rollout: o front novo pode entrar no ar antes da migration
+  // de replies. Nesse intervalo o chat continua abrindo normalmente, apenas sem
+  // referências de resposta até o banco receber a coluna nova.
+  let result = await buildQuery(CHAT_MESSAGE_COLUMNS)
+  if (result.error && String(result.error.message ?? '').includes('reply_to_message_id')) {
+    result = await buildQuery(CHAT_MESSAGE_BASE_COLUMNS)
+  }
+  assertNoError(result.error, 'Não foi possível carregar o histórico da conversa')
 
-  const rows = data ?? []
+  const rows = result.data ?? []
   const hasMore = rows.length > pageSize
-  const messages = rows
+  const mapped = rows
     .slice(0, pageSize)
     .map(mapChatMessageRow)
     .reverse()
+  const messages = await hydrateChatReplyReferences(supabase, mapped)
 
   return { messages, hasMore }
 }

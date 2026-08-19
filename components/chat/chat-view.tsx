@@ -15,14 +15,16 @@ import {
   Paperclip,
   Phone,
   Radio,
+  Reply,
   Search,
   Send,
   Trash2,
   UserRound,
   UsersRound,
   Video,
+  X,
 } from "lucide-react"
-import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
+import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
@@ -141,6 +143,29 @@ function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
   }
 
   return <p className="whitespace-pre-wrap break-words">{parts}</p>
+}
+
+function replySummary(reply: ChatReplyReference) {
+  if (reply.unavailable) return "Mensagem original indisponível"
+  if (reply.type === "audio") return "Mensagem de áudio"
+  if (reply.type === "media") return reply.mediaName?.trim() || reply.content?.trim() || "Mídia"
+  return reply.content?.trim() || "Mensagem"
+}
+
+function replySenderLabel(reply: ChatReplyReference, currentUserId: string, members: Member[]) {
+  if (!reply.senderId) return "Mensagem"
+  if (reply.senderId === currentUserId) return "Você"
+  return members.find((member) => member.id === reply.senderId)?.name ?? "Usuário"
+}
+
+function messageReplyReference(message: ChatMessage): ChatReplyReference {
+  return {
+    messageId: message.id,
+    senderId: message.senderId,
+    content: message.content,
+    type: message.type,
+    mediaName: message.mediaName,
+  }
 }
 
 function ConversationAvatar({
@@ -267,12 +292,18 @@ export function ChatView() {
   const [historyReady, setHistoryReady] = React.useState(false)
   const [conversationActionOpen, setConversationActionOpen] = React.useState(false)
   const [conversationActionBusy, setConversationActionBusy] = React.useState(false)
+  const [replyingTo, setReplyingTo] = React.useState<ChatReplyReference | null>(null)
+  const [focusedReplyMessageId, setFocusedReplyMessageId] = React.useState<string | null>(null)
   const messagesViewportRef = React.useRef<HTMLDivElement | null>(null)
   const historyRequestRef = React.useRef(0)
   const historyLoadingRef = React.useRef(false)
   const stickToBottomRef = React.useRef(true)
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null)
   const messageInputRef = React.useRef<HTMLTextAreaElement | null>(null)
+  const messageHoldTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageHoldStartRef = React.useRef<{ x: number; y: number; messageId: string } | null>(null)
+  const replyFocusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const selectedMessagesRef = React.useRef<ChatMessage[]>([])
 
   const myConversations = React.useMemo(
     () =>
@@ -327,6 +358,10 @@ export function ChatView() {
     (member) => member.id !== currentUserId && member.name.toLowerCase().includes(q),
   )
   const visibleMeetings = myMeetings.filter((meeting) => meeting.title.toLowerCase().includes(q))
+
+  React.useEffect(() => {
+    selectedMessagesRef.current = selected?.messages ?? []
+  }, [selected?.messages])
 
   React.useEffect(() => {
     if (selectedId && !myConversations.some((conversation) => conversation.id === selectedId)) {
@@ -384,7 +419,14 @@ export function ChatView() {
     setMentionRange(null)
     setMentionIndex(0)
     setDraftMentions([])
+    setReplyingTo(null)
+    setFocusedReplyMessageId(null)
   }, [selectedId])
+
+  React.useEffect(() => () => {
+    if (messageHoldTimerRef.current) clearTimeout(messageHoldTimerRef.current)
+    if (replyFocusTimerRef.current) clearTimeout(replyFocusTimerRef.current)
+  }, [])
 
   React.useEffect(() => {
     if (!selected) return
@@ -529,6 +571,78 @@ export function ChatView() {
     })
   }
 
+  function selectMessageForReply(item: ChatMessage) {
+    if (item.deliveryStatus) return
+    setReplyingTo(messageReplyReference(item))
+    setMentionRange(null)
+    setMentionIndex(0)
+    window.getSelection?.()?.removeAllRanges()
+    requestAnimationFrame(() => messageInputRef.current?.focus())
+  }
+
+  function cancelMessageHold() {
+    if (messageHoldTimerRef.current) clearTimeout(messageHoldTimerRef.current)
+    messageHoldTimerRef.current = null
+    messageHoldStartRef.current = null
+  }
+
+  function beginMessageHold(event: React.PointerEvent<HTMLDivElement>, item: ChatMessage) {
+    if (item.deliveryStatus) return
+    if (event.pointerType === "mouse" && event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest("button,a,input,textarea,video,audio")) return
+    cancelMessageHold()
+    messageHoldStartRef.current = { x: event.clientX, y: event.clientY, messageId: item.id }
+    messageHoldTimerRef.current = setTimeout(() => {
+      if (messageHoldStartRef.current?.messageId !== item.id) return
+      selectMessageForReply(item)
+      cancelMessageHold()
+    }, 430)
+  }
+
+  function moveMessageHold(event: React.PointerEvent<HTMLDivElement>) {
+    const start = messageHoldStartRef.current
+    if (!start) return
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) cancelMessageHold()
+  }
+
+  async function focusRepliedMessage(messageId: string) {
+    let element = document.getElementById(`chat-message-${messageId}`)
+
+    // Se a referência apontar para uma página anterior do histórico, carrega as
+    // páginas de 20 sob demanda até localizar a mensagem ou chegar ao início.
+    if (!element && selected && historyReady && historyHasMore && !historyLoadingRef.current) {
+      historyLoadingRef.current = true
+      setHistoryLoading(true)
+      try {
+        let before = selectedMessagesRef.current[0]?.createdAt
+        let hasMore = historyHasMore
+        let pages = 0
+        while (!element && before && hasMore && pages < 30) {
+          const result = await loadChatHistory(selected.id, before)
+          if (!result) break
+          hasMore = result.hasMore
+          setHistoryHasMore(hasMore)
+          pages += 1
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          element = document.getElementById(`chat-message-${messageId}`)
+          const nextBefore = selectedMessagesRef.current[0]?.createdAt
+          if (!nextBefore || nextBefore === before) break
+          before = nextBefore
+        }
+      } finally {
+        historyLoadingRef.current = false
+        setHistoryLoading(false)
+      }
+    }
+
+    if (!element) return
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+    setFocusedReplyMessageId(messageId)
+    if (replyFocusTimerRef.current) clearTimeout(replyFocusTimerRef.current)
+    replyFocusTimerRef.current = setTimeout(() => setFocusedReplyMessageId(null), 1400)
+  }
+
   function submitMessage() {
     if (!selected || !message.trim()) return
     const content = message
@@ -540,13 +654,16 @@ export function ChatView() {
     setMessage("")
     setDraftMentions([])
     setMentionRange(null)
+    const reply = replyingTo
+    setReplyingTo(null)
     stickToBottomRef.current = true
-    void sendChatMessage(selected.id, content, validMentions)
+    void sendChatMessage(selected.id, content, validMentions, reply ?? undefined)
   }
 
   function stageChatFiles(files: FileList | File[]) {
     const next = Array.from(files).filter((file) => file.size > 0)
     if (!next.length) return
+    setReplyingTo(null)
     setStagedFiles(next)
     setAttachmentPreviewOpen(true)
   }
@@ -914,9 +1031,46 @@ export function ChatView() {
                         const sender = members.find((member) => member.id === item.senderId)
                         const own = item.senderId === currentUserId
                         return (
-                          <div key={item.id} className={cn("flex items-end gap-2", own && "flex-row-reverse")}>
+                          <div
+                            key={item.id}
+                            id={`chat-message-${item.id}`}
+                            data-chat-message-id={item.id}
+                            onPointerDown={(event) => beginMessageHold(event, item)}
+                            onPointerMove={moveMessageHold}
+                            onPointerUp={cancelMessageHold}
+                            onPointerCancel={cancelMessageHold}
+                            onPointerLeave={(event) => {
+                              if (event.pointerType === "mouse") cancelMessageHold()
+                            }}
+                            onContextMenu={(event) => {
+                              event.preventDefault()
+                              cancelMessageHold()
+                              selectMessageForReply(item)
+                            }}
+                            className={cn(
+                              "group/message flex items-end gap-2 rounded-xl transition-[background-color,box-shadow] duration-200",
+                              own && "flex-row-reverse",
+                              (focusedReplyMessageId === item.id || replyingTo?.messageId === item.id) && "bg-primary/5 ring-1 ring-primary/15",
+                            )}
+                            title="Segure a mensagem para responder"
+                          >
                             {!own && <MemberAvatar member={sender} className="size-7 ring-0" />}
-                            <div className={cn("max-w-[78%]", own && "text-right")}>
+                            <div className={cn("relative max-w-[78%]", own && "text-right")}>
+                              {!item.deliveryStatus && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => selectMessageForReply(item)}
+                                  className={cn(
+                                    "absolute top-1/2 z-10 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 shadow-sm ring-1 ring-foreground/10 transition-all hover:text-primary group-hover/message:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:flex",
+                                    own ? "-left-9" : "-right-9",
+                                  )}
+                                  title="Responder mensagem"
+                                  aria-label="Responder mensagem"
+                                >
+                                  <Reply className="size-3.5" />
+                                </button>
+                              )}
                               {!own && selected.kind === "group" && (
                                 <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>
                               )}
@@ -928,6 +1082,29 @@ export function ChatView() {
                                     : "rounded-bl-md bg-card ring-1 ring-foreground/8",
                                 )}
                               >
+                                {item.replyTo && (
+                                  <button
+                                    type="button"
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={() => void focusRepliedMessage(item.replyTo!.messageId)}
+                                    disabled={item.replyTo.unavailable}
+                                    className={cn(
+                                      "mb-2 block w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors",
+                                      own
+                                        ? "border-primary-foreground/15 bg-primary-foreground/10 hover:bg-primary-foreground/15"
+                                        : "border-foreground/8 bg-muted/70 hover:bg-muted",
+                                    )}
+                                    title={item.replyTo.unavailable ? "Mensagem original indisponível" : "Ir para a mensagem respondida"}
+                                  >
+                                    <span className={cn("flex items-center gap-1.5 text-[0.62rem] font-semibold", own ? "text-primary-foreground/85" : "text-primary")}>
+                                      <Reply className="size-3 shrink-0" />
+                                      <span className="truncate">{replySenderLabel(item.replyTo, currentUserId, members)}</span>
+                                    </span>
+                                    <span className={cn("mt-0.5 block truncate text-[0.68rem]", own ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                      {replySummary(item.replyTo)}
+                                    </span>
+                                  </button>
+                                )}
                                 {item.type === "audio" ? (
                                   <AudioMessage storagePath={item.mediaPath} durationMs={item.mediaDurationMs} own={own} />
                                 ) : item.type === "media" ? (
@@ -971,7 +1148,30 @@ export function ChatView() {
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
-                  <div className="relative mx-auto flex max-w-3xl items-center gap-2">
+                  <div className="mx-auto max-w-3xl">
+                    {!recordingAudio && replyingTo && (
+                      <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Reply className="size-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1 text-left">
+                          <span className="block truncate text-[0.64rem] font-semibold text-primary">
+                            Respondendo a {replySenderLabel(replyingTo, currentUserId, members)}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[0.65rem] text-muted-foreground">{replySummary(replyingTo)}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingTo(null)}
+                          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                          title="Cancelar resposta"
+                          aria-label="Cancelar resposta"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    <div className="relative flex items-center gap-2">
                     {!recordingAudio && (
                       <>
                         {selected.kind === "group" && mentionRange && mentionCandidates.length > 0 && (
@@ -1047,6 +1247,11 @@ export function ChatView() {
                                 return
                               }
                             }
+                            if (event.key === "Escape" && replyingTo) {
+                              event.preventDefault()
+                              setReplyingTo(null)
+                              return
+                            }
                             if (event.key === "Enter" && !event.shiftKey) {
                               event.preventDefault()
                               void submitMessage()
@@ -1082,7 +1287,10 @@ export function ChatView() {
                     )}
                     <AudioRecordButton
                       disabled={sendingMedia}
-                      onRecordingChange={setRecordingAudio}
+                      onRecordingChange={(recording) => {
+                        setRecordingAudio(recording)
+                        if (recording) setReplyingTo(null)
+                      }}
                       onRecorded={(audio, durationMs) => selected ? sendChatAudio(selected.id, audio, durationMs) : Promise.resolve(false)}
                     />
                     {!recordingAudio && (
@@ -1098,8 +1306,9 @@ export function ChatView() {
                         <span className="sr-only">Enviar mensagem</span>
                       </Button>
                     )}
+                    </div>
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Clique no microfone para gravar</p>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Segure uma mensagem para responder</p>
                 </footer>
               </>
             ) : (

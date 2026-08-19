@@ -37,6 +37,7 @@ import type {
   ChatMeeting,
   ChatMention,
   ChatMessage,
+  ChatReplyReference,
   MeetingMode,
   Member,
   NotificationEntry,
@@ -124,7 +125,7 @@ export type StoreContextValue = {
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
-  sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
+  sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[], replyTo?: ChatReplyReference) => Promise<boolean>
   retryChatMessage: (conversationId: string, messageId: string) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
   sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
@@ -878,16 +879,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [callRpc, refreshChat])
 
-  const deliverChatMessage = React.useCallback(async (conversationId: string, localId: string, content: string, mentions: ChatMention[]) => {
+  const deliverChatMessage = React.useCallback(async (conversationId: string, localId: string, content: string, mentions: ChatMention[], replyTo?: ChatReplyReference) => {
     if (chatMessageDeliveriesRef.current.has(localId)) return false
     chatMessageDeliveriesRef.current.add(localId)
 
     try {
-      const { data, error } = await supabase.rpc("send_chat_message", {
-        p_conversation_id: conversationId,
-        p_content: content,
-        p_mentions: mentions,
-      })
+      const payload = replyTo?.messageId
+        ? {
+            p_conversation_id: conversationId,
+            p_content: content,
+            p_mentions: mentions,
+            p_reply_to_message_id: replyTo.messageId,
+          }
+        : {
+            p_conversation_id: conversationId,
+            p_content: content,
+            p_mentions: mentions,
+          }
+      const { data, error } = await supabase.rpc("send_chat_message", payload)
       if (error) throw error
       const serverId = typeof data === "string" && data ? data : null
       if (!serverId) throw new Error("O servidor não confirmou o envio da mensagem.")
@@ -928,7 +937,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  const sendChatMessage = React.useCallback((conversationId: string, content: string, mentions: ChatMention[] = []) => {
+  const sendChatMessage = React.useCallback((conversationId: string, content: string, mentions: ChatMention[] = [], replyTo?: ChatReplyReference) => {
     const text = content.trim()
     if (!text || !currentUserId) return Promise.resolve(false)
 
@@ -940,6 +949,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       content: text,
       type: "text",
       mentions,
+      replyTo,
       deliveryStatus: "sending",
       createdAt,
     }
@@ -953,7 +963,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     return new Promise<boolean>((resolve) => {
       const startDelivery = () => {
-        void deliverChatMessage(conversationId, localId, text, mentions).then(resolve)
+        void deliverChatMessage(conversationId, localId, text, mentions, replyTo).then(resolve)
       }
 
       if (typeof window === "undefined") {
@@ -981,7 +991,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       : item))
 
-    return deliverChatMessage(conversationId, messageId, message.content, message.mentions ?? [])
+    return deliverChatMessage(conversationId, messageId, message.content, message.mentions ?? [], message.replyTo)
   }, [chatConversations, deliverChatMessage])
 
   const sendChatAudio = React.useCallback(async (conversationId: string, audio: Blob, durationMs: number) => {

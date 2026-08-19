@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   AtSign,
   CircleAlert,
+  Clock3,
   FolderKanban,
   Headphones,
   LoaderCircle,

@@ -32,7 +32,8 @@ export function RunningTimerChip() {
         {formatHMS(found.sub.trackedSeconds)}
       </span>
       <button
-        onClick={stopTimer}
+        type="button"
+        onClick={() => { void stopTimer() }}
         className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
         aria-label="Pausar cronômetro"
       >

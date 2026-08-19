@@ -565,7 +565,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, canManageSubactivity, projects, refreshWorkSessions, schedule])
 
   const stopTimer = React.useCallback(async (subId?: string) => {
-    const targetId = subId ?? activeSubId
+    // Proteção contra handlers React passados diretamente (ex.: onClick={stopTimer}).
+    // Somente strings são tratadas como IDs; qualquer outro valor cai no timer ativo.
+    const targetId = typeof subId === "string" && subId.length > 0 ? subId : activeSubId
     if (!targetId) return false
 
     const rollback = captureOptimisticSubs(projects, targetId, "paused")

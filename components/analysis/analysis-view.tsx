@@ -252,7 +252,7 @@ export function AnalysisView() {
     draftResponsibleFilter !== "all",
   ].some(Boolean)
 
-  function ReviewActions({ review, compact = false }: { review: AqsReview; compact?: boolean }) {
+  function renderReviewActions(review: AqsReview, compact = false) {
     const { sub, aqs } = locate(review)
     if (!sub) return null
     const isBusy = busy.has(review.id)
@@ -422,7 +422,7 @@ export function AnalysisView() {
                           <div className="flex items-start gap-2"><GripVertical className={cn("mt-0.5 size-4 shrink-0", canDrag ? "cursor-grab text-muted-foreground/55" : "text-muted-foreground/20")} /><div className="min-w-0 flex-1"><p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p><h3 className="mt-1 text-sm font-semibold leading-snug">{sub.title}</h3><p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{activity.title}</p></div></div>
                           <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/45 p-2 text-[0.65rem]"><div><p className="text-muted-foreground">Desenvolvedor</p><div className="mt-1 flex min-w-0 items-center gap-1.5"><MemberAvatar member={developer} className="size-6" /><span className="truncate font-medium">{developer?.name ?? "Sem responsável"}</span></div></div><div><p className="text-muted-foreground">AQS</p><div className="mt-1 flex min-w-0 items-center gap-1.5">{aqs ? <MemberAvatar member={aqs} className="size-6" /> : <span className="size-6 rounded-full border border-dashed border-border" />}<span className="truncate font-medium">{aqs?.name ?? "Não atribuído"}</span></div></div></div>
                           {review.revokedReason && <div className="mt-2 flex gap-2 rounded-lg bg-destructive/10 p-2 text-[0.68rem] leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><span>{review.revokedReason}</span></div>}
-                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5"><span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground"><Clock3 className="size-3" /> {elapsed(review.createdAt)}</span><ReviewActions review={review} compact /></div>
+                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5"><span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground"><Clock3 className="size-3" /> {elapsed(review.createdAt)}</span>{renderReviewActions(review, true)}</div>
                         </article>
                       )
                     })}
@@ -449,7 +449,7 @@ export function AnalysisView() {
                   <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={developer} className="size-7" /><div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Desenvolvedor</p><p className="truncate text-xs font-medium">{developer?.name ?? "Sem responsável"}</p></div></div>
                   <div className="flex min-w-0 items-center gap-2">{aqs ? <MemberAvatar member={aqs} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground lg:hidden">Responsável AQS</p><p className="truncate text-xs font-medium">{aqs?.name ?? "Não atribuído"}</p></div></div>
                   <div><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", review.status === "completed" ? "bg-success/15 text-success" : review.status === "revoked" ? "bg-destructive/10 text-destructive" : review.status === "evaluating" ? "bg-chart-3/15 text-chart-3" : "bg-chart-2/15 text-chart-2")}><span className={cn("size-1.5 rounded-full", meta?.tone)} />{meta?.label}</span></div>
-                  <ReviewActions review={review} compact />
+                  {renderReviewActions(review, true)}
                 </article>
               )
             })}

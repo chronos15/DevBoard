@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
-  ClipboardList,
+  Columns3,
   FileText,
+  Filter,
+  FolderKanban,
   ImageIcon,
-  LoaderCircle,
+  List,
   Paperclip,
   Plus,
   Search,
   Send,
+  UserRound,
   Video,
   X,
 } from "lucide-react"
@@ -45,6 +49,32 @@ function formatBytes(value: number) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
   return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+}
+
+function dateKey(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function statusClass(status: SupportTopicStatus) {
+  if (status === "sent-to-dev") return "bg-success/15 text-success"
+  if (status === "revoked") return "bg-destructive/10 text-destructive"
+  if (status === "analyzing") return "bg-chart-3/15 text-chart-3"
+  return "bg-chart-2/15 text-chart-2"
+}
+
+function selectClassName() {
+  return "h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring"
 }
 
 function AttachmentPreview({ attachment }: { attachment: TopicAttachment }) {
@@ -113,34 +143,14 @@ function NewTopicDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   return (
     <Dialog open={open} onOpenChange={(value) => { onOpenChange(value); if (!value && !saving) reset() }}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Novo tópico</DialogTitle>
-          <DialogDescription>Abra uma solicitação completa para AQS, desenvolvimento ou administração. Evidências são obrigatórias.</DialogDescription>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Novo tópico</DialogTitle><DialogDescription>Abra uma solicitação completa para AQS, desenvolvimento ou administração. Evidências são obrigatórias.</DialogDescription></DialogHeader>
         <form id="new-topic-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">Número da ordem *</span>
-            <input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="Ex: OS-45892" className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">Título *</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Resumo do problema" className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
-          </label>
-          <label className="flex flex-col gap-1.5 sm:col-span-2">
-            <span className="text-xs font-medium text-muted-foreground">Descrição *</span>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder="Explique o cenário, comportamento atual, resultado esperado e como reproduzir..." className="resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" />
-          </label>
-
+          <label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Número da ordem *</span><input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="Ex: OS-45892" className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></label>
+          <label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Título *</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Resumo do problema" className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></label>
+          <label className="flex flex-col gap-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Descrição *</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder="Explique o cenário, comportamento atual, resultado esperado e como reproduzir..." className="resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /></label>
           <div className="sm:col-span-2">
-            <div className="flex items-center justify-between gap-3">
-              <div><p className="text-xs font-medium">Evidências *</p><p className="text-[0.68rem] text-muted-foreground">Fotos, vídeos, PDFs, logs ou documentos · até 50 MB por arquivo.</p></div>
-              <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}><Paperclip className="size-3.5" /> Adicionar</Button>
-            </div>
-            <input ref={inputRef} type="file" multiple className="hidden" accept="image/*,video/*,application/pdf,text/*,.sql,.json,.log,.txt,.doc,.docx,.xls,.xlsx" onChange={(event) => {
-              const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024)
-              setFiles((current) => [...current, ...picked])
-              event.currentTarget.value = ""
-            }} />
+            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium">Evidências *</p><p className="text-[0.68rem] text-muted-foreground">Fotos, vídeos, PDFs, logs ou documentos · até 50 MB por arquivo.</p></div><Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}><Paperclip className="size-3.5" /> Adicionar</Button></div>
+            <input ref={inputRef} type="file" multiple className="hidden" accept="image/*,video/*,application/pdf,text/*,.sql,.json,.log,.txt,.doc,.docx,.xls,.xlsx" onChange={(event) => { const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); setFiles((current) => [...current, ...picked]); event.currentTarget.value = "" }} />
             {files.length ? (
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {files.map((file, index) => {
@@ -148,22 +158,17 @@ function NewTopicDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
                   const preview = kind === "image" ? URL.createObjectURL(file) : null
                   return (
                     <div key={`${file.name}-${index}`} className="relative min-w-0 overflow-hidden rounded-xl border border-border bg-muted/25 p-2">
-                      {kind === "image" && preview ? <img src={preview} alt="" className="h-20 w-full rounded-lg object-contain" onLoad={() => URL.revokeObjectURL(preview)} /> : kind === "video" && preview ? <div className="flex h-20 items-center justify-center rounded-lg bg-muted"><Video className="size-5 text-muted-foreground" /></div> : <div className="flex h-20 items-center justify-center rounded-lg bg-muted"><FileText className="size-5 text-muted-foreground" /></div>}
+                      {kind === "image" && preview ? <img src={preview} alt="" className="h-20 w-full rounded-lg object-contain" onLoad={() => URL.revokeObjectURL(preview)} /> : kind === "video" ? <div className="flex h-20 items-center justify-center rounded-lg bg-muted"><Video className="size-5 text-muted-foreground" /></div> : <div className="flex h-20 items-center justify-center rounded-lg bg-muted"><FileText className="size-5 text-muted-foreground" /></div>}
                       <p className="mt-2 truncate text-[0.68rem] font-medium">{file.name}</p>
                       <button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-destructive" aria-label="Remover arquivo"><X className="size-3.5" /></button>
                     </div>
                   )
                 })}
               </div>
-            ) : (
-              <button type="button" onClick={() => inputRef.current?.click()} className="mt-3 flex min-h-28 w-full flex-col items-center justify-center rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground transition-colors hover:bg-muted/40"><ImageIcon className="mb-2 size-5" />Adicione pelo menos uma evidência</button>
-            )}
+            ) : <button type="button" onClick={() => inputRef.current?.click()} className="mt-3 flex min-h-28 w-full flex-col items-center justify-center rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground transition-colors hover:bg-muted/40"><ImageIcon className="mb-2 size-5" />Adicione pelo menos uma evidência</button>}
           </div>
         </form>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button type="submit" form="new-topic-form" disabled={!orderNumber.trim() || title.trim().length < 3 || description.trim().length < 5 || files.length === 0} loading={saving} loadingText="Abrindo tópico...">Abrir tópico</Button>
-        </DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="new-topic-form" disabled={!orderNumber.trim() || title.trim().length < 3 || description.trim().length < 5 || files.length === 0} loading={saving} loadingText="Abrindo tópico...">Abrir tópico</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -175,16 +180,23 @@ export function TopicsView() {
     supportTopics,
     members,
     projects,
-    currentUserId,
     currentUserRole,
     startSupportTopicAnalysis,
     revokeSupportTopic,
     sendSupportTopicToActivity,
     addSupportTopicAttachments,
   } = useStore()
+
   const [newOpen, setNewOpen] = React.useState(false)
   const [selected, setSelected] = React.useState<SupportTopic | null>(null)
   const [search, setSearch] = React.useState("")
+  const [viewMode, setViewMode] = React.useState<"kanban" | "list">("kanban")
+  const [statusFilter, setStatusFilter] = React.useState<"all" | SupportTopicStatus>("all")
+  const [dateFrom, setDateFrom] = React.useState("")
+  const [dateTo, setDateTo] = React.useState("")
+  const [creatorFilter, setCreatorFilter] = React.useState("all")
+  const [analystFilter, setAnalystFilter] = React.useState("all")
+  const [projectFilter, setProjectFilter] = React.useState("all")
   const [busy, setBusy] = React.useState<string | null>(null)
   const [revokeOpen, setRevokeOpen] = React.useState(false)
   const [reason, setReason] = React.useState("")
@@ -196,8 +208,36 @@ export function TopicsView() {
   const canCreate = currentUserRole === "admin" || currentUserRole === "support" || currentUserRole === "member"
   const canAnalyze = currentUserRole === "admin" || currentUserRole === "developer" || currentUserRole === "aqs"
   const developers = members.filter((member) => member.role === "developer")
+
+  const creatorOptions = React.useMemo(() => {
+    const ids = new Set(supportTopics.map((topic) => topic.createdBy))
+    return members.filter((member) => ids.has(member.id)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+  }, [members, supportTopics])
+
+  const analystOptions = React.useMemo(() => {
+    const ids = new Set(supportTopics.map((topic) => topic.assignedAnalystId).filter(Boolean) as string[])
+    return members.filter((member) => ids.has(member.id)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+  }, [members, supportTopics])
+
+  const topicProjectOptions = React.useMemo(() => {
+    const ids = new Set(supportTopics.map((topic) => topic.projectId).filter(Boolean) as string[])
+    return projects.filter((project) => ids.has(project.id)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+  }, [projects, supportTopics])
+
   const normalized = search.trim().toLowerCase()
-  const visibleTopics = supportTopics.filter((topic) => !normalized || `${topic.orderNumber} ${topic.title} ${topic.description}`.toLowerCase().includes(normalized))
+  const visibleTopics = React.useMemo(() => supportTopics.filter((topic) => {
+    if (normalized && !`${topic.orderNumber} ${topic.title} ${topic.description}`.toLowerCase().includes(normalized)) return false
+    if (statusFilter !== "all" && topic.status !== statusFilter) return false
+    if (creatorFilter !== "all" && topic.createdBy !== creatorFilter) return false
+    if (analystFilter !== "all" && topic.assignedAnalystId !== analystFilter) return false
+    if (projectFilter !== "all" && topic.projectId !== projectFilter) return false
+    const created = dateKey(topic.createdAt)
+    if (dateFrom && created < dateFrom) return false
+    if (dateTo && created > dateTo) return false
+    return true
+  }), [analystFilter, creatorFilter, dateFrom, dateTo, normalized, projectFilter, statusFilter, supportTopics])
+
+  const hasFilters = Boolean(search || dateFrom || dateTo || statusFilter !== "all" || creatorFilter !== "all" || analystFilter !== "all" || projectFilter !== "all")
 
   React.useEffect(() => {
     if (!selected) return
@@ -240,50 +280,88 @@ export function TopicsView() {
     } finally { setBusy(null) }
   }
 
+  function clearFilters() {
+    setSearch("")
+    setStatusFilter("all")
+    setDateFrom("")
+    setDateTo("")
+    setCreatorFilter("all")
+    setAnalystFilter("all")
+    setProjectFilter("all")
+  }
+
   return (
-    <div className="min-w-0 space-y-6">
-      <PageHeading
-        eyebrow="Suporte e demandas"
-        title="Tópicos"
-        subtitle="Central de solicitações com evidências, triagem e conversão direta em atividade de desenvolvimento."
-        action={canCreate ? <Button onClick={() => setNewOpen(true)}><Plus className="size-4" /> Novo tópico</Button> : undefined}
-      />
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      <PageHeading eyebrow="Suporte e demandas" title="Tópicos" subtitle="Central de solicitações com evidências, triagem e conversão direta em atividade de desenvolvimento." action={canCreate ? <Button onClick={() => setNewOpen(true)}><Plus className="size-4" /> Novo tópico</Button> : undefined} />
 
-      <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3">
-        <Search className="size-4 shrink-0 text-muted-foreground" />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ordem, título ou descrição..." className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" />
-      </div>
+      <section className="rounded-2xl border border-border bg-card p-3 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <label className="min-w-0 sm:col-span-2 lg:col-span-1 xl:col-span-2">
+              <span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><Search className="size-3.5" />Buscar</span>
+              <div className="flex h-10 min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 focus-within:border-ring"><Search className="size-3.5 shrink-0 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ordem, título ou descrição..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+            </label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={analystFilter} onChange={(event) => setAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+          </div>
 
-      <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain pb-3">
-        <div className="flex w-max min-w-full flex-nowrap items-stretch gap-3">
-          {columns.map((column) => {
-            const topics = visibleTopics.filter((topic) => topic.status === column.status)
-            return (
-              <section key={column.status} className="flex min-h-[500px] w-[285px] min-w-[285px] flex-col rounded-2xl border border-border bg-muted/25 p-2.5 xl:w-[310px] xl:min-w-[310px]">
-                <header className="px-1 py-1.5">
-                  <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className={cn("size-2 rounded-full", column.tone)} /><h2 className="text-xs font-semibold">{column.label}</h2></div><span className="rounded-full bg-card px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground ring-1 ring-foreground/8">{topics.length}</span></div>
-                  <p className="mt-1 text-[0.65rem] text-muted-foreground">{column.helper}</p>
-                </header>
-                <div className="mt-2 flex flex-1 flex-col gap-2">
-                  {topics.map((topic) => {
-                    const creator = members.find((member) => member.id === topic.createdBy)
-                    const analyst = members.find((member) => member.id === topic.assignedAnalystId)
-                    return (
-                      <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="rounded-xl bg-card p-3 text-left shadow-sm ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-md">
-                        <div className="flex items-center justify-between gap-2"><span className="font-mono text-[0.65rem] font-semibold text-primary">{topic.orderNumber}</span><span className="flex items-center gap-1 text-[0.62rem] text-muted-foreground"><Paperclip className="size-3" />{topic.attachments.length}</span></div>
-                        <h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-snug">{topic.title}</h3>
-                        <p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{topic.description}</p>
-                        <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5"><div className="flex min-w-0 items-center gap-1.5"><MemberAvatar member={creator} className="size-6" /><span className="truncate text-[0.65rem] text-muted-foreground">{creator?.name ?? "Usuário"}</span></div>{analyst && <MemberAvatar member={analyst} className="size-6" />}</div>
-                      </button>
-                    )
-                  })}
-                  {topics.length === 0 && <div className="flex min-h-24 flex-1 items-center justify-center rounded-xl border border-dashed border-border px-4 text-center text-xs text-muted-foreground">Nenhum tópico nesta etapa.</div>}
-                </div>
-              </section>
-            )
-          })}
+          <div className="flex shrink-0 items-center rounded-xl bg-muted p-1"><button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button><button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button></div>
         </div>
-      </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 border-t border-border/70 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:max-w-2xl">
+          <div><div className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Data inicial</div><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></div>
+          <div><div className="mb-1.5 flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Data final</div><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></div>
+          <div className="flex items-end">{hasFilters && <Button variant="ghost" className="w-full sm:w-auto" onClick={clearFilters}><X className="size-3.5" />Limpar</Button>}</div>
+        </div>
+        <p className="mt-3 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{visibleTopics.length}</strong> tópico(s) encontrado(s)</p>
+      </section>
+
+      {viewMode === "kanban" ? (
+        <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain pb-3">
+          <div className="flex w-max min-w-full flex-nowrap items-stretch gap-3">
+            {columns.map((column) => {
+              const topics = visibleTopics.filter((topic) => topic.status === column.status)
+              return (
+                <section key={column.status} className="flex min-h-[500px] w-[285px] min-w-[285px] flex-col rounded-2xl border border-border bg-muted/25 p-2.5 xl:w-[310px] xl:min-w-[310px]">
+                  <header className="px-1 py-1.5"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className={cn("size-2 rounded-full", column.tone)} /><h2 className="text-xs font-semibold">{column.label}</h2></div><span className="rounded-full bg-card px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground ring-1 ring-foreground/8">{topics.length}</span></div><p className="mt-1 text-[0.65rem] text-muted-foreground">{column.helper}</p></header>
+                  <div className="mt-2 flex flex-1 flex-col gap-2">
+                    {topics.map((topic) => {
+                      const creator = members.find((member) => member.id === topic.createdBy)
+                      const analyst = members.find((member) => member.id === topic.assignedAnalystId)
+                      return <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="rounded-xl bg-card p-3 text-left shadow-sm ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[0.65rem] font-semibold text-primary">{topic.orderNumber}</span><span className="flex items-center gap-1 text-[0.62rem] text-muted-foreground"><Paperclip className="size-3" />{topic.attachments.length}</span></div><h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-snug">{topic.title}</h3><p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{topic.description}</p><div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5"><div className="flex min-w-0 items-center gap-1.5"><MemberAvatar member={creator} className="size-6" /><span className="truncate text-[0.65rem] text-muted-foreground">{creator?.name ?? "Usuário"}</span></div>{analyst && <MemberAvatar member={analyst} className="size-6" />}</div></button>
+                    })}
+                    {topics.length === 0 && <div className="flex min-h-24 flex-1 items-center justify-center rounded-xl border border-dashed border-border px-4 text-center text-xs text-muted-foreground">Nenhum tópico nesta etapa.</div>}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <section className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="hidden grid-cols-[110px_minmax(200px,1.5fr)_150px_150px_140px_90px] gap-3 border-b border-border bg-muted/35 px-4 py-2.5 text-[0.68rem] font-medium text-muted-foreground lg:grid"><span>Ordem</span><span>Tópico</span><span>Solicitante</span><span>Analista</span><span>Status</span><span className="text-right">Arquivos</span></div>
+          <div className="divide-y divide-border">
+            {visibleTopics.map((topic) => {
+              const creator = members.find((member) => member.id === topic.createdBy)
+              const analyst = members.find((member) => member.id === topic.assignedAnalystId)
+              const status = columns.find((item) => item.status === topic.status)
+              return (
+                <button key={topic.id} type="button" onClick={() => setSelected(topic)} className="grid w-full min-w-0 gap-3 p-3 text-left transition-colors hover:bg-muted/35 sm:p-4 lg:grid-cols-[110px_minmax(200px,1.5fr)_150px_150px_140px_90px] lg:items-center">
+                  <span className="font-mono text-[0.68rem] font-semibold text-primary">{topic.orderNumber}</span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold">{topic.title}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{topic.description} · {formatDateTime(topic.createdAt)}</span></span>
+                  <span className="flex min-w-0 items-center gap-2"><MemberAvatar member={creator} className="size-7" /><span className="truncate text-xs">{creator?.name ?? "Usuário"}</span></span>
+                  <span className="flex min-w-0 items-center gap-2">{analyst ? <MemberAvatar member={analyst} className="size-7" /> : <span className="size-7 shrink-0 rounded-full border border-dashed border-border" />}<span className="truncate text-xs">{analyst?.name ?? "Não atribuído"}</span></span>
+                  <span><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.65rem] font-medium", statusClass(topic.status))}><span className={cn("size-1.5 rounded-full", status?.tone)} />{status?.label}</span></span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground lg:justify-end"><Paperclip className="size-3.5" />{topic.attachments.length}</span>
+                </button>
+              )
+            })}
+            {visibleTopics.length === 0 && <div className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum tópico encontrado com os filtros atuais.</div>}
+          </div>
+        </section>
+      )}
 
       <NewTopicDialog open={newOpen} onOpenChange={setNewOpen} />
 
@@ -291,62 +369,20 @@ export function TopicsView() {
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
           {selected && (
             <>
-              <DialogHeader>
-                <div className="pr-8"><p className="font-mono text-[0.68rem] font-semibold text-primary">ORDEM {selected.orderNumber}</p><DialogTitle className="mt-1 leading-snug">{selected.title}</DialogTitle></div>
-                <DialogDescription>{selected.description}</DialogDescription>
-              </DialogHeader>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Solicitante</p><div className="mt-2 flex items-center gap-2"><MemberAvatar member={members.find((m) => m.id === selected.createdBy)} /><span className="truncate text-xs font-medium">{members.find((m) => m.id === selected.createdBy)?.name}</span></div></div>
-                <div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Analista</p><p className="mt-2 truncate text-xs font-medium">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p></div>
-                <div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Status</p><p className="mt-2 text-xs font-medium">{columns.find((column) => column.status === selected.status)?.label}</p></div>
-              </div>
-
+              <DialogHeader><div className="pr-8"><p className="font-mono text-[0.68rem] font-semibold text-primary">ORDEM {selected.orderNumber}</p><DialogTitle className="mt-1 leading-snug">{selected.title}</DialogTitle></div><DialogDescription>{selected.description}</DialogDescription></DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Solicitante</p><div className="mt-2 flex items-center gap-2"><MemberAvatar member={members.find((m) => m.id === selected.createdBy)} /><span className="truncate text-xs font-medium">{members.find((m) => m.id === selected.createdBy)?.name}</span></div></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Analista</p><p className="mt-2 truncate text-xs font-medium">{members.find((m) => m.id === selected.assignedAnalystId)?.name ?? "Não atribuído"}</p></div><div className="rounded-xl bg-muted/45 p-3"><p className="text-[0.65rem] text-muted-foreground">Status</p><p className="mt-2 text-xs font-medium">{columns.find((column) => column.status === selected.status)?.label}</p></div></div>
               {selected.revokedReason && <div className="flex gap-2 rounded-xl bg-destructive/10 p-3 text-xs leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{selected.revokedReason}</div>}
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Evidências</h3><p className="text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s)</p></div><Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button></div>
-                <input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => {
-                  const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024)
-                  event.currentTarget.value = ""
-                  if (files.length) void addSupportTopicAttachments(selected.id, files)
-                }} />
-                <div className="grid gap-2 sm:grid-cols-2">{selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}</div>
-              </section>
-
-              {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && (
-                <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold">Atividade criada</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Abrir no projeto associado</span></span><ArrowRight className="size-4 text-muted-foreground" /></button>
-              )}
-
-              {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" && (
-                <DialogFooter className="mx-0 mb-0 rounded-xl">
-                  {selected.status === "open" && <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button>}
-                  <Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
-                  <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar Atividade</Button>
-                </DialogFooter>
-              )}
+              <section><div className="mb-2 flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Evidências</h3><p className="text-[0.68rem] text-muted-foreground">{selected.attachments.length} arquivo(s)</p></div><Button size="sm" variant="outline" onClick={() => addFilesRef.current?.click()}><Plus className="size-3.5" />Adicionar</Button></div><input ref={addFilesRef} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 50 * 1024 * 1024); event.currentTarget.value = ""; if (files.length) void addSupportTopicAttachments(selected.id, files) }} /><div className="grid gap-2 sm:grid-cols-2">{selected.attachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} />)}</div></section>
+              {selected.status === "sent-to-dev" && selected.projectId && selected.activityId && (currentUserRole === "admin" || currentUserRole === "developer") && <button type="button" onClick={() => router.push(`/projetos/${selected.projectId}#activity-${selected.activityId}`)} className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-muted"><span><span className="block text-xs font-semibold">Atividade criada</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Abrir no projeto associado</span></span><ArrowRight className="size-4 text-muted-foreground" /></button>}
+              {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" && <DialogFooter className="mx-0 mb-0 rounded-xl">{selected.status === "open" && <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)}>Iniciar análise</Button>}<Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button><Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar Atividade</Button></DialogFooter>}
             </>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Revogar tópico?</DialogTitle><DialogDescription>O solicitante será notificado com o motivo informado.</DialogDescription></DialogHeader>
-          <textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} rows={5} placeholder="Informe por que o tópico está sendo revogado..." className="resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" />
-          <DialogFooter><Button variant="outline" onClick={() => setRevokeOpen(false)}>Cancelar</Button><Button variant="destructive" disabled={reason.trim().length < 3} loading={Boolean(selected && busy === selected.id)} onClick={() => void confirmRevoke()}>Revogar tópico</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}><DialogContent><DialogHeader><DialogTitle>Revogar tópico?</DialogTitle><DialogDescription>O solicitante será notificado com o motivo informado.</DialogDescription></DialogHeader><textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} rows={5} placeholder="Informe por que o tópico está sendo revogado..." className="resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /><DialogFooter><Button variant="outline" onClick={() => setRevokeOpen(false)}>Cancelar</Button><Button variant="destructive" disabled={reason.trim().length < 3} loading={Boolean(selected && busy === selected.id)} onClick={() => void confirmRevoke()}>Revogar tópico</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={sendOpen} onOpenChange={setSendOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Enviar como atividade</DialogTitle><DialogDescription>Escolha o projeto. Associar um desenvolvedor é opcional; administradores sempre serão notificados.</DialogDescription></DialogHeader>
-          <label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Projeto *</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="">Selecione...</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-          <label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Desenvolvedor · opcional</span><select value={developerId} onChange={(event) => setDeveloperId(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="">Sem desenvolvedor associado</option>{developers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-          <div className="rounded-xl bg-muted/45 p-3 text-xs leading-relaxed text-muted-foreground"><CheckCircle2 className="mr-1 inline size-3.5" />Será criada uma atividade real com o número da ordem no título. Administradores e o desenvolvedor associado receberão notificação.</div>
-          <DialogFooter><Button variant="outline" onClick={() => setSendOpen(false)}>Cancelar</Button><Button disabled={!projectId} loading={Boolean(selected && busy === selected.id)} onClick={() => void sendToDev()}>Criar atividade</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={sendOpen} onOpenChange={setSendOpen}><DialogContent><DialogHeader><DialogTitle>Enviar como atividade</DialogTitle><DialogDescription>Escolha o projeto. Associar um desenvolvedor é opcional; administradores sempre serão notificados.</DialogDescription></DialogHeader><label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Projeto *</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="">Selecione...</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="flex flex-col gap-1.5"><span className="text-xs font-medium text-muted-foreground">Desenvolvedor · opcional</span><select value={developerId} onChange={(event) => setDeveloperId(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="">Sem desenvolvedor associado</option>{developers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><div className="rounded-xl bg-muted/45 p-3 text-xs leading-relaxed text-muted-foreground"><CheckCircle2 className="mr-1 inline size-3.5" />Será criada uma atividade real com o número da ordem no título. Administradores e o desenvolvedor associado receberão notificação.</div><DialogFooter><Button variant="outline" onClick={() => setSendOpen(false)}>Cancelar</Button><Button disabled={!projectId} loading={Boolean(selected && busy === selected.id)} onClick={() => void sendToDev()}>Criar atividade</Button></DialogFooter></DialogContent></Dialog>
     </div>
   )
 }

@@ -68,9 +68,9 @@ export function statusCounts(projects: Project[]) {
 export const statusOrder: Status[] = [
   "backlog",
   "waiting",
-  "waiting-aqs",
   "in-progress",
   "paused",
+  "waiting-aqs",
   "done",
   "cancelled",
 ]

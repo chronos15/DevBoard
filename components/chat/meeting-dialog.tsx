@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Headphones, Mic2, Plus, UserPlus, Video, UsersRound } from "lucide-react"
+import { Headphones, Mic2, UserPlus, Video, UsersRound } from "lucide-react"
 import type { ChatConversation, MeetingMode, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar } from "@/components/member-avatar"
@@ -92,7 +92,7 @@ export function MeetingDialog({
         )}
         title="Criar reunião"
       >
-        <Plus className="size-3.5" />
+        <Video className="size-3.5" />
         {!compact && "Nova reunião"}
       </button>
 

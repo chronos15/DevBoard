@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Plus, Settings2, Trash2, UserPlus, UsersRound } from "lucide-react"
+import { Settings2, Trash2, UserPlus, UsersRound } from "lucide-react"
 import type { ChatConversation } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar } from "@/components/member-avatar"
@@ -108,7 +108,7 @@ export function GroupDialog({
         )}
         title={editing ? "Gerenciar grupo" : "Criar grupo"}
       >
-        {editing ? <Settings2 className="size-3.5" /> : <Plus className="size-3.5" />}
+        {editing ? <Settings2 className="size-3.5" /> : <UsersRound className="size-3.5" />}
         {!compact && (editing ? "Gerenciar" : "Novo grupo")}
       </button>
 

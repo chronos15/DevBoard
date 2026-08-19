@@ -11,7 +11,7 @@ import {
 } from "@/lib/project-utils"
 import type { Member, Project, Subactivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { MemberAvatar, MemberName } from "@/components/member-avatar"
+import { MemberAvatar } from "@/components/member-avatar"
 
 type Row = {
   sub: Subactivity
@@ -133,13 +133,13 @@ export function HoursView() {
                 active={memberFilter === m.id}
                 onClick={() => setMemberFilter(m.id)}
               >
-                <MemberName member={m} label={m.name.split(" ")[0]} />
+                {m.name.split(" ")[0]}
               </FilterChip>
             ))}
           </div>
         </div>
 
-        <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-3 font-mono text-[0.65rem] tracking-widest text-muted-foreground uppercase md:grid">
+        <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-4 px-5 py-3 font-mono text-[0.65rem] tracking-widest text-muted-foreground uppercase md:grid">
           <span>Subatividade</span>
           <span className="w-24 text-right">Estimado</span>
           <span className="w-28 text-right">Registrado</span>
@@ -158,12 +158,12 @@ export function HoursView() {
             return (
               <li
                 key={r.sub.id}
-                className="grid grid-cols-1 items-center gap-3 border-t border-border px-5 py-4 md:grid-cols-[1fr_auto_auto_auto_auto] md:gap-4"
+                className="grid min-w-0 grid-cols-1 items-center gap-3 border-t border-border px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] md:gap-4"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                   <MemberAvatar member={r.member} className="size-8 rounded-lg text-[0.7rem] ring-0" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <p className="truncate text-sm font-medium" title={r.sub.title}>
                       {r.sub.title}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">

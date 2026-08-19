@@ -147,11 +147,13 @@ function ConversationAvatar({
   currentUserId,
   members,
   className,
+  profileEnabled = true,
 }: {
   conversation: ChatConversation
   currentUserId: string
   members: Member[]
   className?: string
+  profileEnabled?: boolean
 }) {
   if (conversation.kind === "group") {
     return (
@@ -162,7 +164,7 @@ function ConversationAvatar({
   }
   const otherId = conversation.memberIds.find((id) => id !== currentUserId)
   const member = members.find((item) => item.id === otherId)
-  return <MemberAvatar member={member} className={cn("size-10 text-xs ring-0", className)} />
+  return <MemberAvatar member={member} profileEnabled={profileEnabled} className={cn("size-10 text-xs ring-0", className)} />
 }
 
 function meetingStatusFor(meeting: ChatMeeting, userId: string): MeetingMemberStatus | undefined {
@@ -745,12 +747,12 @@ export function ChatView() {
                         )}
                       >
                         <div className="relative">
-                          <ConversationAvatar conversation={conversation} currentUserId={currentUserId} members={members} />
+                          <ConversationAvatar conversation={conversation} currentUserId={currentUserId} members={members} profileEnabled={false} />
                           {liveMeeting && <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card bg-success" />}
                         </div>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center justify-between gap-2">
-                            <span className="truncate text-xs font-semibold">{conversation.kind === "direct" ? <MemberName member={members.find((member) => conversation.memberIds.includes(member.id) && member.id !== currentUserId)} fallback={title} /> : title}</span>
+                            <span className="truncate text-xs font-semibold">{title}</span>
                             {last && (
                               <time className="shrink-0 font-mono text-[0.56rem] text-muted-foreground">
                                 {timeLabel(last.createdAt)}

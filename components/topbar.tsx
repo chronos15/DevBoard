@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store"
 import { MemberAvatar } from "@/components/member-avatar"
 import { RunningTimerChip } from "@/components/running-timer-chip"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { RecentSubactivities } from "@/components/recent-subactivities"
 import { NotificationCenter } from "@/components/notifications/notification-center"
 import { ACCESS_ROLE_LABELS } from "@/lib/types"
 
@@ -95,6 +96,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
         <RunningTimerChip />
         <ThemeToggle />
+        <RecentSubactivities />
         <NotificationCenter />
 
         <button

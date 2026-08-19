@@ -153,6 +153,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             estimatedHours: Number(sub.estimated_hours || 0),
             trackedSeconds: liveTrackedSeconds(sub),
             timerStartedAt: sub.timer_started_at ?? undefined,
+            createdAt: sub.created_at ?? undefined,
             assigneeId: sub.assignee_id,
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,

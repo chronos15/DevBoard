@@ -86,6 +86,7 @@ export type Subactivity = {
   estimatedHours: number
   trackedSeconds: number
   timerStartedAt?: string
+  createdAt?: string
   assigneeId: string
   needsAttention?: boolean
   attentionMessage?: string

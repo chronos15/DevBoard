@@ -105,6 +105,11 @@ export function AnalysisView() {
   const [projectFilter, setProjectFilter] = React.useState("all")
   const [developerFilter, setDeveloperFilter] = React.useState("all")
   const [responsibleFilter, setResponsibleFilter] = React.useState("all")
+  const [draftDateFrom, setDraftDateFrom] = React.useState(() => todayDateKey())
+  const [draftDateTo, setDraftDateTo] = React.useState(() => todayDateKey())
+  const [draftProjectFilter, setDraftProjectFilter] = React.useState("all")
+  const [draftDeveloperFilter, setDraftDeveloperFilter] = React.useState("all")
+  const [draftResponsibleFilter, setDraftResponsibleFilter] = React.useState("all")
   const [dragging, setDragging] = React.useState<string | null>(null)
   const [over, setOver] = React.useState<AqsReviewStatus | null>(null)
   const [busy, setBusy] = React.useState<Set<string>>(() => new Set())
@@ -211,14 +216,40 @@ export function AnalysisView() {
     }
   }
 
-  function clearFilters() {
-    const today = todayDateKey()
-    setDateFrom(today)
-    setDateTo(today)
-    setProjectFilter("all")
-    setDeveloperFilter("all")
-    setResponsibleFilter("all")
+  function openFilters() {
+    setDraftDateFrom(dateFrom)
+    setDraftDateTo(dateTo)
+    setDraftProjectFilter(projectFilter)
+    setDraftDeveloperFilter(developerFilter)
+    setDraftResponsibleFilter(responsibleFilter)
+    setFiltersOpen(true)
   }
+
+  function clearDraftFilters() {
+    const today = todayDateKey()
+    setDraftDateFrom(today)
+    setDraftDateTo(today)
+    setDraftProjectFilter("all")
+    setDraftDeveloperFilter("all")
+    setDraftResponsibleFilter("all")
+  }
+
+  function applyFilters() {
+    setDateFrom(draftDateFrom)
+    setDateTo(draftDateTo)
+    setProjectFilter(draftProjectFilter)
+    setDeveloperFilter(draftDeveloperFilter)
+    setResponsibleFilter(draftResponsibleFilter)
+    setFiltersOpen(false)
+  }
+
+  const draftHasFilters = [
+    draftDateFrom !== today,
+    draftDateTo !== today,
+    draftProjectFilter !== "all",
+    draftDeveloperFilter !== "all",
+    draftResponsibleFilter !== "all",
+  ].some(Boolean)
 
   function ReviewActions({ review, compact = false }: { review: AqsReview; compact?: boolean }) {
     const { sub, aqs } = locate(review)
@@ -290,7 +321,7 @@ export function AnalysisView() {
               <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
               <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
             </div>
-            <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
+            <button type="button" onClick={openFilters} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
               <SlidersHorizontal className="size-4" />
               {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.58rem] font-semibold text-primary-foreground">{activeFilterCount}</span>}
             </button>
@@ -299,7 +330,7 @@ export function AnalysisView() {
         <p className="mt-2 px-0.5 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{filteredReviews.length}</strong> análise(s) encontrada(s)</p>
       </section>
 
-      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+      <Dialog open={filtersOpen} onOpenChange={(open) => { if (!open) setFiltersOpen(false) }}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Filtros da análise</DialogTitle>
@@ -309,17 +340,17 @@ export function AnalysisView() {
             <div className="sm:col-span-2">
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Período</div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <input aria-label="Data inicial" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
-                <input aria-label="Data final" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data inicial" type="date" value={draftDateFrom} onChange={(event) => setDraftDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data final" type="date" value={draftDateTo} onChange={(event) => setDraftDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
               </div>
             </div>
-            <label className="min-w-0 sm:col-span-2"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os projetos</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Desenvolvedor</span><select value={developerFilter} onChange={(event) => setDeveloperFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{developerOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ShieldCheck className="size-3.5" />Responsável AQS</span><select value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os responsáveis</option>{responsibleOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0 sm:col-span-2"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={draftProjectFilter} onChange={(event) => setDraftProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os projetos</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Desenvolvedor</span><select value={draftDeveloperFilter} onChange={(event) => setDraftDeveloperFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{developerOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ShieldCheck className="size-3.5" />Responsável AQS</span><select value={draftResponsibleFilter} onChange={(event) => setDraftResponsibleFilter(event.target.value)} className={selectClassName()}><option value="all">Todos os responsáveis</option>{responsibleOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>Limpar filtros</Button>
-            <Button type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</Button>
+            <Button type="button" variant="ghost" onClick={clearDraftFilters} disabled={!draftHasFilters}>Limpar filtros</Button>
+            <Button type="button" onClick={applyFilters}>Aplicar filtros</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

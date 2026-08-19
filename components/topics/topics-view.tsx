@@ -210,6 +210,12 @@ export function TopicsView() {
   const [creatorFilter, setCreatorFilter] = React.useState("all")
   const [analystFilter, setAnalystFilter] = React.useState("all")
   const [projectFilter, setProjectFilter] = React.useState("all")
+  const [draftStatusFilter, setDraftStatusFilter] = React.useState<"all" | SupportTopicDisplayStatus>("all")
+  const [draftDateFrom, setDraftDateFrom] = React.useState(() => todayDateKey())
+  const [draftDateTo, setDraftDateTo] = React.useState(() => todayDateKey())
+  const [draftCreatorFilter, setDraftCreatorFilter] = React.useState("all")
+  const [draftAnalystFilter, setDraftAnalystFilter] = React.useState("all")
+  const [draftProjectFilter, setDraftProjectFilter] = React.useState("all")
   const [busy, setBusy] = React.useState<string | null>(null)
   const [revokeOpen, setRevokeOpen] = React.useState(false)
   const [reason, setReason] = React.useState("")
@@ -296,15 +302,44 @@ export function TopicsView() {
     } finally { setBusy(null) }
   }
 
-  function clearFilters() {
-    setStatusFilter("all")
-    const today = todayDateKey()
-    setDateFrom(today)
-    setDateTo(today)
-    setCreatorFilter("all")
-    setAnalystFilter("all")
-    setProjectFilter("all")
+  function openFilters() {
+    setDraftStatusFilter(statusFilter)
+    setDraftDateFrom(dateFrom)
+    setDraftDateTo(dateTo)
+    setDraftCreatorFilter(creatorFilter)
+    setDraftAnalystFilter(analystFilter)
+    setDraftProjectFilter(projectFilter)
+    setFiltersOpen(true)
   }
+
+  function clearDraftFilters() {
+    setDraftStatusFilter("all")
+    const today = todayDateKey()
+    setDraftDateFrom(today)
+    setDraftDateTo(today)
+    setDraftCreatorFilter("all")
+    setDraftAnalystFilter("all")
+    setDraftProjectFilter("all")
+  }
+
+  function applyFilters() {
+    setStatusFilter(draftStatusFilter)
+    setDateFrom(draftDateFrom)
+    setDateTo(draftDateTo)
+    setCreatorFilter(draftCreatorFilter)
+    setAnalystFilter(draftAnalystFilter)
+    setProjectFilter(draftProjectFilter)
+    setFiltersOpen(false)
+  }
+
+  const draftHasFilters = [
+    draftDateFrom !== today,
+    draftDateTo !== today,
+    draftStatusFilter !== "all",
+    draftCreatorFilter !== "all",
+    draftAnalystFilter !== "all",
+    draftProjectFilter !== "all",
+  ].some(Boolean)
 
   return (
     <div className="min-w-0 space-y-5 sm:space-y-6">
@@ -323,7 +358,7 @@ export function TopicsView() {
               <button type="button" onClick={() => setViewMode("list")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><List className="size-3.5" />Lista</button>
               <button type="button" onClick={() => setViewMode("kanban")} className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Columns3 className="size-3.5" />Kanban</button>
             </div>
-            <button type="button" onClick={() => setFiltersOpen(true)} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
+            <button type="button" onClick={openFilters} className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", hasFilters && "border-primary/30 bg-primary/[0.06] text-primary")} aria-label="Abrir filtros">
               <SlidersHorizontal className="size-4" />
               {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.58rem] font-semibold text-primary-foreground">{activeFilterCount}</span>}
             </button>
@@ -332,28 +367,28 @@ export function TopicsView() {
         <p className="mt-2 px-0.5 text-[0.68rem] text-muted-foreground"><strong className="font-semibold text-foreground">{visibleTopics.length}</strong> tópico(s) encontrado(s)</p>
       </section>
 
-      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+      <Dialog open={filtersOpen} onOpenChange={(open) => { if (!open) setFiltersOpen(false) }}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Filtros dos tópicos</DialogTitle>
             <DialogDescription>Refine a fila por status, período, solicitante, analista e projeto.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | SupportTopicDisplayStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={analystFilter} onChange={(event) => setAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Filter className="size-3.5" />Status</span><select value={draftStatusFilter} onChange={(event) => setDraftStatusFilter(event.target.value as "all" | SupportTopicDisplayStatus)} className={selectClassName()}><option value="all">Todos</option>{columns.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><FolderKanban className="size-3.5" />Projeto</span><select value={draftProjectFilter} onChange={(event) => setDraftProjectFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{topicProjectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Solicitante</span><select value={draftCreatorFilter} onChange={(event) => setDraftCreatorFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{creatorOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label className="min-w-0"><span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><UserRound className="size-3.5" />Analista</span><select value={draftAnalystFilter} onChange={(event) => setDraftAnalystFilter(event.target.value)} className={selectClassName()}><option value="all">Todos</option>{analystOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
             <div className="sm:col-span-2">
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><CalendarDays className="size-3.5" />Período</div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <input aria-label="Data inicial" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
-                <input aria-label="Data final" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data inicial" type="date" value={draftDateFrom} onChange={(event) => setDraftDateFrom(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
+                <input aria-label="Data final" type="date" value={draftDateTo} onChange={(event) => setDraftDateTo(event.target.value)} className="h-10 min-w-0 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" />
               </div>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>Limpar filtros</Button>
-            <Button type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</Button>
+            <Button type="button" variant="ghost" onClick={clearDraftFilters} disabled={!draftHasFilters}>Limpar filtros</Button>
+            <Button type="button" onClick={applyFilters}>Aplicar filtros</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

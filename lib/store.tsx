@@ -36,6 +36,7 @@ import type {
   ChatConversation,
   ChatMeeting,
   ChatMention,
+  ChatMessage,
   MeetingMode,
   Member,
   NotificationEntry,
@@ -124,6 +125,7 @@ export type StoreContextValue = {
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
   sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
+  retryChatMessage: (conversationId: string, messageId: string) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
   sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
   loadChatHistory: (conversationId: string, beforeCreatedAt?: string) => Promise<{ count: number; hasMore: boolean } | null>
@@ -271,6 +273,26 @@ function applyRealtimeProjectLog(projects: Project[], row: Record<string, any>) 
   })
 }
 
+function isOptimisticChatMessage(message: ChatMessage) {
+  return message.deliveryStatus === "sending" || message.deliveryStatus === "failed" || message.id.startsWith("local:")
+}
+
+function mergeChatMessages(previous: ChatMessage[], incoming: ChatMessage[], preserveHistory: boolean) {
+  // Mensagens locais de envio otimista nunca podem sumir por causa de um refresh/realtime.
+  // Quando o histórico já foi carregado, preservamos também as páginas antigas já existentes.
+  const seed = preserveHistory ? previous : previous.filter(isOptimisticChatMessage)
+  const byId = new Map(seed.map((message) => [message.id, message]))
+  for (const message of incoming) byId.set(message.id, message)
+  return Array.from(byId.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function optimisticMessageId() {
+  const value = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `local:${value}`
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const supabase = React.useMemo(() => createClient(), [])
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
@@ -291,6 +313,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [lastError, setLastError] = React.useState<string | null>(null)
   const refreshTimers = React.useRef<Record<string, number>>({})
   const loadedChatHistoryIdsRef = React.useRef<Set<string>>(new Set())
+  const chatMessageDeliveriesRef = React.useRef<Set<string>>(new Set())
 
   const fail = React.useCallback((error: unknown, fallback: string) => {
     const message = errorMessage(error, fallback)
@@ -326,14 +349,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const next = await loadChatConversations(supabase, workspaceId)
       setChatConversations((current) => next.map((conversation) => {
         const previous = current.find((item) => item.id === conversation.id)
-        if (!previous || !loadedChatHistoryIdsRef.current.has(conversation.id)) return conversation
-
-        const merged = [...previous.messages]
-        for (const message of conversation.messages) {
-          if (!merged.some((item) => item.id === message.id)) merged.push(message)
+        if (!previous) return conversation
+        const merged = mergeChatMessages(
+          previous.messages,
+          conversation.messages,
+          loadedChatHistoryIdsRef.current.has(conversation.id),
+        )
+        const hasLocalDelivery = merged.some(isOptimisticChatMessage)
+        return {
+          ...conversation,
+          updatedAt: hasLocalDelivery && previous.updatedAt > conversation.updatedAt ? previous.updatedAt : conversation.updatedAt,
+          messages: merged,
         }
-        merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        return { ...conversation, messages: merged }
       }))
     } catch (error) {
       fail(error, "Não foi possível atualizar o chat")
@@ -434,13 +461,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         .then(([nextChat, nextMeetings]) => {
           setChatConversations((current) => nextChat.map((conversation) => {
             const previous = current.find((item) => item.id === conversation.id)
-            if (!previous || !loadedChatHistoryIdsRef.current.has(conversation.id)) return conversation
-            const merged = [...previous.messages]
-            for (const message of conversation.messages) {
-              if (!merged.some((item) => item.id === message.id)) merged.push(message)
+            if (!previous) return conversation
+            const merged = mergeChatMessages(
+              previous.messages,
+              conversation.messages,
+              loadedChatHistoryIdsRef.current.has(conversation.id),
+            )
+            const hasLocalDelivery = merged.some(isOptimisticChatMessage)
+            return {
+              ...conversation,
+              updatedAt: hasLocalDelivery && previous.updatedAt > conversation.updatedAt ? previous.updatedAt : conversation.updatedAt,
+              messages: merged,
             }
-            merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-            return { ...conversation, messages: merged }
           }))
           setChatMeetings(nextMeetings)
         })
@@ -804,9 +836,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       loadedChatHistoryIdsRef.current.add(conversationId)
       setChatConversations((current) => current.map((conversation) => {
         if (conversation.id !== conversationId) return conversation
-        const combined = beforeCreatedAt ? [...page.messages, ...conversation.messages] : page.messages
-        const unique = Array.from(new Map(combined.map((message) => [message.id, message])).values())
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        const incoming = beforeCreatedAt ? [...page.messages, ...conversation.messages] : page.messages
+        const unique = mergeChatMessages(conversation.messages, incoming, Boolean(beforeCreatedAt))
         return { ...conversation, messages: unique }
       }))
       return { count: page.messages.length, hasMore: page.hasMore }
@@ -847,12 +878,111 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [callRpc, refreshChat])
 
-  const sendChatMessage = React.useCallback(async (conversationId: string, content: string, mentions: ChatMention[] = []) => {
-    const id = await callRpc<string>("send_chat_message", { p_conversation_id: conversationId, p_content: content, p_mentions: mentions }, "Não foi possível enviar a mensagem")
-    if (!id) return false
-    await refreshChat()
-    return true
-  }, [callRpc, refreshChat])
+  const deliverChatMessage = React.useCallback(async (conversationId: string, localId: string, content: string, mentions: ChatMention[]) => {
+    if (chatMessageDeliveriesRef.current.has(localId)) return false
+    chatMessageDeliveriesRef.current.add(localId)
+
+    try {
+      const { data, error } = await supabase.rpc("send_chat_message", {
+        p_conversation_id: conversationId,
+        p_content: content,
+        p_mentions: mentions,
+      })
+      if (error) throw error
+      const serverId = typeof data === "string" && data ? data : null
+      if (!serverId) throw new Error("O servidor não confirmou o envio da mensagem.")
+
+      setChatConversations((current) => current.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation
+        const localMessage = conversation.messages.find((message) => message.id === localId)
+        if (!localMessage) return conversation
+
+        // Se o Realtime já trouxe a mensagem definitiva, apenas remove a cópia local.
+        if (conversation.messages.some((message) => message.id === serverId)) {
+          return { ...conversation, messages: conversation.messages.filter((message) => message.id !== localId) }
+        }
+
+        return {
+          ...conversation,
+          messages: conversation.messages.map((message) => message.id === localId
+            ? { ...message, id: serverId, deliveryStatus: undefined }
+            : message),
+        }
+      }))
+      return true
+    } catch (error) {
+      // Erro de envio de chat é mostrado na própria mensagem, evitando snackbar/global error
+      // e permitindo retry sem perder o texto digitado.
+      console.error("[Devboard/Chat] Falha ao entregar mensagem", error)
+      setChatConversations((current) => current.map((conversation) => conversation.id === conversationId
+        ? {
+            ...conversation,
+            messages: conversation.messages.map((message) => message.id === localId
+              ? { ...message, deliveryStatus: "failed" as const }
+              : message),
+          }
+        : conversation))
+      return false
+    } finally {
+      chatMessageDeliveriesRef.current.delete(localId)
+    }
+  }, [supabase])
+
+  const sendChatMessage = React.useCallback((conversationId: string, content: string, mentions: ChatMention[] = []) => {
+    const text = content.trim()
+    if (!text || !currentUserId) return Promise.resolve(false)
+
+    const createdAt = new Date().toISOString()
+    const localId = optimisticMessageId()
+    const optimistic: ChatMessage = {
+      id: localId,
+      senderId: currentUserId,
+      content: text,
+      type: "text",
+      mentions,
+      deliveryStatus: "sending",
+      createdAt,
+    }
+
+    // Primeiro injeta a mensagem localmente. O acesso ao Supabase começa somente
+    // no próximo ciclo do event loop, deixando o React liberar o composer e
+    // renderizar a mensagem otimista antes de qualquer latência de rede.
+    setChatConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? { ...conversation, updatedAt: createdAt, messages: [...conversation.messages, optimistic] }
+      : conversation))
+
+    return new Promise<boolean>((resolve) => {
+      const startDelivery = () => {
+        void deliverChatMessage(conversationId, localId, text, mentions).then(resolve)
+      }
+
+      if (typeof window === "undefined") {
+        startDelivery()
+        return
+      }
+
+      window.setTimeout(startDelivery, 0)
+    })
+  }, [currentUserId, deliverChatMessage])
+
+  const retryChatMessage = React.useCallback((conversationId: string, messageId: string) => {
+    const conversation = chatConversations.find((item) => item.id === conversationId)
+    const message = conversation?.messages.find((item) => item.id === messageId)
+    if (!message || message.deliveryStatus !== "failed" || message.type === "audio" || message.type === "media") {
+      return Promise.resolve(false)
+    }
+
+    setChatConversations((current) => current.map((item) => item.id === conversationId
+      ? {
+          ...item,
+          messages: item.messages.map((entry) => entry.id === messageId
+            ? { ...entry, deliveryStatus: "sending" as const }
+            : entry),
+        }
+      : item))
+
+    return deliverChatMessage(conversationId, messageId, message.content, message.mentions ?? [])
+  }, [chatConversations, deliverChatMessage])
 
   const sendChatAudio = React.useCallback(async (conversationId: string, audio: Blob, durationMs: number) => {
     if (!workspaceId || !currentUserId || !audio.size) return false
@@ -1223,6 +1353,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSubactivityAttachmentActive,
     ensureDirectConversation,
     sendChatMessage,
+    retryChatMessage,
     sendChatAudio,
     sendChatMedia,
     loadChatHistory,
@@ -1246,7 +1377,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,
-    members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
   ])

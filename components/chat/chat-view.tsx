@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   AtSign,
   CircleAlert,
-  Clock3,
   FolderKanban,
   Headphones,
   LoaderCircle,
@@ -951,11 +950,6 @@ export function ChatView() {
                                   minute: "2-digit",
                                 })}
                               </time>
-                              {own && item.deliveryStatus === "sending" && (
-                                <span className="mt-0.5 flex items-center justify-end gap-1 px-1 text-[0.56rem] text-muted-foreground/75">
-                                  <Clock3 className="size-2.5" /> Enviando...
-                                </span>
-                              )}
                               {own && item.deliveryStatus === "failed" && (
                                 <button
                                   type="button"
@@ -976,7 +970,7 @@ export function ChatView() {
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
-                  <div className="relative mx-auto flex max-w-3xl items-end gap-2">
+                  <div className="relative mx-auto flex max-w-3xl items-center gap-2">
                     {!recordingAudio && (
                       <>
                         {selected.kind === "group" && mentionRange && mentionCandidates.length > 0 && (
@@ -1060,7 +1054,7 @@ export function ChatView() {
                           rows={2}
                           maxLength={2500}
                           placeholder={selected.kind === "group" ? `Mensagem para ${selectedTitle}... Use @ para mencionar` : `Mensagem para ${selectedTitle}...`}
-                          className="min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                          className="min-h-14 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-5 outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                         />
                         <input
                           ref={attachmentInputRef}
@@ -1078,6 +1072,7 @@ export function ChatView() {
                           variant="outline"
                           onClick={() => attachmentInputRef.current?.click()}
                           disabled={sendingMedia}
+                          className="self-center"
                         >
                           <Paperclip className="size-4" />
                           <span className="sr-only">Anexar arquivos</span>
@@ -1090,7 +1085,14 @@ export function ChatView() {
                       onRecorded={(audio, durationMs) => selected ? sendChatAudio(selected.id, audio, durationMs) : Promise.resolve(false)}
                     />
                     {!recordingAudio && (
-                      <Button type="button" size="icon-lg" onClick={submitMessage} disabled={!message.trim() || sendingMedia}>
+                      <Button
+                        type="button"
+                        size="icon-lg"
+                        onClick={submitMessage}
+                        disabled={!message.trim()}
+                        loading={false}
+                        className="self-center"
+                      >
                         <Send className="size-4" />
                         <span className="sr-only">Enviar mensagem</span>
                       </Button>

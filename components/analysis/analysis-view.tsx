@@ -111,6 +111,7 @@ export function AnalysisView() {
   const [draftDeveloperFilter, setDraftDeveloperFilter] = React.useState("all")
   const [draftResponsibleFilter, setDraftResponsibleFilter] = React.useState("all")
   const [dragging, setDragging] = React.useState<string | null>(null)
+  const suppressCardDragRef = React.useRef(false)
   const [over, setOver] = React.useState<AqsReviewStatus | null>(null)
   const [busy, setBusy] = React.useState<Set<string>>(() => new Set())
   const [revokeTarget, setRevokeTarget] = React.useState<AqsReview | null>(null)
@@ -258,7 +259,24 @@ export function AnalysisView() {
     const lockedByOther = review.status === "evaluating" && Boolean(review.assignedAqsId && review.assignedAqsId !== currentUserId && currentUserRole !== "admin")
 
     return (
-      <div className={cn("flex items-center gap-1.5", compact && "flex-wrap justify-end")}>
+      <div
+        data-no-drag="true"
+        className={cn("flex items-center gap-1.5", compact && "flex-wrap justify-end")}
+        onPointerDown={(event) => {
+          suppressCardDragRef.current = true
+          event.stopPropagation()
+        }}
+        onPointerUp={(event) => {
+          event.stopPropagation()
+          window.setTimeout(() => { suppressCardDragRef.current = false }, 0)
+        }}
+        onPointerCancel={() => { suppressCardDragRef.current = false }}
+        onClick={(event) => event.stopPropagation()}
+        onDragStart={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+      >
         <CommentDialog
           title={`Comentários · ${sub.title}`}
           description="Observações da validação. O comentário também fica no histórico da subatividade."
@@ -386,7 +404,21 @@ export function AnalysisView() {
                       const canDrag = canReview && !isBusy && !lockedByOther && (review.status === "awaiting" || review.status === "evaluating")
                       const focused = focusSubId === sub.id
                       return (
-                        <article key={review.id} draggable={canDrag} onDragStart={(event) => { setDragging(review.id); event.dataTransfer.setData("text/aqs-review", review.id); event.dataTransfer.effectAllowed = "move" }} onDragEnd={() => { setDragging(null); setOver(null) }} className={cn("rounded-xl bg-card p-3 ring-1 ring-foreground/8 transition-all", canDrag && "hover:-translate-y-0.5 hover:shadow-md", focused && "ring-2 ring-primary/35", dragging === review.id && "opacity-50")}>
+                        <article
+                          key={review.id}
+                          draggable={canDrag}
+                          onDragStart={(event) => {
+                            if (suppressCardDragRef.current) {
+                              event.preventDefault()
+                              return
+                            }
+                            setDragging(review.id)
+                            event.dataTransfer.setData("text/aqs-review", review.id)
+                            event.dataTransfer.effectAllowed = "move"
+                          }}
+                          onDragEnd={() => { setDragging(null); setOver(null) }}
+                          className={cn("rounded-xl bg-card p-3 ring-1 ring-foreground/8 transition-all", canDrag && "hover:-translate-y-0.5 hover:shadow-md", focused && "ring-2 ring-primary/35", dragging === review.id && "opacity-50")}
+                        >
                           <div className="flex items-start gap-2"><GripVertical className={cn("mt-0.5 size-4 shrink-0", canDrag ? "cursor-grab text-muted-foreground/55" : "text-muted-foreground/20")} /><div className="min-w-0 flex-1"><p className="truncate text-[0.68rem] font-medium text-primary">{project.name}</p><h3 className="mt-1 text-sm font-semibold leading-snug">{sub.title}</h3><p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{activity.title}</p></div></div>
                           <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/45 p-2 text-[0.65rem]"><div><p className="text-muted-foreground">Desenvolvedor</p><div className="mt-1 flex min-w-0 items-center gap-1.5"><MemberAvatar member={developer} className="size-6" /><span className="truncate font-medium">{developer?.name ?? "Sem responsável"}</span></div></div><div><p className="text-muted-foreground">AQS</p><div className="mt-1 flex min-w-0 items-center gap-1.5">{aqs ? <MemberAvatar member={aqs} className="size-6" /> : <span className="size-6 rounded-full border border-dashed border-border" />}<span className="truncate font-medium">{aqs?.name ?? "Não atribuído"}</span></div></div></div>
                           {review.revokedReason && <div className="mt-2 flex gap-2 rounded-lg bg-destructive/10 p-2 text-[0.68rem] leading-relaxed text-destructive"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><span>{review.revokedReason}</span></div>}

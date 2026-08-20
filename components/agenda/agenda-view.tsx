@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Flag,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { priorityMeta } from "@/lib/project-utils"
@@ -37,6 +38,43 @@ const priorityDot: Record<string, string> = {
   high: "bg-primary",
   medium: "bg-chart-3",
   low: "bg-muted-foreground/50",
+}
+
+const brazilNationalHolidays: Record<string, string> = {
+  "01-01": "Confraternização Universal",
+  "04-21": "Tiradentes",
+  "05-01": "Dia do Trabalho",
+  "09-07": "Independência do Brasil",
+  "10-12": "Nossa Senhora Aparecida",
+  "11-02": "Finados",
+  "11-15": "Proclamação da República",
+  "11-20": "Dia Nacional de Zumbi e da Consciência Negra",
+  "12-25": "Natal",
+}
+
+function getBrazilNationalHoliday(date: Date) {
+  const monthDay = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+
+  // 20 de novembro passou a ser feriado nacional a partir de 2024.
+  if (monthDay === "11-20" && date.getFullYear() < 2024) return null
+
+  return brazilNationalHolidays[monthDay] ?? null
+}
+
+function HolidayMarker({ name, compact = false }: { name: string; compact?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-md border border-destructive/25 bg-destructive/10 text-destructive",
+        compact ? "size-5" : "h-6 gap-1 px-1.5 text-[0.58rem] font-medium",
+      )}
+      title={`Feriado nacional: ${name}`}
+      aria-label={`Feriado nacional: ${name}`}
+    >
+      <Flag className={compact ? "size-2.5" : "size-3"} aria-hidden="true" />
+      {!compact && <span className="hidden xl:inline">Feriado</span>}
+    </span>
+  )
 }
 
 function startOfDay(date: Date) {
@@ -358,13 +396,18 @@ function MonthView({
           const key = toKey(date)
           const events = byDate.get(key) ?? []
           const isToday = sameDay(date, today)
+          const holiday = getBrazilNationalHoliday(date)
 
           return (
             <div
               key={key}
               className={cn(
-                "min-w-0 rounded-lg border p-1 sm:min-h-[72px] sm:p-1.5",
-                events.length ? "border-primary/25 bg-primary/[0.035]" : "border-transparent hover:bg-muted/60",
+                "relative min-w-0 rounded-lg border p-1 sm:min-h-[72px] sm:p-1.5",
+                events.length
+                  ? "border-primary/25 bg-primary/[0.035]"
+                  : holiday
+                    ? "border-destructive/15 bg-destructive/[0.025]"
+                    : "border-transparent hover:bg-muted/60",
                 isToday && "ring-1 ring-primary/50",
               )}
             >
@@ -377,10 +420,16 @@ function MonthView({
                 >
                   {day}
                 </span>
-                {events.length > 0 && (
+                {events.length > 0 && !holiday && (
                   <span className="text-[0.55rem] tabular-nums text-muted-foreground sm:hidden">{events.length}</span>
                 )}
               </div>
+
+              {holiday && (
+                <span className="absolute right-1 top-1 sm:right-1.5 sm:top-1.5">
+                  <HolidayMarker name={holiday} compact />
+                </span>
+              )}
 
               <div className="mt-1 hidden min-w-0 flex-col gap-0.5 sm:flex">
                 {events.slice(0, 2).map((project) => (
@@ -426,11 +475,13 @@ function WeekView({
       {days.map((date, index) => {
         const projects = byDate.get(toKey(date)) ?? []
         const isToday = sameDay(date, today)
+        const holiday = getBrazilNationalHoliday(date)
         return (
           <div
             key={toKey(date)}
             className={cn(
               "min-w-0 rounded-xl border border-border p-2.5 lg:min-h-36",
+              holiday && !isToday && "border-destructive/20 bg-destructive/[0.025]",
               isToday && "border-primary/40 bg-primary/[0.035]",
             )}
           >
@@ -439,13 +490,21 @@ function WeekView({
                 <p className="text-[0.6rem] font-medium tracking-wide text-muted-foreground uppercase">{weekdays[index]}</p>
                 <p className="text-sm font-semibold tabular-nums">{date.getDate()}</p>
               </div>
-              {projects.length > 0 && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[0.6rem] tabular-nums text-muted-foreground">
-                  {projects.length}
-                </span>
-              )}
+              <div className="flex shrink-0 items-center gap-1">
+                {holiday && <HolidayMarker name={holiday} compact />}
+                {projects.length > 0 && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[0.6rem] tabular-nums text-muted-foreground">
+                    {projects.length}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
+              {holiday && (
+                <p className="truncate text-[0.6rem] font-medium text-destructive" title={holiday}>
+                  {holiday}
+                </p>
+              )}
               {projects.slice(0, 4).map((project) => (
                 <ProjectDeadline key={project.id} project={project} compact />
               ))}
@@ -463,6 +522,7 @@ function WeekView({
 
 function DayView({ cursor, today, projects }: { cursor: Date; today: Date; projects: Project[] }) {
   const isToday = sameDay(cursor, today)
+  const holiday = getBrazilNationalHoliday(cursor)
 
   return (
     <div className="min-h-40 rounded-xl border border-border p-3 sm:p-4">
@@ -472,6 +532,12 @@ function DayView({ cursor, today, projects }: { cursor: Date; today: Date; proje
           <p className="mt-0.5 text-sm font-semibold capitalize">
             {new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).format(cursor)}
           </p>
+          {holiday && (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
+              <Flag className="size-3" aria-hidden="true" />
+              <span className="truncate">{holiday}</span>
+            </div>
+          )}
         </div>
         <span className="rounded-full bg-muted px-2.5 py-1 text-xs tabular-nums text-muted-foreground">
           {projects.length} {projects.length === 1 ? "projeto" : "projetos"}

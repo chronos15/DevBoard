@@ -351,7 +351,7 @@ export function SubactivityKanban({
                               : "Somente o Desenvolvedor responsável ou um Administrador pode alterar status e cronômetro; comentários continuam liberados"
                         }
                         className={cn(
-                          "group rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/8 transition-all",
+                          "group relative rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/8 transition-all",
                           canManage && "hover:-translate-y-0.5 hover:shadow-md",
                           !canManage && "cursor-not-allowed",
                           draggingId === item.sub.id && "opacity-45",
@@ -360,7 +360,13 @@ export function SubactivityKanban({
                           pending && "ring-primary/25",
                         )}
                       >
-                        <div className="flex items-start gap-2">
+                        <CopyEntityLinkButton
+                          href={`/projetos/${project.id}#sub-${item.sub.id}`}
+                          label={`Copiar link da subatividade ${item.sub.title}`}
+                          className="absolute right-2 top-2 z-10 size-7 bg-card/90 shadow-sm ring-1 ring-border/70 backdrop-blur-sm hover:bg-muted"
+                        />
+
+                        <div className="flex items-start gap-2 pr-7">
                           {canManage ? (
                             <GripVertical className="mt-0.5 size-4 shrink-0 cursor-grab text-muted-foreground/55 group-active:cursor-grabbing" />
                           ) : (
@@ -402,10 +408,6 @@ export function SubactivityKanban({
                             onPointerDown={(event) => event.stopPropagation()}
                             onDragStart={(event) => event.preventDefault()}
                           >
-                            <CopyEntityLinkButton
-                              href={`/projetos/${project.id}#sub-${item.sub.id}`}
-                              label={`Copiar link da subatividade ${item.sub.title}`}
-                            />
                             <CommentDialog
                               title={`Comentários · ${item.sub.title}`}
                               description="Discussão da subatividade. Todos os usuários podem comentar."

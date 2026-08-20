@@ -250,14 +250,14 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
 export function ActivityItem({
   activity,
   projectId,
-  defaultOpen,
+  activityNumber,
   visibleSubactivities,
   focusActivityId,
   focusSubactivityId,
 }: {
   activity: Activity
   projectId: string
-  defaultOpen?: boolean
+  activityNumber: number
   visibleSubactivities?: Subactivity[]
   focusActivityId?: string | null
   focusSubactivityId?: string | null
@@ -269,7 +269,7 @@ export function ActivityItem({
   )
   const focusedActivity = focusActivityId === activity.id
   const [open, setOpen] = React.useState(
-    Boolean(defaultOpen || focusedActivity || hasFocusedSubactivity),
+    Boolean(focusedActivity || hasFocusedSubactivity),
   )
 
   React.useEffect(() => {
@@ -326,8 +326,11 @@ export function ActivityItem({
               )}
             />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="truncate font-semibold">{activity.title}</h3>
+              <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+                <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground sm:text-sm">
+                  {activityNumber}-
+                </span>
+                <h3 className="min-w-0 truncate font-semibold" title={activity.title}>{activity.title}</h3>
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
                   <MemberStack ids={activity.assigneeIds ?? []} max={2} />
                 )}

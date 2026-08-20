@@ -132,7 +132,7 @@ export function SubactivityKanban({
   return (
     <>
       <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain pb-3">
-        <div className="flex w-max min-w-full flex-nowrap items-start gap-3">
+        <div className="flex w-max min-w-full flex-nowrap items-stretch gap-3">
           {statusOrder.map((status) => {
             const columnItems = items.filter((item) => item.sub.status === status)
             const meta = statusMeta[status]
@@ -154,7 +154,7 @@ export function SubactivityKanban({
                 }}
                 onDrop={(event) => drop(status, event)}
                 className={cn(
-                  "flex w-[255px] min-w-[255px] flex-col overflow-hidden rounded-2xl border border-border bg-muted/25 p-2.5 transition-colors xl:w-[270px] xl:min-w-[270px]",
+                  "flex h-[calc(100dvh-21rem)] min-h-[430px] w-[255px] min-w-[255px] flex-col rounded-2xl border border-border bg-muted/25 p-2.5 transition-colors xl:w-[270px] xl:min-w-[270px]",
                   isOver && "border-primary/40 bg-primary/[0.045]",
                 )}
               >
@@ -168,7 +168,7 @@ export function SubactivityKanban({
                   </span>
                 </div>
 
-                <div className="mt-2 flex max-h-[calc(100dvh-21rem)] min-h-0 flex-col gap-2 overflow-y-auto overscroll-y-contain pr-1 [scrollbar-gutter:stable]">
+                <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain px-1 pb-1 pt-0.5 [scrollbar-gutter:stable]">
                   {columnItems.map((item) => {
                     const member = members.find((m) => m.id === item.sub.assigneeId)
                     const running = runningSubIds.includes(item.sub.id)
@@ -315,7 +315,7 @@ export function SubactivityKanban({
                   })}
 
                   {columnItems.length === 0 && (
-                    <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-border px-3 text-center text-xs text-muted-foreground">
+                    <div className="flex min-h-24 flex-1 items-center justify-center rounded-xl border border-dashed border-border px-3 text-center text-xs text-muted-foreground">
                       {filter === "all" && assigneeId === "all"
                         ? "Arraste uma subatividade para cá"
                         : "Nenhum item neste filtro"}

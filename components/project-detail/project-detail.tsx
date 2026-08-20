@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
+  ArrowUpDown,
   ChevronDown,
   Columns3,
   List,
@@ -59,6 +60,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
   const [assigneeFilter, setAssigneeFilter] = React.useState("all")
+  const [activitySort, setActivitySort] = React.useState<"newest" | "oldest">("newest")
   const [sidePanelExpanded, setSidePanelExpanded] = React.useState(true)
   const [addingActivity, setAddingActivity] = React.useState(false)
 
@@ -138,6 +140,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     matchesActivityFilter(status, activityFilter) &&
     (assigneeFilter === "all" || assigneeId === assigneeFilter)
 
+  const activityCreationNumber = new Map(
+    project.activities.map((activity, index) => [activity.id, index + 1]),
+  )
+
   const visibleActivities = project.activities.filter((activity) => {
     const activityMatchesAssignee =
       assigneeFilter === "all" || activity.assigneeIds?.includes(assigneeFilter)
@@ -150,6 +156,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       activity.subactivities.some((sub) => matchesCurrentFilters(sub.status, sub.assigneeId)) ||
       Boolean(activityMatchesAssignee && assigneeFilter !== "all" && activityFilter === "all")
     )
+  })
+
+  const orderedVisibleActivities = [...visibleActivities].sort((a, b) => {
+    const aNumber = activityCreationNumber.get(a.id) ?? 0
+    const bNumber = activityCreationNumber.get(b.id) ?? 0
+    return activitySort === "newest" ? bNumber - aNumber : aNumber - bNumber
   })
 
   const handleAddActivity = async (e: React.FormEvent) => {
@@ -362,7 +374,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   value={assigneeFilter}
                   onChange={(event) => setAssigneeFilter(event.target.value)}
                   aria-label="Filtrar atividades por usuário"
-                  className="h-8 w-full appearance-none rounded-full border border-border bg-card pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground sm:w-auto"
+                  className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-card pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
                 >
                   <option value="all">Todos os usuários</option>
                   {filterMembers.map((member) => (
@@ -373,6 +385,23 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2.5 size-3 text-muted-foreground" />
               </label>
+
+              {viewMode === "list" && (
+                <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[154px]">
+                  <ArrowUpDown className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
+                  <select
+                    data-select-chevron="custom"
+                    value={activitySort}
+                    onChange={(event) => setActivitySort(event.target.value as "newest" | "oldest")}
+                    aria-label="Ordenar atividades"
+                    className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-card pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
+                  >
+                    <option value="newest">Mais recentes</option>
+                    <option value="oldest">Mais antigas</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 size-3 text-muted-foreground" />
+                </label>
+              )}
             </div>
 
             <div className="inline-flex w-full min-w-0 shrink-0 rounded-xl bg-muted p-1 sm:w-fit lg:ml-auto">
@@ -398,7 +427,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           {viewMode === "list" ? (
             <>
               <div className="space-y-3">
-                {visibleActivities.map((activity, i) => {
+                {orderedVisibleActivities.map((activity) => {
                   const hasActiveFilter = activityFilter !== "all" || assigneeFilter !== "all"
                   const filteredSubs = hasActiveFilter
                     ? activity.subactivities.filter((sub) =>
@@ -411,7 +440,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                       projectId={project.id}
                       activity={activity}
                       visibleSubactivities={filteredSubs}
-                      defaultOpen={i === 0}
+                      activityNumber={activityCreationNumber.get(activity.id) ?? 0}
                       focusActivityId={focusTarget.activityId}
                       focusSubactivityId={focusTarget.subactivityId}
                     />

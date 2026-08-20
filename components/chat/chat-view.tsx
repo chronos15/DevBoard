@@ -24,7 +24,7 @@ import {
   Video,
   X,
 } from "lucide-react"
-import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member } from "@/lib/types"
+import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member, MemberPresence } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
@@ -49,6 +49,60 @@ function timeLabel(value: string) {
   return sameDay
     ? date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
     : date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+}
+
+function onlineDurationLabel(onlineSince: string | undefined, now: number) {
+  if (!onlineSince) return "agora"
+  const started = new Date(onlineSince).getTime()
+  if (!Number.isFinite(started)) return "agora"
+  const seconds = Math.max(0, Math.floor((now - started) / 1000))
+  if (seconds < 5) return "agora"
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (hours < 24) return remainingMinutes ? `${hours}h ${remainingMinutes}min` : `${hours}h`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`
+}
+
+function LivePresenceLabel({
+  presence,
+  ready,
+  showOffline = true,
+  className,
+}: {
+  presence?: MemberPresence
+  ready: boolean
+  showOffline?: boolean
+  className?: string
+}) {
+  const [now, setNow] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    if (!presence?.online || !presence.onlineSince) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [presence?.online, presence?.onlineSince])
+
+  if (!ready) return <span className={cn("text-muted-foreground", className)}>Verificando status...</span>
+  if (!presence?.online) return showOffline ? <span className={cn("text-muted-foreground", className)}>Offline</span> : null
+
+  const duration = onlineDurationLabel(presence.onlineSince, now)
+  return (
+    <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-success", className)}>
+      <span className="size-1.5 shrink-0 rounded-full bg-success" />
+      <span className="truncate">{duration === "agora" ? "Online agora" : `Online há ${duration}`}</span>
+    </span>
+  )
+}
+
+function PresenceDot({ online, ready }: { online: boolean; ready: boolean }) {
+  if (!ready || !online) return null
+  return <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card bg-success" aria-label="Online" />
 }
 
 function conversationTitle(
@@ -253,6 +307,8 @@ function MeetingListItem({
 export function ChatView() {
   const {
     members,
+    memberPresence,
+    presenceReady,
     projects,
     chatConversations,
     chatMeetings,
@@ -775,6 +831,8 @@ export function ChatView() {
         .map((id) => members.find((member) => member.id === id))
         .filter((member): member is Member => Boolean(member))
     : []
+  const selectedDirectPresence = selectedDirectMember ? memberPresence[selectedDirectMember.id] : undefined
+  const selectedOnlineMembers = selectedMembers.filter((member) => memberPresence[member.id]?.online)
   const canManageGroup = Boolean(
     selected?.kind === "group" &&
       (currentUserRole === "admin" || selected.createdBy === currentUserId),
@@ -856,14 +914,19 @@ export function ChatView() {
                           onClick={() => void openUser(member.id)}
                           className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-muted disabled:cursor-wait disabled:opacity-60"
                         >
-                          <MemberAvatar member={member} className="size-9 text-[0.65rem] ring-0" />
+                          <span className="relative shrink-0">
+                            <MemberAvatar member={member} profileEnabled={false} className="size-9 text-[0.65rem] ring-0" />
+                            <PresenceDot ready={presenceReady} online={Boolean(memberPresence[member.id]?.online)} />
+                          </span>
                           <span className="min-w-0 flex-1">
                             <MemberName member={member} className="block truncate text-xs font-medium" />
-                            <span className="block text-[0.62rem] text-muted-foreground">
-                              {existing ? "Abrir conversa" : "Iniciar conversa"}
-                            </span>
+                            <LivePresenceLabel
+                              presence={memberPresence[member.id]}
+                              ready={presenceReady}
+                              className="mt-0.5 max-w-full text-[0.62rem]"
+                            />
                           </span>
-                          <MessageCircleMore className="size-3.5 text-muted-foreground" />
+                          <MessageCircleMore className="size-3.5 text-muted-foreground" aria-label={existing ? "Abrir conversa" : "Iniciar conversa"} />
                         </button>
                       )
                     })}
@@ -900,6 +963,10 @@ export function ChatView() {
                     const last = conversation.messages.at(-1)
                     const active = conversation.id === selectedId
                     const liveMeeting = myMeetings.some((meeting) => meeting.conversationId === conversation.id && !meeting.endedAt)
+                    const directMemberId = conversation.kind === "direct"
+                      ? conversation.memberIds.find((id) => id !== currentUserId)
+                      : undefined
+                    const directOnline = directMemberId ? Boolean(memberPresence[directMemberId]?.online) : false
                     return (
                       <button
                         key={conversation.id}
@@ -910,9 +977,10 @@ export function ChatView() {
                           active ? "bg-primary/10" : "hover:bg-muted",
                         )}
                       >
-                        <div className="relative">
+                        <div className="relative shrink-0">
                           <ConversationAvatar conversation={conversation} currentUserId={currentUserId} members={members} profileEnabled={false} />
-                          {liveMeeting && <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card bg-success" />}
+                          {conversation.kind === "direct" && <PresenceDot ready={presenceReady} online={directOnline} />}
+                          {liveMeeting && <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-card bg-primary" title="Reunião em andamento" />}
                         </div>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center justify-between gap-2">
@@ -954,16 +1022,25 @@ export function ChatView() {
                   >
                     <ArrowLeft className="size-4" />
                   </button>
-                  <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="size-9" />
+                  <span className="relative shrink-0">
+                    <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="size-9" />
+                    {selected.kind === "direct" && (
+                      <PresenceDot ready={presenceReady} online={Boolean(selectedDirectPresence?.online)} />
+                    )}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <h1 className="truncate text-sm font-semibold">{selected.kind === "direct" ? <MemberName member={selectedDirectMember} fallback={selectedTitle} /> : selectedTitle}</h1>
-                    <p className="truncate text-[0.65rem] text-muted-foreground">
-                      {conversationMeeting
-                        ? "Reunião em andamento"
-                        : selected.kind === "group"
-                          ? `${selected.memberIds.length} participantes`
-                          : "Conversa individual"}
-                    </p>
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+                      {conversationMeeting && <span className="shrink-0 text-success">Reunião em andamento</span>}
+                      {conversationMeeting && <span aria-hidden="true">·</span>}
+                      {selected.kind === "group" ? (
+                        <span className="truncate">
+                          {presenceReady ? `${selectedOnlineMembers.length} online · ` : ""}{selected.memberIds.length} participantes
+                        </span>
+                      ) : (
+                        <LivePresenceLabel presence={selectedDirectPresence} ready={presenceReady} className="max-w-full text-[0.65rem]" />
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
@@ -1377,11 +1454,20 @@ export function ChatView() {
             {selected ? (
               <>
                 <div className="border-b border-border px-4 py-4 text-center">
-                  <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="mx-auto size-12" />
+                  <span className="relative mx-auto inline-flex">
+                    <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="size-12" />
+                    {selected.kind === "direct" && (
+                      <PresenceDot ready={presenceReady} online={Boolean(selectedDirectPresence?.online)} />
+                    )}
+                  </span>
                   <p className="mt-2 truncate text-sm font-semibold">{selected.kind === "direct" ? <MemberName member={selectedDirectMember} fallback={selectedTitle} /> : selectedTitle}</p>
-                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
-                    {selected.kind === "group" ? `${selectedMembers.length} membros` : "Usuário da equipe"}
-                  </p>
+                  <div className="mt-0.5 flex min-h-4 justify-center text-[0.65rem] text-muted-foreground">
+                    {selected.kind === "group" ? (
+                      <span>{presenceReady ? `${selectedOnlineMembers.length} online · ` : ""}{selectedMembers.length} membros</span>
+                    ) : (
+                      <LivePresenceLabel presence={selectedDirectPresence} ready={presenceReady} className="max-w-full text-[0.65rem]" />
+                    )}
+                  </div>
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => void startQuickMeeting("audio")} loading={startingMeetingMode === "audio"}>
                       <Phone className="size-3.5" /> Áudio
@@ -1418,11 +1504,20 @@ export function ChatView() {
                       <div className="space-y-1">
                         {selectedMembers.map((member) => (
                           <div key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
-                            <MemberAvatar member={member} className="size-8 ring-0" />
+                            <span className="relative shrink-0">
+                              <MemberAvatar member={member} className="size-8 ring-0" />
+                              <PresenceDot ready={presenceReady} online={Boolean(memberPresence[member.id]?.online)} />
+                            </span>
                             <span className="min-w-0 flex-1">
                               <MemberName member={member} className="block truncate text-xs font-medium" />
-                              <span className="block text-[0.6rem] text-muted-foreground">
-                                {member.id === selected.createdBy ? "Criador do grupo" : member.id === currentUserId ? "Você" : "Membro"}
+                              <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[0.6rem] text-muted-foreground">
+                                <span className="shrink-0">{member.id === selected.createdBy ? "Criador" : member.id === currentUserId ? "Você" : "Membro"}</span>
+                                <span aria-hidden="true">·</span>
+                                <LivePresenceLabel
+                                  presence={memberPresence[member.id]}
+                                  ready={presenceReady}
+                                  className="max-w-full text-[0.6rem]"
+                                />
                               </span>
                             </span>
                           </div>

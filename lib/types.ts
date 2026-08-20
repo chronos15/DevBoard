@@ -31,6 +31,12 @@ export type Member = {
   role?: AccessRole
 }
 
+export type MemberPresence = {
+  online: boolean
+  onlineSince?: string
+  connections: number
+}
+
 export type CommentEntry = {
   id: string
   authorId: string

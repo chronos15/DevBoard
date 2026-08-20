@@ -46,7 +46,8 @@ Nunca coloque `service_role`/secret key no front-end.
 13. Execute `supabase/migrations/010_devboard_chat_local_delete.sql`.
 14. Execute `supabase/migrations/011_devboard_chat_personal_history_cutoff.sql`.
 15. Execute `supabase/migrations/012_devboard_chat_message_replies.sql`.
-16. As migrations são incrementais e devem ser aplicadas nessa ordem.
+16. Execute `supabase/migrations/013_devboard_chat_realtime_presence.sql`.
+17. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -196,6 +197,14 @@ meeting:<meeting_uuid>
 ```
 
 A policy de `realtime.messages` só permite Broadcast/Presence para participantes de uma reunião ativa cujo status em `meeting_members` seja `joined`.
+
+O Chat usa um segundo canal privado por workspace para presença de usuários:
+
+```text
+devboard-presence:<workspace_uuid>
+```
+
+A migration `013_devboard_chat_realtime_presence.sql` autoriza esse canal somente para membros ativos do workspace. O cliente publica apenas o estado efêmero do Supabase Presence (`user_id`, `online_since` e um identificador da conexão), sem gravar heartbeats periódicos no PostgreSQL. Assim, entrada/saída é recebida por WebSocket e o tempo atual online é calculado no cliente.
 
 O Supabase faz a sinalização. A mídia continua WebRTC.
 

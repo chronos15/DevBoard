@@ -40,6 +40,7 @@ import type {
   ChatReplyReference,
   MeetingMode,
   Member,
+  MemberPresence,
   NotificationEntry,
   Project,
   ProjectInput,
@@ -74,6 +75,8 @@ const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 export type StoreContextValue = {
   projects: Project[]
   members: Member[]
+  memberPresence: Record<string, MemberPresence>
+  presenceReady: boolean
   chatConversations: ChatConversation[]
   chatMeetings: ChatMeeting[]
   notifications: NotificationEntry[]
@@ -294,12 +297,54 @@ function optimisticMessageId() {
   return `local:${value}`
 }
 
+type PresencePayload = {
+  user_id?: string
+  online_since?: string
+  session_id?: string
+}
+
+function presenceSessionId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function validPresenceDate(value: unknown) {
+  if (typeof value !== "string" || !value) return null
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? new Date(time).toISOString() : null
+}
+
+function mapPresenceState(state: Record<string, PresencePayload[]>): Record<string, MemberPresence> {
+  const grouped = new Map<string, { connections: number; onlineSince?: string }>()
+
+  for (const presences of Object.values(state)) {
+    for (const presence of presences ?? []) {
+      const userId = typeof presence?.user_id === "string" ? presence.user_id : ""
+      if (!userId) continue
+      const current = grouped.get(userId) ?? { connections: 0 }
+      current.connections += 1
+      const onlineSince = validPresenceDate(presence.online_since)
+      if (onlineSince && (!current.onlineSince || onlineSince < current.onlineSince)) current.onlineSince = onlineSince
+      grouped.set(userId, current)
+    }
+  }
+
+  return Object.fromEntries(Array.from(grouped.entries()).map(([userId, value]) => [userId, {
+    online: value.connections > 0,
+    onlineSince: value.onlineSince,
+    connections: value.connections,
+  }]))
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const supabase = React.useMemo(() => createClient(), [])
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = React.useState("")
   const [currentUserRole, setCurrentUserRole] = React.useState<AccessRole>("member")
   const [members, setMembers] = React.useState<Member[]>([])
+  const [memberPresence, setMemberPresence] = React.useState<Record<string, MemberPresence>>({})
+  const [presenceReady, setPresenceReady] = React.useState(false)
   const [projects, setProjects] = React.useState<Project[]>([])
   const [chatConversations, setChatConversations] = React.useState<ChatConversation[]>([])
   const [chatMeetings, setChatMeetings] = React.useState<ChatMeeting[]>([])
@@ -551,6 +596,87 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       void supabase.removeChannel(channel)
     }
   }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, schedule, supabase, workspaceId])
+
+  React.useEffect(() => {
+    if (!workspaceId || !currentUserId) {
+      setMemberPresence({})
+      setPresenceReady(false)
+      return
+    }
+
+    const sessionId = presenceSessionId()
+    const topic = `devboard-presence:${workspaceId}`
+    const channel = supabase.channel(topic, {
+      config: {
+        private: true,
+        presence: { key: `${currentUserId}:${sessionId}` },
+      },
+    })
+
+    let disposed = false
+    let onlineSince = new Date().toISOString()
+    let syncingOnlineSince = false
+
+    const currentPayload = (): PresencePayload => ({
+      user_id: currentUserId,
+      online_since: onlineSince,
+      session_id: sessionId,
+    })
+
+    const syncPresence = () => {
+      if (disposed) return
+      const state = channel.presenceState() as unknown as Record<string, PresencePayload[]>
+      const next = mapPresenceState(state)
+      setMemberPresence(next)
+      setPresenceReady(true)
+
+      // Mantém o início do período online estável entre várias abas/dispositivos.
+      // Uma nova conexão herda o menor online_since já publicado pelo mesmo usuário.
+      const mine = next[currentUserId]
+      if (mine?.onlineSince && mine.onlineSince < onlineSince && !syncingOnlineSince) {
+        onlineSince = mine.onlineSince
+        syncingOnlineSince = true
+        void channel.track(currentPayload()).finally(() => {
+          syncingOnlineSince = false
+        })
+      }
+    }
+
+    channel
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .subscribe(async (status) => {
+        if (disposed) return
+
+        if (status === "SUBSCRIBED") {
+          const existing = mapPresenceState(
+            channel.presenceState() as unknown as Record<string, PresencePayload[]>,
+          )[currentUserId]
+          if (existing?.onlineSince && existing.onlineSince < onlineSince) onlineSince = existing.onlineSince
+
+          const tracked = await channel.track(currentPayload())
+          if (tracked !== "ok") {
+            console.warn("[Devboard/Presence] Não foi possível publicar o status online:", tracked)
+          }
+          return
+        }
+
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setPresenceReady(false)
+          setMemberPresence({})
+        }
+      })
+
+    return () => {
+      disposed = true
+      setPresenceReady(false)
+      setMemberPresence({})
+      void channel.untrack().finally(() => {
+        void supabase.removeChannel(channel)
+      })
+    }
+  }, [currentUserId, supabase, workspaceId])
 
   React.useEffect(() => {
     if (typeof document === "undefined") return
@@ -1315,6 +1441,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const value = React.useMemo<StoreContextValue>(() => ({
     projects,
     members,
+    memberPresence,
+    presenceReady,
     chatConversations,
     chatMeetings,
     notifications,
@@ -1387,7 +1515,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,
-    members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
   ])

@@ -50,7 +50,8 @@ declare
     'public.add_topic_attachment(uuid,text,text,bigint,text,text)',
     'public.start_topic_analysis(uuid)',
     'public.revoke_support_topic(uuid,text)',
-    'public.send_topic_to_activity(uuid,uuid,uuid)'
+    'public.send_topic_to_activity(uuid,uuid,uuid)',
+    'public.can_access_presence_realtime(text,uuid)'
   ];
 begin
   foreach v_table in array v_tables loop
@@ -446,5 +447,53 @@ begin
     raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em send_chat_message de reply (migration 012)';
   end if;
   raise notice 'Migration 012 OK: respostas a mensagens do Chat prontas.';
+end $$;
+
+-- 013 · Presença online do Chat via Supabase Realtime Presence
+select
+  to_regprocedure('public.safe_topic_presence_workspace_id(text)') is not null as presence_topic_parser_ok,
+  to_regprocedure('public.can_access_presence_realtime(text,uuid)') is not null as presence_access_helper_ok,
+  has_function_privilege('authenticated','public.can_access_presence_realtime(text,uuid)','EXECUTE') as presence_access_execute_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='realtime'
+      and tablename='messages'
+      and policyname='devboard_presence_realtime_select'
+  ) as presence_select_policy_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='realtime'
+      and tablename='messages'
+      and policyname='devboard_presence_realtime_insert'
+  ) as presence_insert_policy_ok;
+
+do $$
+begin
+  if to_regprocedure('public.safe_topic_presence_workspace_id(text)') is null then
+    raise exception 'Backend Devboard incompleto: parser do tópico de Presence ausente (migration 013)';
+  end if;
+  if to_regprocedure('public.can_access_presence_realtime(text,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: helper de autorização de Presence ausente (migration 013)';
+  end if;
+  if not has_function_privilege('authenticated','public.can_access_presence_realtime(text,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE no helper de Presence (migration 013)';
+  end if;
+  if not exists(
+    select 1 from pg_policies
+    where schemaname='realtime'
+      and tablename='messages'
+      and policyname='devboard_presence_realtime_select'
+  ) then
+    raise exception 'Backend Devboard incompleto: policy SELECT de Presence ausente (migration 013)';
+  end if;
+  if not exists(
+    select 1 from pg_policies
+    where schemaname='realtime'
+      and tablename='messages'
+      and policyname='devboard_presence_realtime_insert'
+  ) then
+    raise exception 'Backend Devboard incompleto: policy INSERT de Presence ausente (migration 013)';
+  end if;
+  raise notice 'Migration 013 OK: Presence privado do Chat autorizado por workspace.';
 end $$;
 

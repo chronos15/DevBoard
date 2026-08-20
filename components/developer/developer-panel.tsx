@@ -7,9 +7,7 @@ import {
   Bell,
   Check,
   Clock,
-  Code2,
   Coffee,
-  Copy,
   Droplets,
   ExternalLink,
   Music,
@@ -28,8 +26,8 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { DeveloperEnvironment } from "@/components/developer/developer-environment"
 import {
-  buildIdeUri,
   DEFAULT_DEVELOPER_SETTINGS,
   DEVELOPER_SETTINGS_EVENT,
   DEVELOPER_WATER_EVENT,
@@ -39,7 +37,6 @@ import {
   musicHome,
   safeExternalUrl,
   shiftState,
-  type DeveloperIdeKind,
   type DeveloperMusicProvider,
   type DeveloperNote,
   type DeveloperSettings,
@@ -55,14 +52,6 @@ const DAY_OPTIONS = [
   { value: 0, label: "Dom", title: "Domingo" },
 ] as const
 
-const IDE_OPTIONS: Array<{ value: DeveloperIdeKind; label: string }> = [
-  { value: "vscode", label: "Visual Studio Code" },
-  { value: "cursor", label: "Cursor" },
-  { value: "visual-studio", label: "Visual Studio" },
-  { value: "delphi", label: "Delphi" },
-  { value: "jetbrains", label: "JetBrains" },
-  { value: "custom", label: "Personalizado" },
-]
 
 const FOCUS_STORAGE_PREFIX = "devboard-developer-focus-v1"
 const SW_PATH = "/devboard-sw.js"
@@ -571,19 +560,7 @@ export function DeveloperPanel() {
     window.open(target, "_blank", "noopener,noreferrer")
   }
 
-  function openIde() {
-    const uri = buildIdeUri(settings)
-    if (!uri) return
-    window.location.href = uri
-  }
 
-  async function copyWorkspacePath() {
-    const value = settings.ideWorkspacePath.trim()
-    if (!value || !navigator.clipboard?.writeText) return
-    await navigator.clipboard.writeText(value)
-    setNotice("Caminho copiado.")
-    window.setTimeout(() => setNotice((current) => current === "Caminho copiado." ? null : current), 1500)
-  }
 
   if (hydrated && currentUserRole !== "developer") return null
 
@@ -601,7 +578,6 @@ export function DeveloperPanel() {
     )
   }
 
-  const ideUri = buildIdeUri(settings)
   const lastDrinkLabel = lastWaterAt ? `Último registro às ${formatClock(new Date(lastWaterAt))}` : "Nenhum registro hoje"
   const shiftDetail = shift.kind === "working"
     ? `${formatMinutesCompact(shift.minutesLeft)} restantes`
@@ -642,6 +618,8 @@ export function DeveloperPanel() {
         <Metric icon={Timer} label="Foco" value={formatFocus(focusRemaining)} detail={focusMode === "focus" ? "Bloco de concentração" : "Pausa programada"} />
         <Metric icon={AlertTriangle} label="Alertas" value={String(alerts.length)} detail={alerts.length ? "Itens que merecem atenção" : "Tudo tranquilo por aqui"} />
       </div>
+
+      <DeveloperEnvironment currentUserId={currentUserId} onNotice={setNotice} />
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
@@ -778,16 +756,6 @@ export function DeveloperPanel() {
                 )
                 return alert.href ? <Link key={alert.id} href={alert.href}>{body}</Link> : <div key={alert.id}>{body}</div>
               })}
-            </div>
-          </Surface>
-
-          <Surface className="min-w-0">
-            <CardHeader icon={Code2} title="Abrir sua IDE" subtitle="Salve a IDE que você usa e o caminho do workspace local." />
-            <div className="space-y-3 p-4">
-              <div><FieldLabel>IDE</FieldLabel><select value={settings.ideKind} onChange={(event) => setSettings((current) => ({ ...current, ideKind: event.target.value as DeveloperIdeKind }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary">{IDE_OPTIONS.map((ide) => <option key={ide.value} value={ide.value}>{ide.label}</option>)}</select></div>
-              <div><FieldLabel>Caminho do projeto / workspace</FieldLabel><div className="flex gap-2"><input value={settings.ideWorkspacePath} onChange={(event) => setSettings((current) => ({ ...current, ideWorkspacePath: event.target.value }))} placeholder="C:\\Projetos\\MeuProjeto" className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary" /><button type="button" onClick={() => void copyWorkspacePath()} disabled={!settings.ideWorkspacePath.trim()} className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted disabled:opacity-40" title="Copiar caminho"><Copy className="size-3.5" /></button></div></div>
-              {(settings.ideKind === "custom" || !["vscode", "cursor"].includes(settings.ideKind)) && <div><FieldLabel>URI de abertura personalizada</FieldLabel><input value={settings.ideCustomUri} onChange={(event) => setSettings((current) => ({ ...current, ideCustomUri: event.target.value }))} placeholder="meu-protocolo://abrir/..." className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary" /><p className="mt-1.5 text-[0.63rem] leading-relaxed text-muted-foreground">VS Code e Cursor funcionam automaticamente. Para Delphi, Visual Studio ou JetBrains, use um protocolo/launcher registrado no seu Windows, se disponível.</p></div>}
-              <button type="button" onClick={openIde} disabled={!ideUri} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-35"><Code2 className="size-3.5" />Abrir {IDE_OPTIONS.find((item) => item.value === settings.ideKind)?.label ?? "IDE"}</button>
             </div>
           </Surface>
 

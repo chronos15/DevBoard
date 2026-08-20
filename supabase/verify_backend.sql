@@ -11,7 +11,7 @@ declare
     'activities','activity_assignees','subactivities','work_sessions','project_comments','subactivity_comments',
     'attachments','project_logs','project_versions','notifications','chat_conversations','chat_members',
     'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments',
-    'developer_settings','developer_notes','developer_water_logs'
+    'developer_settings','developer_notes','developer_water_logs','developer_ides','developer_local_projects'
   ];
   v_functions text[] := array[
     'public.update_my_profile(text,text,text,boolean)',
@@ -199,12 +199,18 @@ begin
   if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_water_logs' and policyname='devboard_developer_water_logs_all') then
     v_missing := array_append(v_missing, 'RLS policy devboard_developer_water_logs_all');
   end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_ides' and policyname='devboard_developer_ides_all') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_developer_ides_all');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_local_projects' and policyname='devboard_developer_local_projects_all') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_developer_local_projects_all');
+  end if;
 
   foreach v_table in array array[
     'profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
     'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
-    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs'
+    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs','developer_ides','developer_local_projects'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -227,7 +233,7 @@ select
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
     'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
-    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs'
+    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs','developer_ides','developer_local_projects'
   )) as devboard_tables,
   (select count(*) from pg_policies where schemaname='public' and (policyname like 'cadence_%' or policyname like 'devboard_%')) as public_rls_policies,
   (select count(*) from storage.buckets where id in ('cadence-attachments','cadence-avatars','devboard-chat-media','devboard-topic-media')) as devboard_buckets;
@@ -517,3 +523,13 @@ select
   to_regclass('public.developer_water_logs') is not null as developer_water_logs_ok,
   exists(select 1 from pg_policies where schemaname='public' and tablename='developer_settings' and policyname='devboard_developer_settings_select') as developer_settings_rls_ok,
   exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_notes') as developer_notes_realtime_ok;
+
+
+-- 016 · Múltiplas IDEs e projetos locais do Painel Dev
+select
+  to_regclass('public.developer_ides') is not null as developer_ides_ok,
+  to_regclass('public.developer_local_projects') is not null as developer_local_projects_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_ides' and policyname='devboard_developer_ides_all') as developer_ides_rls_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_local_projects' and policyname='devboard_developer_local_projects_all') as developer_local_projects_rls_ok,
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_ides') as developer_ides_realtime_ok,
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_local_projects') as developer_local_projects_realtime_ok;

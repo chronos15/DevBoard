@@ -497,3 +497,15 @@ Depois, execute novamente:
 ```text
 supabase/verify_backend.sql
 ```
+
+## Painel Dev — múltiplas IDEs e projetos locais (migration 016)
+
+Depois da migration 015, aplique também:
+
+```sql
+supabase/migrations/016_devboard_developer_multiple_ides_projects.sql
+```
+
+Ela cria `developer_ides` e `developer_local_projects`, mantendo RLS exclusivo da própria role `developer` e do próprio `auth.uid()`.
+
+O caminho absoluto da pasta **não é salvo no Supabase**. A pasta escolhida pelo botão "Escolher pasta" usa a File System Access API e o `FileSystemDirectoryHandle` fica somente no IndexedDB daquele navegador/dispositivo. O banco sincroniza apenas nome do projeto, nome visível da pasta e a IDE associada.

@@ -188,6 +188,22 @@ function iconFor(ide?: DeveloperIde | null, className = "size-4") {
 export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const supabase = React.useMemo(() => createClient(), [])
   const { projects: devboardProjects } = useStore()
+
+  // O Store incrementa trackedSeconds das subatividades em execução a cada segundo,
+  // criando uma nova referência para projects. A área de IDE só depende de nome e
+  // repository; manter esse recorte estável evita refazer a consulta do ambiente
+  // inteiro a cada tick do cronômetro.
+  const launchProjectFingerprint = JSON.stringify(
+    devboardProjects.map((project) => ({
+      name: project.name,
+      repository: String(project.repository ?? ""),
+    })),
+  )
+  const launchProjects = React.useMemo<Array<{ name: string; repository: string }>>(
+    () => JSON.parse(launchProjectFingerprint),
+    [launchProjectFingerprint],
+  )
+
   const [ides, setIdes] = React.useState<DeveloperIde[]>([])
   const [localProjects, setLocalProjects] = React.useState<DeveloperLocalProject[]>([])
   const [folderAvailability, setFolderAvailability] = React.useState<Record<string, boolean>>({})
@@ -206,8 +222,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     const name = (projectName ?? "").trim().toLocaleLowerCase("pt-BR")
     if (!folder) return ""
 
-    const repositoryMatch = devboardProjects.find((project) => {
-      const repository = String(project.repository ?? "").trim()
+    const repositoryMatch = launchProjects.find((project) => {
+      const repository = project.repository.trim()
       if (!isAbsoluteLocalPath(repository)) return false
       const base = localPathBaseName(repository).toLocaleLowerCase("pt-BR")
       return base === folder || (name && project.name.trim().toLocaleLowerCase("pt-BR") === name && base === folder)
@@ -217,7 +233,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     const oldPath = String(oldWorkspacePath ?? "").trim()
     if (isAbsoluteLocalPath(oldPath) && localPathBaseName(oldPath).toLocaleLowerCase("pt-BR") === folder) return oldPath
     return ""
-  }, [devboardProjects])
+  }, [launchProjects])
 
   const loadEnvironment = React.useCallback(async () => {
     if (!currentUserId) return

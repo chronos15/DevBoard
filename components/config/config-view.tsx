@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Loader2, Palette, ShieldCheck, User, Users } from "lucide-react"
+import { Bell, Camera, Check, Loader2, Palette, Pipette, RotateCcw, ShieldCheck, Trash2, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -22,6 +22,33 @@ const roleDescriptions: Record<AccessRole, string> = {
   aqs: "Valida tarefas em Aguardando AQS, registra evidências e atua na triagem de tópicos.",
   support: "Abre e acompanha tópicos da operação, com ordem, descrição e evidências.",
   member: "Acompanha o workspace, Chat e os próprios tópicos enviados para análise.",
+}
+
+const avatarColors = [
+  { value: "#F45A3C", label: "Coral" },
+  { value: "#E5484D", label: "Vermelho" },
+  { value: "#F59E0B", label: "Âmbar" },
+  { value: "#84CC16", label: "Lima" },
+  { value: "#22C55E", label: "Verde" },
+  { value: "#14B8A6", label: "Turquesa" },
+  { value: "#0EA5E9", label: "Céu" },
+  { value: "#3B82F6", label: "Azul" },
+  { value: "#6366F1", label: "Índigo" },
+  { value: "#8B5CF6", label: "Violeta" },
+  { value: "#D946EF", label: "Magenta" },
+  { value: "#64748B", label: "Grafite" },
+] as const
+
+function avatarColorPickerValue(value?: string) {
+  return /^#[0-9a-f]{6}$/i.test(value ?? "") ? String(value).toUpperCase() : avatarColors[0].value
+}
+
+function avatarColorForeground(value: string) {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) return "#FFFFFF"
+  const r = Number.parseInt(value.slice(1, 3), 16)
+  const g = Number.parseInt(value.slice(3, 5), 16)
+  const b = Number.parseInt(value.slice(5, 7), 16)
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111111" : "#FFFFFF"
 }
 
 export function ConfigView() {
@@ -74,12 +101,22 @@ function ProfileSection({ me }: { me?: Member }) {
   const [name, setName] = React.useState(me?.name ?? "")
   const [photo, setPhoto] = React.useState<File | null>(null)
   const [preview, setPreview] = React.useState<string | null>(null)
+  const [avatarColor, setAvatarColor] = React.useState(me?.color ?? avatarColors[0].value)
+  const [removeAvatar, setRemoveAvatar] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [saved, setSaved] = React.useState(false)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => setName(me?.name ?? ""), [me?.name])
+  React.useEffect(() => setAvatarColor(me?.color ?? avatarColors[0].value), [me?.id, me?.color])
   React.useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+
+  function clearPhotoDraft() {
+    if (preview) URL.revokeObjectURL(preview)
+    setPreview(null)
+    setPhoto(null)
+    if (fileRef.current) fileRef.current.value = ""
+  }
 
   function choosePhoto(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -87,17 +124,38 @@ function ProfileSection({ me }: { me?: Member }) {
     if (preview) URL.revokeObjectURL(preview)
     setPhoto(file)
     setPreview(URL.createObjectURL(file))
+    setRemoveAvatar(false)
+  }
+
+  function removePhoto() {
+    clearPhotoDraft()
+    setRemoveAvatar(Boolean(me?.avatarUrl))
+  }
+
+  function cancelChanges() {
+    setName(me?.name ?? "")
+    clearPhotoDraft()
+    setAvatarColor(me?.color ?? avatarColors[0].value)
+    setRemoveAvatar(false)
+    setSaved(false)
   }
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
-    if (!name.trim() || saving) return
+    if (!me || !name.trim() || saving) return
     setSaving(true)
     setSaved(false)
-    const ok = await updateMyProfile({ name: name.trim(), avatarFile: photo })
+    const colorChanged = avatarColor !== me.color
+    const ok = await updateMyProfile({
+      name: name.trim(),
+      avatarFile: photo,
+      avatarColor: colorChanged ? avatarColor : undefined,
+      removeAvatar,
+    })
     setSaving(false)
     if (ok) {
-      setPhoto(null)
+      clearPhotoDraft()
+      setRemoveAvatar(false)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 2200)
     }
@@ -107,22 +165,136 @@ function ProfileSection({ me }: { me?: Member }) {
     return <p className="text-sm text-muted-foreground">Carregando perfil...</p>
   }
 
+  const previewMember: Member = {
+    ...me,
+    color: avatarColor,
+    avatarUrl: preview ?? (removeAvatar ? undefined : me.avatarUrl),
+  }
+  const hasVisiblePhoto = Boolean(previewMember.avatarUrl)
+  const customPickerColor = avatarColorPickerValue(avatarColor)
+
   return (
     <form onSubmit={save}>
       <SectionTitle title="Perfil" subtitle="Dados vinculados à sua conta autenticada no Supabase." />
 
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <div className="relative size-16 overflow-hidden rounded-2xl">
-          {preview ? (
-            <img src={preview} alt="Prévia da foto" className="size-full object-cover" />
-          ) : (
-            <MemberAvatar member={me} className="size-16 rounded-2xl text-base ring-0" />
-          )}
+      <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-muted/20">
+        <div className="flex flex-col gap-5 p-4 sm:flex-row sm:items-center sm:p-5">
+          <div className="relative w-fit shrink-0">
+            <MemberAvatar
+              member={previewMember}
+              profileEnabled={false}
+              className="size-20 rounded-[1.35rem] text-xl shadow-sm ring-1 ring-foreground/10 sm:size-[5.5rem]"
+            />
+            <span className="absolute -right-2 -bottom-2 inline-flex items-center rounded-full border border-border bg-card px-2 py-1 text-[0.62rem] font-semibold text-muted-foreground shadow-sm">
+              Prévia
+            </span>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Seu avatar</p>
+            <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+              Use uma foto ou deixe suas iniciais representarem você. A cor escolhida aparece em todo o Devboard quando não houver foto.
+            </p>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={choosePhoto}
+              className="hidden"
+            />
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3.5 text-xs font-semibold transition-colors hover:bg-muted"
+              >
+                <Camera className="size-4" />
+                {hasVisiblePhoto ? "Alterar foto" : "Adicionar foto"}
+              </button>
+
+              {(preview || me.avatarUrl) && !removeAvatar && (
+                <button
+                  type="button"
+                  onClick={removePhoto}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3.5 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10"
+                >
+                  <Trash2 className="size-4" />
+                  Remover foto
+                </button>
+              )}
+
+              {removeAvatar && me.avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setRemoveAvatar(false)}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3.5 text-xs font-semibold transition-colors hover:bg-muted"
+                >
+                  <RotateCcw className="size-4" />
+                  Manter foto
+                </button>
+              )}
+            </div>
+
+            {removeAvatar && me.avatarUrl && (
+              <p className="mt-2 text-[0.68rem] font-medium text-destructive">
+                A foto atual será removida ao salvar. Suas iniciais passarão a usar a cor escolhida abaixo.
+              </p>
+            )}
+          </div>
         </div>
-        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={choosePhoto} className="hidden" />
-        <button type="button" onClick={() => fileRef.current?.click()} className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
-          Alterar foto
-        </button>
+
+        <div className="border-t border-border bg-card/55 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Palette className="size-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">Cor do avatar</p>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Escolha uma cor pronta ou personalize a sua.</p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {avatarColors.map((swatch) => {
+                const selected = avatarColor.toUpperCase() === swatch.value
+                return (
+                  <button
+                    key={swatch.value}
+                    type="button"
+                    title={swatch.label}
+                    aria-label={`Usar cor ${swatch.label}`}
+                    aria-pressed={selected}
+                    onClick={() => setAvatarColor(swatch.value)}
+                    className={cn(
+                      "relative size-8 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      selected ? "border-card ring-2 ring-foreground ring-offset-2 ring-offset-card" : "border-transparent",
+                    )}
+                    style={{ backgroundColor: swatch.value }}
+                  >
+                    {selected && <Check className="absolute inset-0 m-auto size-4" style={{ color: avatarColorForeground(swatch.value) }} />}
+                  </button>
+                )
+              })}
+
+              <label
+                title="Escolher uma cor personalizada"
+                className="relative inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[0.68rem] font-semibold transition-colors hover:bg-muted"
+              >
+                <span className="size-3 rounded-full border border-foreground/10" style={{ backgroundColor: customPickerColor }} />
+                <Pipette className="size-3.5 text-muted-foreground" />
+                Personalizar
+                <input
+                  type="color"
+                  value={customPickerColor}
+                  onChange={(event) => setAvatarColor(event.target.value.toUpperCase())}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  aria-label="Escolher cor personalizada do avatar"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -143,11 +315,11 @@ function ProfileSection({ me }: { me?: Member }) {
         </label>
       </div>
 
-      <div className="mt-6 flex items-center justify-end gap-2">
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
         {saved && <span className="mr-auto text-xs font-medium text-success">Alterações salvas no Supabase.</span>}
         <button
           type="button"
-          onClick={() => { setName(me.name); setPhoto(null); if (preview) URL.revokeObjectURL(preview); setPreview(null) }}
+          onClick={cancelChanges}
           className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
         >
           Cancelar
@@ -222,7 +394,7 @@ function TeamSection() {
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        Novos usuários são criados pelo Auth e entram inicialmente como Membro. Apenas Administradores podem alterar roles. Em produção, mantenha o cadastro público desabilitado se o ambiente for interno.
+        Novos usuários são criados pelo Supabase Auth e entram inicialmente como Membro. Apenas Administradores podem alterar roles. Em produção, mantenha o cadastro público desabilitado se o ambiente for interno.
       </p>
     </div>
   )

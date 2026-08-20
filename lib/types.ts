@@ -28,6 +28,7 @@ export type Member = {
   color: string
   email?: string
   avatarUrl?: string
+  avatarPath?: string
   role?: AccessRole
 }
 

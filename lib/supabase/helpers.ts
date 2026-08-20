@@ -33,6 +33,7 @@ export function mapMember(row: any, role?: string): Member {
     color: row.color || colorForUser(row.id),
     email: row.email || undefined,
     avatarUrl,
+    avatarPath: row.avatar_path || undefined,
     role: ['admin','developer','aqs','support','member'].includes(String(role)) ? role as Member['role'] : 'member',
   }
 }

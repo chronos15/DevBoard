@@ -13,7 +13,7 @@ declare
     'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments'
   ];
   v_functions text[] := array[
-    'public.update_my_profile(text,text)',
+    'public.update_my_profile(text,text,text,boolean)',
     'public.update_my_preferences(boolean,boolean,boolean,boolean,boolean,boolean,text)',
     'public.set_workspace_member_role(uuid,text)',
     'public.create_project(text,text,text,text,text,date,text,uuid[])',

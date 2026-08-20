@@ -458,3 +458,19 @@ O front-end possui fallback de leitura para um rollout seguro: se ele for public
 
 Depois de aplicar a 012, execute novamente `supabase/verify_backend.sql`.
 
+## Perfil · cor do avatar e remoção de foto (migration 014)
+
+Depois das migrations anteriores, execute também:
+
+```text
+supabase/migrations/014_devboard_profile_avatar_color_remove.sql
+```
+
+A migration é incremental e não remove perfis existentes. Ela amplia `update_my_profile` para permitir que cada usuário escolha a própria cor de avatar e remova explicitamente a foto atual. A remoção física do arquivo antigo continua sendo feita pela Storage API do cliente, respeitando a policy que limita cada usuário à própria pasta no bucket `cadence-avatars`.
+
+Depois, execute novamente:
+
+```text
+supabase/verify_backend.sql
+```
+

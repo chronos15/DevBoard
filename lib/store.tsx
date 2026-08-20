@@ -96,7 +96,7 @@ export type StoreContextValue = {
   clearError: () => void
   refreshAll: () => Promise<void>
   signOut: () => Promise<void>
-  updateMyProfile: (data: { name: string; avatarFile?: File | null }) => Promise<boolean>
+  updateMyProfile: (data: { name: string; avatarFile?: File | null; avatarColor?: string; removeAvatar?: boolean }) => Promise<boolean>
   setMemberRole: (memberId: string, role: AccessRole) => Promise<boolean>
   startAqsReview: (reviewId: string) => Promise<boolean>
   completeAqsReview: (reviewId: string) => Promise<boolean>
@@ -1292,11 +1292,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     else setNotifications((prev) => prev.map((item) => item.recipientId === currentUserId && !item.readAt ? { ...item, readAt: now } : item))
   }, [currentUserId, fail, supabase])
 
-  const updateMyProfile = React.useCallback(async ({ name, avatarFile }: { name: string; avatarFile?: File | null }) => {
+  const updateMyProfile = React.useCallback(async ({
+    name,
+    avatarFile,
+    avatarColor,
+    removeAvatar = false,
+  }: {
+    name: string
+    avatarFile?: File | null
+    avatarColor?: string
+    removeAvatar?: boolean
+  }) => {
+    let uploadedAvatarPath: string | null = null
+    const previousAvatarPath = members.find((member) => member.id === currentUserId)?.avatarPath
+
     try {
-      const { error: authError } = await supabase.auth.updateUser({ data: { full_name: name.trim() } })
+      const trimmedName = name.trim()
+      const normalizedColor = avatarColor?.trim().toUpperCase()
+      const { error: authError } = await supabase.auth.updateUser({ data: { full_name: trimmedName } })
       if (authError) throw authError
-      let avatarPath: string | null = null
+
       if (avatarFile) {
         const path = `${currentUserId}/avatar-${Date.now()}-${safeFileName(avatarFile.name)}`
         const { error: uploadError } = await supabase.storage.from(AVATARS_BUCKET).upload(path, avatarFile, {
@@ -1305,17 +1320,43 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           upsert: false,
         })
         if (uploadError) throw uploadError
-        avatarPath = path
+        uploadedAvatarPath = path
       }
-      const { error } = await supabase.rpc("update_my_profile", { p_name: name, p_avatar_path: avatarPath })
+
+      const { error } = await supabase.rpc("update_my_profile", {
+        p_name: trimmedName,
+        p_avatar_path: uploadedAvatarPath,
+        p_color: normalizedColor || null,
+        p_remove_avatar: Boolean(removeAvatar && !uploadedAvatarPath),
+      })
       if (error) throw error
+
+      const shouldDeletePreviousAvatar = Boolean(
+        previousAvatarPath &&
+        (removeAvatar || (uploadedAvatarPath && uploadedAvatarPath !== previousAvatarPath)),
+      )
+      if (shouldDeletePreviousAvatar && previousAvatarPath) {
+        const { error: cleanupError } = await supabase.storage.from(AVATARS_BUCKET).remove([previousAvatarPath])
+        if (cleanupError) {
+          console.warn("[Devboard/Profile] Perfil atualizado, mas a foto anterior não pôde ser removida do Storage.", cleanupError)
+        }
+      }
+
       await refreshMembers()
       return true
     } catch (error) {
+      // Se o upload novo ocorreu mas a atualização do perfil falhou, removemos o
+      // arquivo recém-criado para não deixar mídia órfã no bucket de avatares.
+      if (uploadedAvatarPath) {
+        const { error: cleanupError } = await supabase.storage.from(AVATARS_BUCKET).remove([uploadedAvatarPath])
+        if (cleanupError) {
+          console.warn("[Devboard/Profile] Não foi possível limpar o avatar enviado após falha no perfil.", cleanupError)
+        }
+      }
       fail(error, "Não foi possível atualizar seu perfil")
       return false
     }
-  }, [currentUserId, fail, refreshMembers, supabase])
+  }, [currentUserId, fail, members, refreshMembers, supabase])
 
   const updatePreferences = React.useCallback(async (next: UserPreferences) => {
     const result = await callRpc<unknown>("update_my_preferences", {

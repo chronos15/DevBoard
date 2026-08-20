@@ -30,6 +30,154 @@ type PendingTransition = {
   toStatus: Status
 }
 
+type OverlayScrollAreaProps = {
+  children: React.ReactNode
+  className?: string
+}
+
+function OverlayScrollArea({ children, className }: OverlayScrollAreaProps) {
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+  const contentRef = React.useRef<HTMLDivElement>(null)
+  const scrollEndTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dragRef = React.useRef<{
+    pointerId: number
+    startY: number
+    startScrollTop: number
+  } | null>(null)
+  const [hovered, setHovered] = React.useState(false)
+  const [scrolling, setScrolling] = React.useState(false)
+  const [draggingThumb, setDraggingThumb] = React.useState(false)
+  const [metrics, setMetrics] = React.useState({
+    scrollable: false,
+    thumbHeight: 0,
+    thumbTop: 0,
+  })
+
+  const updateMetrics = React.useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const { clientHeight, scrollHeight, scrollTop } = viewport
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+    if (clientHeight <= 0 || maxScrollTop <= 1) {
+      setMetrics({ scrollable: false, thumbHeight: 0, thumbTop: 0 })
+      return
+    }
+
+    const thumbHeight = Math.max(32, Math.round((clientHeight / scrollHeight) * clientHeight))
+    const maxThumbTop = Math.max(0, clientHeight - thumbHeight)
+    const thumbTop = maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTop : 0
+
+    setMetrics({ scrollable: true, thumbHeight, thumbTop })
+  }, [])
+
+  React.useLayoutEffect(() => {
+    updateMetrics()
+
+    const viewport = viewportRef.current
+    const content = contentRef.current
+    if (!viewport || !content || typeof ResizeObserver === "undefined") return
+
+    const observer = new ResizeObserver(updateMetrics)
+    observer.observe(viewport)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [updateMetrics, children])
+
+  React.useEffect(
+    () => () => {
+      if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current)
+    },
+    [],
+  )
+
+  function handleScroll() {
+    setScrolling(true)
+    updateMetrics()
+    if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current)
+    scrollEndTimerRef.current = setTimeout(() => setScrolling(false), 700)
+  }
+
+  function handleThumbPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    const viewport = viewportRef.current
+    if (!viewport || !metrics.scrollable) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScrollTop: viewport.scrollTop,
+    }
+    setDraggingThumb(true)
+  }
+
+  function handleThumbPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    const viewport = viewportRef.current
+    const drag = dragRef.current
+    if (!viewport || !drag || drag.pointerId !== event.pointerId) return
+
+    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    const thumbTravel = Math.max(1, viewport.clientHeight - metrics.thumbHeight)
+    viewport.scrollTop = drag.startScrollTop + (event.clientY - drag.startY) * (maxScrollTop / thumbTravel)
+  }
+
+  function finishThumbDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDraggingThumb(false)
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture may already have been released by the browser.
+    }
+  }
+
+  const showScrollbar = metrics.scrollable && (hovered || scrolling || draggingThumb)
+
+  return (
+    <div
+      className={cn("relative min-h-0 flex-1", className)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div
+        ref={viewportRef}
+        onScroll={handleScroll}
+        className="h-full min-h-0 overflow-y-auto overscroll-y-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div ref={contentRef} className="flex min-h-full flex-col gap-2 px-1 pb-1 pt-0.5">
+          {children}
+        </div>
+      </div>
+
+      {metrics.scrollable && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          onPointerDown={handleThumbPointerDown}
+          onPointerMove={handleThumbPointerMove}
+          onPointerUp={finishThumbDrag}
+          onPointerCancel={finishThumbDrag}
+          className={cn(
+            "absolute right-0.5 top-0 z-20 w-1.5 rounded-full bg-foreground/25 opacity-0 shadow-sm transition-opacity duration-150 hover:bg-foreground/40",
+            showScrollbar && "opacity-100",
+            draggingThumb ? "cursor-grabbing" : "cursor-grab",
+          )}
+          style={{
+            height: `${metrics.thumbHeight}px`,
+            transform: `translateY(${metrics.thumbTop}px)`,
+            touchAction: "none",
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 export function SubactivityKanban({
   project,
   filter = "all",
@@ -168,7 +316,7 @@ export function SubactivityKanban({
                   </span>
                 </div>
 
-                <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain px-1 pb-1 pt-0.5 [scrollbar-gutter:stable]">
+                <OverlayScrollArea className="mt-2">
                   {columnItems.map((item) => {
                     const member = members.find((m) => m.id === item.sub.assigneeId)
                     const running = runningSubIds.includes(item.sub.id)
@@ -321,7 +469,7 @@ export function SubactivityKanban({
                         : "Nenhum item neste filtro"}
                     </div>
                   )}
-                </div>
+                </OverlayScrollArea>
               </div>
             )
           })}

@@ -1,17 +1,37 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, CalendarClock } from "lucide-react"
+import Link from "next/link"
+import {
+  CalendarClock,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+} from "lucide-react"
 import { useStore } from "@/lib/store"
 import { priorityMeta } from "@/lib/project-utils"
 import type { Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const monthNames = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ]
-const weekdays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
+
+const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+type CalendarMode = "day" | "week" | "month"
 
 const priorityDot: Record<string, string> = {
   high: "bg-primary",
@@ -19,183 +39,469 @@ const priorityDot: Record<string, string> = {
   low: "bg-muted-foreground/50",
 }
 
-function toKey(y: number, m: number, d: number) {
-  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function startOfWeek(date: Date) {
+  const current = startOfDay(date)
+  const weekday = current.getDay()
+  const offset = weekday === 0 ? -6 : 1 - weekday
+  return addDays(current, offset)
+}
+
+function toKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`
+}
+
+function fromKey(value: string) {
+  const [year, month, day] = value.split("-").map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function sameDay(a: Date, b: Date) {
+  return toKey(a) === toKey(b)
+}
+
+function formatShortDate(date: Date) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  })
+    .format(date)
+    .replace(".", "")
+}
+
+function ProjectDeadline({ project, compact = false }: { project: Project; compact?: boolean }) {
+  return (
+    <Link
+      href={`/projetos/${project.id}`}
+      className={cn(
+        "group flex min-w-0 items-center gap-1 rounded-md bg-card font-medium ring-1 ring-foreground/8 transition-colors hover:bg-muted",
+        compact ? "px-1 py-0.5 text-[0.6rem]" : "px-2 py-1.5 text-xs",
+      )}
+      title={`Abrir projeto ${project.name}`}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full", priorityDot[project.priority])} />
+      <span className="truncate">{project.name}</span>
+    </Link>
+  )
 }
 
 export function AgendaView() {
   const { projects } = useStore()
+  const today = React.useMemo(() => startOfDay(new Date()), [])
 
-  // Anchor the initial view on the earliest upcoming deadline.
-  const initial = React.useMemo(() => {
-    const sorted = [...projects].sort((a, b) =>
-      a.dueDate.localeCompare(b.dueDate),
-    )
-    const first = sorted[0]?.dueDate
-    if (first) {
-      const [y, m] = first.split("-").map(Number)
-      return { year: y, month: m - 1 }
-    }
-    const now = new Date()
-    return { year: now.getFullYear(), month: now.getMonth() }
-  }, [projects])
+  const initialDate = React.useMemo(() => {
+    const nextDeadline = [...projects]
+      .filter((project) => project.dueDate >= toKey(today))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate
 
-  const [view, setView] = React.useState(initial)
+    return nextDeadline ? fromKey(nextDeadline) : today
+  }, [projects, today])
+
+  const [cursor, setCursor] = React.useState(initialDate)
+  const [mode, setMode] = React.useState<CalendarMode>("month")
 
   const byDate = React.useMemo(() => {
     const map = new Map<string, Project[]>()
-    for (const p of projects) {
-      const list = map.get(p.dueDate) ?? []
-      list.push(p)
-      map.set(p.dueDate, list)
+    for (const project of projects) {
+      const list = map.get(project.dueDate) ?? []
+      list.push(project)
+      list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      map.set(project.dueDate, list)
     }
     return map
   }, [projects])
 
   const upcoming = React.useMemo(
     () =>
-      [...projects].sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [projects],
+      [...projects]
+        .filter((project) => project.dueDate >= toKey(today))
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+        .slice(0, 8),
+    [projects, today],
   )
 
-  const firstDay = new Date(view.year, view.month, 1).getDay()
-  const daysInMonth = new Date(view.year, view.month + 1, 0).getDate()
-  const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ]
+  const nextSevenDays = React.useMemo(() => {
+    const end = toKey(addDays(today, 6))
+    return projects.filter((project) => project.dueDate >= toKey(today) && project.dueDate <= end).length
+  }, [projects, today])
 
-  const shift = (delta: number) => {
-    setView((v) => {
-      const m = v.month + delta
-      return {
-        year: v.year + Math.floor(m / 12),
-        month: ((m % 12) + 12) % 12,
-      }
+  const thisMonth = React.useMemo(() => {
+    const prefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-`
+    return projects.filter((project) => project.dueDate.startsWith(prefix)).length
+  }, [projects, today])
+
+  const todayCount = byDate.get(toKey(today))?.length ?? 0
+
+  const shift = (direction: -1 | 1) => {
+    setCursor((current) => {
+      if (mode === "day") return addDays(current, direction)
+      if (mode === "week") return addDays(current, direction * 7)
+      return new Date(current.getFullYear(), current.getMonth() + direction, 1)
     })
   }
 
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="rounded-2xl bg-card p-4 ring-1 ring-foreground/8 md:p-5 lg:col-span-2">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold">
-            {monthNames[view.month]}{" "}
-            <span className="text-muted-foreground">{view.year}</span>
-          </h2>
-          <div className="flex gap-1">
-            <button
-              onClick={() => shift(-1)}
-              className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Mês anterior"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <button
-              onClick={() => shift(1)}
-              className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Próximo mês"
-            >
-              <ChevronRight className="size-4" />
-            </button>
-          </div>
-        </div>
+  const periodLabel = React.useMemo(() => {
+    if (mode === "day") {
+      return new Intl.DateTimeFormat("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      }).format(cursor)
+    }
 
-        <div className="grid grid-cols-7 gap-1">
-          {weekdays.map((w) => (
-            <div
-              key={w}
-              className="pb-2 text-center font-mono text-[0.6rem] tracking-widest text-muted-foreground uppercase"
-            >
-              {w}
+    if (mode === "week") {
+      const start = startOfWeek(cursor)
+      const end = addDays(start, 6)
+      if (start.getMonth() === end.getMonth()) {
+        return `${start.getDate()}–${end.getDate()} de ${monthNames[end.getMonth()]} ${end.getFullYear()}`
+      }
+      return `${formatShortDate(start)} – ${formatShortDate(end)} ${end.getFullYear()}`
+    }
+
+    return `${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`
+  }, [cursor, mode])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+          <p className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">Hoje</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{todayCount}</p>
+          <p className="truncate text-[0.7rem] text-muted-foreground">prazo{todayCount === 1 ? "" : "s"}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+          <p className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">7 dias</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{nextSevenDays}</p>
+          <p className="truncate text-[0.7rem] text-muted-foreground">próximos prazos</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+          <p className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">Este mês</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{thisMonth}</p>
+          <p className="truncate text-[0.7rem] text-muted-foreground">projetos com prazo</p>
+        </div>
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="min-w-0 rounded-2xl bg-card p-3 ring-1 ring-foreground/8 sm:p-4">
+          <div className="mb-3 flex flex-col gap-3 border-b border-border pb-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="size-4 shrink-0 text-primary" />
+                <h2 className="truncate text-sm font-semibold capitalize sm:text-base">{periodLabel}</h2>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">Clique em um prazo para abrir o projeto.</p>
             </div>
-          ))}
-          {cells.map((day, i) => {
-            if (day === null)
-              return <div key={`e${i}`} className="aspect-square" />
-            const key = toKey(view.year, view.month, day)
-            const events = byDate.get(key) ?? []
-            return (
-              <div
-                key={key}
-                className={cn(
-                  "flex aspect-square flex-col rounded-lg border p-1.5 text-left",
-                  events.length
-                    ? "border-primary/30 bg-primary/5"
-                    : "border-transparent hover:bg-muted",
-                )}
+
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Modo de visualização da agenda">
+                {(
+                  [
+                    ["day", "Dia"],
+                    ["week", "Semana"],
+                    ["month", "Mês"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setMode(value)}
+                    className={cn(
+                      "h-8 rounded-lg px-3 text-xs font-medium transition-colors",
+                      mode === value
+                        ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/8"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                    aria-pressed={mode === value}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCursor(today)}
+                className="h-9 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
+                Hoje
+              </button>
+
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => shift(-1)}
+                  className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Período anterior"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => shift(1)}
+                  className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Próximo período"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {mode === "month" && <MonthView cursor={cursor} today={today} byDate={byDate} />}
+          {mode === "week" && <WeekView cursor={cursor} today={today} byDate={byDate} />}
+          {mode === "day" && <DayView cursor={cursor} today={today} projects={byDate.get(toKey(cursor)) ?? []} />}
+        </section>
+
+        <aside className="min-w-0 rounded-2xl bg-card p-4 ring-1 ring-foreground/8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <CalendarClock className="size-4 shrink-0 text-primary" />
+              <h2 className="truncate text-base font-semibold">Próximos prazos</h2>
+            </div>
+            <span className="shrink-0 text-[0.65rem] text-muted-foreground">{upcoming.length}</span>
+          </div>
+
+          {upcoming.length ? (
+            <ul className="flex max-h-[430px] flex-col gap-1.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {upcoming.map((project) => {
+                const date = fromKey(project.dueDate)
+                return (
+                  <li key={project.id}>
+                    <Link
+                      href={`/projetos/${project.id}`}
+                      className="group flex min-w-0 items-center gap-3 rounded-xl border border-transparent p-2.5 transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      title={`Abrir projeto ${project.name}`}
+                    >
+                      <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg bg-muted">
+                        <span className="font-mono text-sm font-bold tabular-nums leading-none">{date.getDate()}</span>
+                        <span className="mt-0.5 font-mono text-[0.58rem] tracking-wide text-muted-foreground uppercase">
+                          {monthNames[date.getMonth()].slice(0, 3)}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium group-hover:text-primary">{project.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{project.client}</p>
+                      </div>
+                      <span
+                        className={cn(
+                          "hidden shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-medium sm:inline-flex xl:hidden 2xl:inline-flex",
+                          priorityMeta[project.priority].className,
+                        )}
+                      >
+                        {priorityMeta[project.priority].label}
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="flex min-h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border px-4 text-center">
+              <Clock3 className="mb-2 size-5 text-muted-foreground" />
+              <p className="text-sm font-medium">Nenhum prazo futuro</p>
+              <p className="mt-1 text-xs text-muted-foreground">Novos projetos com prazo aparecerão aqui.</p>
+            </div>
+          )}
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function MonthView({
+  cursor,
+  today,
+  byDate,
+}: {
+  cursor: Date
+  today: Date
+  byDate: Map<string, Project[]>
+}) {
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const first = new Date(year, month, 1)
+  const offset = (first.getDay() + 6) % 7
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(offset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ]
+
+  return (
+    <div className="min-w-0">
+      <div className="grid grid-cols-7 gap-1">
+        {weekdays.map((weekday) => (
+          <div
+            key={weekday}
+            className="pb-1.5 text-center font-mono text-[0.56rem] tracking-wider text-muted-foreground uppercase sm:text-[0.6rem]"
+          >
+            {weekday}
+          </div>
+        ))}
+
+        {cells.map((day, index) => {
+          if (day === null) return <div key={`empty-${index}`} className="min-h-14 sm:min-h-[72px]" />
+
+          const date = new Date(year, month, day)
+          const key = toKey(date)
+          const events = byDate.get(key) ?? []
+          const isToday = sameDay(date, today)
+
+          return (
+            <div
+              key={key}
+              className={cn(
+                "min-w-0 rounded-lg border p-1 sm:min-h-[72px] sm:p-1.5",
+                events.length ? "border-primary/25 bg-primary/[0.035]" : "border-transparent hover:bg-muted/60",
+                isToday && "ring-1 ring-primary/50",
+              )}
+            >
+              <div className="flex items-center justify-between gap-1">
                 <span
                   className={cn(
-                    "text-xs font-medium tabular-nums",
-                    events.length ? "text-foreground" : "text-muted-foreground",
+                    "flex size-5 items-center justify-center rounded-md text-[0.65rem] font-medium tabular-nums sm:size-6 sm:text-xs",
+                    isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground",
                   )}
                 >
                   {day}
                 </span>
-                <div className="mt-auto flex flex-col gap-0.5">
-                  {events.slice(0, 2).map((p) => (
-                    <span
-                      key={p.id}
-                      className="flex items-center gap-1 truncate rounded bg-card px-1 py-0.5 text-[0.6rem] font-medium ring-1 ring-foreground/8"
-                      title={p.name}
-                    >
-                      <span
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          priorityDot[p.priority],
-                        )}
-                      />
-                      <span className="truncate">{p.name}</span>
-                    </span>
-                  ))}
-                </div>
+                {events.length > 0 && (
+                  <span className="text-[0.55rem] tabular-nums text-muted-foreground sm:hidden">{events.length}</span>
+                )}
               </div>
-            )
-          })}
+
+              <div className="mt-1 hidden min-w-0 flex-col gap-0.5 sm:flex">
+                {events.slice(0, 2).map((project) => (
+                  <ProjectDeadline key={project.id} project={project} compact />
+                ))}
+                {events.length > 2 && (
+                  <span className="px-1 text-[0.55rem] text-muted-foreground">+{events.length - 2}</span>
+                )}
+              </div>
+
+              <div className="mt-1 flex flex-wrap gap-0.5 sm:hidden">
+                {events.slice(0, 3).map((project) => (
+                  <Link
+                    key={project.id}
+                    href={`/projetos/${project.id}`}
+                    className={cn("size-1.5 rounded-full", priorityDot[project.priority])}
+                    aria-label={`Abrir projeto ${project.name}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function WeekView({
+  cursor,
+  today,
+  byDate,
+}: {
+  cursor: Date
+  today: Date
+  byDate: Map<string, Project[]>
+}) {
+  const start = startOfWeek(cursor)
+  const days = Array.from({ length: 7 }, (_, index) => addDays(start, index))
+
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-7">
+      {days.map((date, index) => {
+        const projects = byDate.get(toKey(date)) ?? []
+        const isToday = sameDay(date, today)
+        return (
+          <div
+            key={toKey(date)}
+            className={cn(
+              "min-w-0 rounded-xl border border-border p-2.5 lg:min-h-36",
+              isToday && "border-primary/40 bg-primary/[0.035]",
+            )}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[0.6rem] font-medium tracking-wide text-muted-foreground uppercase">{weekdays[index]}</p>
+                <p className="text-sm font-semibold tabular-nums">{date.getDate()}</p>
+              </div>
+              {projects.length > 0 && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[0.6rem] tabular-nums text-muted-foreground">
+                  {projects.length}
+                </span>
+              )}
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              {projects.slice(0, 4).map((project) => (
+                <ProjectDeadline key={project.id} project={project} compact />
+              ))}
+              {projects.length > 4 && (
+                <span className="px-1 text-[0.6rem] text-muted-foreground">+{projects.length - 4} prazo(s)</span>
+              )}
+              {!projects.length && <span className="text-[0.65rem] text-muted-foreground/70">Sem prazos</span>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DayView({ cursor, today, projects }: { cursor: Date; today: Date; projects: Project[] }) {
+  const isToday = sameDay(cursor, today)
+
+  return (
+    <div className="min-h-40 rounded-xl border border-border p-3 sm:p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">{isToday ? "Hoje" : "Prazos do dia"}</p>
+          <p className="mt-0.5 text-sm font-semibold capitalize">
+            {new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).format(cursor)}
+          </p>
         </div>
+        <span className="rounded-full bg-muted px-2.5 py-1 text-xs tabular-nums text-muted-foreground">
+          {projects.length} {projects.length === 1 ? "projeto" : "projetos"}
+        </span>
       </div>
 
-      <div className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
-        <div className="mb-4 flex items-center gap-2">
-          <CalendarClock className="size-4 text-primary" />
-          <h2 className="text-base font-semibold">Próximos prazos</h2>
+      {projects.length ? (
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {projects.map((project) => (
+            <Link
+              key={project.id}
+              href={`/projetos/${project.id}`}
+              className="group flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/60"
+            >
+              <span className={cn("size-2.5 shrink-0 rounded-full", priorityDot[project.priority])} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium group-hover:text-primary">{project.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{project.client}</p>
+              </div>
+              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-medium", priorityMeta[project.priority].className)}>
+                {priorityMeta[project.priority].label}
+              </span>
+            </Link>
+          ))}
         </div>
-        <ul className="flex flex-col gap-2">
-          {upcoming.map((p) => {
-            const d = new Date(p.dueDate + "T00:00:00")
-            return (
-              <li
-                key={p.id}
-                className="flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/60"
-              >
-                <div className="flex size-11 shrink-0 flex-col items-center justify-center rounded-lg bg-muted">
-                  <span className="font-mono text-sm font-bold tabular-nums leading-none">
-                    {d.getDate()}
-                  </span>
-                  <span className="mt-0.5 font-mono text-[0.6rem] tracking-wide text-muted-foreground uppercase">
-                    {monthNames[d.getMonth()].slice(0, 3)}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {p.client}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
-                    priorityMeta[p.priority].className,
-                  )}
-                >
-                  {priorityMeta[p.priority].label}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+      ) : (
+        <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-border text-center text-sm text-muted-foreground">
+          Nenhum projeto com prazo neste dia.
+        </div>
+      )}
     </div>
   )
 }

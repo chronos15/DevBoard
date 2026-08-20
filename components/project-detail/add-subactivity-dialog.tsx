@@ -88,27 +88,28 @@ export function AddSubactivityDialog({
         Nova subatividade
       </button>
 
-      <DialogContent>
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-xl sm:max-w-xl md:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Nova subatividade</DialogTitle>
           <DialogDescription>
-            Adicione uma tarefa com situação, estimativa e responsável.
+            Descreva a subatividade, defina a situação, a estimativa e o responsável.
           </DialogDescription>
         </DialogHeader>
 
         <form id="add-sub-form" onSubmit={submit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Título</label>
-            <input
+            <label className="text-xs font-medium text-muted-foreground">Descrição</label>
+            <textarea
               autoFocus
+              rows={5}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex: Revisar wireframes"
-              className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+              placeholder="Descreva o que precisa ser feito..."
+              className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring sm:min-h-32"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
               <input

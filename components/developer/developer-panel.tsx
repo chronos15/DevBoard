@@ -619,8 +619,6 @@ export function DeveloperPanel() {
         <Metric icon={AlertTriangle} label="Alertas" value={String(alerts.length)} detail={alerts.length ? "Itens que merecem atenção" : "Tudo tranquilo por aqui"} />
       </div>
 
-      <DeveloperEnvironment currentUserId={currentUserId} onNotice={setNotice} />
-
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
           <Surface className="min-w-0 lg:col-span-2">
@@ -758,6 +756,8 @@ export function DeveloperPanel() {
               })}
             </div>
           </Surface>
+
+          <DeveloperEnvironment currentUserId={currentUserId} onNotice={setNotice} />
 
           <Surface className="min-w-0">
             <CardHeader icon={Music} title="Música de trabalho" subtitle="Escolha seu serviço e deixe uma playlist favorita a um clique." />

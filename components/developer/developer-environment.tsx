@@ -16,10 +16,12 @@ import {
   Pencil,
   Plus,
   Rocket,
+  Settings2,
   TerminalSquare,
   Trash2,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -75,9 +77,12 @@ type IdeDraft = {
 }
 
 type ProjectDraft = {
+  id?: string
   name: string
   ideId: string
   handle: LocalDirectoryHandle | null
+  currentFolderName: string
+  legacyPath: string
 }
 
 const IDE_OPTIONS: Array<{ value: DeveloperIdeKind; label: string; icon: DeveloperIdeIcon }> = [
@@ -111,6 +116,10 @@ function defaultIdeDraft(): IdeDraft {
   return { name: "Visual Studio Code", kind: "vscode", icon: "code", customUriTemplate: "" }
 }
 
+function emptyProjectDraft(ideId = ""): ProjectDraft {
+  return { name: "", ideId, handle: null, currentFolderName: "", legacyPath: "" }
+}
+
 function normalizeIdeRow(row: any): DeveloperIde {
   return {
     id: String(row.id),
@@ -134,19 +143,35 @@ function normalizeProjectRow(row: any): DeveloperLocalProject {
 }
 
 function encodedLocalPath(path: string) {
-  return path.trim().replace(/\\/g, "/").split("/").map((part, index) => index === 0 && /^[A-Za-z]:$/.test(part) ? part : encodeURIComponent(part)).join("/")
+  return path
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part, index) => (index === 0 && /^[A-Za-z]:$/.test(part) ? part : encodeURIComponent(part)))
+    .join("/")
+}
+
+function localPathBaseName(path: string) {
+  const normalized = path.trim().replace(/[\\/]+$/, "").replace(/\\/g, "/")
+  return normalized.split("/").filter(Boolean).at(-1) ?? ""
+}
+
+function isAbsoluteLocalPath(value: string) {
+  const path = value.trim()
+  return /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\]+\\/.test(path) || /^\/(?!\/)/.test(path)
 }
 
 function buildLaunchUri(ide: DeveloperIde, project: DeveloperLocalProject) {
-  const legacyPath = project.legacyPath.trim()
-  if (legacyPath && ide.kind === "vscode") return `vscode://file/${encodedLocalPath(legacyPath)}`
-  if (legacyPath && ide.kind === "cursor") return `cursor://file/${encodedLocalPath(legacyPath)}`
+  const launchPath = project.legacyPath.trim()
+  if (launchPath && ide.kind === "vscode") return `vscode://file/${encodedLocalPath(launchPath)}`
+  if (launchPath && ide.kind === "cursor") return `cursor://file/${encodedLocalPath(launchPath)}`
 
   const custom = ide.customUriTemplate.trim()
   if (custom) {
     return custom
       .replaceAll("{project}", encodeURIComponent(project.name))
       .replaceAll("{folder}", encodeURIComponent(project.folderName))
+      .replaceAll("{path}", encodeURIComponent(launchPath))
       .replaceAll("{projectId}", encodeURIComponent(project.id))
   }
 
@@ -155,35 +180,74 @@ function buildLaunchUri(ide: DeveloperIde, project: DeveloperLocalProject) {
   return ""
 }
 
-function iconFor(ide?: DeveloperIde | null) {
+function iconFor(ide?: DeveloperIde | null, className = "size-4") {
   const Icon = ICONS[ide?.icon ?? "code"]
-  return <Icon className="size-4" />
+  return <Icon className={className} />
 }
 
 export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const supabase = React.useMemo(() => createClient(), [])
+  const { projects: devboardProjects } = useStore()
   const [ides, setIdes] = React.useState<DeveloperIde[]>([])
   const [localProjects, setLocalProjects] = React.useState<DeveloperLocalProject[]>([])
   const [folderAvailability, setFolderAvailability] = React.useState<Record<string, boolean>>({})
   const [loading, setLoading] = React.useState(true)
+  const [manageDialogOpen, setManageDialogOpen] = React.useState(false)
   const [ideDialogOpen, setIdeDialogOpen] = React.useState(false)
   const [ideDraft, setIdeDraft] = React.useState<IdeDraft>(defaultIdeDraft)
   const [projectDialogOpen, setProjectDialogOpen] = React.useState(false)
-  const [projectDraft, setProjectDraft] = React.useState<ProjectDraft>({ name: "", ideId: "", handle: null })
+  const [projectDraft, setProjectDraft] = React.useState<ProjectDraft>(emptyProjectDraft)
   const [savingIde, setSavingIde] = React.useState(false)
   const [savingProject, setSavingProject] = React.useState(false)
   const pickerSupported = React.useMemo(() => supportsDirectoryPicker(), [])
 
+  const inferKnownLaunchPath = React.useCallback((folderName: string, projectName?: string, oldWorkspacePath?: string) => {
+    const folder = folderName.trim().toLocaleLowerCase("pt-BR")
+    const name = (projectName ?? "").trim().toLocaleLowerCase("pt-BR")
+    if (!folder) return ""
+
+    const repositoryMatch = devboardProjects.find((project) => {
+      const repository = String(project.repository ?? "").trim()
+      if (!isAbsoluteLocalPath(repository)) return false
+      const base = localPathBaseName(repository).toLocaleLowerCase("pt-BR")
+      return base === folder || (name && project.name.trim().toLocaleLowerCase("pt-BR") === name && base === folder)
+    })
+    if (repositoryMatch?.repository) return repositoryMatch.repository.trim()
+
+    const oldPath = String(oldWorkspacePath ?? "").trim()
+    if (isAbsoluteLocalPath(oldPath) && localPathBaseName(oldPath).toLocaleLowerCase("pt-BR") === folder) return oldPath
+    return ""
+  }, [devboardProjects])
+
   const loadEnvironment = React.useCallback(async () => {
     if (!currentUserId) return
-    const [{ data: ideRows, error: ideError }, { data: projectRows, error: projectError }] = await Promise.all([
+    const [{ data: ideRows, error: ideError }, { data: projectRows, error: projectError }, { data: settingsRow }] = await Promise.all([
       supabase.from("developer_ides").select("id,name,kind,icon,custom_uri_template,sort_order").eq("user_id", currentUserId).order("sort_order").order("created_at"),
       supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,created_at").eq("user_id", currentUserId).order("created_at"),
+      supabase.from("developer_settings").select("ide_workspace_path").eq("user_id", currentUserId).maybeSingle(),
     ])
     if (ideError) throw ideError
     if (projectError) throw projectError
+
     const mappedIdes = (ideRows ?? []).map(normalizeIdeRow)
     const mappedProjects = (projectRows ?? []).map(normalizeProjectRow)
+    const oldWorkspacePath = String((settingsRow as any)?.ide_workspace_path ?? "")
+
+    // A versão anterior tinha o caminho completo. A seleção por File System Access API não revela
+    // esse caminho ao navegador, portanto recuperamos automaticamente o caminho antigo (ou o
+    // repository local já cadastrado no Devboard) quando o nome da pasta confere.
+    for (const project of mappedProjects) {
+      if (project.legacyPath || !project.folderName) continue
+      const recovered = inferKnownLaunchPath(project.folderName, project.name, oldWorkspacePath)
+      if (!recovered) continue
+      project.legacyPath = recovered
+      void supabase
+        .from("developer_local_projects")
+        .update({ legacy_path: recovered })
+        .eq("id", project.id)
+        .eq("user_id", currentUserId)
+    }
+
     setIdes(mappedIdes)
     setLocalProjects(mappedProjects)
 
@@ -196,7 +260,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       }
     }))
     setFolderAvailability(availability)
-  }, [currentUserId, supabase])
+  }, [currentUserId, inferKnownLaunchPath, supabase])
 
   React.useEffect(() => {
     if (!currentUserId) return
@@ -219,11 +283,13 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   }, [currentUserId, loadEnvironment, supabase])
 
   function openNewIde() {
+    setManageDialogOpen(false)
     setIdeDraft(defaultIdeDraft())
     setIdeDialogOpen(true)
   }
 
   function editIde(ide: DeveloperIde) {
+    setManageDialogOpen(false)
     setIdeDraft({ id: ide.id, name: ide.name, kind: ide.kind, icon: ide.icon, customUriTemplate: ide.customUriTemplate })
     setIdeDialogOpen(true)
   }
@@ -260,6 +326,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     }
     setIdeDialogOpen(false)
     await loadEnvironment()
+    setManageDialogOpen(true)
     onNotice(ideDraft.id ? "IDE atualizada." : "IDE adicionada.")
   }
 
@@ -274,14 +341,33 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   }
 
   function openNewProject() {
-    setProjectDraft({ name: "", ideId: ides[0]?.id ?? "", handle: null })
+    setProjectDraft(emptyProjectDraft(ides[0]?.id ?? ""))
+    setProjectDialogOpen(true)
+  }
+
+  function editProject(project: DeveloperLocalProject) {
+    setProjectDraft({
+      id: project.id,
+      name: project.name,
+      ideId: project.ideId ?? ides[0]?.id ?? "",
+      handle: null,
+      currentFolderName: project.folderName,
+      legacyPath: project.legacyPath,
+    })
     setProjectDialogOpen(true)
   }
 
   async function chooseFolderForDraft() {
     try {
-      const handle = await pickDirectory(`new-${currentUserId ?? "developer"}`)
-      setProjectDraft((current) => ({ ...current, handle, name: current.name.trim() || handle.name }))
+      const handle = await pickDirectory(`project-${projectDraft.id ?? currentUserId ?? "developer"}`)
+      const recovered = inferKnownLaunchPath(handle.name, projectDraft.name)
+      setProjectDraft((current) => ({
+        ...current,
+        handle,
+        currentFolderName: handle.name,
+        name: current.name.trim() || handle.name,
+        legacyPath: recovered || (localPathBaseName(current.legacyPath).toLocaleLowerCase("pt-BR") === handle.name.toLocaleLowerCase("pt-BR") ? current.legacyPath : ""),
+      }))
     } catch (error: any) {
       if (error?.name === "AbortError") return
       onNotice(String(error?.message ?? error ?? "Não foi possível selecionar a pasta."))
@@ -291,59 +377,56 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   async function saveProject() {
     const name = projectDraft.name.trim()
     if (!currentUserId || !name || !projectDraft.ideId || savingProject) return
-    setSavingProject(true)
-    const { data, error } = await supabase
-      .from("developer_local_projects")
-      .insert({
-        user_id: currentUserId,
-        name,
-        folder_name: projectDraft.handle?.name ?? "",
-        ide_id: projectDraft.ideId,
-      })
-      .select("id,name,folder_name,ide_id,legacy_path,created_at")
-      .single()
-    if (error) {
-      setSavingProject(false)
-      onNotice(error.message)
+    if (!projectDraft.id && pickerSupported && !projectDraft.handle) {
+      onNotice("Escolha a pasta do projeto antes de adicionar o atalho.")
       return
     }
+
+    setSavingProject(true)
+    const folderName = projectDraft.handle?.name ?? projectDraft.currentFolderName
+    const recoveredPath = projectDraft.legacyPath || inferKnownLaunchPath(folderName, name)
+    const payload = {
+      user_id: currentUserId,
+      name,
+      folder_name: folderName,
+      ide_id: projectDraft.ideId,
+      legacy_path: recoveredPath,
+    }
+
+    const result = projectDraft.id
+      ? await supabase
+        .from("developer_local_projects")
+        .update(payload)
+        .eq("id", projectDraft.id)
+        .eq("user_id", currentUserId)
+        .select("id,name,folder_name,ide_id,legacy_path,created_at")
+        .single()
+      : await supabase
+        .from("developer_local_projects")
+        .insert(payload)
+        .select("id,name,folder_name,ide_id,legacy_path,created_at")
+        .single()
+
+    if (result.error) {
+      setSavingProject(false)
+      onNotice(result.error.message)
+      return
+    }
+
     if (projectDraft.handle) {
       try {
-        await saveDirectoryHandle(localDirectoryKey(currentUserId, data.id), projectDraft.handle)
+        await saveDirectoryHandle(localDirectoryKey(currentUserId, result.data.id), projectDraft.handle)
       } catch {
         onNotice("Projeto salvo, mas este navegador não conseguiu guardar o vínculo persistente da pasta.")
       }
     }
+
     setSavingProject(false)
     setProjectDialogOpen(false)
     await loadEnvironment()
+    onNotice(projectDraft.id ? "Projeto local atualizado." : "Projeto local adicionado.")
   }
 
-  async function chooseFolder(project: DeveloperLocalProject) {
-    if (!currentUserId) return
-    try {
-      const handle = await pickDirectory(`project-${project.id}`)
-      await saveDirectoryHandle(localDirectoryKey(currentUserId, project.id), handle)
-      const { error } = await supabase.from("developer_local_projects").update({ folder_name: handle.name, legacy_path: "" }).eq("id", project.id).eq("user_id", currentUserId)
-      if (error) throw error
-      setFolderAvailability((current) => ({ ...current, [project.id]: true }))
-      await loadEnvironment()
-      onNotice(`Pasta “${handle.name}” vinculada neste navegador.`)
-    } catch (error: any) {
-      if (error?.name === "AbortError") return
-      onNotice(String(error?.message ?? error ?? "Não foi possível selecionar a pasta."))
-    }
-  }
-
-  async function assignIde(project: DeveloperLocalProject, ideId: string) {
-    if (!currentUserId) return
-    setLocalProjects((current) => current.map((item) => item.id === project.id ? { ...item, ideId } : item))
-    const { error } = await supabase.from("developer_local_projects").update({ ide_id: ideId || null }).eq("id", project.id).eq("user_id", currentUserId)
-    if (error) {
-      onNotice(error.message)
-      await loadEnvironment()
-    }
-  }
 
   async function deleteProject(project: DeveloperLocalProject) {
     if (!currentUserId || !window.confirm(`Remover o atalho local “${project.name}”? Nenhum arquivo da pasta será apagado.`)) return
@@ -376,7 +459,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       try {
         const allowed = await verifyFolder(project)
         if (!allowed) {
-          onNotice("O navegador perdeu a permissão da pasta. Clique em Pasta e selecione-a novamente.")
+          onNotice("O navegador perdeu a permissão da pasta. Edite o atalho e selecione-a novamente.")
           return
         }
       } catch {
@@ -386,132 +469,184 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     const uri = buildLaunchUri(ide, project)
     if (!uri) {
-      onNotice(`${ide.name} está vinculada ao projeto, mas precisa de um protocolo/launcher personalizado para abrir pelo navegador.`)
+      onNotice(`${ide.name} precisa de um protocolo/launcher personalizado para abrir pelo navegador.`)
       return
     }
 
     window.location.href = uri
-    if (!project.legacyPath && !ide.customUriTemplate.trim()) {
-      onNotice(`Abrindo ${ide.name}. Por segurança, navegadores não revelam o caminho absoluto da pasta selecionada; o vínculo da pasta continua salvo localmente no Devboard.`)
+    if ((ide.kind === "vscode" || ide.kind === "cursor") && !project.legacyPath) {
+      onNotice(`Abrindo ${ide.name}. A IDE será aberta sem forçar uma pasta porque o navegador não expôs o caminho absoluto deste diretório.`)
     }
   }
 
   if (!currentUserId) return null
 
   return (
-    <section className="rounded-2xl border border-border bg-card">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Code2 className="size-[1.1rem]" /></span>
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold sm:text-base">Ambiente de desenvolvimento</h2>
-            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Cadastre várias IDEs e diga qual delas cada projeto local deve usar.</p>
+    <>
+      <section className="min-w-0 rounded-2xl border border-border bg-card">
+        <div className="flex min-w-0 items-start gap-3 border-b border-border px-4 py-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <Code2 className="size-[1.1rem]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold">Projetos & IDEs</h2>
+            <p className="mt-0.5 truncate text-[0.67rem] text-muted-foreground">
+              {localProjects.length} {localProjects.length === 1 ? "projeto" : "projetos"} · {ides.length} {ides.length === 1 ? "IDE" : "IDEs"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={openNewProject}
+              disabled={!ides.length}
+              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              title="Adicionar projeto local"
+            >
+              <Plus className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setManageDialogOpen(true)}
+              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Gerenciar IDEs"
+            >
+              <Settings2 className="size-3.5" />
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
-          <button type="button" onClick={openNewIde} className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-semibold hover:bg-muted"><Plus className="size-3.5" />IDE</button>
-          <button type="button" onClick={openNewProject} disabled={!ides.length} className="inline-flex h-9 items-center gap-2 rounded-xl bg-foreground px-3 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-40"><FolderOpen className="size-3.5" />Projeto local</button>
-        </div>
-      </div>
 
-      <div className="space-y-5 p-4 sm:p-5">
-        <div>
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <div><p className="text-xs font-semibold">Minhas IDEs</p><p className="mt-0.5 text-[0.66rem] text-muted-foreground">Delphi, VS Code, Cursor e quantas outras você precisar.</p></div>
-            <span className="rounded-full bg-muted px-2 py-1 text-[0.62rem] font-semibold text-muted-foreground">{ides.length}</span>
-          </div>
-          {ides.length === 0 ? (
-            <button type="button" onClick={openNewIde} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-7 text-xs font-medium text-muted-foreground hover:bg-muted/35"><Plus className="size-4" />Adicionar primeira IDE</button>
+        <div className="p-2.5">
+          {loading ? (
+            <div className="px-2 py-5 text-center text-[0.67rem] text-muted-foreground">Carregando atalhos...</div>
+          ) : localProjects.length === 0 ? (
+            <button
+              type="button"
+              onClick={ides.length ? openNewProject : () => setManageDialogOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border px-3 py-5 text-xs font-medium text-muted-foreground hover:bg-muted/35"
+            >
+              <Plus className="size-3.5" />
+              {ides.length ? "Adicionar projeto local" : "Adicionar uma IDE"}
+            </button>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {ides.map((ide) => (
-                <div key={ide.id} className="group flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background/45 p-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">{iconFor(ide)}</span>
-                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold" title={ide.name}>{ide.name}</p><p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">{kindLabel(ide.kind)}</p></div>
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
-                    <button type="button" onClick={() => editIde(ide)} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Editar IDE"><Pencil className="size-3.5" /></button>
-                    <button type="button" onClick={() => void deleteIde(ide)} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remover IDE"><Trash2 className="size-3.5" /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-border pt-5">
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <div><p className="text-xs font-semibold">Projetos locais</p><p className="mt-0.5 text-[0.66rem] text-muted-foreground">Cada pasta pode usar uma IDE diferente. O vínculo da pasta fica somente neste navegador.</p></div>
-            <span className="rounded-full bg-muted px-2 py-1 text-[0.62rem] font-semibold text-muted-foreground">{localProjects.length}</span>
-          </div>
-
-          {!pickerSupported && (
-            <div className="mb-3 rounded-xl border border-warning/20 bg-warning/5 px-3 py-2.5 text-[0.66rem] leading-relaxed text-muted-foreground">A seleção nativa de pasta não está disponível neste navegador. No desktop, use Chrome ou Edge atualizado para vincular diretórios sem digitar caminhos.</div>
-          )}
-
-          {localProjects.length === 0 ? (
-            <button type="button" onClick={openNewProject} disabled={!ides.length} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-7 text-xs font-medium text-muted-foreground hover:bg-muted/35 disabled:opacity-40"><Folder className="size-4" />{ides.length ? "Vincular um projeto local" : "Adicione uma IDE primeiro"}</button>
-          ) : (
-            <div className="space-y-2">
+            <div className="max-h-[245px] space-y-0.5 overflow-y-auto overscroll-contain pr-0.5">
               {localProjects.map((project) => {
                 const ide = ides.find((item) => item.id === project.ideId)
-                const hasLocalFolder = folderAvailability[project.id] === true
+                const hasFolder = folderAvailability[project.id] === true || Boolean(project.legacyPath)
+                const opensFolder = Boolean(project.legacyPath) && Boolean(ide && (ide.kind === "vscode" || ide.kind === "cursor"))
                 return (
-                  <div key={project.id} className="grid min-w-0 gap-3 rounded-xl border border-border bg-background/45 p-3 md:grid-cols-[minmax(0,1fr)_minmax(180px,260px)_auto] md:items-center">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", hasLocalFolder || project.legacyPath ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{hasLocalFolder || project.legacyPath ? <FolderCheck className="size-4" /> : <Folder className="size-4" />}</span>
-                      <div className="min-w-0"><p className="truncate text-xs font-semibold" title={project.name}>{project.name}</p><p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground" title={project.folderName || project.legacyPath}>{project.folderName || project.legacyPath || "Pasta ainda não selecionada"}</p></div>
-                    </div>
-
-                    <select value={project.ideId ?? ""} onChange={(event) => void assignIde(project, event.target.value)} className="h-9 min-w-0 rounded-xl border border-border bg-background px-2.5 text-xs outline-none focus:border-primary">
-                      <option value="">Escolher IDE</option>
-                      {ides.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-
-                    <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
-                      <button type="button" onClick={() => void chooseFolder(project)} disabled={!pickerSupported} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border px-2.5 text-[0.67rem] font-semibold text-muted-foreground hover:bg-muted disabled:opacity-40" title="Escolher ou trocar pasta"><FolderOpen className="size-3.5" /><span className="hidden sm:inline">Pasta</span></button>
-                      <button type="button" onClick={() => void openProject(project)} disabled={!ide} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-foreground px-2.5 text-[0.67rem] font-semibold text-background disabled:opacity-35" title={ide ? `Abrir ${ide.name}` : "Escolha uma IDE"}>{ide ? iconFor(ide) : <Code2 className="size-3.5" />}<span className="hidden sm:inline">Abrir</span></button>
-                      <button type="button" onClick={() => void deleteProject(project)} className="flex size-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remover projeto local"><Trash2 className="size-3.5" /></button>
-                    </div>
+                  <div key={project.id} className="group flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-2 transition-colors hover:bg-muted/45">
+                    <span className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                      ide ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                    )}>
+                      {ide ? iconFor(ide, "size-3.5") : <Folder className="size-3.5" />}
+                    </span>
+                    <button type="button" onClick={() => editProject(project)} className="min-w-0 flex-1 text-left">
+                      <span className="block truncate text-xs font-semibold" title={project.name}>{project.name}</span>
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[0.62rem] text-muted-foreground">
+                        {hasFolder ? <FolderCheck className="size-3 shrink-0" /> : <Folder className="size-3 shrink-0" />}
+                        <span className="truncate" title={`${ide?.name ?? "Sem IDE"} · ${project.folderName || "Pasta não vinculada"}`}>
+                          {ide?.name ?? "Sem IDE"} · {project.folderName || "Pasta não vinculada"}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openProject(project)}
+                      disabled={!ide}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
+                      title={ide ? `${opensFolder ? "Abrir pasta em" : "Abrir"} ${ide.name}` : "Escolha uma IDE"}
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </button>
                   </div>
                 )
               })}
             </div>
           )}
-        </div>
 
-        <div className="rounded-xl bg-muted/45 px-3 py-2.5 text-[0.64rem] leading-relaxed text-muted-foreground">
-          <strong className="font-semibold text-foreground">Privacidade da pasta:</strong> o navegador não entrega o caminho absoluto de diretórios escolhidos. O Devboard guarda o acesso à pasta no IndexedDB deste dispositivo e sincroniza apenas nome do projeto, pasta e IDE escolhida. Para abrir Delphi/Visual Studio/JetBrains diretamente em um projeto, você pode configurar um protocolo/launcher local na IDE usando os marcadores <code>{"{project}"}</code>, <code>{"{folder}"}</code> e <code>{"{projectId}"}</code>.
+          {localProjects.length > 0 && (
+            <button
+              type="button"
+              onClick={openNewProject}
+              disabled={!ides.length}
+              className="mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-[0.65rem] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35"
+            >
+              <Plus className="size-3" />Novo atalho
+            </button>
+          )}
         </div>
-      </div>
+      </section>
+
+      <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Gerenciar IDEs</DialogTitle>
+            <DialogDescription>Cadastre seus ambientes sem ocupar espaço no Painel Dev.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {ides.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma IDE cadastrada.</div>
+            ) : ides.map((ide) => (
+              <div key={ide.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background/45 p-2.5">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">{iconFor(ide)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold" title={ide.name}>{ide.name}</p>
+                  <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">{kindLabel(ide.kind)}</p>
+                </div>
+                <button type="button" onClick={() => editIde(ide)} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Editar IDE"><Pencil className="size-3.5" /></button>
+                <button type="button" onClick={() => void deleteIde(ide)} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remover IDE"><Trash2 className="size-3.5" /></button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <button type="button" onClick={openNewIde} className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-muted"><Plus className="size-3.5" />Adicionar IDE</button>
+            <button type="button" onClick={() => setManageDialogOpen(false)} className="h-9 rounded-xl bg-foreground px-3 text-xs font-semibold text-background">Concluir</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={ideDialogOpen} onOpenChange={setIdeDialogOpen}>
         <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>{ideDraft.id ? "Editar IDE" : "Adicionar IDE"}</DialogTitle><DialogDescription>Crie um atalho visual para cada ambiente que você usa no dia a dia.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{ideDraft.id ? "Editar IDE" : "Adicionar IDE"}</DialogTitle><DialogDescription>Crie um atalho para cada ambiente que você usa.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={ideDraft.name} onChange={(event) => setIdeDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Delphi 12" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Tipo</label><select value={ideDraft.kind} onChange={(event) => changeIdeKind(event.target.value as DeveloperIdeKind)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary">{IDE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
               <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Ícone</label><div className="grid grid-cols-9 gap-1 rounded-xl border border-border bg-background p-1">{ICON_OPTIONS.map((icon) => { const Icon = ICONS[icon]; return <button key={icon} type="button" onClick={() => setIdeDraft((current) => ({ ...current, icon }))} className={cn("flex h-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted", ideDraft.icon === icon && "bg-primary/10 text-primary ring-1 ring-primary/25")} title={`Ícone ${icon}`}><Icon className="size-3.5" /></button> })}</div></div>
             </div>
-            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Protocolo/launcher avançado <span className="font-normal">(opcional)</span></label><input value={ideDraft.customUriTemplate} onChange={(event) => setIdeDraft((current) => ({ ...current, customUriTemplate: event.target.value }))} placeholder="devlauncher://open?project={projectId}" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-primary" /><p className="mt-1.5 text-[0.63rem] leading-relaxed text-muted-foreground">Use somente se você tiver um protocolo local registrado. Marcadores: {"{project}"}, {"{folder}"} e {"{projectId}"}. VS Code e Cursor abrem o aplicativo automaticamente.</p></div>
+            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Protocolo/launcher avançado <span className="font-normal">(opcional)</span></label><input value={ideDraft.customUriTemplate} onChange={(event) => setIdeDraft((current) => ({ ...current, customUriTemplate: event.target.value }))} placeholder="devlauncher://open?path={path}" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-primary" /><p className="mt-1.5 text-[0.63rem] leading-relaxed text-muted-foreground">Marcadores: {"{project}"}, {"{folder}"}, {"{path}"} e {"{projectId}"}. VS Code e Cursor usam abertura nativa quando o caminho local está disponível.</p></div>
           </div>
           <DialogFooter><button type="button" onClick={() => setIdeDialogOpen(false)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold">Cancelar</button><button type="button" onClick={() => void saveIde()} disabled={!ideDraft.name.trim() || savingIde} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">{savingIde ? "Salvando..." : "Salvar IDE"}</button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>Novo projeto local</DialogTitle><DialogDescription>Escolha a pasta pelo navegador e defina qual IDE deve ser usada para este projeto.</DialogDescription></DialogHeader>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{projectDraft.id ? "Editar projeto local" : "Novo projeto local"}</DialogTitle>
+            <DialogDescription>Escolha a pasta e defina qual IDE deve abrir este projeto.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={projectDraft.name} onChange={(event) => setProjectDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: ERP Softwork" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">IDE deste projeto</label><select value={projectDraft.ideId} onChange={(event) => setProjectDraft((current) => ({ ...current, ideId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Escolher IDE</option>{ides.map((ide) => <option key={ide.id} value={ide.id}>{ide.name}</option>)}</select></div>
-            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label><button type="button" onClick={() => void chooseFolderForDraft()} disabled={!pickerSupported} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors", projectDraft.handle ? "border-success/25 bg-success/5" : "border-dashed border-border bg-background hover:bg-muted/35", !pickerSupported && "cursor-not-allowed opacity-45")}><span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", projectDraft.handle ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{projectDraft.handle ? <FolderCheck className="size-4" /> : <FolderOpen className="size-4" />}</span><span className="min-w-0"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name ?? "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle ? "Acesso será salvo neste navegador" : "Abre o seletor nativo de diretórios"}</span></span></button></div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label>
+              <button type="button" onClick={() => void chooseFolderForDraft()} disabled={!pickerSupported} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors", projectDraft.handle || projectDraft.currentFolderName ? "border-success/25 bg-success/5" : "border-dashed border-border bg-background hover:bg-muted/35", !pickerSupported && "cursor-not-allowed opacity-45")}>
+                <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", projectDraft.handle || projectDraft.currentFolderName ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{projectDraft.handle || projectDraft.currentFolderName ? <FolderCheck className="size-4" /> : <FolderOpen className="size-4" />}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name || projectDraft.currentFolderName || "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle || projectDraft.currentFolderName ? "Clique para trocar a pasta" : "Abre o seletor nativo de diretórios"}</span></span>
+              </button>
+              {!pickerSupported && <p className="mt-1.5 text-[0.63rem] text-muted-foreground">Use Chrome ou Edge atualizado no desktop para selecionar diretórios.</p>}
+              {projectDraft.currentFolderName && projectDraft.legacyPath && <p className="mt-1.5 flex items-center gap-1.5 text-[0.63rem] font-medium text-success"><FolderCheck className="size-3" />Abertura direta da pasta disponível para VS Code/Cursor.</p>}
+            </div>
           </div>
-          <DialogFooter><button type="button" onClick={() => setProjectDialogOpen(false)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold">Cancelar</button><button type="button" onClick={() => void saveProject()} disabled={!projectDraft.name.trim() || !projectDraft.ideId || savingProject} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">{savingProject ? "Salvando..." : "Adicionar projeto"}</button></DialogFooter>
+          <DialogFooter>
+            {projectDraft.id && <button type="button" onClick={() => { const project = localProjects.find((item) => item.id === projectDraft.id); if (project) void deleteProject(project); setProjectDialogOpen(false) }} className="mr-auto h-9 rounded-xl px-2 text-xs font-semibold text-destructive hover:bg-destructive/10">Remover</button>}
+            <button type="button" onClick={() => setProjectDialogOpen(false)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold">Cancelar</button>
+            <button type="button" onClick={() => void saveProject()} disabled={!projectDraft.name.trim() || !projectDraft.ideId || savingProject} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">{savingProject ? "Salvando..." : projectDraft.id ? "Salvar" : "Adicionar projeto"}</button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {loading && <div className="px-4 pb-4 text-[0.65rem] text-muted-foreground">Carregando ambiente local...</div>}
-    </section>
+    </>
   )
 }

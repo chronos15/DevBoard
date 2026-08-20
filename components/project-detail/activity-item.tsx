@@ -290,6 +290,7 @@ export function ActivityItem({
   const progress = allSubs.length ? Math.round((done / allSubs.length) * 100) : 0
   const tracked = activityTracked(activity)
   const canDelete = allSubs.length === 0
+  const hasRunningSubactivity = allSubs.some((sub) => sub.status === "in-progress")
   const filtering = visibleSubactivities !== undefined
   const sourceTopic = supportTopics.find((topic) => topic.activityId === activity.id)
 
@@ -314,6 +315,15 @@ export function ActivityItem({
           focusedActivity && "ring-2 ring-inset ring-primary/35",
         )}
       >
+        {hasRunningSubactivity && (
+          <div className="flex items-center gap-2 border-b border-chart-3/15 bg-chart-3/[0.06] px-3 py-2 sm:px-4">
+            <span className="relative flex size-2 shrink-0">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-chart-3 opacity-40" />
+              <span className="relative inline-flex size-2 rounded-full bg-chart-3" />
+            </span>
+            <span className="text-xs font-semibold text-chart-3">Executando</span>
+          </div>
+        )}
         <div className="flex min-w-0 items-stretch">
           <button
             onClick={() => setOpen((o) => !o)}

@@ -13,9 +13,12 @@ import { ACCESS_ROLE_LABELS, type AccessRole } from "@/lib/types"
 import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { BrowserNotifications } from "@/components/notifications/browser-notifications"
 import { MemberProfileProvider } from "@/components/member-profile-popover"
+import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-notifier"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
+  // O Painel Dev é pessoal e exclusivo da role developer. Nem admin herda acesso.
+  if (pathname.startsWith("/dev")) return role === "developer"
   if (role === "admin") return true
   if (pathname.startsWith("/analise")) return role === "aqs" || role === "developer"
   if (pathname.startsWith("/projetos") || pathname.startsWith("/horas") || pathname.startsWith("/agenda") || pathname.startsWith("/relatorios")) {
@@ -55,6 +58,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         </main>
         <BackendErrorBanner />
         <BrowserNotifications />
+        <DeveloperShiftNotifier />
         <IncomingCallCenter />
       </div>
     </div>

@@ -474,3 +474,26 @@ Depois, execute novamente:
 supabase/verify_backend.sql
 ```
 
+
+## 015 · Painel pessoal do Desenvolvedor
+
+Depois da 014, execute:
+
+```text
+supabase/migrations/015_devboard_developer_panel.sql
+```
+
+A 015 cria um módulo **exclusivo da role `developer`** e sem vínculo obrigatório com projetos. Ela adiciona:
+
+- `developer_settings`: expediente, intervalo, dias úteis, hidratação, foco, música e IDE preferida;
+- `developer_notes`: anotações privadas do desenvolvedor;
+- `developer_water_logs`: registros diários de hidratação;
+- RLS restrita a `auth.uid()` **e** role `developer` — administrador não herda acesso;
+- Realtime nas três tabelas para sincronização entre abas/dispositivos;
+- avisos de expediente/hidratação no navegador são disparados pelo front quando a permissão de Notification estiver concedida.
+
+Depois, execute novamente:
+
+```text
+supabase/verify_backend.sql
+```

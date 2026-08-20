@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Code2,
   ClipboardCheck,
   ClipboardList,
   FolderKanban,
@@ -28,6 +29,7 @@ const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/dev", label: "Painel Dev", icon: Code2, roles: ["developer"] },
   { href: "/projetos", label: "Projetos", icon: FolderKanban, roles: ["admin","developer"] },
   { href: "/analise", label: "Análise", icon: ClipboardCheck, roles: ["admin","developer","aqs"] },
   { href: "/topicos", label: "Tópicos", icon: ClipboardList, roles: ["admin","developer","aqs","support","member"] },

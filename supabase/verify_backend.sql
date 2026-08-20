@@ -10,7 +10,8 @@ declare
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members',
     'activities','activity_assignees','subactivities','work_sessions','project_comments','subactivity_comments',
     'attachments','project_logs','project_versions','notifications','chat_conversations','chat_members',
-    'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments'
+    'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments',
+    'developer_settings','developer_notes','developer_water_logs'
   ];
   v_functions text[] := array[
     'public.update_my_profile(text,text,text,boolean)',
@@ -189,11 +190,21 @@ begin
     v_missing := array_append(v_missing, 'realtime meeting INSERT policy');
   end if;
 
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_settings' and policyname='devboard_developer_settings_select') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_developer_settings_select');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_notes' and policyname='devboard_developer_notes_all') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_developer_notes_all');
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_water_logs' and policyname='devboard_developer_water_logs_all') then
+    v_missing := array_append(v_missing, 'RLS policy devboard_developer_water_logs_all');
+  end if;
+
   foreach v_table in array array[
     'profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
     'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
-    'aqs_reviews','support_topics','topic_attachments'
+    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -207,7 +218,7 @@ begin
     raise exception 'Backend Devboard incompleto: %', array_to_string(v_missing, ', ');
   end if;
 
-  raise notice 'Devboard backend OK: 24 tabelas, roles, AQS, Tópicos, RPCs críticas, Storage, Auth trigger, índices e Realtime verificados.';
+  raise notice 'Devboard backend OK: 27 tabelas, roles, AQS, Tópicos, Painel Dev, RPCs críticas, Storage, Auth trigger, índices e Realtime verificados.';
 end $$;
 
 -- Resumo visual adicional
@@ -216,7 +227,7 @@ select
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members','activities','activity_assignees',
     'subactivities','work_sessions','project_comments','subactivity_comments','attachments','project_logs','project_versions',
     'notifications','chat_conversations','chat_members','chat_messages','meetings','meeting_members',
-    'aqs_reviews','support_topics','topic_attachments'
+    'aqs_reviews','support_topics','topic_attachments','developer_settings','developer_notes','developer_water_logs'
   )) as devboard_tables,
   (select count(*) from pg_policies where schemaname='public' and (policyname like 'cadence_%' or policyname like 'devboard_%')) as public_rls_policies,
   (select count(*) from storage.buckets where id in ('cadence-attachments','cadence-avatars','devboard-chat-media','devboard-topic-media')) as devboard_buckets;
@@ -497,3 +508,12 @@ begin
   raise notice 'Migration 013 OK: Presence privado do Chat autorizado por workspace.';
 end $$;
 
+
+
+-- 015 · Painel pessoal do Desenvolvedor
+select
+  to_regclass('public.developer_settings') is not null as developer_settings_ok,
+  to_regclass('public.developer_notes') is not null as developer_notes_ok,
+  to_regclass('public.developer_water_logs') is not null as developer_water_logs_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_settings' and policyname='devboard_developer_settings_select') as developer_settings_rls_ok,
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_notes') as developer_notes_realtime_ok;

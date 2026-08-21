@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const AGENT_VERSION = "0.1.0"
+const AGENT_VERSION = "0.1.1"
 const CONFIG_MARKER = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 
 export async function GET(request: NextRequest) {

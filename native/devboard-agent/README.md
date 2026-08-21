@@ -4,6 +4,7 @@ Agente nativo pequeno usado pelo Painel Dev para:
 
 - iniciar automaticamente com a sessão do Windows;
 - registrar `Ctrl + Shift + 7` como atalho global;
+- usar automaticamente um hook global como fallback quando outro aplicativo já reservou o atalho;
 - abrir o Devboard diretamente em `/dev#dev-session`, mesmo com o navegador fechado;
 - enviar heartbeat para o Supabase para o Painel Dev mostrar o estado real da integração;
 - registrar o protocolo `devboard-agent://` para integrações locais futuras.

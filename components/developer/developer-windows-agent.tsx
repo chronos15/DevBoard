@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  AlertTriangle,
   CheckCircle2,
   Download,
   Keyboard,
@@ -13,7 +14,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
-const CURRENT_AGENT_VERSION = "0.1.0"
+const CURRENT_AGENT_VERSION = "0.1.1"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {
@@ -81,6 +82,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const selected = onlineAgent ?? agents[0] ?? null
   const isOnline = Boolean(onlineAgent)
   const needsUpdate = Boolean(isOnline && selected?.agent_version && selected.agent_version !== CURRENT_AGENT_VERSION)
+  const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
 
   async function downloadInstaller() {
     if (downloading) return
@@ -114,14 +116,22 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
       <div className="flex min-w-0 items-start gap-3 border-b border-border px-4 py-4">
         <span className={cn(
           "flex size-10 shrink-0 items-center justify-center rounded-xl",
-          isOnline ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
+          shortcutReady
+            ? "bg-success/10 text-success"
+            : isOnline
+              ? "bg-warning/10 text-warning"
+              : "bg-muted text-muted-foreground",
         )}>
           <Laptop className="size-[1.1rem]" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-sm font-semibold sm:text-base">Integração Windows</h2>
-            {isOnline && <span className="size-2 shrink-0 rounded-full bg-success" aria-label="Agente online" />}
+            {shortcutReady ? (
+              <span className="size-2 shrink-0 rounded-full bg-success" aria-label="Agente e atalho funcionando" />
+            ) : isOnline ? (
+              <span className="size-2 shrink-0 rounded-full bg-warning" aria-label="Agente online, atalho indisponível" />
+            ) : null}
           </div>
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             Atalho global e launcher local sem configuração manual.
@@ -144,18 +154,36 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
         ) : selected ? (
           <div className={cn(
             "rounded-xl border p-3",
-            isOnline ? "border-success/20 bg-success/[0.04]" : "border-border bg-background/45",
+            shortcutReady
+              ? "border-success/20 bg-success/[0.04]"
+              : isOnline
+                ? "border-warning/25 bg-warning/[0.04]"
+                : "border-border bg-background/45",
           )}>
             <div className="flex min-w-0 items-start gap-3">
               <span className={cn(
                 "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg",
-                isOnline ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
+                shortcutReady
+                  ? "bg-success/10 text-success"
+                  : isOnline
+                    ? "bg-warning/10 text-warning"
+                    : "bg-muted text-muted-foreground",
               )}>
-                {isOnline ? <CheckCircle2 className="size-4" /> : <WifiOff className="size-4" />}
+                {shortcutReady ? (
+                  <CheckCircle2 className="size-4" />
+                ) : isOnline ? (
+                  <AlertTriangle className="size-4" />
+                ) : (
+                  <WifiOff className="size-4" />
+                )}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-semibold">
-                  {isOnline ? `Funcionando${selected.machine_name ? ` em ${selected.machine_name}` : ""}` : "Agente não está respondendo"}
+                  {shortcutReady
+                    ? `Funcionando${selected.machine_name ? ` em ${selected.machine_name}` : ""}`
+                    : isOnline
+                      ? `Agente online${selected.machine_name ? ` em ${selected.machine_name}` : ""}, atalho indisponível`
+                      : "Agente não está respondendo"}
                 </p>
                 <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
                   {relativeHeartbeat(selected.last_seen_at, now)}
@@ -183,7 +211,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
 
             {selected.hotkey_ok === false && (
               <p className="mt-2 text-[0.65rem] leading-relaxed text-warning">
-                O agente está online, mas Ctrl + Shift + 7 já está sendo usado por outro aplicativo.
+                O agente está online, mas o atalho global não pôde ser ativado. Atualize o Agent para usar o fallback automático.
               </p>
             )}
           </div>
@@ -203,7 +231,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
           onClick={() => void downloadInstaller()}
           className={cn(
             "mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-            isOnline && !needsUpdate ? "border border-border bg-background hover:bg-muted" : "bg-primary text-primary-foreground",
+            shortcutReady && !needsUpdate ? "border border-border bg-background hover:bg-muted" : "bg-primary text-primary-foreground",
           )}
         >
           {downloading ? <RefreshCw className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}

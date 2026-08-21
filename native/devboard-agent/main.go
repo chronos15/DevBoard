@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	agentVersion = "0.1.0"
+	agentVersion = "0.1.1"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -59,13 +59,25 @@ type winMsg struct {
 }
 
 var (
-	user32               = syscall.NewLazyDLL("user32.dll")
-	kernel32             = syscall.NewLazyDLL("kernel32.dll")
-	procRegisterHotKey   = user32.NewProc("RegisterHotKey")
-	procUnregisterHotKey = user32.NewProc("UnregisterHotKey")
-	procGetMessageW      = user32.NewProc("GetMessageW")
-	procCreateMutexW     = kernel32.NewProc("CreateMutexW")
-	procGetLastError     = kernel32.NewProc("GetLastError")
+	user32                  = syscall.NewLazyDLL("user32.dll")
+	kernel32                = syscall.NewLazyDLL("kernel32.dll")
+	procRegisterHotKey      = user32.NewProc("RegisterHotKey")
+	procUnregisterHotKey    = user32.NewProc("UnregisterHotKey")
+	procGetMessageW         = user32.NewProc("GetMessageW")
+	procSetWindowsHookExW   = user32.NewProc("SetWindowsHookExW")
+	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
+	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
+	procCreateMutexW        = kernel32.NewProc("CreateMutexW")
+	procGetLastError        = kernel32.NewProc("GetLastError")
+	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
+
+	keyboardHookHandle uintptr
+	keyboardHookProc   uintptr
+	hookAppURL         string
+	hookCtrlDown       bool
+	hookShiftDown      bool
+	hookShortcutDown   bool
+	registeredHotkey   bool
 )
 
 func main() {
@@ -237,8 +249,8 @@ func acquireSingleInstance() bool {
 }
 
 func runAgent(cfg agentConfig) {
-	hotkeyOK := registerHotkey()
-	defer unregisterHotkey()
+	hotkeyOK := startGlobalShortcut(cfg.AppURL)
+	defer stopGlobalShortcut()
 
 	go heartbeatLoop(cfg, hotkeyOK)
 
@@ -263,13 +275,114 @@ func runAgent(cfg agentConfig) {
 	}
 }
 
-func registerHotkey() bool {
-	r, _, _ := procRegisterHotKey.Call(0, hotkeyID, modControl|modShift|modNoRepeat, vk7)
-	return r != 0
+const (
+	whKeyboardLL = 13
+	wmKeyDown    = 0x0100
+	wmKeyUp      = 0x0101
+	wmSysKeyDown = 0x0104
+	wmSysKeyUp   = 0x0105
+	vkControl    = 0x11
+	vkShift      = 0x10
+	vkLControl   = 0xA2
+	vkRControl   = 0xA3
+	vkLShift     = 0xA0
+	vkRShift     = 0xA1
+)
+
+type kbdLLHookStruct struct {
+	VkCode      uint32
+	ScanCode    uint32
+	Flags       uint32
+	Time        uint32
+	DwExtraInfo uintptr
 }
 
-func unregisterHotkey() {
-	procUnregisterHotKey.Call(0, hotkeyID)
+// startGlobalShortcut tenta primeiro RegisterHotKey, que é o caminho mais leve.
+// Se outro aplicativo (por exemplo a extensão antiga do Devboard) já tiver
+// reservado Ctrl+Shift+7, usamos um WH_KEYBOARD_LL como fallback. Assim o Agent
+// continua respondendo ao mesmo atalho sem exigir qualquer configuração do usuário.
+func startGlobalShortcut(appURL string) bool {
+	r, _, _ := procRegisterHotKey.Call(0, hotkeyID, modControl|modShift|modNoRepeat, vk7)
+	if r != 0 {
+		registeredHotkey = true
+		return true
+	}
+
+	hookAppURL = appURL
+	keyboardHookProc = syscall.NewCallback(lowLevelKeyboardProc)
+	module, _, _ := procGetModuleHandleW.Call(0)
+	hook, _, _ := procSetWindowsHookExW.Call(
+		whKeyboardLL,
+		keyboardHookProc,
+		module,
+		0,
+	)
+	if hook == 0 {
+		// Alguns ambientes aceitam hook low-level com hMod nulo mesmo quando o
+		// módulo não foi resolvido. Tentamos uma segunda vez antes de desistir.
+		hook, _, _ = procSetWindowsHookExW.Call(
+			whKeyboardLL,
+			keyboardHookProc,
+			0,
+			0,
+		)
+	}
+	keyboardHookHandle = hook
+	return keyboardHookHandle != 0
+}
+
+func stopGlobalShortcut() {
+	if registeredHotkey {
+		procUnregisterHotKey.Call(0, hotkeyID)
+		registeredHotkey = false
+	}
+	if keyboardHookHandle != 0 {
+		procUnhookWindowsHookEx.Call(keyboardHookHandle)
+		keyboardHookHandle = 0
+	}
+}
+
+func lowLevelKeyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
+	if nCode < 0 || lParam == 0 {
+		result, _, _ := procCallNextHookEx.Call(keyboardHookHandle, uintptr(nCode), wParam, lParam)
+		return result
+	}
+
+	info := (*kbdLLHookStruct)(unsafe.Pointer(lParam))
+	isDown := wParam == wmKeyDown || wParam == wmSysKeyDown
+	isUp := wParam == wmKeyUp || wParam == wmSysKeyUp
+
+	switch info.VkCode {
+	case vkControl, vkLControl, vkRControl:
+		if isDown {
+			hookCtrlDown = true
+		} else if isUp {
+			hookCtrlDown = false
+		}
+	case vkShift, vkLShift, vkRShift:
+		if isDown {
+			hookShiftDown = true
+		} else if isUp {
+			hookShiftDown = false
+		}
+	case vk7:
+		if isDown && hookCtrlDown && hookShiftDown {
+			if !hookShortcutDown {
+				hookShortcutDown = true
+				go openDevboard(hookAppURL)
+			}
+			// Consumimos o atalho no fallback para evitar que a extensão antiga
+			// ou outro aplicativo execute a mesma combinação em paralelo.
+			return 1
+		}
+		if isUp && hookShortcutDown {
+			hookShortcutDown = false
+			return 1
+		}
+	}
+
+	result, _, _ := procCallNextHookEx.Call(keyboardHookHandle, uintptr(nCode), wParam, lParam)
+	return result
 }
 
 func heartbeatLoop(cfg agentConfig, hotkeyOK bool) {

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.2.0"
+	agentVersion = "0.3.0"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -96,6 +96,13 @@ func main() {
 	currentExe, _ = filepath.Abs(currentExe)
 	installedExe, _ = filepath.Abs(installedExe)
 
+	// O helper de atualização roda a partir de um executável temporário e precisa
+	// substituir o Agent instalado antes da lógica normal de instalação/instância única.
+	if hasArg("--apply-update") {
+		applyAgentUpdateMode(cfg, installedExe)
+		return
+	}
+
 	// Nunca herdar Downloads/System32 como diretório de trabalho do Agent instalado.
 	// Além de tornar o comportamento previsível, isto impede que qualquer caminho relativo
 	// acidental seja interpretado como uma pasta válida de projeto.
@@ -134,27 +141,11 @@ func samePath(a, b string) bool {
 }
 
 func readEmbeddedConfig() (agentConfig, error) {
-	var cfg agentConfig
 	exe, err := os.Executable()
 	if err != nil {
-		return cfg, err
+		return agentConfig{}, err
 	}
-	raw, err := os.ReadFile(exe)
-	if err != nil {
-		return cfg, err
-	}
-	idx := bytes.LastIndex(raw, []byte(configMarker))
-	if idx < 0 {
-		return cfg, errors.New("configuração do Devboard Agent não encontrada")
-	}
-	payload := bytes.TrimSpace(raw[idx+len(configMarker):])
-	if err := json.Unmarshal(payload, &cfg); err != nil {
-		return cfg, err
-	}
-	if cfg.AgentID == "" || cfg.AgentSecret == "" || cfg.AppURL == "" || cfg.SupabaseURL == "" || cfg.SupabaseKey == "" {
-		return cfg, errors.New("configuração do Devboard Agent incompleta")
-	}
-	return cfg, nil
+	return readEmbeddedConfigFromPath(exe)
 }
 
 func installedExecutablePath() (string, error) {
@@ -261,8 +252,10 @@ func runAgent(cfg agentConfig) {
 	hotkeyOK := startGlobalShortcut(cfg.AppURL)
 	defer stopGlobalShortcut()
 
+	cleanupAgentUpdateArtifacts()
 	go heartbeatLoop(cfg, hotkeyOK)
 	go startLocalAPIServer(cfg)
+	startAutoUpdater(cfg)
 
 	if hasArg("--protocol") {
 		for index, arg := range os.Args {

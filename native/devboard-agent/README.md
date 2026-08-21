@@ -9,6 +9,8 @@ Agente nativo pequeno usado pelo Painel Dev para:
 - priorizar automaticamente a PWA do Devboard que já estiver instalada no Windows, seja Chrome ou Edge;
 - se houver mais de uma PWA instalada, usar a instalação detectada mais recente, sem preferência fixa por navegador;
 - enviar heartbeat para o Supabase para o Painel Dev mostrar o estado real da integração;
+- verificar novas versões automaticamente em segundo plano, baixar somente do próprio Devboard, validar SHA-256 e atualizar sem reinstalação manual;
+- fazer rollback automático para o executável anterior caso a nova versão não responda ao teste de saúde;
 - abrir projetos locais diretamente na IDE configurada;
 - manter o caminho local do projeto por máquina em `%LOCALAPPDATA%\\Devboard\\Agent\\workspace-bindings.json`;
 - abrir o seletor nativo de pastas do Windows quando um projeto ainda não possui vínculo local;
@@ -21,6 +23,25 @@ Agente nativo pequeno usado pelo Painel Dev para:
 - consultar status e histórico Git localmente, fazer Pull, Commit de todas as alterações e Push;
 - consultar SVN via `svn.exe` quando disponível e fazer Update, Commit e Logs dentro do Devboard;
 - usar `TortoiseProc.exe` como fallback seguro para Update, Commit, Logs e Check for modifications quando o cliente CLI do SVN não estiver instalado.
+
+
+## Atualização automática
+
+A partir da versão `0.3.0`, o Agent verifica o manifesto `/api/dev-agent/update` após iniciar e novamente em intervalos regulares. Quando existe uma versão mais nova:
+
+1. aguarda o Agent ficar ocioso para não interromper Commit, Pull/Update, Push, seletor de pasta ou abertura de IDE;
+2. mostra apenas o aviso **Atualizando Agent**;
+3. baixa o template genérico exclusivamente da mesma origem HTTPS do Devboard;
+4. valida tamanho, formato PE e SHA-256 informado pelo manifesto;
+5. reaproveita localmente o `agent_id`/segredo já instalado, sem gerar novo pareamento;
+6. inicia um helper temporário, encerra a versão antiga e substitui o executável em `%LOCALAPPDATA%\Devboard\Agent`;
+7. inicia a nova versão e consulta `/v1/health`;
+8. se a nova versão responder corretamente, mostra **Atualização finalizada**;
+9. se falhar, restaura automaticamente `DevboardAgent.exe.bak`, reinicia a versão anterior e mostra **Atualização do Agent falhou**.
+
+A atualização `0.3.0` é o bootstrap do mecanismo. Máquinas ainda em `0.2.x` precisam executar esse instalador uma última vez; as versões seguintes passam a ser automáticas.
+
+O template de atualização é público e não contém segredo. A configuração individual continua somente na máquina e é reaplicada pelo próprio Agent durante o update.
 
 ## Abertura de IDEs
 

@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const AGENT_VERSION = "0.2.0"
 const CONFIG_MARKER = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 
 export async function GET(request: NextRequest) {
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         app_url: request.nextUrl.origin,
         supabase_url: supabaseUrl,
         supabase_key: supabaseKey,
-        agent_version: AGENT_VERSION,
+        agent_version: DEVBOARD_AGENT_VERSION,
       }),
       "utf8",
     )

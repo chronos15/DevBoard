@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,6 +60,7 @@ type localLaunchResult struct {
 }
 
 var localBindingMu sync.Mutex
+var localActiveOperations atomic.Int32
 
 func startLocalAPIServer(cfg agentConfig) {
 	listener, err := net.Listen("tcp", localAgentAddress)
@@ -76,7 +78,12 @@ func startLocalAPIServer(cfg agentConfig) {
 			return
 		}
 		hostname, _ := os.Hostname()
-		writeLocalAgentJSON(w, http.StatusOK, map[string]any{"ok": true, "version": agentVersion, "machine": hostname})
+		writeLocalAgentJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"version": agentVersion,
+			"machine": hostname,
+			"update":  readAgentUpdateStatus(),
+		})
 	})
 
 	mux.HandleFunc("/v1/pick-folder", func(w http.ResponseWriter, r *http.Request) {
@@ -304,8 +311,17 @@ func startLocalAPIServer(cfg agentConfig) {
 		writeLocalAgentJSON(w, http.StatusOK, result)
 	})
 
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		track := r.Method != http.MethodOptions && r.URL.Path != "/v1/health"
+		if track {
+			localActiveOperations.Add(1)
+			defer localActiveOperations.Add(-1)
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 4 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}

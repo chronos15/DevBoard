@@ -13,8 +13,7 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
-
-const CURRENT_AGENT_VERSION = "0.2.0"
+import { DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION, DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {
@@ -26,6 +25,22 @@ type AgentStatus = {
   installed_at: string | null
   last_seen_at: string | null
   created_at: string
+}
+
+
+function compareVersions(a: string | null | undefined, b: string) {
+  const parse = (value: string | null | undefined) => String(value ?? "")
+    .replace(/^v/i, "")
+    .split(".")
+    .slice(0, 3)
+    .map((part) => Number.parseInt(part, 10) || 0)
+  const left = parse(a)
+  const right = parse(b)
+  for (let index = 0; index < 3; index += 1) {
+    if ((left[index] ?? 0) < (right[index] ?? 0)) return -1
+    if ((left[index] ?? 0) > (right[index] ?? 0)) return 1
+  }
+  return 0
 }
 
 function relativeHeartbeat(value: string | null, now: number) {
@@ -81,7 +96,9 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const onlineAgent = agents.find((agent) => agent.last_seen_at && now - new Date(agent.last_seen_at).getTime() <= ONLINE_WINDOW_MS)
   const selected = onlineAgent ?? agents[0] ?? null
   const isOnline = Boolean(onlineAgent)
-  const needsUpdate = Boolean(isOnline && selected?.agent_version && selected.agent_version !== CURRENT_AGENT_VERSION)
+  const needsUpdate = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, DEVBOARD_AGENT_VERSION) < 0)
+  const autoUpdateReady = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION) >= 0)
+  const needsAutoUpdateBootstrap = Boolean(needsUpdate && !autoUpdateReady)
   const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
 
   async function downloadInstaller() {
@@ -102,7 +119,9 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
       anchor.click()
       anchor.remove()
       window.setTimeout(() => URL.revokeObjectURL(href), 10_000)
-      onNotice?.("Instalador baixado. Execute-o uma vez; o painel detecta o agente automaticamente.")
+      onNotice?.(needsAutoUpdateBootstrap
+        ? "Instalador baixado. Execute esta última atualização manual; depois o Agent passa a se atualizar sozinho."
+        : "Instalador baixado. Execute-o uma vez; o painel detecta o agente automaticamente.")
       window.setTimeout(() => void loadStatus(true), 2_000)
     } catch (error) {
       onNotice?.(error instanceof Error ? error.message : "Não foi possível baixar o Devboard Agent.")
@@ -209,6 +228,14 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
               </div>
             </div>
 
+            {autoUpdateReady && (
+              <div className="mt-2 flex items-center gap-2 px-1 text-[0.64rem] text-muted-foreground">
+                <RefreshCw className="size-3 shrink-0" />
+                <span>Atualizações automáticas ativas</span>
+                {needsUpdate && <span className="text-primary">· atualização será aplicada em segundo plano</span>}
+              </div>
+            )}
+
             {selected.hotkey_ok === false && (
               <p className="mt-2 text-[0.65rem] leading-relaxed text-warning">
                 O agente está online, mas o atalho global não pôde ser ativado. Atualize o Agent para usar o fallback automático.
@@ -225,22 +252,25 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
           </div>
         )}
 
-        <button
-          type="button"
-          disabled={downloading || backendMissing}
-          onClick={() => void downloadInstaller()}
-          className={cn(
-            "mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-            shortcutReady && !needsUpdate ? "border border-border bg-background hover:bg-muted" : "bg-primary text-primary-foreground",
-          )}
-        >
-          {downloading ? <RefreshCw className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-          {downloading ? "Preparando instalador..." : needsUpdate ? "Atualizar agente" : isOnline ? "Baixar novamente" : "Baixar e instalar"}
-        </button>
+        {(!isOnline || needsAutoUpdateBootstrap) && (
+          <>
+            <button
+              type="button"
+              disabled={downloading || backendMissing}
+              onClick={() => void downloadInstaller()}
+              className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloading ? <RefreshCw className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+              {downloading ? "Preparando instalador..." : needsAutoUpdateBootstrap ? "Ativar atualizações automáticas" : "Baixar e instalar"}
+            </button>
 
-        <p className="mt-2 text-center text-[0.61rem] leading-relaxed text-muted-foreground">
-          Sem formulário ou pareamento: o download já é vinculado à sua conta.
-        </p>
+            <p className="mt-2 text-center text-[0.61rem] leading-relaxed text-muted-foreground">
+              {needsAutoUpdateBootstrap
+                ? "Esta é a última atualização manual necessária. As próximas serão instaladas em segundo plano."
+                : "Sem formulário ou pareamento: o download já é vinculado à sua conta."}
+            </p>
+          </>
+        )}
       </div>
     </section>
   )

@@ -3,10 +3,20 @@ import type { DeveloperIdeRecord, DeveloperLocalProjectRecord } from "@/lib/deve
 const AGENT_ORIGIN = "http://127.0.0.1:43827"
 const AGENT_HEADER = { "X-Devboard-Agent": "1" }
 
+export type DeveloperAgentUpdateStatus = {
+  state?: "idle" | "updating" | "completed" | "failed" | string
+  current_version?: string
+  target_version?: string
+  message?: string
+  started_at?: string
+  finished_at?: string
+}
+
 type AgentHealth = {
   ok: boolean
   version?: string
   machine?: string
+  update?: DeveloperAgentUpdateStatus
 }
 
 type AgentFolderResult = {
@@ -56,6 +66,18 @@ export async function getDeveloperAgentHealth(): Promise<AgentHealth | null> {
     return await agentFetch<AgentHealth>("/v1/health", { method: "GET" }, 700)
   } catch {
     return null
+  }
+}
+
+export async function requestDeveloperAgentUpdateCheck(): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  try {
+    await agentFetch<{ ok: boolean }>("/v1/update/check", { method: "POST" }, 1200)
+    return true
+  } catch {
+    // Agents 0.3.x/0.4.0/0.4.1 ainda não possuem este endpoint.
+    // Eles continuam usando o loop interno de atualização normalmente.
+    return false
   }
 }
 

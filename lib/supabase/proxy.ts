@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update']
 
 type SessionCookie = {
   name: string
@@ -10,6 +10,16 @@ type SessionCookie = {
 }
 
 export async function updateSession(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+  const isAgentUpdateEndpoint = pathname === '/api/dev-agent/update' || pathname.startsWith('/api/dev-agent/update/')
+
+  // O Agent não possui cookie/JWT do navegador. O manifesto e o binário genérico
+  // precisam ser públicos para que versões já instaladas consigam fazer bootstrap
+  // do auto-update. Nenhum dos dois contém agent_id, segredo ou dados do usuário.
+  if (isAgentUpdateEndpoint) {
+    return NextResponse.next({ request })
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
@@ -49,7 +59,6 @@ export async function updateSession(request: NextRequest) {
   // Mantém a sessão SSR sincronizada e valida assinatura/expiração do JWT.
   const { data, error } = await supabase.auth.getClaims()
   const authenticated = !error && Boolean(data?.claims?.sub)
-  const pathname = request.nextUrl.pathname
   const isPublic = PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
   if (!authenticated && !isPublic) {

@@ -7,7 +7,7 @@ import { DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const TEMPLATE_URL = "/downloads/devboard-agent-setup-template.exe"
+const TEMPLATE_URL = "/api/dev-agent/update/binary"
 
 export async function GET() {
   try {

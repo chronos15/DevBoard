@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,6 +32,8 @@ type agentUpdateManifest struct {
 	Size        int64  `json:"size"`
 }
 
+var agentUpdateCheckRunning atomic.Bool
+
 type agentUpdateStatus struct {
 	State          string     `json:"state"`
 	CurrentVersion string     `json:"current_version,omitempty"`
@@ -44,10 +47,21 @@ func startAutoUpdater(cfg agentConfig) {
 	go func() {
 		time.Sleep(updateInitialDelay)
 		for {
-			_ = checkAndApplyAgentUpdate(cfg)
+			requestImmediateAgentUpdateCheck(cfg)
 			time.Sleep(updateCheckEvery)
 		}
 	}()
+}
+
+func requestImmediateAgentUpdateCheck(cfg agentConfig) bool {
+	if !agentUpdateCheckRunning.CompareAndSwap(false, true) {
+		return false
+	}
+	go func() {
+		defer agentUpdateCheckRunning.Store(false)
+		_ = checkAndApplyAgentUpdate(cfg)
+	}()
+	return true
 }
 
 func checkAndApplyAgentUpdate(cfg agentConfig) error {
@@ -125,7 +139,12 @@ func fetchAgentUpdateManifest(appURL string) (agentUpdateManifest, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "DevboardAgent/"+agentVersion)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return manifest, err
@@ -155,7 +174,12 @@ func downloadAndStageAgentUpdate(cfg agentConfig, manifest agentUpdateManifest) 
 	}
 	req.Header.Set("User-Agent", "DevboardAgent/"+agentVersion)
 
-	client := &http.Client{Timeout: 90 * time.Second}
+	client := &http.Client{
+		Timeout: 90 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

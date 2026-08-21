@@ -86,6 +86,22 @@ func startLocalAPIServer(cfg agentConfig) {
 		})
 	})
 
+	mux.HandleFunc("/v1/update/check", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		started := requestImmediateAgentUpdateCheck(cfg)
+		writeLocalAgentJSON(w, http.StatusAccepted, map[string]any{
+			"ok":      true,
+			"started": started,
+			"update":  readAgentUpdateStatus(),
+		})
+	})
+
 	mux.HandleFunc("/v1/diagnostics", func(w http.ResponseWriter, r *http.Request) {
 		if !prepareLocalAgentRequest(w, r, cfg) {
 			return

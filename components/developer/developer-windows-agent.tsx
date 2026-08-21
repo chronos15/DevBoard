@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION, DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
 import { getDeveloperAgentDiagnostics, type DeveloperAgentDiagnostics } from "@/lib/developer/agent-diagnostics"
+import { getDeveloperAgentHealth, requestDeveloperAgentUpdateCheck, type DeveloperAgentUpdateStatus } from "@/lib/developer/windows-agent"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {
@@ -68,6 +69,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const [diagnostics, setDiagnostics] = React.useState<DeveloperAgentDiagnostics | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = React.useState(false)
   const [diagnosticsError, setDiagnosticsError] = React.useState<string | null>(null)
+  const [localUpdateStatus, setLocalUpdateStatus] = React.useState<DeveloperAgentUpdateStatus | null>(null)
 
   const loadStatus = React.useCallback(async (silent = false) => {
     if (!currentUserId) return
@@ -107,6 +109,29 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const autoUpdateReady = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION) >= 0)
   const needsAutoUpdateBootstrap = Boolean(needsUpdate && !autoUpdateReady)
   const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
+
+  React.useEffect(() => {
+    if (!isOnline || !needsUpdate) {
+      setLocalUpdateStatus(null)
+      return
+    }
+
+    let cancelled = false
+    const syncUpdate = async () => {
+      const health = await getDeveloperAgentHealth()
+      if (!cancelled) setLocalUpdateStatus(health?.update ?? null)
+      // v0.4.2+ atualiza imediatamente; versões anteriores ignoram a chamada e
+      // continuam usando o próprio loop interno.
+      await requestDeveloperAgentUpdateCheck()
+    }
+
+    void syncUpdate()
+    const timer = window.setInterval(() => void syncUpdate(), 15_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isOnline, needsUpdate])
 
   async function loadDiagnostics() {
     if (diagnosticsLoading) return
@@ -259,9 +284,17 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
 
             {autoUpdateReady && (
               <div className="mt-2 flex items-center gap-2 px-1 text-[0.64rem] text-muted-foreground">
-                <RefreshCw className="size-3 shrink-0" />
+                <RefreshCw className={cn("size-3 shrink-0", localUpdateStatus?.state === "updating" && "animate-spin")} />
                 <span>Atualizações automáticas ativas</span>
-                {needsUpdate && <span className="text-primary">· atualização será aplicada em segundo plano</span>}
+                {needsUpdate && (
+                  <span className="text-primary">
+                    · {localUpdateStatus?.state === "updating"
+                      ? `atualizando para v${localUpdateStatus.target_version || DEVBOARD_AGENT_VERSION}`
+                      : selected.agent_version === "0.3.0"
+                        ? "bootstrap automático aguardando próxima verificação do Agent"
+                        : "verificando atualização em segundo plano"}
+                  </span>
+                )}
               </div>
             )}
 

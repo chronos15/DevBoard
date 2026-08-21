@@ -14,7 +14,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
-const CURRENT_AGENT_VERSION = "0.1.1"
+const CURRENT_AGENT_VERSION = "0.1.2"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {

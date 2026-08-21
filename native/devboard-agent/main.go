@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -19,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.1.1"
+	agentVersion = "0.1.2"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -433,38 +434,238 @@ func handleProtocol(cfg agentConfig, raw string) {
 	}
 }
 
+var (
+	profileDirectoryPattern = regexp.MustCompile(`(?i)--profile-directory=(?:"([^"]+)"|([^\s]+))`)
+	appIDPattern            = regexp.MustCompile(`(?i)--app-id=(?:"([^"]+)"|([^\s]+))`)
+)
+
+type installedPWA struct {
+	Launcher         string
+	ProfileDirectory string
+	AppID            string
+	Browser          string
+	ShortcutPath     string
+	ModifiedAt       time.Time
+}
+
 func openDevboard(appURL string) {
 	target := strings.TrimRight(appURL, "/") + "/dev#dev-session"
 
-	// App-mode dá uma experiência de PWA mesmo quando o navegador estava fechado.
-	if exe := findBrowserExecutable("msedge.exe", []string{
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
-		filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
-	}); exe != "" {
-		cmd := exec.Command(exe, "--app="+target)
-		hideChildWindow(cmd)
-		_ = cmd.Start()
-		return
+	// 1) Sempre prioriza uma instalação PWA REAL já existente no Windows.
+	// Não existe preferência fixa por Edge ou Chrome: usamos o Devboard que o
+	// usuário já instalou. Se houver mais de uma instalação válida, a mais recente
+	// é escolhida. Isso preserva o perfil/cookies/sessão daquela PWA.
+	if pwa, ok := findInstalledDevboardPWA(); ok {
+		if launchInstalledPWA(pwa, target) == nil {
+			return
+		}
 	}
 
-	if exe := findBrowserExecutable("chrome.exe", []string{
+	// 2) Se nenhuma PWA do Devboard estiver instalada, abre em app-mode.
+	// Chrome vem antes somente neste fallback, sem interferir em PWAs existentes.
+	if exe := findBrowserExecutable([]string{
 		filepath.Join(os.Getenv("ProgramFiles"), "Google", "Chrome", "Application", "chrome.exe"),
 		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Google", "Chrome", "Application", "chrome.exe"),
 		filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "Application", "chrome.exe"),
 	}); exe != "" {
 		cmd := exec.Command(exe, "--app="+target)
 		hideChildWindow(cmd)
-		_ = cmd.Start()
-		return
+		if err := cmd.Start(); err == nil {
+			return
+		}
 	}
 
+	if exe := findBrowserExecutable([]string{
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
+	}); exe != "" {
+		cmd := exec.Command(exe, "--app="+target)
+		hideChildWindow(cmd)
+		if err := cmd.Start(); err == nil {
+			return
+		}
+	}
+
+	// 3) Último fallback: navegador padrão do Windows.
 	cmd := exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", target)
 	hideChildWindow(cmd)
 	_ = cmd.Start()
 }
 
-func findBrowserExecutable(_ string, candidates []string) string {
+func findInstalledDevboardPWA() (installedPWA, bool) {
+	var best installedPWA
+	found := false
+
+	roots := []string{
+		filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs"),
+		filepath.Join(os.Getenv("USERPROFILE"), "Desktop"),
+		filepath.Join(os.Getenv("PUBLIC"), "Desktop"),
+	}
+
+	// Evita considerar o mesmo PWA duas vezes quando há atalho no menu Iniciar e Desktop.
+	seen := map[string]struct{}{}
+
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		rootInfo, err := os.Stat(root)
+		if err != nil || !rootInfo.IsDir() {
+			continue
+		}
+
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				if path != root {
+					relative, _ := filepath.Rel(root, path)
+					// O menu Iniciar pode ter muita coisa. Atalhos PWA não precisam de
+					// uma busca profunda para serem encontrados.
+					if strings.Count(relative, string(os.PathSeparator)) >= 4 {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+
+			if !strings.EqualFold(filepath.Ext(path), ".lnk") {
+				return nil
+			}
+			shortcutName := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+			if !strings.Contains(shortcutName, "devboard") {
+				return nil
+			}
+
+			launcher, arguments, ok := readWindowsShortcut(path)
+			if !ok {
+				return nil
+			}
+			browser, ok := classifyInstalledPWALauncher(launcher)
+			if !ok {
+				return nil
+			}
+
+			profile := extractSwitchValue(profileDirectoryPattern, arguments)
+			appID := extractSwitchValue(appIDPattern, arguments)
+			if appID == "" {
+				return nil
+			}
+			// Alguns launchers dedicados já carregam o perfil internamente. Quando o
+			// atalho fornece --profile-directory, preservamos explicitamente.
+			key := strings.ToLower(filepath.Clean(launcher) + "|" + profile + "|" + appID)
+			if _, exists := seen[key]; exists {
+				return nil
+			}
+			seen[key] = struct{}{}
+
+			info, _ := entry.Info()
+			modifiedAt := time.Time{}
+			if info != nil {
+				modifiedAt = info.ModTime()
+			}
+			candidate := installedPWA{
+				Launcher:         launcher,
+				ProfileDirectory: profile,
+				AppID:            appID,
+				Browser:          browser,
+				ShortcutPath:     path,
+				ModifiedAt:       modifiedAt,
+			}
+
+			if !found || candidate.ModifiedAt.After(best.ModifiedAt) {
+				best = candidate
+				found = true
+			}
+			return nil
+		})
+	}
+
+	return best, found
+}
+
+func launchInstalledPWA(pwa installedPWA, target string) error {
+	args := make([]string, 0, 3)
+	if pwa.ProfileDirectory != "" {
+		args = append(args, "--profile-directory="+pwa.ProfileDirectory)
+	}
+	args = append(args, "--app-id="+pwa.AppID)
+	// Chromium usa este switch ao abrir URLs internas de um Web App instalado.
+	// Como /dev está dentro do scope do Devboard, a navegação permanece dentro
+	// da própria PWA em vez de criar uma janela genérica do navegador.
+	args = append(args, "--app-launch-url-for-shortcuts-menu-item="+target)
+
+	cmd := exec.Command(pwa.Launcher, args...)
+	hideChildWindow(cmd)
+	return cmd.Start()
+}
+
+func readWindowsShortcut(shortcutPath string) (string, string, bool) {
+	if shortcutPath == "" {
+		return "", "", false
+	}
+	const script = `$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DEVBOARD_PWA_SHORTCUT); [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $shortcut.TargetPath; Write-Output $shortcut.Arguments`
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", script,
+	)
+	cmd.Env = append(os.Environ(), "DEVBOARD_PWA_SHORTCUT="+shortcutPath)
+	hideChildWindow(cmd)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", "", false
+	}
+	lines := strings.Split(strings.ReplaceAll(string(output), "\r\n", "\n"), "\n")
+	if len(lines) < 2 {
+		return "", "", false
+	}
+	launcher := strings.TrimSpace(lines[0])
+	arguments := strings.TrimSpace(strings.Join(lines[1:], " "))
+	if launcher == "" || arguments == "" {
+		return "", "", false
+	}
+	return launcher, arguments, true
+}
+
+func classifyInstalledPWALauncher(path string) (string, bool) {
+	lower := strings.ToLower(filepath.Clean(path))
+	base := strings.ToLower(filepath.Base(lower))
+	if !strings.HasSuffix(base, ".exe") {
+		return "", false
+	}
+
+	if strings.Contains(lower, `\google\chrome\`) || strings.Contains(lower, `\google\chrome sxs\`) {
+		if base == "chrome_proxy.exe" || base == "chrome_pwa_launcher.exe" || base == "chrome.exe" || strings.Contains(lower, `\web applications\`) {
+			return "chrome", true
+		}
+	}
+
+	if strings.Contains(lower, `\microsoft\edge\`) {
+		if base == "msedge_proxy.exe" || base == "msedge_pwa_launcher.exe" || base == "msedge.exe" || strings.Contains(lower, `\web applications\`) {
+			return "edge", true
+		}
+	}
+
+	return "", false
+}
+
+func extractSwitchValue(pattern *regexp.Regexp, arguments string) string {
+	match := pattern.FindStringSubmatch(arguments)
+	if len(match) < 3 {
+		return ""
+	}
+	if match[1] != "" {
+		return strings.TrimSpace(match[1])
+	}
+	return strings.TrimSpace(match[2])
+}
+
+func findBrowserExecutable(candidates []string) string {
 	for _, candidate := range candidates {
 		if candidate == "" {
 			continue

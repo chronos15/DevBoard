@@ -14,6 +14,7 @@ import {
 import { useStore } from "@/lib/store"
 import { projectHasPendingWork } from "@/lib/project-utils"
 import type { Project } from "@/lib/types"
+import { DeveloperVcsVersionSummary } from "@/components/developer/developer-vcs-version-summary"
 
 export function VersionProjectDialog({ project }: { project: Project }) {
   const { versionProject } = useStore()
@@ -146,6 +147,7 @@ export function VersionProjectDialog({ project }: { project: Project }) {
                   required
                 />
               </label>
+              <DeveloperVcsVersionSummary project={project} active={open && !confirming} />
             </form>
 
             <DialogFooter>

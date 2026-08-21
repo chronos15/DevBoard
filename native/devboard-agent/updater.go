@@ -103,12 +103,12 @@ func checkAndApplyAgentUpdate(cfg agentConfig) error {
 func waitForAgentOperationsIdle(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if localActiveOperations.Load() == 0 {
+		if localActiveOperations.Load() == 0 && !runtimeHasActiveProcess() {
 			return true
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return localActiveOperations.Load() == 0
+	return localActiveOperations.Load() == 0 && !runtimeHasActiveProcess()
 }
 
 func fetchAgentUpdateManifest(appURL string) (agentUpdateManifest, error) {

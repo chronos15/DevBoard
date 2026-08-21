@@ -4,16 +4,19 @@ import * as React from "react"
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Download,
   Keyboard,
   Laptop,
   RefreshCw,
   ShieldCheck,
   WifiOff,
+  Wrench,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION, DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
+import { getDeveloperAgentDiagnostics, type DeveloperAgentDiagnostics } from "@/lib/developer/agent-diagnostics"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {
@@ -61,6 +64,9 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const [downloading, setDownloading] = React.useState(false)
   const [backendMissing, setBackendMissing] = React.useState(false)
   const [now, setNow] = React.useState(() => Date.now())
+  const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false)
+  const [diagnostics, setDiagnostics] = React.useState<DeveloperAgentDiagnostics | null>(null)
+  const [diagnosticsLoading, setDiagnosticsLoading] = React.useState(false)
 
   const loadStatus = React.useCallback(async (silent = false) => {
     if (!currentUserId) return
@@ -101,6 +107,16 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const needsAutoUpdateBootstrap = Boolean(needsUpdate && !autoUpdateReady)
   const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
 
+  async function toggleDiagnostics() {
+    const next = !diagnosticsOpen
+    setDiagnosticsOpen(next)
+    if (!next || diagnostics || diagnosticsLoading) return
+    setDiagnosticsLoading(true)
+    const result = await getDeveloperAgentDiagnostics()
+    setDiagnostics(result)
+    setDiagnosticsLoading(false)
+  }
+
   async function downloadInstaller() {
     if (downloading) return
     setDownloading(true)
@@ -131,7 +147,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   }
 
   return (
-    <section className="min-w-0 rounded-2xl border border-border bg-card">
+    <section id="integration-windows" className="min-w-0 scroll-mt-24 rounded-2xl border border-border bg-card">
       <div className="flex min-w-0 items-start gap-3 border-b border-border px-4 py-4">
         <span className={cn(
           "flex size-10 shrink-0 items-center justify-center rounded-xl",
@@ -240,6 +256,36 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
               <p className="mt-2 text-[0.65rem] leading-relaxed text-warning">
                 O agente está online, mas o atalho global não pôde ser ativado. Atualize o Agent para usar o fallback automático.
               </p>
+            )}
+
+            {isOnline && (
+              <div className="mt-2 border-t border-border/70 pt-2">
+                <button type="button" onClick={() => void toggleDiagnostics()} className="flex h-8 w-full items-center justify-between gap-2 rounded-lg px-1.5 text-[0.65rem] font-semibold text-muted-foreground transition-colors hover:bg-muted/55 hover:text-foreground">
+                  <span className="inline-flex items-center gap-1.5"><Wrench className="size-3" />Diagnóstico local</span>
+                  <ChevronDown className={cn("size-3.5 transition-transform", diagnosticsOpen && "rotate-180")} />
+                </button>
+                {diagnosticsOpen && (
+                  <div className="mt-1.5 rounded-lg border border-border/70 bg-background/55 p-2.5">
+                    {diagnosticsLoading ? (
+                      <div className="flex items-center gap-2 py-2 text-[0.64rem] text-muted-foreground"><RefreshCw className="size-3 animate-spin" />Verificando este computador...</div>
+                    ) : diagnostics ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { label: "PWA", ok: diagnostics.pwaInstalled, value: diagnostics.pwaInstalled ? `Instalada${diagnostics.pwaBrowser ? ` · ${diagnostics.pwaBrowser}` : ""}` : "Não encontrada" },
+                            { label: "Tray", ok: diagnostics.trayOk, value: diagnostics.trayOk ? "Ativo" : "Indisponível" },
+                            { label: "Atalho", ok: diagnostics.hotkeyOk, value: diagnostics.hotkeyOk ? "Ativo" : "Indisponível" },
+                            { label: "Auto update", ok: diagnostics.autoUpdate, value: diagnostics.autoUpdate ? "Ativo" : "Indisponível" },
+                          ].map((item) => <div key={item.label} className="rounded-lg border border-border/60 bg-card px-2 py-1.5"><p className="text-[0.55rem] text-muted-foreground">{item.label}</p><p className={cn("mt-0.5 truncate text-[0.62rem] font-semibold", item.ok ? "text-foreground" : "text-warning")}>{item.value}</p></div>)}
+                        </div>
+                        <div className="mt-2 grid gap-1">
+                          {diagnostics.tools.map((tool) => <div key={tool.id} className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1"><span className={cn("size-1.5 shrink-0 rounded-full", tool.found ? "bg-success" : "bg-muted-foreground/35")} /><span className="min-w-0 flex-1 truncate text-[0.61rem] text-muted-foreground">{tool.label}</span><span className={cn("shrink-0 text-[0.58rem] font-semibold", tool.found ? "text-success" : "text-muted-foreground")}>{tool.found ? "OK" : "—"}</span></div>)}
+                        </div>
+                      </>
+                    ) : <p className="py-2 text-[0.63rem] text-warning">O Agent está online, mas esta versão ainda não expõe o diagnóstico local.</p>}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ) : (

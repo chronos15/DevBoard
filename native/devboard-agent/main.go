@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.3.0"
+	agentVersion = "0.4.0"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -251,6 +251,8 @@ func acquireSingleInstance() bool {
 func runAgent(cfg agentConfig) {
 	hotkeyOK := startGlobalShortcut(cfg.AppURL)
 	defer stopGlobalShortcut()
+	_ = startTray(cfg.AppURL)
+	defer stopTray()
 
 	cleanupAgentUpdateArtifacts()
 	go heartbeatLoop(cfg, hotkeyOK)
@@ -274,7 +276,9 @@ func runAgent(cfg agentConfig) {
 		}
 		if msg.Message == wmHotkey && msg.WParam == hotkeyID {
 			openDevboard(cfg.AppURL)
+			continue
 		}
+		dispatchWindowMessage(&msg)
 	}
 }
 
@@ -451,7 +455,15 @@ type installedPWA struct {
 }
 
 func openDevboard(appURL string) {
-	target := strings.TrimRight(appURL, "/") + "/dev#dev-session"
+	openDevboardPath(appURL, "/dev#dev-session")
+}
+
+func openDevboardPath(appURL, relative string) {
+	relative = strings.TrimSpace(relative)
+	if relative == "" || !strings.HasPrefix(relative, "/") {
+		relative = "/"
+	}
+	target := strings.TrimRight(appURL, "/") + relative
 
 	// 1) Sempre prioriza uma instalação PWA REAL já existente no Windows.
 	// Não existe preferência fixa por Edge ou Chrome: usamos o Devboard que o

@@ -6,12 +6,14 @@ import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
+import { SecurityHealthSection } from "@/components/config/security-health-section"
 
 const sections = [
-  { id: "perfil", label: "Perfil", icon: User },
-  { id: "equipe", label: "Equipe", icon: Users },
-  { id: "notificacoes", label: "Notificações", icon: Bell },
-  { id: "aparencia", label: "Aparência", icon: Palette },
+  { id: "perfil", label: "Perfil", icon: User, adminOnly: false },
+  { id: "equipe", label: "Equipe", icon: Users, adminOnly: false },
+  { id: "notificacoes", label: "Notificações", icon: Bell, adminOnly: false },
+  { id: "aparencia", label: "Aparência", icon: Palette, adminOnly: false },
+  { id: "seguranca", label: "Segurança", icon: ShieldCheck, adminOnly: true },
 ] as const
 
 type SectionId = (typeof sections)[number]["id"]
@@ -52,14 +54,19 @@ function avatarColorForeground(value: string) {
 }
 
 export function ConfigView() {
-  const { members, currentUserId } = useStore()
+  const { members, currentUserId, currentUserRole } = useStore()
   const me = members.find((member) => member.id === currentUserId)
   const [active, setActive] = React.useState<SectionId>("perfil")
+  const visibleSections = React.useMemo(() => sections.filter((section) => !section.adminOnly || currentUserRole === "admin"), [currentUserRole])
+
+  React.useEffect(() => {
+    if (active === "seguranca" && currentUserRole !== "admin") setActive("perfil")
+  }, [active, currentUserRole])
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
       <nav className="flex gap-1 overflow-x-auto rounded-2xl bg-card p-2 ring-1 ring-foreground/8 lg:flex-col lg:overflow-visible">
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <button
             key={section.id}
             type="button"
@@ -82,6 +89,7 @@ export function ConfigView() {
         {active === "equipe" && <TeamSection />}
         {active === "notificacoes" && <NotificationsSection />}
         {active === "aparencia" && <AppearanceSection />}
+        {active === "seguranca" && currentUserRole === "admin" && <SecurityHealthSection />}
       </div>
     </div>
   )

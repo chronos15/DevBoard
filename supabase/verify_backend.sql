@@ -613,3 +613,33 @@ begin
   end if;
   raise notice 'Migration 019 OK: vínculos de commits/revisões Git/SVN do Painel Dev prontos.';
 end $$;
+
+-- 020 · Diagnóstico administrativo de segurança
+select
+  to_regprocedure('public.devboard_security_health()') is not null as security_health_rpc_ok,
+  has_function_privilege('authenticated','public.devboard_security_health()','EXECUTE') as security_health_execute_ok;
+
+do $$
+begin
+  if to_regprocedure('public.devboard_security_health()') is null then
+    raise exception 'Backend Devboard incompleto: devboard_security_health() ausente (migration 020)';
+  end if;
+  raise notice 'Migration 020 OK: diagnóstico administrativo de segurança disponível.';
+end $$;
+
+-- 021 · Baseline de Git/SVN no início da subatividade
+select
+  to_regclass('public.developer_vcs_task_baselines') is not null as developer_vcs_task_baselines_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_task_baselines' and policyname='devboard_developer_vcs_task_baselines_select') as developer_vcs_task_baselines_rls_ok,
+  exists(select 1 from pg_indexes where schemaname='public' and tablename='developer_vcs_task_baselines' and indexname='developer_vcs_task_baselines_subactivity_idx') as developer_vcs_task_baselines_index_ok;
+
+do $$
+begin
+  if to_regclass('public.developer_vcs_task_baselines') is null then
+    raise exception 'Backend Devboard incompleto: developer_vcs_task_baselines ausente (migration 021)';
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_task_baselines' and policyname='devboard_developer_vcs_task_baselines_select') then
+    raise exception 'Backend Devboard incompleto: RLS de developer_vcs_task_baselines ausente (migration 021)';
+  end if;
+  raise notice 'Migration 021 OK: baseline Git/SVN por subatividade disponível.';
+end $$;

@@ -15,6 +15,7 @@ import {
   GitBranch,
   MonitorCog,
   Pencil,
+  Play,
   Plus,
   Rocket,
   Settings2,
@@ -43,6 +44,7 @@ import {
   type LocalDirectoryHandle,
 } from "@/lib/developer/local-workspaces"
 import { DeveloperVcsDialog } from "@/components/developer/developer-vcs-dialog"
+import { DeveloperRuntimeDialog } from "@/components/developer/developer-runtime-dialog"
 import {
   DEVELOPER_VCS_CHANGED_EVENT,
   DEVELOPER_VCS_STATUS_EVENT,
@@ -238,6 +240,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const [agentAvailable, setAgentAvailable] = React.useState(false)
   const [vcsStatuses, setVcsStatuses] = React.useState<Record<string, DeveloperVcsStatus>>({})
   const [vcsProject, setVcsProject] = React.useState<DeveloperLocalProject | null>(null)
+  const [runtimeProject, setRuntimeProject] = React.useState<DeveloperLocalProject | null>(null)
   const [vcsLinkSchemaReady, setVcsLinkSchemaReady] = React.useState(true)
   const pickerSupported = React.useMemo(() => supportsDirectoryPicker(), [])
   const activeFound = activeSubId ? findSub(activeSubId) : null
@@ -736,6 +739,15 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setRuntimeProject(project)}
+                      disabled={!agentAvailable}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                      title={agentAvailable ? "Executar, build, testes e terminal" : "Devboard Agent necessário para ações locais"}
+                    >
+                      <Play className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setVcsProject(project)}
                       disabled={!agentAvailable}
                       className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30", vcs?.conflicted && "border-destructive/30 bg-destructive/5 text-destructive", vcs && vcs.changedCount > 0 && !vcs.conflicted && "border-warning/25 bg-warning/5 text-warning")}
@@ -770,6 +782,13 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           )}
         </div>
       </section>
+
+      <DeveloperRuntimeDialog
+        open={Boolean(runtimeProject)}
+        onOpenChange={(next) => { if (!next) setRuntimeProject(null) }}
+        project={runtimeProject}
+        onNotice={onNotice}
+      />
 
       <DeveloperVcsDialog
         open={Boolean(vcsProject)}

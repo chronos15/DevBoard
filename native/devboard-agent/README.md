@@ -89,3 +89,12 @@ GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -H windowsgui" -o .
 ```
 
 O arquivo em `public/downloads/` é um template. A rota `/api/dev-agent/installer` anexa uma configuração individual e autenticada ao final do executável antes do download.
+
+## v0.4.0
+
+- ícone na bandeja do Windows com acesso rápido ao Devboard/Painel Dev/diagnóstico;
+- endpoint local `/v1/diagnostics` para PWA, hotkey, auto-update, IDEs, Git/SVN e runtimes;
+- execução tipada de projetos locais (`run`, `build`, `test`, `terminal`, `stop`) sem shell arbitrário vindo do frontend;
+- detecção de Node/Next.js, Flutter, .NET e Delphi;
+- logs locais de execução e parada da árvore de processos;
+- auto-update adiado enquanto Run/Build/Test estiver em execução.

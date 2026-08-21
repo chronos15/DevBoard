@@ -86,6 +86,17 @@ func startLocalAPIServer(cfg agentConfig) {
 		})
 	})
 
+	mux.HandleFunc("/v1/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, collectAgentDiagnostics())
+	})
+
 	mux.HandleFunc("/v1/pick-folder", func(w http.ResponseWriter, r *http.Request) {
 		if !prepareLocalAgentRequest(w, r, cfg) {
 			return
@@ -179,6 +190,48 @@ func startLocalAPIServer(cfg agentConfig) {
 			"executable": result.Executable,
 			"target":     result.Target,
 		})
+	})
+
+	mux.HandleFunc("/v1/runtime/status", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localRuntimeRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		status, err := getLocalRuntimeStatus(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "runtime_status_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, status)
+	})
+
+	mux.HandleFunc("/v1/runtime/action", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localRuntimeRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		status, err := runLocalRuntimeAction(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "runtime_action_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, status)
 	})
 
 	mux.HandleFunc("/v1/vcs/status", func(w http.ResponseWriter, r *http.Request) {

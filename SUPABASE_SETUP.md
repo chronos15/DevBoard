@@ -560,3 +560,31 @@ Depois execute novamente:
 ```text
 supabase/verify_backend.sql
 ```
+
+## Migration 020 — diagnóstico administrativo de segurança
+
+Depois da 019, execute:
+
+```text
+supabase/migrations/020_devboard_security_health.sql
+```
+
+A 020 adiciona o RPC administrativo `devboard_security_health()`, usado em **Configurações → Segurança**. O diagnóstico é somente leitura e não retorna chaves/tokens. Ele verifica RLS nas tabelas críticas, grants diretos para `anon`, `SECURITY DEFINER` sem `search_path`, policies do Storage, publicação Realtime e o modelo de segredo do Devboard Agent.
+
+A função só pode ser executada por usuário autenticado com role `admin`.
+
+## Migration 021 — baseline Git/SVN da subatividade
+
+Depois da 020, execute:
+
+```text
+supabase/migrations/021_devboard_vcs_task_baseline.sql
+```
+
+Quando um developer inicia uma subatividade que possui projeto local vinculado, o Devboard tenta registrar automaticamente branch/revisão/repositório inicial em `developer_vcs_task_baselines`. Isso permite comparar a origem da sessão de desenvolvimento com commits/revisões associados posteriormente, sem enviar código-fonte ou credenciais locais ao Supabase.
+
+Depois execute novamente:
+
+```text
+supabase/verify_backend.sql
+```

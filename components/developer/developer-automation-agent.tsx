@@ -29,6 +29,7 @@ import {
   type DeveloperLocalProjectRecord,
 } from "@/lib/developer/context"
 import { openDeveloperProjectSmart } from "@/lib/developer/windows-agent"
+import { getDeveloperVcsStatus } from "@/lib/developer/vcs"
 
 const SETTINGS_SELECT = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
 
@@ -69,7 +70,7 @@ export function DeveloperAutomationAgent() {
       supabase.from("developer_settings").select(SETTINGS_SELECT).eq("user_id", currentUserId).maybeSingle(),
       supabase.from("developer_contexts").select("id,name,devboard_project_id,local_project_id,ide_id,music_provider,music_url,auto_focus,auto_open_ide,auto_open_music,sort_order").eq("user_id", currentUserId).order("sort_order").order("created_at"),
       supabase.from("developer_ides").select("id,name,kind,icon,custom_uri_template").eq("user_id", currentUserId),
-      supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path").eq("user_id", currentUserId),
+      supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,devboard_project_id").eq("user_id", currentUserId),
     ])
     if (settingsError) throw settingsError
     if (contextError) throw contextError
@@ -108,6 +109,26 @@ export function DeveloperAutomationAgent() {
     const onTimerStarted = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: string; subactivityId?: string }>).detail
       const context = contextForProject(contexts, detail?.projectId, currentUserId)
+      const localForProject = localProjects.find((item) => item.id === context?.localProjectId)
+        ?? localProjects.find((item) => item.devboardProjectId === detail?.projectId)
+        ?? null
+
+      if (detail?.subactivityId && localForProject) {
+        void getDeveloperVcsStatus(localForProject, { allowFolderPicker: false }).then((status) => {
+          if (status.provider === "none") return
+          return supabase.from("developer_vcs_task_baselines").upsert({
+            user_id: currentUserId,
+            local_project_id: localForProject.id,
+            devboard_project_id: detail.projectId ?? localForProject.devboardProjectId ?? null,
+            subactivity_id: detail.subactivityId,
+            provider: status.provider,
+            revision: status.revision || "",
+            branch: status.branch || "",
+            repository: status.repository || "",
+            captured_at: new Date().toISOString(),
+          }, { onConflict: "user_id,local_project_id,subactivity_id" })
+        }).catch(() => undefined)
+      }
 
       if (settings.autoFocusOnTimer && (context?.autoFocus ?? true)) {
         startDeveloperFocusSession(currentUserId, settings.focusMinutes)
@@ -119,7 +140,7 @@ export function DeveloperAutomationAgent() {
       }
 
       if (settings.autoOpenIdeOnTimer && context?.autoOpenIde) {
-        const local = localProjects.find((item) => item.id === context.localProjectId) ?? null
+        const local = localForProject
         const ideId = context.ideId || local?.ideId
         const ide = ides.find((item) => item.id === ideId) ?? null
         if (ide && local) {

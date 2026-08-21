@@ -41,6 +41,12 @@ import {
   supportsDirectoryPicker,
   type LocalDirectoryHandle,
 } from "@/lib/developer/local-workspaces"
+import {
+  bindDeveloperProjectFolder,
+  getDeveloperAgentHealth,
+  openDeveloperProjectWithAgent,
+  pickDeveloperProjectFolder,
+} from "@/lib/developer/windows-agent"
 
 export type DeveloperIdeKind = "vscode" | "cursor" | "visual-studio" | "delphi" | "jetbrains" | "custom"
 export type DeveloperIdeIcon = "code" | "braces" | "terminal" | "blocks" | "box" | "monitor" | "cpu" | "rocket" | "app"
@@ -215,7 +221,18 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const [projectDraft, setProjectDraft] = React.useState<ProjectDraft>(emptyProjectDraft)
   const [savingIde, setSavingIde] = React.useState(false)
   const [savingProject, setSavingProject] = React.useState(false)
+  const [agentAvailable, setAgentAvailable] = React.useState(false)
   const pickerSupported = React.useMemo(() => supportsDirectoryPicker(), [])
+
+  React.useEffect(() => {
+    let active = true
+    const check = () => void getDeveloperAgentHealth().then((health) => {
+      if (active) setAgentAvailable(Boolean(health?.ok))
+    })
+    check()
+    const timer = window.setInterval(check, 12_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
 
   const inferKnownLaunchPath = React.useCallback((folderName: string, projectName?: string, oldWorkspacePath?: string) => {
     const folder = folderName.trim().toLocaleLowerCase("pt-BR")
@@ -374,6 +391,31 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   }
 
   async function chooseFolderForDraft() {
+    // Quando o Agent está ativo, usamos o seletor NATIVO do Windows. Além de ser mais
+    // natural, ele conhece o caminho absoluto da pasta e consegue abrir Delphi/VS Code/etc.
+    // exatamente naquele diretório. O File System Access API do navegador não expõe esse path.
+    if (agentAvailable) {
+      try {
+        const picked = await pickDeveloperProjectFolder({
+          projectId: projectDraft.id,
+          projectName: projectDraft.name,
+          expectedFolderName: projectDraft.currentFolderName,
+        })
+        setProjectDraft((current) => ({
+          ...current,
+          handle: null,
+          currentFolderName: picked.name,
+          name: current.name.trim() || picked.name,
+          legacyPath: picked.path,
+        }))
+        return
+      } catch (error: any) {
+        if (error?.code === "picker_cancelled") return
+        // Se o Agent ficou indisponível entre o heartbeat e o clique, ainda temos o picker web.
+        setAgentAvailable(false)
+      }
+    }
+
     try {
       const handle = await pickDirectory(`project-${projectDraft.id ?? currentUserId ?? "developer"}`)
       const recovered = inferKnownLaunchPath(handle.name, projectDraft.name)
@@ -393,7 +435,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   async function saveProject() {
     const name = projectDraft.name.trim()
     if (!currentUserId || !name || !projectDraft.ideId || savingProject) return
-    if (!projectDraft.id && pickerSupported && !projectDraft.handle) {
+    if (!projectDraft.id && !projectDraft.handle && !projectDraft.legacyPath.trim() && pickerSupported) {
       onNotice("Escolha a pasta do projeto antes de adicionar o atalho.")
       return
     }
@@ -437,6 +479,12 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       }
     }
 
+    // O Agent mantém também um vínculo local por máquina. Assim um mesmo atalho pode apontar
+    // para C:\Projetos\ERP neste PC e para D:\Fontes\ERP em outro sem quebrar a abertura.
+    if (recoveredPath && agentAvailable) {
+      try { await bindDeveloperProjectFolder(result.data.id, recoveredPath) } catch { /* fallback web continua disponível */ }
+    }
+
     setSavingProject(false)
     setProjectDialogOpen(false)
     await loadEnvironment()
@@ -471,6 +519,28 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       return
     }
 
+    // Prioridade: Devboard Agent. Ele abre o executável real da IDE e passa a pasta/projeto
+    // como argumento, sem depender de vscode://, cursor:// ou do navegador conhecer o path.
+    if (agentAvailable) {
+      try {
+        const result = await openDeveloperProjectWithAgent(ide, project, { allowFolderPicker: true })
+        if (result.path && result.path !== project.legacyPath) {
+          setLocalProjects((current) => current.map((item) => item.id === project.id ? { ...item, legacyPath: result.path! } : item))
+          void supabase.from("developer_local_projects").update({ legacy_path: result.path }).eq("id", project.id).eq("user_id", currentUserId)
+        }
+        return
+      } catch (error: any) {
+        if (error?.code === "picker_cancelled") return
+        // Só cai para o método antigo se o serviço local realmente não respondeu.
+        const health = await getDeveloperAgentHealth()
+        if (health?.ok) {
+          onNotice(String(error?.message ?? error ?? `Não foi possível abrir ${ide.name}.`))
+          return
+        }
+        setAgentAvailable(false)
+      }
+    }
+
     if (folderAvailability[project.id]) {
       try {
         const allowed = await verifyFolder(project)
@@ -479,19 +549,19 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           return
         }
       } catch {
-        // O vínculo local não impede a tentativa de abrir a IDE.
+        // O vínculo local não impede a tentativa via protocolo.
       }
     }
 
     const uri = buildLaunchUri(ide, project)
     if (!uri) {
-      onNotice(`${ide.name} precisa de um protocolo/launcher personalizado para abrir pelo navegador.`)
+      onNotice(`${ide.name} precisa do Devboard Agent para abrir diretamente o projeto nesta IDE.`)
       return
     }
 
     window.location.href = uri
     if ((ide.kind === "vscode" || ide.kind === "cursor") && !project.legacyPath) {
-      onNotice(`Abrindo ${ide.name}. A IDE será aberta sem forçar uma pasta porque o navegador não expôs o caminho absoluto deste diretório.`)
+      onNotice(`O Devboard Agent não está disponível. ${ide.name} foi aberto sem forçar a pasta.`)
     }
   }
 
@@ -648,12 +718,12 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">IDE deste projeto</label><select value={projectDraft.ideId} onChange={(event) => setProjectDraft((current) => ({ ...current, ideId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Escolher IDE</option>{ides.map((ide) => <option key={ide.id} value={ide.id}>{ide.name}</option>)}</select></div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label>
-              <button type="button" onClick={() => void chooseFolderForDraft()} disabled={!pickerSupported} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors", projectDraft.handle || projectDraft.currentFolderName ? "border-success/25 bg-success/5" : "border-dashed border-border bg-background hover:bg-muted/35", !pickerSupported && "cursor-not-allowed opacity-45")}>
+              <button type="button" onClick={() => void chooseFolderForDraft()} disabled={!agentAvailable && !pickerSupported} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors", projectDraft.handle || projectDraft.currentFolderName ? "border-success/25 bg-success/5" : "border-dashed border-border bg-background hover:bg-muted/35", !agentAvailable && !pickerSupported && "cursor-not-allowed opacity-45")}>
                 <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", projectDraft.handle || projectDraft.currentFolderName ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{projectDraft.handle || projectDraft.currentFolderName ? <FolderCheck className="size-4" /> : <FolderOpen className="size-4" />}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name || projectDraft.currentFolderName || "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle || projectDraft.currentFolderName ? "Clique para trocar a pasta" : "Abre o seletor nativo de diretórios"}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name || projectDraft.currentFolderName || "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle || projectDraft.currentFolderName ? "Clique para trocar a pasta" : agentAvailable ? "Abre o seletor nativo do Windows pelo Devboard Agent" : "Abre o seletor de diretórios do navegador"}</span></span>
               </button>
-              {!pickerSupported && <p className="mt-1.5 text-[0.63rem] text-muted-foreground">Use Chrome ou Edge atualizado no desktop para selecionar diretórios.</p>}
-              {projectDraft.currentFolderName && projectDraft.legacyPath && <p className="mt-1.5 flex items-center gap-1.5 text-[0.63rem] font-medium text-success"><FolderCheck className="size-3" />Abertura direta da pasta disponível para VS Code/Cursor.</p>}
+              {!agentAvailable && !pickerSupported && <p className="mt-1.5 text-[0.63rem] text-muted-foreground">Instale/atualize o Devboard Agent ou use Chrome/Edge atualizado para selecionar diretórios.</p>}
+              {projectDraft.currentFolderName && projectDraft.legacyPath && <p className="mt-1.5 flex items-center gap-1.5 text-[0.63rem] font-medium text-success"><FolderCheck className="size-3" />{agentAvailable ? "Pasta vinculada ao Agent: abertura direta na IDE disponível." : "Abertura direta disponível para VS Code/Cursor."}</p>}
             </div>
           </div>
           <DialogFooter>

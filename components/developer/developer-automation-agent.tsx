@@ -28,6 +28,7 @@ import {
   type DeveloperIdeRecord,
   type DeveloperLocalProjectRecord,
 } from "@/lib/developer/context"
+import { openDeveloperProjectSmart } from "@/lib/developer/windows-agent"
 
 const SETTINGS_SELECT = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
 
@@ -121,14 +122,18 @@ export function DeveloperAutomationAgent() {
         const local = localProjects.find((item) => item.id === context.localProjectId) ?? null
         const ideId = context.ideId || local?.ideId
         const ide = ides.find((item) => item.id === ideId) ?? null
-        const uri = developerLaunchUri(ide, local)
-        if (uri) {
-          const anchor = document.createElement("a")
-          anchor.href = uri
-          anchor.style.display = "none"
-          document.body.appendChild(anchor)
-          anchor.click()
-          anchor.remove()
+        if (ide && local) {
+          void openDeveloperProjectSmart(ide, local, { allowFolderPicker: false }).then((opened) => {
+            if (opened.opened) return
+            const uri = developerLaunchUri(ide, local)
+            if (!uri) return
+            const anchor = document.createElement("a")
+            anchor.href = uri
+            anchor.style.display = "none"
+            document.body.appendChild(anchor)
+            anchor.click()
+            anchor.remove()
+          })
         }
       }
     }

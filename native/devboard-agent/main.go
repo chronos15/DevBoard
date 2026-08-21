@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.1.2"
+	agentVersion = "0.1.3"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -254,6 +254,7 @@ func runAgent(cfg agentConfig) {
 	defer stopGlobalShortcut()
 
 	go heartbeatLoop(cfg, hotkeyOK)
+	go startLocalAPIServer(cfg)
 
 	if hasArg("--protocol") {
 		for index, arg := range os.Args {

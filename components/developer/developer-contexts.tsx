@@ -23,6 +23,7 @@ import {
   type DeveloperIdeRecord,
   type DeveloperLocalProjectRecord,
 } from "@/lib/developer/context"
+import { openDeveloperProjectSmart } from "@/lib/developer/windows-agent"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type Props = { currentUserId: string; onNotice: (message: string | null) => void }
@@ -147,7 +148,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
     window.dispatchEvent(new Event(DEVELOPER_CONTEXTS_EVENT))
   }
 
-  function launch(context: DeveloperContextRecord) {
+  async function launch(context: DeveloperContextRecord) {
     rememberDeveloperContext(currentUserId, context)
     const local = localProjects.find((item) => item.id === context.localProjectId) ?? null
     const ide = ides.find((item) => item.id === (context.ideId || local?.ideId)) ?? null
@@ -157,18 +158,24 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
       const music = safeExternalUrl(context.musicUrl)
       if (music) window.open(music, "_blank", "noopener,noreferrer")
     }
-    if (context.autoOpenIde) {
-      const uri = developerLaunchUri(ide, local)
-      if (uri) {
-        const a = document.createElement("a")
-        a.href = uri
-        a.style.display = "none"
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-      } else if (ide) {
-        onNotice(`${ide.name} precisa de um launcher/protocolo configurado para este contexto.`)
+    if (context.autoOpenIde && ide && local) {
+      const opened = await openDeveloperProjectSmart(ide, local, { allowFolderPicker: true })
+      if (!opened.opened) {
+        // Fallback para versões antigas do Agent / máquinas sem Agent.
+        const uri = developerLaunchUri(ide, local)
+        if (uri) {
+          const a = document.createElement("a")
+          a.href = uri
+          a.style.display = "none"
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+        } else {
+          onNotice(opened.error || `${ide.name} não pôde abrir o projeto configurado.`)
+        }
       }
+    } else if (context.autoOpenIde && ide && !local) {
+      onNotice(`Vincule um projeto local ao contexto “${context.name}” para abrir ${ide.name}.`)
     }
     if (context.devboardProjectId) router.push(`/projetos/${context.devboardProjectId}`)
   }
@@ -197,7 +204,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
                       <span className="block truncate text-xs font-semibold" title={context.name}>{context.name}</span>
                       <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground" title={`${project?.name ?? "Sem projeto"} · ${ide?.name ?? "Sem IDE"}`}>{project?.name ?? "Sem projeto"} · {ide?.name ?? "Sem IDE"}</span>
                     </button>
-                    <button type="button" onClick={() => launch(context)} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background" title="Iniciar contexto"><ExternalLink className="size-3.5" /></button>
+                    <button type="button" onClick={() => void launch(context)} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background" title="Iniciar contexto"><ExternalLink className="size-3.5" /></button>
                   </div>
                 )
               })}

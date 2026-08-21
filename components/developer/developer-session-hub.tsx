@@ -71,8 +71,18 @@ export function DeveloperSessionHub() {
     if (ok) router.push(`/projetos/${last.project.id}#sub-${last.sub.id}`)
   }
 
+  React.useEffect(() => {
+    function focusFromShortcut() {
+      if (window.location.hash !== "#dev-session") return
+      window.requestAnimationFrame(() => document.getElementById("dev-session")?.focus({ preventScroll: false }))
+    }
+    focusFromShortcut()
+    window.addEventListener("hashchange", focusFromShortcut)
+    return () => window.removeEventListener("hashchange", focusFromShortcut)
+  }, [])
+
   return (
-    <section className="min-w-0 rounded-2xl border border-border bg-card">
+    <section id="dev-session" tabIndex={-1} className="min-w-0 scroll-mt-24 rounded-2xl border border-border bg-card outline-none focus-visible:ring-2 focus-visible:ring-primary/35">
       <div className="min-w-0 p-4">
         <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">

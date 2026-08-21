@@ -735,13 +735,13 @@ export function DeveloperPanel() {
           <Surface className="min-w-0 self-start lg:col-span-2">
             <CardHeader icon={NotebookPen} title="Anotações rápidas" subtitle="Rascunhos pessoais do developer. Não ficam ligados a projeto, atividade ou tópico." action={<span className="rounded-full bg-muted px-2 py-1 text-[0.65rem] text-muted-foreground">{notes.length} notas</span>} />
             <div className="p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <div className="min-w-0 flex-1">
-                  <FieldLabel>Nova anotação</FieldLabel>
-                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={2} maxLength={6000} className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
-                  <p className="mt-1 text-[0.64rem] text-muted-foreground">Ctrl/Cmd + Enter salva rapidamente.</p>
+              <div className="min-w-0">
+                <FieldLabel>Nova anotação</FieldLabel>
+                <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={2} maxLength={6000} className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
+                <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="min-w-0 text-[0.64rem] text-muted-foreground">Ctrl/Cmd + Enter salva rapidamente.</p>
+                  <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-45 sm:w-auto"><Plus className="size-3.5" />Salvar nota</button>
                 </div>
-                <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-45"><Plus className="size-3.5" />Salvar nota</button>
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -766,7 +766,7 @@ export function DeveloperPanel() {
         <div className="flex min-w-0 self-start flex-col gap-4">
           <Surface className="min-w-0">
             <CardHeader icon={AlertTriangle} title="Alertas importantes" subtitle="Resumo pessoal para você não encerrar o dia deixando algo passar." />
-            <div className="space-y-2 p-3 sm:p-4">
+            <div className="grid gap-2.5 p-3 sm:p-4">
               {alerts.length === 0 && <div className="rounded-xl border border-dashed border-border px-4 py-7 text-center"><Check className="mx-auto size-5 text-success" /><p className="mt-2 text-xs font-medium">Nenhum alerta importante</p><p className="mt-1 text-[0.67rem] text-muted-foreground">Seu dia está organizado.</p></div>}
               {alerts.map((alert) => {
                 const body = (
@@ -775,7 +775,7 @@ export function DeveloperPanel() {
                     <p className="mt-1 line-clamp-2 text-[0.67rem] leading-relaxed text-muted-foreground">{alert.description}</p>
                   </div>
                 )
-                return alert.href ? <Link key={alert.id} href={alert.href}>{body}</Link> : <div key={alert.id}>{body}</div>
+                return alert.href ? <Link key={alert.id} href={alert.href} className="block min-w-0">{body}</Link> : <div key={alert.id} className="min-w-0">{body}</div>
               })}
             </div>
           </Surface>

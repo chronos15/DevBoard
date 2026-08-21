@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Devboard - Atalho Global",
+  "version": "1.0.0",
+  "description": "Abre e coloca em foco o Painel do Desenvolvedor do Devboard a partir de qualquer aplicativo do Windows.",
+  "permissions": ["tabs", "storage"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Devboard - Atalho Global",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "open-devboard-panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+7",
+        "windows": "Ctrl+Shift+7",
+        "linux": "Ctrl+Shift+7",
+        "mac": "Command+Shift+7"
+      },
+      "description": "Abrir o Painel do Desenvolvedor",
+      "global": true
+    }
+  }
+}

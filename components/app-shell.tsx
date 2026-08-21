@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { StoreProvider } from "@/lib/store"
 import { Sidebar } from "@/components/sidebar"
 import { Topbar } from "@/components/topbar"
@@ -48,6 +48,30 @@ const BARE_ROUTES = ["/login"]
 function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.ReactNode; menuOpen: boolean; setMenuOpen: React.Dispatch<React.SetStateAction<boolean>> }) {
   const { hydrated, currentUserRole } = useStore()
   const pathname = usePathname()
+  const router = useRouter()
+
+  React.useEffect(() => {
+    if (!hydrated || currentUserRole !== "developer") return
+
+    function focusDeveloperPanel() {
+      if (window.location.pathname.startsWith("/dev")) {
+        if (window.location.hash !== "#dev-session") window.history.replaceState(null, "", "/dev#dev-session")
+        window.requestAnimationFrame(() => document.getElementById("dev-session")?.focus({ preventScroll: false }))
+        return
+      }
+      router.push("/dev#dev-session")
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat) return
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey || event.code !== "Digit7") return
+      event.preventDefault()
+      focusDeveloperPanel()
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [currentUserRole, hydrated, router])
 
   return (
     <div className="flex min-h-screen max-w-full overflow-x-clip">

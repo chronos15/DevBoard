@@ -30,6 +30,7 @@ import { DeveloperEnvironment } from "@/components/developer/developer-environme
 import { DeveloperSessionHub } from "@/components/developer/developer-session-hub"
 import { DeveloperContexts } from "@/components/developer/developer-contexts"
 import { DeveloperWindowsAgent } from "@/components/developer/developer-windows-agent"
+import { DEVELOPER_VCS_STATUS_EVENT } from "@/lib/developer/vcs"
 import {
   DEFAULT_DEVELOPER_SETTINGS,
   DEVELOPER_SETTINGS_EVENT,
@@ -199,6 +200,7 @@ export function DeveloperPanel() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [notice, setNotice] = React.useState<string | null>(null)
+  const [vcsDirtyProjects, setVcsDirtyProjects] = React.useState<Array<{ id: string; name: string; provider: string; changedCount: number }>>([])
   const [backendMissing, setBackendMissing] = React.useState(false)
   const [now, setNow] = React.useState(() => new Date())
   const [notificationPermission, setNotificationPermission] = React.useState<NotificationPermission | "unsupported">("unsupported")
@@ -375,6 +377,15 @@ export function DeveloperPanel() {
     return () => window.clearInterval(timer)
   }, [focusEndAt, focusMode, focusRunning, settings.breakMinutes, settings.focusMinutes])
 
+  React.useEffect(() => {
+    function onVcsStatus(event: Event) {
+      const detail = (event as CustomEvent<{ dirtyProjects?: Array<{ id: string; name: string; provider: string; changedCount: number }> }>).detail
+      setVcsDirtyProjects(Array.isArray(detail?.dirtyProjects) ? detail.dirtyProjects : [])
+    }
+    window.addEventListener(DEVELOPER_VCS_STATUS_EVENT, onVcsStatus)
+    return () => window.removeEventListener(DEVELOPER_VCS_STATUS_EVENT, onVcsStatus)
+  }, [])
+
   const assignedItems = React.useMemo(() => {
     return projects.flatMap((project) => project.activities.flatMap((activity) => activity.subactivities
       .filter((sub) => sub.assigneeId === currentUserId)
@@ -415,6 +426,16 @@ export function DeveloperPanel() {
         href: `/projetos/${paused[0].project.id}`,
       })
     }
+    if (vcsDirtyProjects.length) {
+      const total = vcsDirtyProjects.reduce((sum, item) => sum + Math.max(0, item.changedCount), 0)
+      const first = vcsDirtyProjects[0]
+      result.push({
+        id: "vcs-dirty",
+        tone: "warning",
+        title: `${total} alteraç${total === 1 ? "ão" : "ões"} local${total === 1 ? "" : "is"} sem commit`,
+        description: `${first.name}${vcsDirtyProjects.length > 1 ? ` e mais ${vcsDirtyProjects.length - 1} projeto${vcsDirtyProjects.length === 2 ? "" : "s"}` : ""}. Revise em Projetos & IDEs antes de encerrar o dia.`,
+      })
+    }
     const dueProjects = Array.from(new Map(assignedItems
       .filter((item) => !["done", "cancelled"].includes(item.sub.status))
       .map((item) => [item.project.id, item.project])).values())
@@ -437,7 +458,7 @@ export function DeveloperPanel() {
       result.push({ id: "water", tone: "info", title: "Hidratação abaixo da metade da meta", description: `Você registrou ${waterMl} ml de ${settings.hydrationGoalMl} ml hoje.` })
     }
     return result.slice(0, 5)
-  }, [assignedItems, now, settings.hydrationGoalMl, settings.workEnd, shift.kind, shift.minutesLeft, waterMl, waterPercent])
+  }, [assignedItems, now, settings.hydrationGoalMl, settings.workEnd, shift.kind, shift.minutesLeft, vcsDirtyProjects, waterMl, waterPercent])
 
   async function saveSettings() {
     if (!currentUserId || saving) return

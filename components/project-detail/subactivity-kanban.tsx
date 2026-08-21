@@ -249,7 +249,7 @@ export function SubactivityKanban({
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = item.sub.status === "done" || item.sub.status === "cancelled"
 
-    if (nextTerminal || (currentTerminal && currentUserRole === "admin")) {
+    if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
       setPendingTransition({
         subId: item.sub.id,
         subTitle: item.sub.title,
@@ -490,6 +490,7 @@ export function SubactivityKanban({
           isAdmin={currentUserRole === "admin"}
           onConfirm={confirmTransition}
           loading={pendingIds.has(pendingTransition.subId)}
+          projectId={project.id}
         />
       )}
     </>

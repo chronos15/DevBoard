@@ -14,6 +14,7 @@ export type DeveloperLocalProjectRecord = {
   folderName: string
   ideId: string | null
   legacyPath: string
+  devboardProjectId?: string | null
 }
 
 export type DeveloperContextRecord = {
@@ -47,6 +48,7 @@ export function normalizeDeveloperLocalProject(row: any): DeveloperLocalProjectR
     folderName: String(row.folder_name ?? ""),
     ideId: row.ide_id ? String(row.ide_id) : null,
     legacyPath: String(row.legacy_path ?? ""),
+    devboardProjectId: row.devboard_project_id ? String(row.devboard_project_id) : null,
   }
 }
 

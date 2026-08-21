@@ -12,6 +12,7 @@ import {
   Folder,
   FolderCheck,
   FolderOpen,
+  GitBranch,
   MonitorCog,
   Pencil,
   Plus,
@@ -41,6 +42,14 @@ import {
   supportsDirectoryPicker,
   type LocalDirectoryHandle,
 } from "@/lib/developer/local-workspaces"
+import { DeveloperVcsDialog } from "@/components/developer/developer-vcs-dialog"
+import {
+  DEVELOPER_VCS_CHANGED_EVENT,
+  DEVELOPER_VCS_STATUS_EVENT,
+  developerVcsProviderLabel,
+  getDeveloperVcsStatus,
+  type DeveloperVcsStatus,
+} from "@/lib/developer/vcs"
 import {
   bindDeveloperProjectFolder,
   getDeveloperAgentHealth,
@@ -66,6 +75,7 @@ type DeveloperLocalProject = {
   folderName: string
   ideId: string | null
   legacyPath: string
+  devboardProjectId: string | null
   createdAt: string
 }
 
@@ -89,6 +99,7 @@ type ProjectDraft = {
   handle: LocalDirectoryHandle | null
   currentFolderName: string
   legacyPath: string
+  devboardProjectId: string
 }
 
 const IDE_OPTIONS: Array<{ value: DeveloperIdeKind; label: string; icon: DeveloperIdeIcon }> = [
@@ -123,7 +134,7 @@ function defaultIdeDraft(): IdeDraft {
 }
 
 function emptyProjectDraft(ideId = ""): ProjectDraft {
-  return { name: "", ideId, handle: null, currentFolderName: "", legacyPath: "" }
+  return { name: "", ideId, handle: null, currentFolderName: "", legacyPath: "", devboardProjectId: "" }
 }
 
 function normalizeIdeRow(row: any): DeveloperIde {
@@ -144,6 +155,7 @@ function normalizeProjectRow(row: any): DeveloperLocalProject {
     folderName: String(row.folder_name ?? ""),
     ideId: row.ide_id ? String(row.ide_id) : null,
     legacyPath: String(row.legacy_path ?? ""),
+    devboardProjectId: row.devboard_project_id ? String(row.devboard_project_id) : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   }
 }
@@ -194,7 +206,7 @@ function iconFor(ide?: DeveloperIde | null, className = "size-4") {
 
 export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const supabase = React.useMemo(() => createClient(), [])
-  const { projects: devboardProjects } = useStore()
+  const { projects: devboardProjects, activeSubId, findSub } = useStore()
 
   // O Store incrementa trackedSeconds das subatividades em execução a cada segundo,
   // criando uma nova referência para projects. A área de IDE só depende de nome e
@@ -202,11 +214,12 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   // inteiro a cada tick do cronômetro.
   const launchProjectFingerprint = JSON.stringify(
     devboardProjects.map((project) => ({
+      id: project.id,
       name: project.name,
       repository: String(project.repository ?? ""),
     })),
   )
-  const launchProjects = React.useMemo<Array<{ name: string; repository: string }>>(
+  const launchProjects = React.useMemo<Array<{ id: string; name: string; repository: string }>>(
     () => JSON.parse(launchProjectFingerprint),
     [launchProjectFingerprint],
   )
@@ -223,7 +236,17 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
   const [savingIde, setSavingIde] = React.useState(false)
   const [savingProject, setSavingProject] = React.useState(false)
   const [agentAvailable, setAgentAvailable] = React.useState(false)
+  const [vcsStatuses, setVcsStatuses] = React.useState<Record<string, DeveloperVcsStatus>>({})
+  const [vcsProject, setVcsProject] = React.useState<DeveloperLocalProject | null>(null)
+  const [vcsLinkSchemaReady, setVcsLinkSchemaReady] = React.useState(true)
   const pickerSupported = React.useMemo(() => supportsDirectoryPicker(), [])
+  const activeFound = activeSubId ? findSub(activeSubId) : null
+  const activeTask = activeFound ? {
+    subactivityId: activeFound.sub.id,
+    title: activeFound.sub.title,
+    devboardProjectId: activeFound.project.id,
+    projectName: activeFound.project.name,
+  } : null
 
   React.useEffect(() => {
     let active = true
@@ -234,6 +257,41 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     const timer = window.setInterval(check, 12_000)
     return () => { active = false; window.clearInterval(timer) }
   }, [])
+
+  const refreshVcsStatus = React.useCallback(async (project: DeveloperLocalProject) => {
+    if (!agentAvailable) return null
+    try {
+      const status = await getDeveloperVcsStatus(project, { allowFolderPicker: false })
+      setVcsStatuses((current) => ({ ...current, [project.id]: status }))
+      return status
+    } catch {
+      return null
+    }
+  }, [agentAvailable])
+
+  const refreshAllVcsStatuses = React.useCallback(async () => {
+    if (!agentAvailable || localProjects.length === 0) return
+    const results = await Promise.all(localProjects.map(async (project) => ({ project, status: await refreshVcsStatus(project) })))
+    const dirty = results
+      .filter((item) => item.status && item.status.provider !== "none" && item.status.changedCount > 0)
+      .map((item) => ({ id: item.project.id, name: item.project.name, provider: item.status!.provider, changedCount: item.status!.changedCount }))
+    window.dispatchEvent(new CustomEvent(DEVELOPER_VCS_STATUS_EVENT, { detail: { dirtyProjects: dirty } }))
+  }, [agentAvailable, localProjects, refreshVcsStatus])
+
+  React.useEffect(() => {
+    if (!agentAvailable || localProjects.length === 0) return
+    void refreshAllVcsStatuses()
+    const timer = window.setInterval(() => void refreshAllVcsStatuses(), 30_000)
+    const onFocus = () => void refreshAllVcsStatuses()
+    const onChanged = () => void refreshAllVcsStatuses()
+    window.addEventListener("focus", onFocus)
+    window.addEventListener(DEVELOPER_VCS_CHANGED_EVENT, onChanged)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener("focus", onFocus)
+      window.removeEventListener(DEVELOPER_VCS_CHANGED_EVENT, onChanged)
+    }
+  }, [agentAvailable, localProjects.length, refreshAllVcsStatuses])
 
   const inferKnownLaunchPath = React.useCallback((folderName: string, projectName?: string, oldWorkspacePath?: string) => {
     const folder = folderName.trim().toLocaleLowerCase("pt-BR")
@@ -255,13 +313,26 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
   const loadEnvironment = React.useCallback(async () => {
     if (!currentUserId) return
-    const [{ data: ideRows, error: ideError }, { data: projectRows, error: projectError }, { data: settingsRow }] = await Promise.all([
+    const [ideResult, settingsResult] = await Promise.all([
       supabase.from("developer_ides").select("id,name,kind,icon,custom_uri_template,sort_order").eq("user_id", currentUserId).order("sort_order").order("created_at"),
-      supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,created_at").eq("user_id", currentUserId).order("created_at"),
       supabase.from("developer_settings").select("ide_workspace_path").eq("user_id", currentUserId).maybeSingle(),
     ])
-    if (ideError) throw ideError
-    if (projectError) throw projectError
+    if (ideResult.error) throw ideResult.error
+
+    let projectResult = await supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,devboard_project_id,created_at").eq("user_id", currentUserId).order("created_at")
+    let linkSchemaReady = true
+    if (projectResult.error && (projectResult.error.code === "42703" || /devboard_project_id/i.test(projectResult.error.message))) {
+      linkSchemaReady = false
+      // Rollout seguro: o restante do Painel Dev continua funcionando se o frontend
+      // chegar antes da migration 019. Apenas o vínculo VCS fica indisponível até aplicar a migration.
+      projectResult = await supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,created_at").eq("user_id", currentUserId).order("created_at") as typeof projectResult
+    }
+    if (projectResult.error) throw projectResult.error
+    setVcsLinkSchemaReady(linkSchemaReady)
+
+    const ideRows = ideResult.data
+    const projectRows = projectResult.data
+    const settingsRow = settingsResult.data
 
     const mappedIdes = (ideRows ?? []).map(normalizeIdeRow)
     const mappedProjects = (projectRows ?? []).map(normalizeProjectRow)
@@ -398,6 +469,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       handle: null,
       currentFolderName: project.folderName,
       legacyPath: project.legacyPath,
+      devboardProjectId: project.devboardProjectId ?? "",
     })
     setProjectDialogOpen(true)
   }
@@ -462,6 +534,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       folder_name: folderName,
       ide_id: projectDraft.ideId,
       legacy_path: recoveredPath,
+      ...(vcsLinkSchemaReady ? { devboard_project_id: projectDraft.devboardProjectId || null } : {}),
     }
 
     const result = projectDraft.id
@@ -470,12 +543,12 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
         .update(payload)
         .eq("id", projectDraft.id)
         .eq("user_id", currentUserId)
-        .select("id,name,folder_name,ide_id,legacy_path,created_at")
+        .select("id,name,folder_name,ide_id,legacy_path,devboard_project_id,created_at")
         .single()
       : await supabase
         .from("developer_local_projects")
         .insert(payload)
-        .select("id,name,folder_name,ide_id,legacy_path,created_at")
+        .select("id,name,folder_name,ide_id,legacy_path,devboard_project_id,created_at")
         .single()
 
     if (result.error) {
@@ -634,6 +707,10 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
                 const ide = ides.find((item) => item.id === project.ideId)
                 const hasFolder = folderAvailability[project.id] === true || Boolean(project.legacyPath)
                 const opensFolder = Boolean(project.legacyPath) && Boolean(ide && (ide.kind === "vscode" || ide.kind === "cursor"))
+                const vcs = vcsStatuses[project.id]
+                const vcsMeta = vcs?.provider && vcs.provider !== "none"
+                  ? `${developerVcsProviderLabel(vcs.provider)}${vcs.branch ? ` · ${vcs.branch}` : vcs.revision ? ` · ${vcs.revision}` : ""}${vcs.changedCount > 0 ? ` · ${vcs.changedCount} alt.` : vcs.directStatus ? " · limpo" : ""}`
+                  : ""
                 return (
                   <div key={project.id} className="group flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-2 transition-colors hover:bg-muted/45">
                     <span className={cn(
@@ -646,10 +723,19 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
                       <span className="block truncate text-xs font-semibold" title={project.name}>{project.name}</span>
                       <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[0.62rem] text-muted-foreground">
                         {hasFolder ? <FolderCheck className="size-3 shrink-0" /> : <Folder className="size-3 shrink-0" />}
-                        <span className="truncate" title={`${ide?.name ?? "Sem IDE"} · ${project.folderName || "Pasta não vinculada"}`}>
-                          {ide?.name ?? "Sem IDE"} · {project.folderName || "Pasta não vinculada"}
+                        <span className="truncate" title={`${ide?.name ?? "Sem IDE"} · ${project.folderName || "Pasta não vinculada"}${vcsMeta ? ` · ${vcsMeta}` : ""}`}>
+                          {ide?.name ?? "Sem IDE"} · {project.folderName || "Pasta não vinculada"}{vcsMeta ? ` · ${vcsMeta}` : ""}
                         </span>
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVcsProject(project)}
+                      disabled={!agentAvailable}
+                      className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30", vcs?.conflicted && "border-destructive/30 bg-destructive/5 text-destructive", vcs && vcs.changedCount > 0 && !vcs.conflicted && "border-warning/25 bg-warning/5 text-warning")}
+                      title={agentAvailable ? "Git / SVN deste projeto" : "Devboard Agent necessário para Git/SVN"}
+                    >
+                      <GitBranch className="size-3.5" />
                     </button>
                     <button
                       type="button"
@@ -678,6 +764,20 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           )}
         </div>
       </section>
+
+      <DeveloperVcsDialog
+        open={Boolean(vcsProject)}
+        onOpenChange={(next) => { if (!next) setVcsProject(null) }}
+        project={vcsProject}
+        currentUserId={currentUserId}
+        activeTask={activeTask}
+        initialStatus={vcsProject ? vcsStatuses[vcsProject.id] ?? null : null}
+        onStatusChanged={(status) => {
+          if (!vcsProject) return
+          setVcsStatuses((current) => ({ ...current, [vcsProject.id]: status }))
+        }}
+        onNotice={onNotice}
+      />
 
       <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
         <DialogContent className="sm:max-w-[560px]">
@@ -730,6 +830,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           </DialogHeader>
           <div className="space-y-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={projectDraft.name} onChange={(event) => setProjectDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: ERP Softwork" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto do Devboard <span className="font-normal">(opcional)</span></label><select value={projectDraft.devboardProjectId} disabled={!vcsLinkSchemaReady} onChange={(event) => setProjectDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-45"><option value="">Não vincular</option>{launchProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="mt-1.5 text-[0.63rem] text-muted-foreground">{vcsLinkSchemaReady ? "Permite associar commits/revisões à subatividade em execução e alertar antes de concluir/enviar para AQS." : "Execute a migration 019 para habilitar o vínculo de controle de versão."}</p></div>
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">IDE deste projeto</label><select value={projectDraft.ideId} onChange={(event) => setProjectDraft((current) => ({ ...current, ideId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Escolher IDE</option>{ides.map((ide) => <option key={ide.id} value={ide.id}>{ide.name}</option>)}</select></div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label>

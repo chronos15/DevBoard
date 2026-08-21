@@ -3,6 +3,7 @@
 import type { Status } from "@/lib/types"
 import { statusMeta } from "@/lib/project-utils"
 import { Button } from "@/components/ui/button"
+import { DeveloperVcsCompletionWarning } from "@/components/developer/developer-vcs-completion-warning"
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,7 @@ export function SubactivityStatusConfirmDialog({
   isAdmin,
   onConfirm,
   loading = false,
+  projectId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -32,10 +34,12 @@ export function SubactivityStatusConfirmDialog({
   isAdmin: boolean
   onConfirm: () => void
   loading?: boolean
+  projectId?: string
 }) {
   const enteringTerminal = isTerminalStatus(toStatus)
   const leavingTerminal = isTerminalStatus(fromStatus) && fromStatus !== toStatus
   const isCancelling = toStatus === "cancelled"
+  const sendingToAqs = toStatus === "waiting-aqs"
 
   let title = "Confirmar alteração de status?"
   let description = `A subatividade “${subactivityTitle}” será alterada de ${statusMeta[fromStatus].label} para ${statusMeta[toStatus].label}.`
@@ -47,6 +51,10 @@ export function SubactivityStatusConfirmDialog({
     description = isAdmin
       ? `A subatividade “${subactivityTitle}” ficará com status final ${statusMeta[toStatus].label}. Como administrador, você poderá alterá-la depois, mas qualquer nova mudança também exigirá confirmação.`
       : `A subatividade “${subactivityTitle}” ficará com status final ${statusMeta[toStatus].label}. Depois de confirmar, você não poderá mudar o status novamente. Somente um administrador poderá reabrir ou alterar esta subatividade.`
+  } else if (sendingToAqs) {
+    title = "Enviar subatividade para AQS?"
+    confirmLabel = "Sim, enviar para AQS"
+    description = `A subatividade “${subactivityTitle}” será enviada para análise AQS. Antes de continuar, confira se as alterações locais relacionadas já foram commitadas.`
   } else if (leavingTerminal && isAdmin) {
     title = "Alterar status final?"
     confirmLabel = "Sim, alterar status"
@@ -60,6 +68,8 @@ export function SubactivityStatusConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        <DeveloperVcsCompletionWarning projectId={projectId} enabled={enteringTerminal || sendingToAqs} />
 
         {(enteringTerminal || leavingTerminal) && (
           <div className="rounded-xl border border-border bg-muted/45 px-3 py-2.5 text-xs text-muted-foreground">

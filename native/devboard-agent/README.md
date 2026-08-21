@@ -16,7 +16,11 @@ Agente nativo pequeno usado pelo Painel Dev para:
 - para Delphi, procurar automaticamente `.groupproj`, `.dproj` ou `.dpr` dentro da pasta;
 - para Visual Studio, priorizar `.slnx`/`.sln` e usar `vswhere.exe` quando disponível;
 - expor uma API estritamente em loopback (`127.0.0.1:43827`) para a PWA conversar com o Agent sem expor a porta na rede;
-- registrar o protocolo `devboard-agent://` para integrações locais futuras.
+- registrar o protocolo `devboard-agent://` para integrações locais futuras;
+- detectar automaticamente `.git` e `.svn` na pasta do projeto ou em diretórios-pai;
+- consultar status e histórico Git localmente, fazer Pull, Commit de todas as alterações e Push;
+- consultar SVN via `svn.exe` quando disponível e fazer Update, Commit e Logs dentro do Devboard;
+- usar `TortoiseProc.exe` como fallback seguro para Update, Commit, Logs e Check for modifications quando o cliente CLI do SVN não estiver instalado.
 
 ## Abertura de IDEs
 
@@ -44,8 +48,16 @@ A API escuta somente em `127.0.0.1:43827` e valida a origem configurada do Devbo
 - `POST /v1/pick-folder`
 - `POST /v1/bind-project`
 - `POST /v1/open-project`
+- `POST /v1/vcs/status`
+- `POST /v1/vcs/log`
+- `POST /v1/vcs/update`
+- `POST /v1/vcs/commit`
+- `POST /v1/vcs/push`
+- `POST /v1/vcs/native`
 
 As respostas CORS também suportam Private Network Access para permitir a comunicação da PWA HTTPS com o loopback local.
+
+A API não possui endpoint de shell/comando arbitrário. As operações locais são allowlisted e tipadas (`open-project`, `vcs/status`, `vcs/commit`, etc.), e o Agent monta os argumentos dos executáveis localmente.
 
 ## Build
 

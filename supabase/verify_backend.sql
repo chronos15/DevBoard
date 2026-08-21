@@ -585,3 +585,31 @@ begin
   end if;
   raise notice 'Migration 018 OK: Devboard Agent para Windows pronto para instalação e heartbeat.';
 end $$;
+
+-- 019 · Controle de versão local Git/SVN do Painel Dev
+select
+  to_regclass('public.developer_vcs_changes') is not null as developer_vcs_changes_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_local_projects' and column_name='devboard_project_id') as developer_local_project_link_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_select')
+  and exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_insert')
+  and exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_update')
+  and exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_delete') as developer_vcs_changes_rls_ok,
+  exists(select 1 from pg_indexes where schemaname='public' and tablename='developer_vcs_changes' and indexname='developer_vcs_changes_subactivity_idx') as developer_vcs_changes_subactivity_index_ok,
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_vcs_changes') as developer_vcs_changes_realtime_ok;
+
+do $$
+begin
+  if to_regclass('public.developer_vcs_changes') is null then
+    raise exception 'Backend Devboard incompleto: developer_vcs_changes ausente (migration 019)';
+  end if;
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_local_projects' and column_name='devboard_project_id') then
+    raise exception 'Backend Devboard incompleto: vínculo developer_local_projects.devboard_project_id ausente (migration 019)';
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_select')
+     or not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_insert')
+     or not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_update')
+     or not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_vcs_changes' and policyname='devboard_developer_vcs_changes_delete') then
+    raise exception 'Backend Devboard incompleto: policies RLS de developer_vcs_changes ausentes (migration 019)';
+  end if;
+  raise notice 'Migration 019 OK: vínculos de commits/revisões Git/SVN do Painel Dev prontos.';
+end $$;

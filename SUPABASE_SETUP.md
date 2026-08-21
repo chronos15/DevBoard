@@ -542,3 +542,21 @@ Ela cria o registro seguro dos agentes Windows e as RPCs usadas para:
 O segredo do agente não possui SELECT direto e nunca é retornado pelo painel. O instalador é gerado em `/api/dev-agent/installer` e recebe um token aleatório próprio daquela instalação.
 
 > O agente não é instalado como Windows Service tradicional. Ele inicia automaticamente na sessão do usuário via HKCU porque precisa receber hotkeys globais e abrir IDEs/janelas na área de trabalho. Windows Services executam fora da sessão interativa e não são adequados para esse papel.
+
+## Migration 019 — Git/SVN local vinculado às tarefas
+
+Depois da migration 018, execute:
+
+```text
+supabase/migrations/019_devboard_developer_vcs.sql
+```
+
+A 019 adiciona o vínculo opcional entre `developer_local_projects` e um projeto real do Devboard (`devboard_project_id`) e cria `developer_vcs_changes` para guardar **somente os metadados de commits/revisões que o developer associar a uma subatividade**.
+
+O código-fonte, credenciais Git/SVN e working copy continuam exclusivamente no computador. Git, SVN e TortoiseSVN são acessados pelo Devboard Agent em loopback. A escrita/alteração dos vínculos continua exclusiva do próprio developer. Quando um commit/revisão é associado a uma subatividade, os membros daquele workspace podem ler somente esse metadado; assim a AQS consegue conferir exatamente quais alterações foram vinculadas sem receber acesso à pasta local, credenciais ou código-fonte.
+
+Depois execute novamente:
+
+```text
+supabase/verify_backend.sql
+```

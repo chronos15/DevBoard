@@ -70,7 +70,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
     if (nextStatus === sub.status || statusSaving) return
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = sub.status === "done" || sub.status === "cancelled"
-    if (nextTerminal || (currentTerminal && currentUserRole === "admin")) {
+    if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
       setPendingFromStatus(sub.status)
       setPendingStatus(nextStatus)
       return
@@ -241,6 +241,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
         isAdmin={currentUserRole === "admin"}
         onConfirm={confirmStatus}
         loading={statusSaving}
+        projectId={projectId}
       />
     )}
     </>

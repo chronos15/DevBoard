@@ -34,6 +34,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
+import { DeveloperVcsTaskChanges, type DeveloperTaskVcsChange } from "@/components/developer/developer-vcs-task-changes"
 
 const columns: Array<{
   status: AqsReviewStatus
@@ -113,6 +115,68 @@ export function AnalysisView() {
   const [revokeTarget, setRevokeTarget] = React.useState<AqsReview | null>(null)
   const [reason, setReason] = React.useState("")
   const canReview = currentUserRole === "admin" || currentUserRole === "aqs"
+  const [vcsChangesBySubactivity, setVcsChangesBySubactivity] = React.useState<Record<string, DeveloperTaskVcsChange[]>>({})
+  const vcsSubactivityKey = React.useMemo(
+    () => Array.from(new Set(aqsReviews.map((item) => item.subactivityId).filter(Boolean))).sort().join(","),
+    [aqsReviews],
+  )
+
+  const loadVcsChanges = React.useCallback(async () => {
+    const subactivityIds = vcsSubactivityKey ? vcsSubactivityKey.split(",") : []
+    if (subactivityIds.length === 0) {
+      setVcsChangesBySubactivity({})
+      return
+    }
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("developer_vcs_changes")
+        .select("id,subactivity_id,provider,revision,branch,message,committed_at")
+        .in("subactivity_id", subactivityIds)
+        .order("committed_at", { ascending: false })
+      if (error) {
+        // Rollout seguro: antes da migration 019, a fila AQS continua funcionando normalmente.
+        if (error.code === "42P01" || error.code === "42703") return
+        console.warn("Não foi possível carregar os commits vinculados à AQS.", error)
+        return
+      }
+      const grouped: Record<string, DeveloperTaskVcsChange[]> = {}
+      for (const row of data ?? []) {
+        const subactivityId = row.subactivity_id ? String(row.subactivity_id) : ""
+        if (!subactivityId) continue
+        const provider = String(row.provider) === "svn" ? "svn" : "git"
+        const item: DeveloperTaskVcsChange = {
+          id: String(row.id),
+          provider,
+          revision: String(row.revision ?? ""),
+          branch: String(row.branch ?? ""),
+          message: String(row.message ?? ""),
+          committedAt: String(row.committed_at ?? ""),
+        }
+        grouped[subactivityId] = [...(grouped[subactivityId] ?? []), item]
+      }
+      setVcsChangesBySubactivity(grouped)
+    } catch (error) {
+      console.warn("Não foi possível carregar os commits vinculados à AQS.", error)
+    }
+  }, [vcsSubactivityKey])
+
+  React.useEffect(() => {
+    void loadVcsChanges()
+    let channel: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null
+    try {
+      const supabase = createClient()
+      channel = supabase
+        .channel(`aqs-vcs-${currentUserId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "developer_vcs_changes" }, () => void loadVcsChanges())
+        .subscribe()
+    } catch {
+      // Sem Supabase/migration, o restante da AQS não deve ser afetado.
+    }
+    return () => {
+      if (channel) void createClient().removeChannel(channel)
+    }
+  }, [currentUserId, loadVcsChanges])
 
   const focusAnalysisFromNavigation = React.useCallback((subactivityId: string) => {
     if (!subactivityId) return
@@ -336,6 +400,11 @@ export function AnalysisView() {
           onSetActive={(attachmentId, active) => setSubactivityAttachmentActive(sub.id, attachmentId, active)}
           compact
           buttonLabel="Evidências"
+        />
+        <DeveloperVcsTaskChanges
+          changes={vcsChangesBySubactivity[sub.id] ?? []}
+          taskTitle={sub.title}
+          compact
         />
         {canReview && review.status === "awaiting" && (
           <Button size="sm" disabled={lockedByOther} loading={isBusy} onClick={() => void transition(review, "evaluating")}>Avaliar</Button>

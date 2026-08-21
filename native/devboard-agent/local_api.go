@@ -174,6 +174,136 @@ func startLocalAPIServer(cfg agentConfig) {
 		})
 	})
 
+	mux.HandleFunc("/v1/vcs/status", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSProjectRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		status, err := getLocalVCSStatus(input)
+		if err != nil {
+			code := "vcs_status_failed"
+			if strings.Contains(strings.ToLower(err.Error()), "pasta") {
+				code = "folder_not_found"
+			}
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, code, err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, status)
+	})
+
+	mux.HandleFunc("/v1/vcs/log", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSLogRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		result, err := getLocalVCSLog(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_log_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("/v1/vcs/commit", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSCommitRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Solicitação de commit inválida.")
+			return
+		}
+		result, err := commitLocalVCS(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_commit_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("/v1/vcs/update", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSProjectRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		result, err := updateLocalVCS(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_update_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("/v1/vcs/push", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSProjectRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		result, err := pushLocalVCS(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_push_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("/v1/vcs/native", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSNativeRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto local inválido.")
+			return
+		}
+		result, err := openLocalVCSNative(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_native_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
 	server := &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 4 * time.Second,

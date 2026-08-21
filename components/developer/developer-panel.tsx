@@ -641,12 +641,12 @@ export function DeveloperPanel() {
 
       <DeveloperSessionHub />
 
-      <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
-        <div className="grid min-w-0 self-start auto-rows-max grid-cols-1 content-start items-start gap-4 lg:grid-cols-2">
-          <Surface className="min-w-0 self-start lg:col-span-2">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+          <Surface className="min-w-0 lg:col-span-2">
             <CardHeader icon={Clock} title="Expediente" subtitle="Configure sua rotina uma vez. O painel acompanha o horário e pode avisar quando chegar a hora de encerrar." action={<span className="font-mono text-xs text-muted-foreground">{settings.workStart}–{settings.workEnd}</span>} />
             <div className="p-4 sm:p-5">
-              <div className="mb-4">
+              <div className="mb-5">
                 <div className="mb-2 flex items-center justify-between gap-3 text-xs">
                   <span className="font-medium">{shift.label}</span>
                   <span className="text-muted-foreground">{shift.kind === "working" ? `${Math.round(shift.progress)}% do dia` : shiftDetail}</span>
@@ -663,7 +663,7 @@ export function DeveloperPanel() {
                 <div><FieldLabel>Fim intervalo</FieldLabel><input type="time" value={settings.breakEnd} onChange={(event) => setSettings((current) => ({ ...current, breakEnd: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
               </div>
 
-              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <FieldLabel>Dias de trabalho</FieldLabel>
                   <div className="flex flex-wrap gap-1.5">
@@ -680,12 +680,12 @@ export function DeveloperPanel() {
             </div>
           </Surface>
 
-          <Surface className="min-w-0 self-start">
+          <Surface className="min-w-0">
             <CardHeader icon={Droplets} title="Hidratação" subtitle="Meta diária e lembrete leve durante o expediente." action={<button type="button" onClick={() => void resetWater()} className="text-[0.68rem] font-medium text-muted-foreground hover:text-foreground">Zerar hoje</button>} />
             <div className="p-4 sm:p-5">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="relative flex size-20 shrink-0 items-center justify-center rounded-full sm:size-24" style={{ background: `conic-gradient(var(--primary) ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
-                  <div className="flex size-16 flex-col items-center justify-center rounded-full bg-card sm:size-[76px]">
+              <div className="flex items-center gap-4">
+                <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
+                  <div className="flex size-[76px] flex-col items-center justify-center rounded-full bg-card">
                     <span className="text-lg font-semibold">{waterPercent}%</span>
                     <span className="text-[0.62rem] text-muted-foreground">da meta</span>
                   </div>
@@ -699,7 +699,7 @@ export function DeveloperPanel() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><FieldLabel>Meta diária (ml)</FieldLabel><input type="number" min={500} max={10000} step={100} value={settings.hydrationGoalMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationGoalMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div><FieldLabel>Copo padrão (ml)</FieldLabel><input type="number" min={50} max={2000} step={50} value={settings.hydrationCupMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationCupMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div className="col-span-2 sm:col-span-1"><FieldLabel>Lembrete (min)</FieldLabel><input type="number" min={15} max={240} step={5} value={settings.hydrationReminderMinutes} onChange={(event) => setSettings((current) => ({ ...current, hydrationReminderMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
@@ -709,42 +709,42 @@ export function DeveloperPanel() {
             </div>
           </Surface>
 
-          <Surface className="min-w-0 self-start">
+          <Surface className="min-w-0">
             <CardHeader icon={Timer} title="Modo foco" subtitle="Pomodoro configurável que continua contando mesmo navegando por outras telas." />
             <div className="p-4 sm:p-5">
               <div className="flex rounded-xl bg-muted p-1">
                 <button type="button" onClick={() => switchFocusMode("focus")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "focus" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Foco</button>
                 <button type="button" onClick={() => switchFocusMode("break")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "break" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Pausa</button>
               </div>
-              <div className="py-4 text-center">
-                <p className="font-mono text-4xl font-semibold tracking-[-0.07em] tabular-nums sm:text-5xl">{formatFocus(focusRemaining)}</p>
+              <div className="py-6 text-center">
+                <p className="font-mono text-5xl font-semibold tracking-[-0.08em] tabular-nums">{formatFocus(focusRemaining)}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{focusRunning ? "Cronômetro em andamento" : focusMode === "focus" ? "Pronto para um bloco sem distrações" : "Hora de descansar um pouco"}</p>
               </div>
               <div className="flex justify-center gap-2">
                 <button type="button" onClick={focusRunning ? pauseFocus : startFocus} className="inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground">{focusRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{focusRunning ? "Pausar" : "Iniciar"}</button>
                 <button type="button" onClick={resetFocus} className="inline-flex size-10 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Reiniciar foco"><RotateCcw className="size-3.5" /></button>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-5 grid grid-cols-2 gap-3">
                 <div><FieldLabel>Foco (min)</FieldLabel><input type="number" min={10} max={180} value={settings.focusMinutes} onChange={(event) => setSettings((current) => ({ ...current, focusMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div><FieldLabel>Pausa (min)</FieldLabel><input type="number" min={5} max={60} value={settings.breakMinutes} onChange={(event) => setSettings((current) => ({ ...current, breakMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
               </div>
             </div>
           </Surface>
 
-          <Surface className="min-w-0 self-start lg:col-span-2">
+          <Surface className="min-w-0 lg:col-span-2">
             <CardHeader icon={NotebookPen} title="Anotações rápidas" subtitle="Rascunhos pessoais do developer. Não ficam ligados a projeto, atividade ou tópico." action={<span className="rounded-full bg-muted px-2 py-1 text-[0.65rem] text-muted-foreground">{notes.length} notas</span>} />
             <div className="p-4 sm:p-5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <FieldLabel>Nova anotação</FieldLabel>
-                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={2} maxLength={6000} className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
+                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={3} maxLength={6000} className="min-h-24 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
                   <p className="mt-1 text-[0.64rem] text-muted-foreground">Ctrl/Cmd + Enter salva rapidamente.</p>
                 </div>
                 <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-45"><Plus className="size-3.5" />Salvar nota</button>
               </div>
 
-              <div className={cn("mt-4 grid grid-cols-1 gap-2 md:grid-cols-2", notes.length > 4 && "max-h-[340px] overflow-y-auto overscroll-contain pr-1")}>
-                {notes.length === 0 && <div className="md:col-span-2 rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">Nenhuma anotação ainda.</div>}
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {notes.length === 0 && <div className="md:col-span-2 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma anotação ainda.</div>}
                 {notes.map((note) => (
                   <article key={note.id} className="group min-w-0 rounded-xl border border-border bg-background/50 p-3.5">
                     <div className="flex items-start gap-2">
@@ -762,11 +762,11 @@ export function DeveloperPanel() {
           </Surface>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4 self-start">
-          <Surface className="min-w-0 self-start">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Surface className="min-w-0">
             <CardHeader icon={AlertTriangle} title="Alertas importantes" subtitle="Resumo pessoal para você não encerrar o dia deixando algo passar." />
             <div className="space-y-2 p-3 sm:p-4">
-              {alerts.length === 0 && <div className="rounded-xl border border-dashed border-border px-4 py-5 text-center"><Check className="mx-auto size-5 text-success" /><p className="mt-2 text-xs font-medium">Nenhum alerta importante</p><p className="mt-1 text-[0.67rem] text-muted-foreground">Seu dia está organizado.</p></div>}
+              {alerts.length === 0 && <div className="rounded-xl border border-dashed border-border px-4 py-7 text-center"><Check className="mx-auto size-5 text-success" /><p className="mt-2 text-xs font-medium">Nenhum alerta importante</p><p className="mt-1 text-[0.67rem] text-muted-foreground">Seu dia está organizado.</p></div>}
               {alerts.map((alert) => {
                 const body = (
                   <div className={cn("rounded-xl border p-3 transition-colors", alert.tone === "warning" ? "border-warning/25 bg-warning/5" : alert.tone === "success" ? "border-success/20 bg-success/5" : "border-border bg-background/45 hover:bg-muted/45")}>
@@ -782,59 +782,55 @@ export function DeveloperPanel() {
           <DeveloperEnvironment currentUserId={currentUserId} onNotice={setNotice} />
 
           <DeveloperContexts currentUserId={currentUserId} onNotice={setNotice} />
-        </div>
-      </div>
 
-      <Surface className="min-w-0 self-start">
-        <CardHeader icon={Settings} title="Automações" subtitle="Configure uma vez e deixe o Painel Dev preparar seu ambiente e lembrar do que importa." />
-        <div className="grid gap-2 p-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Toggle checked={settings.autoFocusOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoFocusOnTimer: value }))} label="Foco ao iniciar timer" description="Inicia seu bloco de foco automaticamente." />
-          <Toggle checked={settings.autoOpenIdeOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenIdeOnTimer: value }))} label="Abrir IDE do contexto" description="Se houver contexto para o projeto, abre a IDE configurada." />
-          <Toggle checked={settings.autoOpenMusicOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenMusicOnTimer: value }))} label="Abrir música do contexto" description="Usa a playlist definida naquele contexto." />
-          <Toggle checked={settings.notifyForgottenTimer} onChange={(value) => setSettings((current) => ({ ...current, notifyForgottenTimer: value }))} label="Detectar timer esquecido" description="Pergunta antes de deixar um cronômetro rodando por horas." />
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-background/45 p-3 sm:col-span-2 xl:col-span-1">
-            <div><FieldLabel>Alertar timer após</FieldLabel><div className="relative"><input type="number" min={30} max={480} step={15} value={settings.forgottenTimerMinutes} onChange={(event) => setSettings((current) => ({ ...current, forgottenTimerMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
-            <div><FieldLabel>Preparar saída antes</FieldLabel><div className="relative"><input type="number" min={5} max={120} step={5} value={settings.wrapupMinutes} onChange={(event) => setSettings((current) => ({ ...current, wrapupMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
-          </div>
-          <div className="sm:col-span-2 xl:col-span-2">
-            <Toggle checked={settings.notifyWrapup} onChange={(value) => setSettings((current) => ({ ...current, notifyWrapup: value }))} label="Preparar fim do expediente" description="Mostra resumo e checklist antes do horário de saída." />
-          </div>
-        </div>
-      </Surface>
-
-      <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-3">
-        <Surface className="min-w-0 self-start">
-          <CardHeader icon={Music} title="Música de trabalho" subtitle="Sua playlist favorita a um clique." />
-          <div className="p-4">
-            <div className="grid grid-cols-2 gap-2">
-              {(["spotify", "youtube-music"] as DeveloperMusicProvider[]).map((provider) => <button key={provider} type="button" onClick={() => setSettings((current) => ({ ...current, musicProvider: provider }))} className={cn("h-9 rounded-xl border text-xs font-semibold transition-colors", settings.musicProvider === provider ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:bg-muted")}>{provider === "spotify" ? "Spotify" : "YouTube Music"}</button>)}
+          <Surface className="min-w-0">
+            <CardHeader icon={Settings} title="Automações" subtitle="Ações pessoais disparadas quando você inicia uma subatividade ou se aproxima do fim do expediente." />
+            <div className="space-y-2 p-4">
+              <Toggle checked={settings.autoFocusOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoFocusOnTimer: value }))} label="Foco ao iniciar timer" description="Inicia seu bloco de foco automaticamente." />
+              <Toggle checked={settings.autoOpenIdeOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenIdeOnTimer: value }))} label="Abrir IDE do contexto" description="Se houver contexto para o projeto, abre a IDE configurada." />
+              <Toggle checked={settings.autoOpenMusicOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenMusicOnTimer: value }))} label="Abrir música do contexto" description="Usa a playlist definida naquele contexto." />
+              <Toggle checked={settings.notifyForgottenTimer} onChange={(value) => setSettings((current) => ({ ...current, notifyForgottenTimer: value }))} label="Detectar timer esquecido" description="Pergunta antes de deixar um cronômetro rodando por horas." />
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div><FieldLabel>Alertar timer após</FieldLabel><div className="relative"><input type="number" min={30} max={480} step={15} value={settings.forgottenTimerMinutes} onChange={(event) => setSettings((current) => ({ ...current, forgottenTimerMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
+                <div><FieldLabel>Preparar saída antes</FieldLabel><div className="relative"><input type="number" min={5} max={120} step={5} value={settings.wrapupMinutes} onChange={(event) => setSettings((current) => ({ ...current, wrapupMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
+              </div>
+              <Toggle checked={settings.notifyWrapup} onChange={(value) => setSettings((current) => ({ ...current, notifyWrapup: value }))} label="Preparar fim do expediente" description="Mostra resumo e checklist antes do horário de saída." />
             </div>
-            <div className="mt-3"><FieldLabel>Playlist, álbum ou música</FieldLabel><input type="url" value={settings.musicUrl} onChange={(event) => setSettings((current) => ({ ...current, musicUrl: event.target.value }))} placeholder={settings.musicProvider === "spotify" ? "https://open.spotify.com/playlist/..." : "https://music.youtube.com/playlist?..."} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/55 focus:border-primary" /></div>
-            <button type="button" onClick={openMusic} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-semibold hover:bg-muted"><ExternalLink className="size-3.5" />Abrir {settings.musicProvider === "spotify" ? "Spotify" : "YouTube Music"}</button>
-          </div>
-        </Surface>
+          </Surface>
 
-        <Surface className="min-w-0 self-start">
-          <CardHeader icon={Bell} title="Notificações" subtitle="Avisos de expediente, água e foco." />
-          <div className="p-4">
-            {notificationPermission === "granted" ? (
-              <div className="flex items-center gap-3 rounded-xl border border-success/20 bg-success/5 p-3"><span className="flex size-8 items-center justify-center rounded-lg bg-success/10 text-success"><Check className="size-3.5" /></span><div><p className="text-xs font-semibold">Notificações ativadas</p><p className="mt-0.5 text-[0.65rem] text-muted-foreground">O navegador está autorizado.</p></div></div>
-            ) : notificationPermission === "unsupported" ? (
-              <p className="text-xs leading-relaxed text-muted-foreground">Este navegador não disponibiliza a API de notificações.</p>
-            ) : notificationPermission === "denied" ? (
-              <div className="rounded-xl border border-warning/20 bg-warning/5 p-3"><p className="text-xs font-semibold">Notificações bloqueadas</p><p className="mt-1 text-[0.66rem] leading-relaxed text-muted-foreground">Libere as notificações nas permissões deste site no navegador e recarregue a página.</p></div>
-            ) : (
-              <button type="button" onClick={() => void requestNotificationPermission()} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground"><Bell className="size-3.5" />Ativar notificações</button>
-            )}
-          </div>
-        </Surface>
+          <Surface className="min-w-0">
+            <CardHeader icon={Music} title="Música de trabalho" subtitle="Escolha seu serviço e deixe uma playlist favorita a um clique." />
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-2">
+                {(["spotify", "youtube-music"] as DeveloperMusicProvider[]).map((provider) => <button key={provider} type="button" onClick={() => setSettings((current) => ({ ...current, musicProvider: provider }))} className={cn("h-9 rounded-xl border text-xs font-semibold transition-colors", settings.musicProvider === provider ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:bg-muted")}>{provider === "spotify" ? "Spotify" : "YouTube Music"}</button>)}
+              </div>
+              <div className="mt-3"><FieldLabel>Playlist, álbum ou música</FieldLabel><input type="url" value={settings.musicUrl} onChange={(event) => setSettings((current) => ({ ...current, musicUrl: event.target.value }))} placeholder={settings.musicProvider === "spotify" ? "https://open.spotify.com/playlist/..." : "https://music.youtube.com/playlist?..."} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/55 focus:border-primary" /></div>
+              <button type="button" onClick={openMusic} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-semibold hover:bg-muted"><ExternalLink className="size-3.5" />Abrir {settings.musicProvider === "spotify" ? "Spotify" : "YouTube Music"}</button>
+            </div>
+          </Surface>
 
-        <Surface className="min-w-0 self-start">
-          <CardHeader icon={Coffee} title="Fim do dia" subtitle="Checklist rápido antes de fechar tudo." />
-          <div className="grid gap-1 p-4 text-xs">
-            {["Pausar ou finalizar cronômetros ativos", "Revisar subatividades com atenção", "Salvar/commit das alterações locais", "Registrar anotações para amanhã"].map((item) => <div key={item} className="flex items-start gap-2 rounded-lg px-1 py-1"><span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[0.55rem] text-muted-foreground">✓</span><span className="leading-relaxed text-muted-foreground">{item}</span></div>)}
-          </div>
-        </Surface>
+          <Surface className="min-w-0">
+            <CardHeader icon={Bell} title="Notificações do navegador" subtitle="Necessárias para avisos de expediente, água e foco em segundo plano." />
+            <div className="p-4">
+              {notificationPermission === "granted" ? (
+                <div className="flex items-center gap-3 rounded-xl border border-success/20 bg-success/5 p-3"><span className="flex size-8 items-center justify-center rounded-lg bg-success/10 text-success"><Check className="size-3.5" /></span><div><p className="text-xs font-semibold">Notificações ativadas</p><p className="mt-0.5 text-[0.65rem] text-muted-foreground">O navegador está autorizado.</p></div></div>
+              ) : notificationPermission === "unsupported" ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">Este navegador não disponibiliza a API de notificações.</p>
+              ) : notificationPermission === "denied" ? (
+                <div className="rounded-xl border border-warning/20 bg-warning/5 p-3"><p className="text-xs font-semibold">Notificações bloqueadas</p><p className="mt-1 text-[0.66rem] leading-relaxed text-muted-foreground">Libere as notificações nas permissões deste site no navegador e recarregue a página.</p></div>
+              ) : (
+                <button type="button" onClick={() => void requestNotificationPermission()} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground"><Bell className="size-3.5" />Ativar notificações</button>
+              )}
+            </div>
+          </Surface>
+
+          <Surface className="min-w-0">
+            <CardHeader icon={Coffee} title="Fim do dia" subtitle="Um lembrete simples antes de fechar tudo." />
+            <div className="grid gap-2 p-4 text-xs">
+              {["Pausar ou finalizar cronômetros ativos", "Revisar subatividades com atenção", "Salvar/commit das alterações locais", "Registrar anotações que precisam continuar amanhã"].map((item) => <div key={item} className="flex items-start gap-2 rounded-lg px-1 py-1.5"><span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[0.55rem] text-muted-foreground">✓</span><span className="leading-relaxed text-muted-foreground">{item}</span></div>)}
+            </div>
+          </Surface>
+        </div>
       </div>
 
       {loading && <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 mx-auto w-fit rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-lg">Carregando seu Painel Dev...</div>}

@@ -689,6 +689,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => projects.flatMap((project) => project.activities.flatMap((activity) => activity.subactivities.filter((sub) => sub.status === "in-progress").map((sub) => sub.id))),
     [projects],
   )
+  const runningSubKey = runningSubIds.join("|")
 
   const activeSubId = React.useMemo(() => {
     for (const project of projects) {
@@ -702,17 +703,62 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!hydrated || runningSubIds.length === 0) return
-    const interval = window.setInterval(() => {
+
+    // Timers de navegador são reduzidos/suspensos quando a aba/PWA fica em
+    // segundo plano. Incrementar apenas `+1` por callback fazia o relógio da
+    // UI ficar atrasado até um refresh. Mantemos uma âncora de tempo real e
+    // aplicamos o delta efetivamente transcorrido quando o callback voltar a
+    // executar (inclusive após minimizar, trocar de aba ou suspender a máquina).
+    let lastWallClock = Date.now()
+    let remainderMs = 0
+
+    const reconcileRunningTimers = (force = false) => {
+      if (!force && typeof document !== "undefined" && document.visibilityState === "hidden") return
+
+      const now = Date.now()
+      const elapsedMs = Math.max(0, now - lastWallClock)
+      lastWallClock = now
+      remainderMs += elapsedMs
+
+      const elapsedSeconds = Math.floor(remainderMs / 1000)
+      if (elapsedSeconds <= 0) return
+      remainderMs -= elapsedSeconds * 1000
+
       setProjects((prev) => prev.map((project) => ({
         ...project,
         activities: project.activities.map((activity) => ({
           ...activity,
-          subactivities: activity.subactivities.map((sub) => sub.status === "in-progress" ? { ...sub, trackedSeconds: sub.trackedSeconds + 1 } : sub),
+          subactivities: activity.subactivities.map((sub) => sub.status === "in-progress"
+            ? { ...sub, trackedSeconds: sub.trackedSeconds + elapsedSeconds }
+            : sub),
         })),
       })))
-    }, 1000)
-    return () => window.clearInterval(interval)
-  }, [hydrated, runningSubIds.length])
+    }
+
+    const interval = window.setInterval(() => reconcileRunningTimers(), 1000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Fecha o último pedaço visível antes do navegador começar a throttlar.
+        reconcileRunningTimers(true)
+        return
+      }
+      // Ao voltar para a aplicação, atualiza imediatamente todo o período em
+      // segundo plano, sem esperar o próximo tick do setInterval.
+      reconcileRunningTimers(true)
+    }
+    const handleResume = () => reconcileRunningTimers(true)
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    window.addEventListener("focus", handleResume)
+    window.addEventListener("pageshow", handleResume)
+
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("focus", handleResume)
+      window.removeEventListener("pageshow", handleResume)
+    }
+  }, [hydrated, runningSubKey])
 
   const canManageSubactivity = React.useCallback((sub: Subactivity) => {
     if (currentUserRole === "admin") return true

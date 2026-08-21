@@ -29,8 +29,22 @@ export function DeveloperSessionHub() {
   const [pending, setPending] = React.useState(false)
 
   React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000)
-    return () => window.clearInterval(timer)
+    const syncNow = () => setNow(new Date())
+    const timer = window.setInterval(syncNow, 1000)
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") syncNow()
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility)
+    window.addEventListener("focus", syncNow)
+    window.addEventListener("pageshow", syncNow)
+
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", handleVisibility)
+      window.removeEventListener("focus", syncNow)
+      window.removeEventListener("pageshow", syncNow)
+    }
   }, [])
 
   const mySessions = React.useMemo(

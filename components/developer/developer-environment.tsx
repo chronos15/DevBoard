@@ -168,7 +168,8 @@ function isAbsoluteLocalPath(value: string) {
 }
 
 function buildLaunchUri(ide: DeveloperIde, project: DeveloperLocalProject) {
-  const launchPath = project.legacyPath.trim()
+  const rawLaunchPath = project.legacyPath.trim()
+  const launchPath = isAbsoluteLocalPath(rawLaunchPath) ? rawLaunchPath : ""
   if (launchPath && ide.kind === "vscode") return `vscode://file/${encodedLocalPath(launchPath)}`
   if (launchPath && ide.kind === "cursor") return `cursor://file/${encodedLocalPath(launchPath)}`
 
@@ -270,7 +271,18 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     // esse caminho ao navegador, portanto recuperamos automaticamente o caminho antigo (ou o
     // repository local já cadastrado no Devboard) quando o nome da pasta confere.
     for (const project of mappedProjects) {
-      if (project.legacyPath || !project.folderName) continue
+      const persistedPath = project.legacyPath.trim()
+      if (persistedPath && !isAbsoluteLocalPath(persistedPath)) {
+        // Corrige automaticamente dados deixados por builds antigos (ex.: legacy_path = ".").
+        // Esse valor relativo fazia o Agent interpretar o diretório atual do processo como projeto.
+        project.legacyPath = ""
+        void supabase
+          .from("developer_local_projects")
+          .update({ legacy_path: "" })
+          .eq("id", project.id)
+          .eq("user_id", currentUserId)
+      }
+      if (isAbsoluteLocalPath(project.legacyPath) || !project.folderName) continue
       const recovered = inferKnownLaunchPath(project.folderName, project.name, oldWorkspacePath)
       if (!recovered) continue
       project.legacyPath = recovered
@@ -442,7 +454,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     setSavingProject(true)
     const folderName = projectDraft.handle?.name ?? projectDraft.currentFolderName
-    const recoveredPath = projectDraft.legacyPath || inferKnownLaunchPath(folderName, name)
+    const draftPath = projectDraft.legacyPath.trim()
+    const recoveredPath = isAbsoluteLocalPath(draftPath) ? draftPath : inferKnownLaunchPath(folderName, name)
     const payload = {
       user_id: currentUserId,
       name,
@@ -524,7 +537,9 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     if (agentAvailable) {
       try {
         const result = await openDeveloperProjectWithAgent(ide, project, { allowFolderPicker: true })
-        if (result.path && result.path !== project.legacyPath) {
+        if (result.path && isAbsoluteLocalPath(result.path) && result.path !== project.legacyPath) {
+          // Mantém o caminho retornado como fallback compatível, mas somente se for absoluto.
+          // Builds antigas podiam devolver "." e acabavam persistindo Downloads/System32 no fluxo.
           setLocalProjects((current) => current.map((item) => item.id === project.id ? { ...item, legacyPath: result.path! } : item))
           void supabase.from("developer_local_projects").update({ legacy_path: result.path }).eq("id", project.id).eq("user_id", currentUserId)
         }

@@ -124,8 +124,8 @@ func startLocalAPIServer(cfg agentConfig) {
 			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Projeto e pasta são obrigatórios.")
 			return
 		}
-		clean := filepath.Clean(strings.TrimSpace(input.Path))
-		if !directoryExists(clean) {
+		clean := normalizeAbsoluteDirectory(input.Path)
+		if clean == "" {
 			writeLocalAgentError(w, http.StatusBadRequest, "folder_not_found", "A pasta configurada não existe neste computador.")
 			return
 		}
@@ -259,25 +259,71 @@ func readLocalBindingsUnlocked() localBindingFile {
 	return result
 }
 
+func normalizeAbsoluteDirectory(path string) string {
+	raw := strings.TrimSpace(strings.Trim(path, `"`))
+	if raw == "" || raw == "." || !filepath.IsAbs(raw) {
+		return ""
+	}
+	clean := filepath.Clean(raw)
+	if clean == "." || !directoryExists(clean) {
+		return ""
+	}
+	return clean
+}
+
 func readLocalProjectBinding(projectID string) string {
 	bindings := readLocalBindings()
-	value := strings.TrimSpace(bindings.Projects[projectID])
-	if directoryExists(value) {
-		return filepath.Clean(value)
+	raw := strings.TrimSpace(bindings.Projects[projectID])
+	if value := normalizeAbsoluteDirectory(raw); value != "" {
+		return value
+	}
+
+	// Builds anteriores podiam persistir "." quando legacyPath vinha vazio.
+	// Em Windows isso fazia a IDE herdar o diretório atual do Agent (por exemplo Downloads).
+	// Removemos esse vínculo inválido para obrigar uma resolução real da pasta.
+	if raw != "" {
+		_ = removeLocalProjectBinding(projectID)
 	}
 	return ""
 }
 
 func saveLocalProjectBinding(projectID, folder string) error {
 	projectID = strings.TrimSpace(projectID)
-	folder = filepath.Clean(strings.TrimSpace(folder))
-	if projectID == "" || !directoryExists(folder) {
+	folder = normalizeAbsoluteDirectory(folder)
+	if projectID == "" || folder == "" {
 		return errors.New("vínculo local inválido")
 	}
 	localBindingMu.Lock()
 	defer localBindingMu.Unlock()
 	bindings := readLocalBindingsUnlocked()
 	bindings.Projects[projectID] = folder
+	raw, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := localBindingsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func removeLocalProjectBinding(projectID string) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil
+	}
+	localBindingMu.Lock()
+	defer localBindingMu.Unlock()
+	bindings := readLocalBindingsUnlocked()
+	if _, ok := bindings.Projects[projectID]; !ok {
+		return nil
+	}
+	delete(bindings.Projects, projectID)
 	raw, err := json.MarshalIndent(bindings, "", "  ")
 	if err != nil {
 		return err
@@ -309,9 +355,55 @@ func pickNativeFolder(projectName, initial string) (string, error) {
 	if strings.TrimSpace(projectName) != "" {
 		title = "Selecione a pasta de " + strings.TrimSpace(projectName)
 	}
-	const script = `Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = $env:DEVBOARD_FOLDER_TITLE; $dialog.ShowNewFolderButton = $true; if ($env:DEVBOARD_FOLDER_INITIAL -and (Test-Path -LiteralPath $env:DEVBOARD_FOLDER_INITIAL)) { $dialog.SelectedPath = $env:DEVBOARD_FOLDER_INITIAL }; $result = $dialog.ShowDialog(); if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath; exit 0 }; exit 17`
+
+	// O FolderBrowserDialog sem janela proprietária pode aparecer atrás da PWA/browser.
+	// Criamos uma janela invisível/topmost somente para ser owner do diálogo; assim o seletor
+	// nasce em primeiro plano, recebe foco e continua modal em relação ao Agent.
+	const script = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class DevboardNativeWindow {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+}
+"@
+$owner = New-Object System.Windows.Forms.Form
+$owner.Text = $env:DEVBOARD_FOLDER_TITLE
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
+$owner.ShowInTaskbar = $false
+$owner.TopMost = $true
+$owner.Size = New-Object System.Drawing.Size(2,2)
+$owner.Opacity = 0.01
+$owner.Show()
+$owner.Activate()
+[System.Windows.Forms.Application]::DoEvents()
+[DevboardNativeWindow]::BringWindowToTop($owner.Handle) | Out-Null
+[DevboardNativeWindow]::SetForegroundWindow($owner.Handle) | Out-Null
+
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = $env:DEVBOARD_FOLDER_TITLE
+$dialog.ShowNewFolderButton = $true
+if ($env:DEVBOARD_FOLDER_INITIAL -and (Test-Path -LiteralPath $env:DEVBOARD_FOLDER_INITIAL -PathType Container)) {
+  $dialog.SelectedPath = $env:DEVBOARD_FOLDER_INITIAL
+}
+$result = $dialog.ShowDialog($owner)
+$selected = if ($result -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.SelectedPath } else { "" }
+$owner.Close()
+$owner.Dispose()
+$dialog.Dispose()
+if ($selected) {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  Write-Output $selected
+  exit 0
+}
+exit 17
+`
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", script)
-	cmd.Env = append(os.Environ(), "DEVBOARD_FOLDER_TITLE="+title, "DEVBOARD_FOLDER_INITIAL="+strings.TrimSpace(initial))
+	cmd.Env = append(os.Environ(), "DEVBOARD_FOLDER_TITLE="+title, "DEVBOARD_FOLDER_INITIAL="+normalizeAbsoluteDirectory(initial))
 	hideChildWindow(cmd)
 	output, err := cmd.Output()
 	if err != nil {
@@ -320,8 +412,8 @@ func pickNativeFolder(projectName, initial string) (string, error) {
 		}
 		return "", err
 	}
-	selected := filepath.Clean(strings.TrimSpace(string(bytes.TrimSpace(output))))
-	if !directoryExists(selected) {
+	selected := normalizeAbsoluteDirectory(string(bytes.TrimSpace(output)))
+	if selected == "" {
 		return "", errors.New("pasta selecionada inválida")
 	}
 	return selected, nil
@@ -331,7 +423,7 @@ func resolveLocalProjectFolder(input localOpenProjectRequest) (string, error) {
 	if binding := readLocalProjectBinding(input.ProjectID); binding != "" {
 		return binding, nil
 	}
-	if legacy := filepath.Clean(strings.TrimSpace(input.LegacyPath)); directoryExists(legacy) {
+	if legacy := normalizeAbsoluteDirectory(input.LegacyPath); legacy != "" {
 		_ = saveLocalProjectBinding(input.ProjectID, legacy)
 		return legacy, nil
 	}
@@ -423,6 +515,10 @@ func findDirectoryByLeaf(root, expected string, maxDepth, maxVisited int) string
 }
 
 func launchLocalProject(folder string, ide localAgentIDE, projectName, projectID string) (localLaunchResult, error) {
+	folder = normalizeAbsoluteDirectory(folder)
+	if folder == "" {
+		return localLaunchResult{}, errors.New("a pasta local do projeto é inválida ou não existe neste computador")
+	}
 	kind := strings.ToLower(strings.TrimSpace(ide.Kind))
 	switch kind {
 	case "vscode":

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.1.3"
+	agentVersion = "0.1.4"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -95,6 +95,13 @@ func main() {
 	currentExe, _ := os.Executable()
 	currentExe, _ = filepath.Abs(currentExe)
 	installedExe, _ = filepath.Abs(installedExe)
+
+	// Nunca herdar Downloads/System32 como diretório de trabalho do Agent instalado.
+	// Além de tornar o comportamento previsível, isto impede que qualquer caminho relativo
+	// acidental seja interpretado como uma pasta válida de projeto.
+	if samePath(currentExe, installedExe) {
+		_ = os.Chdir(filepath.Dir(installedExe))
+	}
 
 	if !samePath(currentExe, installedExe) && !hasArg("--agent") {
 		if err := installSelf(installedExe); err != nil {
@@ -230,6 +237,7 @@ func registerProtocol(installedExe string) error {
 
 func launchInstalledAgent(installedExe string) error {
 	cmd := exec.Command(installedExe, "--agent")
+	cmd.Dir = filepath.Dir(installedExe)
 	hideChildWindow(cmd)
 	return cmd.Start()
 }

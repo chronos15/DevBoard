@@ -47,7 +47,11 @@ Nunca coloque `service_role`/secret key no front-end.
 14. Execute `supabase/migrations/011_devboard_chat_personal_history_cutoff.sql`.
 15. Execute `supabase/migrations/012_devboard_chat_message_replies.sql`.
 16. Execute `supabase/migrations/013_devboard_chat_realtime_presence.sql`.
-17. As migrations são incrementais e devem ser aplicadas nessa ordem.
+17. Execute `supabase/migrations/014_devboard_profile_avatar_color_remove.sql`.
+18. Execute `supabase/migrations/015_devboard_developer_panel.sql`.
+19. Execute `supabase/migrations/016_devboard_developer_multiple_ides_projects.sql`.
+20. Execute `supabase/migrations/017_devboard_developer_cockpit_automation.sql`.
+21. As migrations são incrementais e devem ser aplicadas nessa ordem.
 
 Depois execute `supabase/verify_backend.sql`. Ele interrompe com erro se estruturas essenciais não tiverem sido criadas.
 
@@ -509,3 +513,18 @@ supabase/migrations/016_devboard_developer_multiple_ides_projects.sql
 Ela cria `developer_ides` e `developer_local_projects`, mantendo RLS exclusivo da própria role `developer` e do próprio `auth.uid()`.
 
 O caminho absoluto da pasta **não é salvo no Supabase**. A pasta escolhida pelo botão "Escolher pasta" usa a File System Access API e o `FileSystemDirectoryHandle` fica somente no IndexedDB daquele navegador/dispositivo. O banco sincroniza apenas nome do projeto, nome visível da pasta e a IDE associada.
+
+
+## Painel Dev — cockpit, automações e contextos (migration 017)
+
+Depois da 016, execute:
+
+```text
+supabase/migrations/017_devboard_developer_cockpit_automation.sql
+```
+
+A 017 adiciona as preferências de automação do developer e a tabela `developer_contexts`. Cada contexto pode vincular um projeto do Devboard a um projeto local/IDE e a uma playlist. O módulo usa isso para continuar o último trabalho, iniciar foco ao ligar um timer, abrir a IDE/música do contexto quando habilitado, detectar cronômetros possivelmente esquecidos, preparar o encerramento do expediente e montar o resumo diário pelas `work_sessions` já existentes.
+
+Os contextos seguem a mesma regra do Painel Dev: somente o próprio `auth.uid()` com role `developer` pode consultar ou alterar os registros.
+
+Depois execute novamente `supabase/verify_backend.sql`.

@@ -19,6 +19,13 @@ export type DeveloperSettings = {
   ideCustomUri: string
   focusMinutes: number
   breakMinutes: number
+  autoFocusOnTimer: boolean
+  autoOpenIdeOnTimer: boolean
+  autoOpenMusicOnTimer: boolean
+  notifyForgottenTimer: boolean
+  forgottenTimerMinutes: number
+  notifyWrapup: boolean
+  wrapupMinutes: number
 }
 
 export type DeveloperNote = {
@@ -47,10 +54,21 @@ export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   ideCustomUri: "",
   focusMinutes: 50,
   breakMinutes: 10,
+  autoFocusOnTimer: true,
+  autoOpenIdeOnTimer: false,
+  autoOpenMusicOnTimer: false,
+  notifyForgottenTimer: true,
+  forgottenTimerMinutes: 120,
+  notifyWrapup: true,
+  wrapupMinutes: 30,
 }
 
 export const DEVELOPER_SETTINGS_EVENT = "devboard:developer-settings-updated"
 export const DEVELOPER_WATER_EVENT = "devboard:developer-water-logged"
+export const DEVELOPER_TIMER_STARTED_EVENT = "devboard:developer-timer-started"
+export const DEVELOPER_FOCUS_EVENT = "devboard:developer-focus-control"
+export const DEVELOPER_CONTEXTS_EVENT = "devboard:developer-contexts-updated"
+export const FOCUS_STORAGE_PREFIX = "devboard-developer-focus-v1"
 
 export function normalizeTime(value?: string | null, fallback = "08:00") {
   const match = String(value ?? "").match(/^(\d{2}):(\d{2})/)
@@ -79,6 +97,13 @@ export function mapDeveloperSettings(row: any): DeveloperSettings {
     ideCustomUri: String(row.ide_custom_uri ?? ""),
     focusMinutes: Number(row.focus_minutes || DEFAULT_DEVELOPER_SETTINGS.focusMinutes),
     breakMinutes: Number(row.break_minutes || DEFAULT_DEVELOPER_SETTINGS.breakMinutes),
+    autoFocusOnTimer: row.auto_focus_on_timer !== false,
+    autoOpenIdeOnTimer: row.auto_open_ide_on_timer === true,
+    autoOpenMusicOnTimer: row.auto_open_music_on_timer === true,
+    notifyForgottenTimer: row.notify_forgotten_timer !== false,
+    forgottenTimerMinutes: Number(row.forgotten_timer_minutes || DEFAULT_DEVELOPER_SETTINGS.forgottenTimerMinutes),
+    notifyWrapup: row.notify_wrapup !== false,
+    wrapupMinutes: Number(row.wrapup_minutes || DEFAULT_DEVELOPER_SETTINGS.wrapupMinutes),
   }
 }
 
@@ -102,6 +127,13 @@ export function developerSettingsRow(userId: string, settings: DeveloperSettings
     ide_custom_uri: settings.ideCustomUri.trim(),
     focus_minutes: settings.focusMinutes,
     break_minutes: settings.breakMinutes,
+    auto_focus_on_timer: settings.autoFocusOnTimer,
+    auto_open_ide_on_timer: settings.autoOpenIdeOnTimer,
+    auto_open_music_on_timer: settings.autoOpenMusicOnTimer,
+    notify_forgotten_timer: settings.notifyForgottenTimer,
+    forgotten_timer_minutes: settings.forgottenTimerMinutes,
+    notify_wrapup: settings.notifyWrapup,
+    wrapup_minutes: settings.wrapupMinutes,
   }
 }
 
@@ -168,4 +200,17 @@ export function safeExternalUrl(value: string) {
   } catch {
     return ""
   }
+}
+
+
+export function developerFocusStorageKey(userId: string) {
+  return `${FOCUS_STORAGE_PREFIX}:${userId}`
+}
+
+export function startDeveloperFocusSession(userId: string, minutes: number) {
+  if (typeof window === "undefined" || !userId) return
+  const duration = Math.max(10, Math.min(180, Math.round(minutes))) * 60
+  const state = { mode: "focus", remaining: duration, running: true, endAt: Date.now() + duration * 1000 }
+  try { window.localStorage.setItem(developerFocusStorageKey(userId), JSON.stringify(state)) } catch { /* opcional */ }
+  window.dispatchEvent(new CustomEvent(DEVELOPER_FOCUS_EVENT, { detail: state }))
 }

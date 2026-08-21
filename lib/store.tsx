@@ -29,6 +29,7 @@ import {
   safeFileName,
   topicMediaStoragePath,
 } from "@/lib/supabase/helpers"
+import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import type {
   AccessRole,
   AqsReview,
@@ -734,8 +735,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [fail, supabase])
 
   const startTimer = React.useCallback(async (subId: string) => {
-    const target = findSubInProjects(projects, subId)?.sub
-    if (!target || !canManageSubactivity(target)) return false
+    const found = findSubInProjects(projects, subId)
+    const target = found?.sub
+    if (!target || !found || !canManageSubactivity(target)) return false
+
+    if (currentUserRole === "developer" && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(DEVELOPER_TIMER_STARTED_EVENT, { detail: {
+        subactivityId: subId,
+        activityId: found.activityId,
+        projectId: found.project.id,
+      } }))
+    }
 
     const rollback = captureOptimisticSubs(projects, subId, "in-progress")
     setProjects((current) => optimisticSubStatus(current, subId, "in-progress"))
@@ -747,7 +757,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     schedule("sessions-after-start", refreshWorkSessions)
     return true
-  }, [callRpc, canManageSubactivity, projects, refreshWorkSessions, schedule])
+  }, [callRpc, canManageSubactivity, currentUserRole, projects, refreshWorkSessions, schedule])
 
   const stopTimer = React.useCallback(async (subId?: string) => {
     // Proteção contra handlers React passados diretamente (ex.: onClick={stopTimer}).
@@ -768,6 +778,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [activeSubId, callRpc, projects, refreshWorkSessions, schedule])
 
   const setSubStatus = React.useCallback(async (subId: string, status: Status) => {
+    if (status === "in-progress" && currentUserRole === "developer" && typeof window !== "undefined") {
+      const found = findSubInProjects(projects, subId)
+      if (found) window.dispatchEvent(new CustomEvent(DEVELOPER_TIMER_STARTED_EVENT, { detail: {
+        subactivityId: subId,
+        activityId: found.activityId,
+        projectId: found.project.id,
+      } }))
+    }
     const rollback = captureOptimisticSubs(projects, subId, status)
     setProjects((current) => optimisticSubStatus(current, subId, status))
 
@@ -779,7 +797,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     schedule("sessions-after-status", refreshWorkSessions)
     return true
-  }, [callRpc, projects, refreshWorkSessions, schedule])
+  }, [callRpc, currentUserRole, projects, refreshWorkSessions, schedule])
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
     const result = await callRpc<string>("add_subactivity", {

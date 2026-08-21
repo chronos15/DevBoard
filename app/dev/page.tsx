@@ -7,7 +7,7 @@ export default function DeveloperPage() {
       <PageHeading
         eyebrow="Developer workspace"
         title="Painel do desenvolvedor"
-        subtitle="Seu espaço pessoal para foco, expediente, hidratação, anotações e seu ambiente local com múltiplas IDEs e projetos — sem misturar com a gestão do Devboard."
+        subtitle="Seu cockpit pessoal para continuar de onde parou, acompanhar a sessão atual, automatizar foco/IDE, revisar o dia e iniciar seus contextos de trabalho."
       />
       <DeveloperPanel />
     </div>

@@ -4,7 +4,7 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { FolderKanban, Mail, MessageCircleMore, Send, ShieldCheck, X } from "lucide-react"
-import type { Member } from "@/lib/types"
+import type { Member, MemberPresence } from "@/lib/types"
 import { ACCESS_ROLE_LABELS } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
@@ -35,11 +35,66 @@ function MemberAvatarVisual({ member, className }: { member: Member; className?:
   )
 }
 
+
+function onlineDurationLabel(onlineSince: string | undefined, now: number) {
+  if (!onlineSince) return "agora"
+  const started = new Date(onlineSince).getTime()
+  if (!Number.isFinite(started)) return "agora"
+  const seconds = Math.max(0, Math.floor((now - started) / 1000))
+  if (seconds < 5) return "agora"
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (hours < 24) return remainingMinutes ? `${hours}h ${remainingMinutes}min` : `${hours}h`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`
+}
+
+function ProfilePresenceStatus({ presence, ready }: { presence?: MemberPresence; ready: boolean }) {
+  const [now, setNow] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    if (!presence?.online || !presence.onlineSince) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [presence?.online, presence?.onlineSince])
+
+  if (!ready) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-muted-foreground/45" />
+        Verificando status...
+      </span>
+    )
+  }
+
+  if (!presence?.online) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-muted-foreground/45" />
+        Offline
+      </span>
+    )
+  }
+
+  const duration = onlineDurationLabel(presence.onlineSince, now)
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-success">
+      <span className="size-1.5 shrink-0 rounded-full bg-success" />
+      <span className="truncate">{duration === "agora" ? "Online agora" : `Online há ${duration}`}</span>
+    </span>
+  )
+}
+
 function popupPosition(anchor: AnchorRect) {
   const margin = 12
   const gap = 8
   const width = Math.min(360, Math.max(280, window.innerWidth - margin * 2))
-  const estimatedHeight = 390
+  const estimatedHeight = 415
   const left = Math.min(
     Math.max(margin, anchor.left),
     Math.max(margin, window.innerWidth - width - margin),
@@ -54,7 +109,7 @@ function popupPosition(anchor: AnchorRect) {
 
 export function MemberProfileProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { currentUserId, projects, ensureDirectConversation, sendChatMessage } = useStore()
+  const { currentUserId, projects, ensureDirectConversation, sendChatMessage, memberPresence, presenceReady } = useStore()
   const [member, setMember] = React.useState<Member | null>(null)
   const [anchorRect, setAnchorRect] = React.useState<AnchorRect | null>(null)
   const [position, setPosition] = React.useState<{ left: number; top: number; width: number } | null>(null)
@@ -179,7 +234,16 @@ export function MemberProfileProvider({ children }: { children: React.ReactNode 
         >
           <div className="h-20 bg-muted/80" />
           <div className="relative px-4 pb-4">
-            <MemberAvatarVisual member={member} className="-mt-9 size-[74px] border-[5px] border-popover text-lg shadow-sm" />
+            <div className="relative -mt-9 inline-flex align-top">
+              <MemberAvatarVisual member={member} className="size-[74px] border-[5px] border-popover text-lg shadow-sm" />
+              {presenceReady && memberPresence[member.id]?.online ? (
+                <span
+                  className="absolute bottom-1 right-1 size-4 rounded-full border-[3px] border-popover bg-success shadow-sm"
+                  aria-label="Online"
+                  title="Online"
+                />
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={closeMemberProfile}
@@ -194,6 +258,9 @@ export function MemberProfileProvider({ children }: { children: React.ReactNode 
               <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                 <Mail className="size-3.5 shrink-0" />
                 <span className="truncate">{member.email ?? "Usuário do workspace"}</span>
+              </div>
+              <div className="mt-1.5 min-w-0">
+                <ProfilePresenceStatus presence={memberPresence[member.id]} ready={presenceReady} />
               </div>
             </div>
 

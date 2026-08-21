@@ -14,6 +14,7 @@ import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { BrowserNotifications } from "@/components/notifications/browser-notifications"
 import { MemberProfileProvider } from "@/components/member-profile-popover"
 import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-notifier"
+import { DeveloperAutomationAgent } from "@/components/developer/developer-automation-agent"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -59,6 +60,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         <BackendErrorBanner />
         <BrowserNotifications />
         <DeveloperShiftNotifier />
+        <DeveloperAutomationAgent />
         <IncomingCallCenter />
       </div>
     </div>

@@ -533,3 +533,26 @@ select
   exists(select 1 from pg_policies where schemaname='public' and tablename='developer_local_projects' and policyname='devboard_developer_local_projects_all') as developer_local_projects_rls_ok,
   exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_ides') as developer_ides_realtime_ok,
   exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_local_projects') as developer_local_projects_realtime_ok;
+
+
+-- 017 · Cockpit, automações e contextos pessoais do Painel Dev
+select
+  to_regclass('public.developer_contexts') is not null as developer_contexts_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='auto_focus_on_timer') as developer_auto_focus_setting_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='forgotten_timer_minutes') as developer_forgotten_timer_setting_ok,
+  exists(select 1 from pg_policies where schemaname='public' and tablename='developer_contexts' and policyname='devboard_developer_contexts_all') as developer_contexts_rls_ok,
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='developer_contexts') as developer_contexts_realtime_ok;
+
+do $$
+begin
+  if to_regclass('public.developer_contexts') is null then
+    raise exception 'Backend Devboard incompleto: developer_contexts ausente (migration 017)';
+  end if;
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='auto_focus_on_timer') then
+    raise exception 'Backend Devboard incompleto: automações do Painel Dev ausentes (migration 017)';
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='developer_contexts' and policyname='devboard_developer_contexts_all') then
+    raise exception 'Backend Devboard incompleto: RLS de developer_contexts ausente (migration 017)';
+  end if;
+  raise notice 'Migration 017 OK: cockpit, automações e contextos pessoais do developer prontos.';
+end $$;

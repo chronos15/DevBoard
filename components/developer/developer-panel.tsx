@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import { DeveloperEnvironment } from "@/components/developer/developer-environment"
 import { DeveloperSessionHub } from "@/components/developer/developer-session-hub"
 import { DeveloperContexts } from "@/components/developer/developer-contexts"
+import { DeveloperWindowsAgent } from "@/components/developer/developer-windows-agent"
 import {
   DEFAULT_DEVELOPER_SETTINGS,
   DEVELOPER_SETTINGS_EVENT,
@@ -781,6 +782,8 @@ export function DeveloperPanel() {
           </Surface>
 
           <DeveloperEnvironment currentUserId={currentUserId} onNotice={setNotice} />
+
+          <DeveloperWindowsAgent currentUserId={currentUserId} onNotice={setNotice} />
 
           <DeveloperContexts currentUserId={currentUserId} onNotice={setNotice} />
 

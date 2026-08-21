@@ -556,3 +556,32 @@ begin
   end if;
   raise notice 'Migration 017 OK: cockpit, automações e contextos pessoais do developer prontos.';
 end $$;
+
+-- 018 · Devboard Agent para Windows
+select
+  to_regclass('public.developer_agents') is not null as developer_agents_ok,
+  to_regprocedure('public.register_developer_agent()') is not null as register_developer_agent_ok,
+  to_regprocedure('public.developer_agent_status()') is not null as developer_agent_status_ok,
+  to_regprocedure('public.developer_agent_heartbeat(uuid,text,text,text,text,boolean)') is not null as developer_agent_heartbeat_ok,
+  has_function_privilege('authenticated','public.register_developer_agent()','EXECUTE') as register_developer_agent_execute_ok,
+  has_function_privilege('anon','public.developer_agent_heartbeat(uuid,text,text,text,text,boolean)','EXECUTE') as heartbeat_anon_execute_ok;
+
+do $$
+begin
+  if to_regclass('public.developer_agents') is null then
+    raise exception 'Backend Devboard incompleto: developer_agents ausente (migration 018)';
+  end if;
+  if to_regprocedure('public.register_developer_agent()') is null then
+    raise exception 'Backend Devboard incompleto: register_developer_agent() ausente (migration 018)';
+  end if;
+  if to_regprocedure('public.developer_agent_status()') is null then
+    raise exception 'Backend Devboard incompleto: developer_agent_status() ausente (migration 018)';
+  end if;
+  if to_regprocedure('public.developer_agent_heartbeat(uuid,text,text,text,text,boolean)') is null then
+    raise exception 'Backend Devboard incompleto: developer_agent_heartbeat(...) ausente (migration 018)';
+  end if;
+  if not has_function_privilege('anon','public.developer_agent_heartbeat(uuid,text,text,text,text,boolean)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: anon sem EXECUTE no heartbeat do agente (migration 018)';
+  end if;
+  raise notice 'Migration 018 OK: Devboard Agent para Windows pronto para instalação e heartbeat.';
+end $$;

@@ -528,3 +528,17 @@ A 017 adiciona as preferências de automação do developer e a tabela `develope
 Os contextos seguem a mesma regra do Painel Dev: somente o próprio `auth.uid()` com role `developer` pode consultar ou alterar os registros.
 
 Depois execute novamente `supabase/verify_backend.sql`.
+
+## Migration 018 — Devboard Agent para Windows
+
+Execute `supabase/migrations/018_devboard_windows_agent.sql` depois da migration 017.
+
+Ela cria o registro seguro dos agentes Windows e as RPCs usadas para:
+
+- gerar um instalador individual para o developer autenticado;
+- receber heartbeat do agente sem depender da sessão do navegador;
+- exibir no Painel Dev se o agente está online, qual versão está instalada e se o atalho global foi registrado.
+
+O segredo do agente não possui SELECT direto e nunca é retornado pelo painel. O instalador é gerado em `/api/dev-agent/installer` e recebe um token aleatório próprio daquela instalação.
+
+> O agente não é instalado como Windows Service tradicional. Ele inicia automaticamente na sessão do usuário via HKCU porque precisa receber hotkeys globais e abrir IDEs/janelas na área de trabalho. Windows Services executam fora da sessão interativa e não são adequados para esse papel.

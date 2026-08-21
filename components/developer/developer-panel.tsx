@@ -639,14 +639,15 @@ export function DeveloperPanel() {
         <Metric icon={AlertTriangle} label="Alertas" value={String(alerts.length)} detail={alerts.length ? "Itens que merecem atenção" : "Tudo tranquilo por aqui"} />
       </div>
 
-      <DeveloperSessionHub />
-
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-          <Surface className="min-w-0 lg:col-span-2">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
+        <div className="grid min-w-0 self-start auto-rows-max grid-cols-1 content-start items-start gap-4 lg:grid-cols-2">
+          <div className="min-w-0 self-start lg:col-span-2">
+            <DeveloperSessionHub />
+          </div>
+          <Surface className="min-w-0 self-start lg:col-span-2">
             <CardHeader icon={Clock} title="Expediente" subtitle="Configure sua rotina uma vez. O painel acompanha o horário e pode avisar quando chegar a hora de encerrar." action={<span className="font-mono text-xs text-muted-foreground">{settings.workStart}–{settings.workEnd}</span>} />
-            <div className="p-4 sm:p-5">
-              <div className="mb-5">
+            <div className="p-4">
+              <div className="mb-4">
                 <div className="mb-2 flex items-center justify-between gap-3 text-xs">
                   <span className="font-medium">{shift.label}</span>
                   <span className="text-muted-foreground">{shift.kind === "working" ? `${Math.round(shift.progress)}% do dia` : shiftDetail}</span>
@@ -663,7 +664,7 @@ export function DeveloperPanel() {
                 <div><FieldLabel>Fim intervalo</FieldLabel><input type="time" value={settings.breakEnd} onChange={(event) => setSettings((current) => ({ ...current, breakEnd: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
               </div>
 
-              <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <FieldLabel>Dias de trabalho</FieldLabel>
                   <div className="flex flex-wrap gap-1.5">
@@ -680,18 +681,18 @@ export function DeveloperPanel() {
             </div>
           </Surface>
 
-          <Surface className="min-w-0">
+          <Surface className="min-w-0 self-start">
             <CardHeader icon={Droplets} title="Hidratação" subtitle="Meta diária e lembrete leve durante o expediente." action={<button type="button" onClick={() => void resetWater()} className="text-[0.68rem] font-medium text-muted-foreground hover:text-foreground">Zerar hoje</button>} />
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center gap-4">
-                <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
-                  <div className="flex size-[76px] flex-col items-center justify-center rounded-full bg-card">
+            <div className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="relative flex size-20 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
+                  <div className="flex size-16 flex-col items-center justify-center rounded-full bg-card">
                     <span className="text-lg font-semibold">{waterPercent}%</span>
                     <span className="text-[0.62rem] text-muted-foreground">da meta</span>
                   </div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-2xl font-semibold tracking-tight">{waterMl.toLocaleString("pt-BR")} <span className="text-sm font-normal text-muted-foreground">/ {settings.hydrationGoalMl} ml</span></p>
+                  <p className="text-xl font-semibold tracking-tight">{waterMl.toLocaleString("pt-BR")} <span className="text-sm font-normal text-muted-foreground">/ {settings.hydrationGoalMl} ml</span></p>
                   <p className="mt-1 text-xs text-muted-foreground">{lastDrinkLabel}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {[200, 300, 500].map((amount) => <button key={amount} type="button" onClick={() => void addWater(amount)} className="h-8 rounded-lg border border-border bg-background px-2.5 text-[0.68rem] font-semibold hover:bg-muted">+ {amount} ml</button>)}
@@ -699,52 +700,52 @@ export function DeveloperPanel() {
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><FieldLabel>Meta diária (ml)</FieldLabel><input type="number" min={500} max={10000} step={100} value={settings.hydrationGoalMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationGoalMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div><FieldLabel>Copo padrão (ml)</FieldLabel><input type="number" min={50} max={2000} step={50} value={settings.hydrationCupMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationCupMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div className="col-span-2 sm:col-span-1"><FieldLabel>Lembrete (min)</FieldLabel><input type="number" min={15} max={240} step={5} value={settings.hydrationReminderMinutes} onChange={(event) => setSettings((current) => ({ ...current, hydrationReminderMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
               </div>
               <div className="mt-3"><Toggle checked={settings.notifyHydration} onChange={(value) => setSettings((current) => ({ ...current, notifyHydration: value }))} label="Lembrete de água" description={`Durante o expediente, lembrar a cada ${settings.hydrationReminderMinutes || 60} minutos.`} /></div>
-              <button type="button" onClick={() => void addWater(settings.hydrationCupMl)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground"><Droplets className="size-3.5" />Registrar {settings.hydrationCupMl} ml</button>
+              <button type="button" onClick={() => void addWater(settings.hydrationCupMl)} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground"><Droplets className="size-3.5" />Registrar {settings.hydrationCupMl} ml</button>
             </div>
           </Surface>
 
-          <Surface className="min-w-0">
+          <Surface className="min-w-0 self-start">
             <CardHeader icon={Timer} title="Modo foco" subtitle="Pomodoro configurável que continua contando mesmo navegando por outras telas." />
-            <div className="p-4 sm:p-5">
+            <div className="p-4">
               <div className="flex rounded-xl bg-muted p-1">
                 <button type="button" onClick={() => switchFocusMode("focus")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "focus" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Foco</button>
                 <button type="button" onClick={() => switchFocusMode("break")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "break" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Pausa</button>
               </div>
-              <div className="py-6 text-center">
-                <p className="font-mono text-5xl font-semibold tracking-[-0.08em] tabular-nums">{formatFocus(focusRemaining)}</p>
+              <div className="py-4 text-center">
+                <p className="font-mono text-4xl sm:text-5xl font-semibold tracking-[-0.08em] tabular-nums">{formatFocus(focusRemaining)}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{focusRunning ? "Cronômetro em andamento" : focusMode === "focus" ? "Pronto para um bloco sem distrações" : "Hora de descansar um pouco"}</p>
               </div>
               <div className="flex justify-center gap-2">
                 <button type="button" onClick={focusRunning ? pauseFocus : startFocus} className="inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground">{focusRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{focusRunning ? "Pausar" : "Iniciar"}</button>
                 <button type="button" onClick={resetFocus} className="inline-flex size-10 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Reiniciar foco"><RotateCcw className="size-3.5" /></button>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <div><FieldLabel>Foco (min)</FieldLabel><input type="number" min={10} max={180} value={settings.focusMinutes} onChange={(event) => setSettings((current) => ({ ...current, focusMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
                 <div><FieldLabel>Pausa (min)</FieldLabel><input type="number" min={5} max={60} value={settings.breakMinutes} onChange={(event) => setSettings((current) => ({ ...current, breakMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
               </div>
             </div>
           </Surface>
 
-          <Surface className="min-w-0 lg:col-span-2">
+          <Surface className="min-w-0 self-start lg:col-span-2">
             <CardHeader icon={NotebookPen} title="Anotações rápidas" subtitle="Rascunhos pessoais do developer. Não ficam ligados a projeto, atividade ou tópico." action={<span className="rounded-full bg-muted px-2 py-1 text-[0.65rem] text-muted-foreground">{notes.length} notas</span>} />
-            <div className="p-4 sm:p-5">
+            <div className="p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <FieldLabel>Nova anotação</FieldLabel>
-                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={3} maxLength={6000} className="min-h-24 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
+                  <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={2} maxLength={6000} className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
                   <p className="mt-1 text-[0.64rem] text-muted-foreground">Ctrl/Cmd + Enter salva rapidamente.</p>
                 </div>
                 <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-45"><Plus className="size-3.5" />Salvar nota</button>
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-                {notes.length === 0 && <div className="md:col-span-2 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma anotação ainda.</div>}
+                {notes.length === 0 && <div className="md:col-span-2 rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">Nenhuma anotação ainda.</div>}
                 {notes.map((note) => (
                   <article key={note.id} className="group min-w-0 rounded-xl border border-border bg-background/50 p-3.5">
                     <div className="flex items-start gap-2">
@@ -762,7 +763,7 @@ export function DeveloperPanel() {
           </Surface>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 self-start flex-col gap-4">
           <Surface className="min-w-0">
             <CardHeader icon={AlertTriangle} title="Alertas importantes" subtitle="Resumo pessoal para você não encerrar o dia deixando algo passar." />
             <div className="space-y-2 p-3 sm:p-4">

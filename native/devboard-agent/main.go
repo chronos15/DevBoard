@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.4.0"
+	agentVersion = "0.4.1"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312

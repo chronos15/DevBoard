@@ -67,6 +67,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false)
   const [diagnostics, setDiagnostics] = React.useState<DeveloperAgentDiagnostics | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = React.useState(false)
+  const [diagnosticsError, setDiagnosticsError] = React.useState<string | null>(null)
 
   const loadStatus = React.useCallback(async (silent = false) => {
     if (!currentUserId) return
@@ -107,14 +108,26 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const needsAutoUpdateBootstrap = Boolean(needsUpdate && !autoUpdateReady)
   const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
 
+  async function loadDiagnostics() {
+    if (diagnosticsLoading) return
+    setDiagnosticsLoading(true)
+    setDiagnosticsError(null)
+    try {
+      const result = await getDeveloperAgentDiagnostics()
+      setDiagnostics(result)
+    } catch (error) {
+      setDiagnostics(null)
+      setDiagnosticsError(error instanceof Error ? error.message : "Não foi possível consultar o diagnóstico local.")
+    } finally {
+      setDiagnosticsLoading(false)
+    }
+  }
+
   async function toggleDiagnostics() {
     const next = !diagnosticsOpen
     setDiagnosticsOpen(next)
     if (!next || diagnostics || diagnosticsLoading) return
-    setDiagnosticsLoading(true)
-    const result = await getDeveloperAgentDiagnostics()
-    setDiagnostics(result)
-    setDiagnosticsLoading(false)
+    await loadDiagnostics()
   }
 
   async function downloadInstaller() {
@@ -282,7 +295,18 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
                           {diagnostics.tools.map((tool) => <div key={tool.id} className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1"><span className={cn("size-1.5 shrink-0 rounded-full", tool.found ? "bg-success" : "bg-muted-foreground/35")} /><span className="min-w-0 flex-1 truncate text-[0.61rem] text-muted-foreground">{tool.label}</span><span className={cn("shrink-0 text-[0.58rem] font-semibold", tool.found ? "text-success" : "text-muted-foreground")}>{tool.found ? "OK" : "—"}</span></div>)}
                         </div>
                       </>
-                    ) : <p className="py-2 text-[0.63rem] text-warning">O Agent está online, mas esta versão ainda não expõe o diagnóstico local.</p>}
+                    ) : (
+                      <div className="py-1.5">
+                        <p className="text-[0.63rem] leading-relaxed text-warning">
+                          {selected?.agent_version && compareVersions(selected.agent_version, "0.4.0") < 0
+                            ? `O Agent v${selected.agent_version} está online, mas o diagnóstico local exige v0.4.0 ou superior. A atualização automática está pendente.`
+                            : diagnosticsError || "Não foi possível consultar o diagnóstico local neste momento."}
+                        </p>
+                        <button type="button" onClick={() => void loadDiagnostics()} disabled={diagnosticsLoading} className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[0.61rem] font-semibold text-foreground hover:bg-muted disabled:opacity-50">
+                          <RefreshCw className={cn("size-3", diagnosticsLoading && "animate-spin")} />Tentar novamente
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

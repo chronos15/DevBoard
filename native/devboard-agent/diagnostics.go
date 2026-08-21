@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 type agentToolDiagnostic struct {
@@ -29,7 +31,27 @@ type agentDiagnostics struct {
 	Tools        []agentToolDiagnostic `json:"tools"`
 }
 
+var diagnosticsCache = struct {
+	sync.Mutex
+	at    time.Time
+	value agentDiagnostics
+}{}
+
 func collectAgentDiagnostics() agentDiagnostics {
+	// Algumas verificações (atalhos da PWA, VS/Delphi/JetBrains e PATH) podem tocar
+	// disco/registro. Cacheamos a parte pesada por 45s para o painel abrir instantaneamente
+	// nas consultas seguintes sem perder os estados dinâmicos do hotkey/tray.
+	diagnosticsCache.Lock()
+	if !diagnosticsCache.at.IsZero() && time.Since(diagnosticsCache.at) < 45*time.Second {
+		cached := diagnosticsCache.value
+		diagnosticsCache.Unlock()
+		cached.HotkeyOK = registeredHotkey || keyboardHookHandle != 0
+		cached.TrayOK = trayIsReady()
+		cached.Version = agentVersion
+		return cached
+	}
+	diagnosticsCache.Unlock()
+
 	hostname, _ := os.Hostname()
 	result := agentDiagnostics{
 		OK:         true,
@@ -62,6 +84,11 @@ func collectAgentDiagnostics() agentDiagnostics {
 	add("pnpm", "pnpm", "Runtime", executableOnPath("pnpm.cmd", "pnpm"), "Scripts de projeto")
 	add("flutter", "Flutter", "Runtime", executableOnPath("flutter.bat", "flutter"), "Build e testes Flutter")
 	add("dotnet", ".NET SDK", "Runtime", executableOnPath("dotnet.exe", "dotnet"), "Build, run e testes .NET")
+
+	diagnosticsCache.Lock()
+	diagnosticsCache.at = time.Now()
+	diagnosticsCache.value = result
+	diagnosticsCache.Unlock()
 	return result
 }
 

@@ -23,10 +23,26 @@ export type DeveloperAgentDiagnostics = {
   tools: DeveloperAgentToolDiagnostic[]
 }
 
-export async function getDeveloperAgentDiagnostics(): Promise<DeveloperAgentDiagnostics | null> {
-  if (typeof window === "undefined") return null
+export class DeveloperAgentDiagnosticsError extends Error {
+  code?: string
+  status?: number
+
+  constructor(message: string, options?: { code?: string; status?: number }) {
+    super(message)
+    this.name = "DeveloperAgentDiagnosticsError"
+    this.code = options?.code
+    this.status = options?.status
+  }
+}
+
+export async function getDeveloperAgentDiagnostics(): Promise<DeveloperAgentDiagnostics> {
+  if (typeof window === "undefined") throw new DeveloperAgentDiagnosticsError("Diagnóstico local disponível apenas no navegador.")
+
+  // A primeira coleta pode consultar atalhos de PWA, IDEs e ferramentas instaladas.
+  // Em máquinas com discos/antivírus mais lentos, 2,5s era pouco e fazia a UI concluir
+  // incorretamente que o Agent não suportava diagnóstico.
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 2500)
+  const timeout = window.setTimeout(() => controller.abort(), 12_000)
   try {
     const response = await fetch(`${AGENT_ORIGIN}/v1/diagnostics`, {
       method: "GET",
@@ -34,10 +50,20 @@ export async function getDeveloperAgentDiagnostics(): Promise<DeveloperAgentDiag
       signal: controller.signal,
       headers: AGENT_HEADER,
     })
-    if (!response.ok) return null
-    return await response.json() as DeveloperAgentDiagnostics
-  } catch {
-    return null
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new DeveloperAgentDiagnosticsError(
+        String(payload?.error || `Devboard Agent respondeu ${response.status}.`),
+        { code: payload?.code, status: response.status },
+      )
+    }
+    return payload as DeveloperAgentDiagnostics
+  } catch (error) {
+    if (error instanceof DeveloperAgentDiagnosticsError) throw error
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new DeveloperAgentDiagnosticsError("O diagnóstico local demorou mais que o esperado. Tente novamente.", { code: "timeout" })
+    }
+    throw new DeveloperAgentDiagnosticsError("Não foi possível consultar o diagnóstico local do Agent.", { code: "unavailable" })
   } finally {
     window.clearTimeout(timeout)
   }

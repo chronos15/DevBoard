@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	updateInitialDelay = 20 * time.Second
-	updateCheckEvery   = 15 * time.Minute
+	updateInitialDelay = 8 * time.Second
+	updateCheckEvery   = 2 * time.Minute
 	updateMaxSize      = 64 * 1024 * 1024
 )
 

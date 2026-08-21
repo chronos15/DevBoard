@@ -207,7 +207,11 @@ func startLocalAPIServer(cfg agentConfig) {
 		}
 		status, err := getLocalRuntimeStatus(input)
 		if err != nil {
-			writeLocalAgentError(w, http.StatusUnprocessableEntity, "runtime_status_failed", err.Error())
+			code := "runtime_status_failed"
+			if strings.Contains(strings.ToLower(err.Error()), "pasta") {
+				code = "folder_not_found"
+			}
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, code, err.Error())
 			return
 		}
 		writeLocalAgentJSON(w, http.StatusOK, status)
@@ -228,7 +232,11 @@ func startLocalAPIServer(cfg agentConfig) {
 		}
 		status, err := runLocalRuntimeAction(input)
 		if err != nil {
-			writeLocalAgentError(w, http.StatusUnprocessableEntity, "runtime_action_failed", err.Error())
+			code := "runtime_action_failed"
+			if strings.Contains(strings.ToLower(err.Error()), "pasta") {
+				code = "folder_not_found"
+			}
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, code, err.Error())
 			return
 		}
 		writeLocalAgentJSON(w, http.StatusOK, status)

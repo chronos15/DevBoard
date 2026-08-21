@@ -29,8 +29,26 @@ export type DeveloperRuntimeStatus = {
   logTail: string[]
 }
 
+export class DeveloperRuntimeError extends Error {
+  code?: string
+  status?: number
+
+  constructor(message: string, options?: { code?: string; status?: number }) {
+    super(message)
+    this.name = "DeveloperRuntimeError"
+    this.code = options?.code
+    this.status = options?.status
+  }
+}
+
 function payload(project: DeveloperLocalProjectRecord, allowFolderPicker = false) {
-  return { projectId: project.id, projectName: project.name, folderName: project.folderName, legacyPath: project.legacyPath, allowFolderPicker }
+  return {
+    projectId: project.id,
+    projectName: project.name,
+    folderName: project.folderName,
+    legacyPath: project.legacyPath,
+    allowFolderPicker,
+  }
 }
 
 async function runtimeFetch(path: string, body: unknown, timeoutMs = 5000): Promise<DeveloperRuntimeStatus> {
@@ -45,17 +63,28 @@ async function runtimeFetch(path: string, body: unknown, timeoutMs = 5000): Prom
       body: JSON.stringify(body),
     })
     const data = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(String(data?.error || "Não foi possível executar esta ação pelo Devboard Agent."))
+    if (!response.ok) {
+      throw new DeveloperRuntimeError(
+        String(data?.error || `Devboard Agent respondeu ${response.status}.`),
+        { code: data?.code, status: response.status },
+      )
+    }
     return data as DeveloperRuntimeStatus
+  } catch (error) {
+    if (error instanceof DeveloperRuntimeError) throw error
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new DeveloperRuntimeError("O Devboard Agent demorou mais que o esperado para responder.", { code: "timeout" })
+    }
+    throw new DeveloperRuntimeError("Não foi possível comunicar com o Devboard Agent.", { code: "agent_unavailable" })
   } finally {
     window.clearTimeout(timeout)
   }
 }
 
 export function getDeveloperRuntimeStatus(project: DeveloperLocalProjectRecord, allowFolderPicker = false) {
-  return runtimeFetch("/v1/runtime/status", payload(project, allowFolderPicker), allowFolderPicker ? 120_000 : 5000)
+  return runtimeFetch("/v1/runtime/status", payload(project, allowFolderPicker), allowFolderPicker ? 120_000 : 7000)
 }
 
-export function runDeveloperRuntimeAction(project: DeveloperLocalProjectRecord, action: "run" | "build" | "test" | "terminal" | "stop", allowFolderPicker = true) {
-  return runtimeFetch("/v1/runtime/action", { ...payload(project, allowFolderPicker), action }, allowFolderPicker ? 120_000 : 7000)
+export function runDeveloperRuntimeAction(project: DeveloperLocalProjectRecord, action: "run" | "build" | "test" | "terminal" | "stop", allowFolderPicker = false) {
+  return runtimeFetch("/v1/runtime/action", { ...payload(project, allowFolderPicker), action }, allowFolderPicker ? 120_000 : 15_000)
 }

@@ -107,6 +107,11 @@ export function DeveloperVcsDialog({
   const [commitOpen, setCommitOpen] = React.useState(false)
   const [commitMessage, setCommitMessage] = React.useState("")
   const [includeUnversioned, setIncludeUnversioned] = React.useState(true)
+  // O status do projeto é devolvido ao componente pai após cada consulta. Isso faz o
+  // `initialStatus` receber uma nova referência e também pode recriar callbacks do pai.
+  // Sem este controle, o efeito de inicialização era executado novamente e resetava
+  // `tab` para Alterações e fechava o editor de Commit logo após o clique do usuário.
+  const initializedProjectIdRef = React.useRef<string | null>(null)
 
   const activeMatches = Boolean(activeTask && (project?.devboardProjectId === activeTask.devboardProjectId || linkedProjectIds.includes(activeTask.devboardProjectId)))
   const remoteUrl = developerVcsRemoteUrl(status?.repository ?? "")
@@ -151,7 +156,16 @@ export function DeveloperVcsDialog({
   }, [onNotice, project])
 
   React.useEffect(() => {
-    if (!open || !project) return
+    if (!open || !project) {
+      initializedProjectIdRef.current = null
+      return
+    }
+
+    // Inicializa a UI somente uma vez por abertura/projeto. Atualizações de status
+    // vindas do Agent não podem alterar a aba escolhida nem fechar o formulário de commit.
+    if (initializedProjectIdRef.current === project.id) return
+    initializedProjectIdRef.current = project.id
+
     setStatus(initialStatus ?? null)
     setTab("changes")
     setCommitOpen(false)

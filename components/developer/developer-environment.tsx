@@ -248,6 +248,12 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     projectName: activeFound.project.name,
   } : null
 
+  const handleVcsStatusChanged = React.useCallback((status: DeveloperVcsStatus) => {
+    const projectId = vcsProject?.id
+    if (!projectId) return
+    setVcsStatuses((current) => ({ ...current, [projectId]: status }))
+  }, [vcsProject?.id])
+
   React.useEffect(() => {
     let active = true
     const check = () => void getDeveloperAgentHealth().then((health) => {
@@ -772,10 +778,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
         currentUserId={currentUserId}
         activeTask={activeTask}
         initialStatus={vcsProject ? vcsStatuses[vcsProject.id] ?? null : null}
-        onStatusChanged={(status) => {
-          if (!vcsProject) return
-          setVcsStatuses((current) => ({ ...current, [vcsProject.id]: status }))
-        }}
+        onStatusChanged={handleVcsStatusChanged}
         onNotice={onNotice}
       />
 

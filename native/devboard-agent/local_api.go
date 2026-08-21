@@ -389,7 +389,18 @@ func startLocalAPIServer(cfg agentConfig) {
 	})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		track := r.Method != http.MethodOptions && r.URL.Path != "/v1/health"
+		// CORS precisa ser aplicado antes do ServeMux. Assim até um endpoint que não
+		// existe nesta versão do Agent responde corretamente ao preflight OPTIONS,
+		// em vez de o navegador esconder o 404 como um erro genérico de CORS.
+		if !prepareLocalAgentCORS(w, r, cfg) {
+			return
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		track := r.URL.Path != "/v1/health"
 		if track {
 			localActiveOperations.Add(1)
 			defer localActiveOperations.Add(-1)
@@ -405,7 +416,7 @@ func startLocalAPIServer(cfg agentConfig) {
 	_ = server.Serve(listener)
 }
 
-func prepareLocalAgentRequest(w http.ResponseWriter, r *http.Request, cfg agentConfig) bool {
+func prepareLocalAgentCORS(w http.ResponseWriter, r *http.Request, cfg agentConfig) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin != "" && !localAgentOriginAllowed(origin, cfg.AppURL) {
 		writeLocalAgentError(w, http.StatusForbidden, "origin_denied", "Origem não autorizada pelo Devboard Agent.")
@@ -413,17 +424,19 @@ func prepareLocalAgentRequest(w http.ResponseWriter, r *http.Request, cfg agentC
 	}
 	if origin != "" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
+		w.Header().Add("Vary", "Origin")
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Devboard-Agent")
 	w.Header().Set("Access-Control-Allow-Private-Network", "true")
+	w.Header().Set("Access-Control-Max-Age", "600")
 	w.Header().Set("Cache-Control", "no-store")
+	return true
+}
 
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return false
-	}
+func prepareLocalAgentRequest(w http.ResponseWriter, r *http.Request, _ agentConfig) bool {
+	// O CORS já foi validado pelo handler externo antes de chegar ao ServeMux.
+	// Mantemos a checagem do header local em todas as operações reais.
 	if r.Header.Get("X-Devboard-Agent") != "1" {
 		writeLocalAgentError(w, http.StatusForbidden, "agent_header_missing", "Solicitação local inválida.")
 		return false

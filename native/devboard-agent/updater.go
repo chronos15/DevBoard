@@ -74,9 +74,9 @@ func checkAndApplyAgentUpdate(cfg agentConfig) error {
 	}
 
 	previous := readAgentUpdateStatus()
-	if previous.State == "failed" && previous.TargetVersion == manifest.Version && previous.FinishedAt != nil && time.Since(*previous.FinishedAt) < 2*time.Hour {
-		// Evita bombardear o usuário quando a mesma versão falha por um problema
-		// transitório. O Agent continua funcional e tenta novamente depois.
+	if previous.State == "failed" && previous.TargetVersion == manifest.Version && previous.FinishedAt != nil && time.Since(*previous.FinishedAt) < 10*time.Minute {
+		// Evita bombardear o usuário quando a mesma versão falha, mas não segura
+		// uma correção por horas. Depois de 10 minutos tentamos novamente.
 		return nil
 	}
 

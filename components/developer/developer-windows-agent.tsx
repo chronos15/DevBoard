@@ -108,6 +108,8 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
   const needsUpdate = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, DEVBOARD_AGENT_VERSION) < 0)
   const autoUpdateReady = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION) >= 0)
   const needsAutoUpdateBootstrap = Boolean(needsUpdate && !autoUpdateReady)
+  const canRequestImmediateUpdate = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, "0.4.2") >= 0)
+  const canUseDiagnostics = Boolean(isOnline && selected?.agent_version && compareVersions(selected.agent_version, "0.4.0") >= 0)
   const shortcutReady = Boolean(isOnline && selected?.hotkey_ok !== false)
 
   React.useEffect(() => {
@@ -120,9 +122,13 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
     const syncUpdate = async () => {
       const health = await getDeveloperAgentHealth()
       if (!cancelled) setLocalUpdateStatus(health?.update ?? null)
-      // v0.4.2+ atualiza imediatamente; versões anteriores ignoram a chamada e
-      // continuam usando o próprio loop interno.
-      await requestDeveloperAgentUpdateCheck()
+      // /v1/update/check só existe a partir da v0.4.2. Não chamamos esse endpoint
+      // em Agents antigos: além de não funcionar, o preflight CORS cairia no 404
+      // do servidor local e poluiria o console. A v0.3.x continua usando o loop
+      // interno de auto-update normalmente.
+      if (canRequestImmediateUpdate) {
+        await requestDeveloperAgentUpdateCheck()
+      }
     }
 
     void syncUpdate()
@@ -131,10 +137,17 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [isOnline, needsUpdate])
+  }, [canRequestImmediateUpdate, isOnline, needsUpdate])
 
   async function loadDiagnostics() {
     if (diagnosticsLoading) return
+    if (!canUseDiagnostics) {
+      setDiagnostics(null)
+      setDiagnosticsError(selected?.agent_version
+        ? `O Agent v${selected.agent_version} está online, mas o diagnóstico local exige v0.4.0 ou superior.`
+        : "O Agent precisa ser atualizado para liberar o diagnóstico local.")
+      return
+    }
     setDiagnosticsLoading(true)
     setDiagnosticsError(null)
     try {
@@ -290,8 +303,8 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
                   <span className="text-primary">
                     · {localUpdateStatus?.state === "updating"
                       ? `atualizando para v${localUpdateStatus.target_version || DEVBOARD_AGENT_VERSION}`
-                      : selected.agent_version === "0.3.0"
-                        ? "bootstrap automático aguardando próxima verificação do Agent"
+                      : !canRequestImmediateUpdate
+                        ? "Agent antigo verificará a nova versão pelo atualizador interno"
                         : "verificando atualização em segundo plano"}
                   </span>
                 )}
@@ -335,9 +348,11 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
                             ? `O Agent v${selected.agent_version} está online, mas o diagnóstico local exige v0.4.0 ou superior. A atualização automática está pendente.`
                             : diagnosticsError || "Não foi possível consultar o diagnóstico local neste momento."}
                         </p>
-                        <button type="button" onClick={() => void loadDiagnostics()} disabled={diagnosticsLoading} className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[0.61rem] font-semibold text-foreground hover:bg-muted disabled:opacity-50">
-                          <RefreshCw className={cn("size-3", diagnosticsLoading && "animate-spin")} />Tentar novamente
-                        </button>
+                        {canUseDiagnostics && (
+                          <button type="button" onClick={() => void loadDiagnostics()} disabled={diagnosticsLoading} className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[0.61rem] font-semibold text-foreground hover:bg-muted disabled:opacity-50">
+                            <RefreshCw className={cn("size-3", diagnosticsLoading && "animate-spin")} />Tentar novamente
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

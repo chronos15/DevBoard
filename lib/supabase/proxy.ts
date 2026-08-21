@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/manifest.webmanifest', '/devboard-sw.js']
 
 type SessionCookie = {
   name: string
@@ -12,6 +12,14 @@ type SessionCookie = {
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isAgentUpdateEndpoint = pathname === '/api/dev-agent/update' || pathname.startsWith('/api/dev-agent/update/')
+  const isPublicPwaAsset = pathname === '/manifest.webmanifest' || pathname === '/devboard-sw.js'
+
+  // Manifest e service worker são buscados pelo navegador fora do fluxo normal de
+  // navegação e podem chegar sem cookies. Eles precisam responder diretamente,
+  // senão o browser recebe o HTML de /login e acusa "Manifest: syntax error".
+  if (isPublicPwaAsset) {
+    return NextResponse.next({ request })
+  }
 
   // O Agent não possui cookie/JWT do navegador. O manifesto e o binário genérico
   // precisam ser públicos para que versões já instaladas consigam fazer bootstrap

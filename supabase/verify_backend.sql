@@ -664,26 +664,3 @@ begin
   end if;
   raise notice 'Migration 022 OK: detecção de ausência e ajuste do apontamento disponíveis.';
 end $$;
-
--- 023 · Apuração de horas por período e privacidade dos registros
-select
-  to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is not null as hours_report_rpc_ok,
-  has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') as hours_report_execute_ok,
-  exists(
-    select 1 from pg_policies
-    where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select'
-  ) as work_sessions_select_policy_ok;
-
-do $$
-begin
-  if to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is null then
-    raise exception 'Backend Devboard incompleto: hours_report(...) ausente (migration 023)';
-  end if;
-  if not has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') then
-    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em hours_report(...) (migration 023)';
-  end if;
-  if not exists(select 1 from pg_policies where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select') then
-    raise exception 'Backend Devboard incompleto: policy de leitura de work_sessions ausente (migration 023)';
-  end if;
-  raise notice 'Migration 023 OK: apuração por período/projeto/responsável e privacidade de work_sessions disponíveis.';
-end $$;

@@ -28,12 +28,14 @@ import {
   type DeveloperIdeRecord,
   type DeveloperLocalProjectRecord,
 } from "@/lib/developer/context"
-import { openDeveloperProjectSmart } from "@/lib/developer/windows-agent"
+import { getDeveloperAgentActivity, openDeveloperProjectSmart, syncDeveloperAgentSession } from "@/lib/developer/windows-agent"
 import { getDeveloperVcsStatus } from "@/lib/developer/vcs"
 
-const SETTINGS_SELECT = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
+const SETTINGS_SELECT_LEGACY = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
+const SETTINGS_SELECT = `${SETTINGS_SELECT_LEGACY},idle_detection_enabled,idle_threshold_minutes`
 
 type AgentPrompt =
+  | { kind: "idle"; subId: string; idleSeconds: number; title: string; description: string }
   | { kind: "forgotten"; subId: string; title: string; description: string }
   | { kind: "wrapup"; title: string; description: string }
   | { kind: "ended"; title: string; description: string }
@@ -57,22 +59,48 @@ function dateKey(date = new Date()) {
 
 export function DeveloperAutomationAgent() {
   const supabase = React.useMemo(() => createClient(), [])
-  const { hydrated, currentUserId, currentUserRole, projects, activeSubId, stopTimer } = useStore()
+  const { hydrated, currentUserId, currentUserRole, projects, activeSubId, stopTimer, refreshAll } = useStore()
   const [settings, setSettings] = React.useState<DeveloperSettings>({ ...DEFAULT_DEVELOPER_SETTINGS })
   const [contexts, setContexts] = React.useState<DeveloperContextRecord[]>([])
   const [ides, setIdes] = React.useState<DeveloperIdeRecord[]>([])
   const [localProjects, setLocalProjects] = React.useState<DeveloperLocalProjectRecord[]>([])
   const [prompt, setPrompt] = React.useState<AgentPrompt | null>(null)
 
+  const activeSession = React.useMemo(() => {
+    if (!activeSubId) return null
+    for (const project of projects) {
+      for (const activity of project.activities) {
+        const sub = activity.subactivities.find((item) => item.id === activeSubId)
+        if (!sub) continue
+        const context = contextForProject(contexts, project.id, currentUserId)
+        const local = localProjects.find((item) => item.id === context?.localProjectId)
+          ?? localProjects.find((item) => item.devboardProjectId === project.id)
+          ?? null
+        const ideId = context?.ideId || local?.ideId
+        const ide = ides.find((item) => item.id === ideId) ?? null
+        return { project, activity, sub, local, ide }
+      }
+    }
+    return null
+  }, [activeSubId, contexts, currentUserId, ides, localProjects, projects])
+
+  const activeSessionKey = activeSession
+    ? [activeSession.project.id, activeSession.sub.id, activeSession.sub.title, activeSession.sub.timerStartedAt ?? "", activeSession.local?.id ?? "", activeSession.ide?.id ?? ""].join("|")
+    : "none"
+
   const loadAutomation = React.useCallback(async () => {
     if (!currentUserId || currentUserRole !== "developer") return
-    const [{ data: settingsRow, error: settingsError }, { data: contextRows, error: contextError }, { data: ideRows }, { data: localRows }] = await Promise.all([
-      supabase.from("developer_settings").select(SETTINGS_SELECT).eq("user_id", currentUserId).maybeSingle(),
+    let settingsResult = await supabase.from("developer_settings").select(SETTINGS_SELECT).eq("user_id", currentUserId).maybeSingle()
+    if (settingsResult.error && /idle_detection_enabled|idle_threshold_minutes/i.test(settingsResult.error.message)) {
+      settingsResult = await supabase.from("developer_settings").select(SETTINGS_SELECT_LEGACY).eq("user_id", currentUserId).maybeSingle()
+    }
+    const [{ data: contextRows, error: contextError }, { data: ideRows }, { data: localRows }] = await Promise.all([
       supabase.from("developer_contexts").select("id,name,devboard_project_id,local_project_id,ide_id,music_provider,music_url,auto_focus,auto_open_ide,auto_open_music,sort_order").eq("user_id", currentUserId).order("sort_order").order("created_at"),
       supabase.from("developer_ides").select("id,name,kind,icon,custom_uri_template").eq("user_id", currentUserId),
       supabase.from("developer_local_projects").select("id,name,folder_name,ide_id,legacy_path,devboard_project_id").eq("user_id", currentUserId),
     ])
-    if (settingsError) throw settingsError
+    if (settingsResult.error) throw settingsResult.error
+    const settingsRow = settingsResult.data
     if (contextError) throw contextError
     setSettings(mapDeveloperSettings(settingsRow))
     setContexts((contextRows ?? []).map(normalizeDeveloperContext))
@@ -162,6 +190,100 @@ export function DeveloperAutomationAgent() {
     window.addEventListener(DEVELOPER_TIMER_STARTED_EVENT, onTimerStarted)
     return () => window.removeEventListener(DEVELOPER_TIMER_STARTED_EVENT, onTimerStarted)
   }, [contexts, currentUserId, currentUserRole, hydrated, ides, localProjects, settings])
+
+  React.useEffect(() => {
+    if (!hydrated || currentUserRole !== "developer" || !currentUserId) return
+    const session = activeSession
+    const sync = () => {
+      if (!session) {
+        void syncDeveloperAgentSession({ active: false })
+        return
+      }
+      const localProject = session.local && session.ide ? {
+        projectId: session.local.id,
+        projectName: session.local.name,
+        folderName: session.local.folderName,
+        legacyPath: session.local.legacyPath,
+        allowFolderPicker: false,
+        ide: {
+          id: session.ide.id,
+          name: session.ide.name,
+          kind: session.ide.kind,
+          customUriTemplate: session.ide.customUriTemplate,
+        },
+      } : null
+      void syncDeveloperAgentSession({
+        active: true,
+        title: session.sub.title,
+        projectName: session.project.name,
+        taskPath: `/projetos/${session.project.id}#sub:${session.sub.id}`,
+        timerStartedAt: session.sub.timerStartedAt,
+        localProject,
+      })
+    }
+    sync()
+    const timer = window.setInterval(sync, 30_000)
+    return () => window.clearInterval(timer)
+    // activeSessionKey evita ressincronizar a cada tick visual do cronômetro.
+  }, [activeSessionKey, currentUserId, currentUserRole, hydrated])
+
+  React.useEffect(() => {
+    if (!hydrated || currentUserRole !== "developer" || !currentUserId || !activeSession || !settings.idleDetectionEnabled) return
+    const timerStartedAt = activeSession.sub.timerStartedAt ? new Date(activeSession.sub.timerStartedAt).getTime() : 0
+    if (!timerStartedAt) return
+
+    const checkIdle = async () => {
+      const activity = await getDeveloperAgentActivity()
+      if (!activity?.ok || !activity.lastIdleEventId || !activity.lastIdleEndedAt) return
+      const endedAt = new Date(activity.lastIdleEndedAt).getTime()
+      if (!Number.isFinite(endedAt) || endedAt < timerStartedAt) return
+      if (activity.lastIdleSeconds < settings.idleThresholdMinutes * 60) return
+      const marker = `devboard-idle-reviewed:${currentUserId}:${activeSession.sub.id}:${activity.lastIdleEventId}:${endedAt}`
+      try {
+        if (window.localStorage.getItem(marker) === "1") return
+        window.localStorage.setItem(marker, "1")
+      } catch { /* memória local é opcional */ }
+      const minutes = Math.max(1, Math.round(activity.lastIdleSeconds / 60))
+      setPrompt({
+        kind: "idle",
+        subId: activeSession.sub.id,
+        idleSeconds: activity.lastIdleSeconds,
+        title: "Período de ausência detectado",
+        description: `O Windows ficou sem atividade por cerca de ${minutes} min enquanto “${activeSession.sub.title}” estava em execução. Como deseja tratar esse período?`,
+      })
+    }
+
+    void checkIdle()
+    const timer = window.setInterval(() => void checkIdle(), 8_000)
+    const onFocus = () => void checkIdle()
+    window.addEventListener("focus", onFocus)
+    document.addEventListener("visibilitychange", onFocus)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener("focus", onFocus)
+      document.removeEventListener("visibilitychange", onFocus)
+    }
+  }, [activeSessionKey, currentUserId, currentUserRole, hydrated, settings.idleDetectionEnabled, settings.idleThresholdMinutes])
+
+  async function adjustIdle(promptValue: Extract<AgentPrompt, { kind: "idle" }>, pause: boolean) {
+    const { error } = await supabase.rpc("developer_adjust_active_session", {
+      p_subactivity_id: promptValue.subId,
+      p_idle_seconds: Math.max(0, Math.round(promptValue.idleSeconds)),
+      p_pause: pause,
+    })
+    if (error) {
+      setPrompt(null)
+      void notify("Não foi possível ajustar o apontamento", error.message, "devboard-idle-adjust-error")
+      return
+    }
+    setPrompt(null)
+    await refreshAll()
+    void notify(
+      pause ? "Ausência descontada e timer pausado" : "Ausência descontada",
+      pause ? "O período ausente foi removido do apontamento e a subatividade foi pausada." : "O período ausente foi removido; o timer continua em execução.",
+      "devboard-idle-adjusted",
+    )
+  }
 
   React.useEffect(() => {
     if (!hydrated || currentUserRole !== "developer" || !currentUserId) return
@@ -259,7 +381,7 @@ export function DeveloperAutomationAgent() {
     <div className="fixed bottom-4 right-4 z-[95] w-[min(390px,calc(100vw-2rem))] rounded-2xl border border-border bg-card p-4 shadow-2xl">
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          {prompt.kind === "forgotten" ? <TimerReset className="size-4" /> : <Clock3 className="size-4" />}
+          {prompt.kind === "forgotten" || prompt.kind === "idle" ? <TimerReset className="size-4" /> : <Clock3 className="size-4" />}
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">{prompt.title}</p>
@@ -268,7 +390,13 @@ export function DeveloperAutomationAgent() {
         <button type="button" onClick={() => setPrompt(null)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Fechar"><X className="size-3.5" /></button>
       </div>
       <div className="mt-4 flex flex-wrap justify-end gap-2">
-        {prompt.kind === "forgotten" ? (
+        {prompt.kind === "idle" ? (
+          <>
+            <button type="button" onClick={() => setPrompt(null)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-muted"><Check className="mr-1.5 inline size-3.5" />Manter tempo</button>
+            <button type="button" onClick={() => void adjustIdle(prompt, false)} className="h-9 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-semibold text-primary">Descontar ausência</button>
+            <button type="button" onClick={() => void adjustIdle(prompt, true)} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"><Pause className="mr-1.5 inline size-3.5" />Descontar e pausar</button>
+          </>
+        ) : prompt.kind === "forgotten" ? (
           <>
             <button type="button" onClick={() => setPrompt(null)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-muted"><Check className="mr-1.5 inline size-3.5" />Continuar</button>
             <button type="button" onClick={() => { void stopTimer(prompt.subId); setPrompt(null) }} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"><Pause className="mr-1.5 inline size-3.5" />Pausar timer</button>

@@ -18,12 +18,16 @@ const (
 	nifIcon            = 0x00000002
 	nifTip             = 0x00000004
 	mfString           = 0x00000000
+	mfGrayed           = 0x00000001
 	mfSeparator        = 0x00000800
 	tpmReturnCmd       = 0x0100
 	tpmRightButton     = 0x0002
 	trayCmdOpenHome    = 1001
 	trayCmdOpenDev     = 1002
 	trayCmdDiagnostics = 1003
+	trayCmdOpenTask    = 1004
+	trayCmdOpenTaskIDE = 1005
+	trayCmdStopRuntime = 1006
 	trayCmdExit        = 1099
 )
 
@@ -143,8 +147,29 @@ func showTrayMenu(hwnd uintptr) {
 		return
 	}
 	defer procDestroyMenu.Call(menu)
+
+	session := currentAgentSession()
+	if session.Active {
+		label := session.ProjectName
+		if label == "" {
+			label = "Sessão atual"
+		}
+		if elapsed := sessionElapsedLabel(session); elapsed != "" {
+			label += " · " + elapsed
+		}
+		appendTrayItem(menu, mfString|mfGrayed, 0, compactTrayLabel("● "+label, 58))
+		appendTrayItem(menu, mfString, trayCmdOpenTask, compactTrayLabel("Abrir tarefa · "+session.Title, 58))
+		if session.LocalProject != nil {
+			appendTrayItem(menu, mfString, trayCmdOpenTaskIDE, "Abrir IDE da tarefa")
+		}
+		appendTrayItem(menu, mfSeparator, 0, "")
+	}
+
 	appendTrayItem(menu, mfString, trayCmdOpenHome, "Abrir Devboard")
 	appendTrayItem(menu, mfString, trayCmdOpenDev, "Painel Dev")
+	if runtimeHasActiveProcess() {
+		appendTrayItem(menu, mfString, trayCmdStopRuntime, "Parar processos iniciados pelo Agent")
+	}
 	appendTrayItem(menu, mfString, trayCmdDiagnostics, "Diagnóstico do Agent")
 	appendTrayItem(menu, mfSeparator, 0, "")
 	appendTrayItem(menu, mfString, trayCmdExit, "Sair do Agent")
@@ -157,12 +182,43 @@ func showTrayMenu(hwnd uintptr) {
 		go openDevboardPath(trayAppURL, "/")
 	case trayCmdOpenDev:
 		go openDevboard(trayAppURL)
+	case trayCmdOpenTask:
+		if session.TaskPath != "" {
+			go openDevboardPath(trayAppURL, session.TaskPath)
+		} else {
+			go openDevboard(trayAppURL)
+		}
+	case trayCmdOpenTaskIDE:
+		if session.LocalProject != nil {
+			request := *session.LocalProject
+			request.AllowFolderPicker = false
+			go func() {
+				folder, err := resolveLocalProjectFolder(request)
+				if err != nil {
+					return
+				}
+				_, _ = launchLocalProject(folder, request.IDE, request.ProjectName, request.ProjectID)
+			}()
+		}
+	case trayCmdStopRuntime:
+		go stopAllRuntimeProcesses()
 	case trayCmdDiagnostics:
 		go openDevboardPath(trayAppURL, "/dev#integration-windows")
 	case trayCmdExit:
 		stopTray()
 		procPostQuitMessage.Call(0)
 	}
+}
+
+func compactTrayLabel(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit < 4 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func appendTrayItem(menu uintptr, flags, id uintptr, label string) {

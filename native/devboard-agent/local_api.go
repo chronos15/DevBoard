@@ -113,6 +113,34 @@ func startLocalAPIServer(cfg agentConfig) {
 		writeLocalAgentJSON(w, http.StatusOK, collectAgentDiagnostics())
 	})
 
+	mux.HandleFunc("/v1/activity", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, getAgentActivityStatus())
+	})
+
+	mux.HandleFunc("/v1/session", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input agentSessionSync
+		if err := decodeLocalAgentJSON(r, &input); err != nil {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Sessão local inválida.")
+			return
+		}
+		syncAgentSession(input)
+		writeLocalAgentJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+
 	mux.HandleFunc("/v1/pick-folder", func(w http.ResponseWriter, r *http.Request) {
 		if !prepareLocalAgentRequest(w, r, cfg) {
 			return
@@ -299,6 +327,27 @@ func startLocalAPIServer(cfg agentConfig) {
 		result, err := getLocalVCSLog(input)
 		if err != nil {
 			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_log_failed", err.Error())
+			return
+		}
+		writeLocalAgentJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("/v1/vcs/diff", func(w http.ResponseWriter, r *http.Request) {
+		if !prepareLocalAgentRequest(w, r, cfg) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeLocalAgentError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Método não permitido.")
+			return
+		}
+		var input localVCSDiffRequest
+		if err := decodeLocalAgentJSON(r, &input); err != nil || strings.TrimSpace(input.ProjectID) == "" || strings.TrimSpace(input.Path) == "" {
+			writeLocalAgentError(w, http.StatusBadRequest, "invalid_payload", "Arquivo inválido para diff.")
+			return
+		}
+		result, err := getLocalVCSDiff(input)
+		if err != nil {
+			writeLocalAgentError(w, http.StatusUnprocessableEntity, "vcs_diff_failed", err.Error())
 			return
 		}
 		writeLocalAgentJSON(w, http.StatusOK, result)

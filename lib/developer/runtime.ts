@@ -15,6 +15,8 @@ export type DeveloperRuntimeCapabilities = {
   testLabel?: string
 }
 
+export type DeveloperRuntimePort = { port: number; address: string; url: string; pid: number }
+
 export type DeveloperRuntimeStatus = {
   ok: boolean
   path: string
@@ -27,6 +29,7 @@ export type DeveloperRuntimeStatus = {
   exitCode?: number | null
   lastResult?: string
   logTail: string[]
+  ports: DeveloperRuntimePort[]
 }
 
 export class DeveloperRuntimeError extends Error {
@@ -85,6 +88,6 @@ export function getDeveloperRuntimeStatus(project: DeveloperLocalProjectRecord, 
   return runtimeFetch("/v1/runtime/status", payload(project, allowFolderPicker), allowFolderPicker ? 120_000 : 7000)
 }
 
-export function runDeveloperRuntimeAction(project: DeveloperLocalProjectRecord, action: "run" | "build" | "test" | "terminal" | "stop", allowFolderPicker = false) {
+export function runDeveloperRuntimeAction(project: DeveloperLocalProjectRecord, action: "run" | "build" | "test" | "terminal" | "stop" | "restart", allowFolderPicker = false) {
   return runtimeFetch("/v1/runtime/action", { ...payload(project, allowFolderPicker), action }, allowFolderPicker ? 120_000 : 15_000)
 }

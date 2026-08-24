@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  Eye,
   FileCode2,
   GitBranch,
   History,
@@ -14,6 +15,7 @@ import {
   LoaderCircle,
   RefreshCw,
   Upload,
+  X,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import type { DeveloperLocalProjectRecord } from "@/lib/developer/context"
@@ -22,11 +24,13 @@ import {
   DEVELOPER_VCS_CHANGED_EVENT,
   developerVcsProviderLabel,
   developerVcsRemoteUrl,
+  getDeveloperVcsDiff,
   getDeveloperVcsLog,
   getDeveloperVcsStatus,
   openDeveloperVcsNative,
   pushDeveloperVcs,
   updateDeveloperVcs,
+  type DeveloperVcsDiffResult,
   type DeveloperVcsLogEntry,
   type DeveloperVcsStatus,
 } from "@/lib/developer/vcs"
@@ -99,6 +103,9 @@ export function DeveloperVcsDialog({
   const [tab, setTab] = React.useState<Tab>("changes")
   const [status, setStatus] = React.useState<DeveloperVcsStatus | null>(initialStatus ?? null)
   const [logs, setLogs] = React.useState<DeveloperVcsLogEntry[]>([])
+  const [logLimit, setLogLimit] = React.useState(20)
+  const [diff, setDiff] = React.useState<DeveloperVcsDiffResult | null>(null)
+  const [loadingDiff, setLoadingDiff] = React.useState(false)
   const [linkedChanges, setLinkedChanges] = React.useState<LinkedChange[]>([])
   const [linkedProjectIds, setLinkedProjectIds] = React.useState<string[]>([])
   const [loadingStatus, setLoadingStatus] = React.useState(false)
@@ -146,14 +153,27 @@ export function DeveloperVcsDialog({
     if (!project) return
     setLoadingLogs(true)
     try {
-      const result = await getDeveloperVcsLog(project, { limit: 30 })
+      const result = await getDeveloperVcsLog(project, { limit: logLimit })
       setLogs(result.entries)
     } catch (error: any) {
       onNotice(String(error?.message ?? error ?? "Não foi possível carregar os logs."))
     } finally {
       setLoadingLogs(false)
     }
-  }, [onNotice, project])
+  }, [logLimit, onNotice, project])
+
+  async function loadDiff(path: string) {
+    if (!project || loadingDiff) return
+    setLoadingDiff(true)
+    try {
+      const result = await getDeveloperVcsDiff(project, path)
+      setDiff(result)
+    } catch (error: any) {
+      onNotice(String(error?.message ?? error ?? "Não foi possível carregar o diff."))
+    } finally {
+      setLoadingDiff(false)
+    }
+  }
 
   React.useEffect(() => {
     if (!open || !project) {
@@ -168,6 +188,8 @@ export function DeveloperVcsDialog({
 
     setStatus(initialStatus ?? null)
     setTab("changes")
+    setLogLimit(20)
+    setDiff(null)
     setCommitOpen(false)
     setCommitMessage(activeTask?.title ?? "")
     void Promise.all([refreshStatus(true), loadLinks()])
@@ -330,7 +352,8 @@ export function DeveloperVcsDialog({
                   <div className="rounded-xl border border-border bg-muted/35 p-4"><p className="text-xs font-semibold">TortoiseSVN encontrado</p><p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">O cliente de linha de comando <code className="font-mono">svn.exe</code> não foi encontrado. Update, Commit e Logs continuam disponíveis pela interface nativa do TortoiseSVN.</p><button type="button" onClick={() => void openNative("status")} className="mt-3 h-8 rounded-lg border border-border bg-background px-3 text-[0.67rem] font-semibold hover:bg-muted">Ver alterações no TortoiseSVN</button></div>
                 ) : status?.files.length ? (
                   <div className="space-y-1">
-                    {status.files.map((file, index) => <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/45"><span className={cn("min-w-16 shrink-0 rounded-md px-1.5 py-1 text-center text-[0.58rem] font-semibold", file.conflicted ? "bg-destructive/10 text-destructive" : file.label === "Novo" || file.label === "Adicionado" ? "bg-success/10 text-success" : file.label === "Removido" ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning")}>{file.label}</span><span className="min-w-0 flex-1 truncate font-mono text-[0.68rem]" title={file.path}>{file.path}</span>{file.staged && <span className="shrink-0 text-[0.58rem] text-muted-foreground">staged</span>}</div>)}
+                    {status.files.map((file, index) => <button type="button" key={`${file.path}-${index}`} onClick={() => void loadDiff(file.path)} className={cn("flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-muted/45", diff?.path === file.path && "bg-muted/55")} title="Ver diferenças"><span className={cn("min-w-16 shrink-0 rounded-md px-1.5 py-1 text-center text-[0.58rem] font-semibold", file.conflicted ? "bg-destructive/10 text-destructive" : file.label === "Novo" || file.label === "Adicionado" ? "bg-success/10 text-success" : file.label === "Removido" ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning")}>{file.label}</span><span className="min-w-0 flex-1 truncate font-mono text-[0.68rem]" title={file.path}>{file.path}</span>{file.staged && <span className="shrink-0 text-[0.58rem] text-muted-foreground">staged</span>}<Eye className={cn("size-3.5 shrink-0 text-muted-foreground", loadingDiff && diff?.path === file.path && "animate-pulse")} /></button>)}
+                    {diff && <div className="mt-2 overflow-hidden rounded-xl border border-border bg-[#0d1117] text-[#c9d1d9] dark:bg-black/35"><div className="flex min-w-0 items-center gap-2 border-b border-white/10 px-3 py-2"><span className="min-w-0 flex-1 truncate font-mono text-[0.62rem]" title={diff.path}>{diff.path}</span>{diff.truncated && <span className="shrink-0 text-[0.58rem] text-[#d29922]">truncado</span>}<button type="button" onClick={() => setDiff(null)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-[#8b949e] hover:bg-white/10 hover:text-white" aria-label="Fechar diff"><X className="size-3" /></button></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[0.61rem] leading-relaxed">{diff.binary ? "Arquivo binário — o diff textual não está disponível." : diff.content || "Sem diferenças textuais para exibir."}</pre></div>}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-success/20 bg-success/5 px-4 py-8 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-2 text-xs font-semibold">Nenhuma alteração local</p><p className="mt-1 text-[0.67rem] text-muted-foreground">Seu projeto está limpo.</p></div>
@@ -343,7 +366,7 @@ export function DeveloperVcsDialog({
                 ) : logs.length === 0 ? <div className="py-10 text-center text-xs text-muted-foreground">Nenhum commit/revisão encontrado.</div> : <div className="space-y-1.5">{logs.map((entry) => {
                   const associated = linkedChanges.some((item) => item.subactivityId === activeTask?.subactivityId && (item.revision === entry.id || entry.id.startsWith(item.revision) || item.revision.startsWith(entry.id)))
                   return <div key={entry.id} className="rounded-xl border border-border bg-background/35 p-3"><div className="flex min-w-0 items-start gap-3"><span className="mt-0.5 shrink-0 rounded-md bg-muted px-1.5 py-1 font-mono text-[0.6rem] font-semibold">{entry.shortId}</span><div className="min-w-0 flex-1"><p className="line-clamp-2 text-xs font-semibold leading-snug">{entry.message || "Sem mensagem"}</p><p className="mt-1 truncate text-[0.62rem] text-muted-foreground">{entry.author} · {relativeTime(entry.date)}{entry.filesChanged ? ` · ${entry.filesChanged} arquivos` : ""}</p></div>{activeMatches && <button type="button" onClick={() => void associateLog(entry)} disabled={associated} className={cn("inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-[0.6rem] font-semibold", associated ? "bg-success/10 text-success" : "border border-border text-muted-foreground hover:bg-muted hover:text-foreground")} title={associated ? "Já associado à tarefa atual" : "Associar à subatividade em execução"}>{associated ? <Check className="size-3" /> : <Link2 className="size-3" />}{associated ? "Vinculado" : "Associar"}</button>}</div></div>
-                })}</div>}
+                })}{logs.length >= logLimit && <button type="button" onClick={() => setLogLimit((value) => Math.min(100, value + 20))} disabled={loadingLogs || logLimit >= 100} className="mt-2 flex h-9 w-full items-center justify-center rounded-xl border border-border text-[0.65rem] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40">{logLimit >= 100 ? "Limite de 100 registros" : "Carregar mais 20"}</button>}</div>}
               </div>
             )}
           </div>

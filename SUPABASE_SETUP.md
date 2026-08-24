@@ -598,15 +598,3 @@ supabase/migrations/022_devboard_developer_idle_adjustment.sql
 ```
 
 A 022 adiciona as preferências pessoais de detecção de ausência do Windows (`idle_detection_enabled` e `idle_threshold_minutes`) e o RPC `developer_adjust_active_session(...)`. O RPC só permite que o próprio responsável developer ajuste a sessão ativa: ele pode desconsiderar o período ausente mantendo o timer em execução ou desconsiderar e pausar. O Agent informa somente duração de inatividade/bloqueio; não captura teclas, textos, arquivos ou conteúdo de tela.
-
-## Migration 023 — apuração de horas por período
-
-Depois da migration 022, aplique:
-
-```text
-supabase/migrations/023_devboard_hours_reporting.sql
-```
-
-A 023 adiciona o RPC `hours_report(...)` para a tela **Controle de horas**, com filtros por período, projeto e responsável. Administradores podem consolidar os registros do workspace; usuários não administradores ficam restritos aos próprios apontamentos tanto no RPC quanto na policy de leitura de `work_sessions`.
-
-Depois execute novamente `supabase/verify_backend.sql`.

@@ -12,6 +12,37 @@ export type DeveloperAgentUpdateStatus = {
   finished_at?: string
 }
 
+
+export type DeveloperAgentActivity = {
+  ok: boolean
+  idleSeconds: number
+  locked: boolean
+  lastIdleSeconds: number
+  lastIdleEndedAt?: string
+  lastIdleEventId: number
+}
+
+export type DeveloperAgentSessionPayload = {
+  active: boolean
+  title?: string
+  projectName?: string
+  taskPath?: string
+  timerStartedAt?: string
+  localProject?: {
+    projectId: string
+    projectName: string
+    folderName: string
+    legacyPath: string
+    allowFolderPicker: boolean
+    ide: {
+      id: string
+      name: string
+      kind: string
+      customUriTemplate: string
+    }
+  } | null
+}
+
 type AgentHealth = {
   ok: boolean
   version?: string
@@ -143,5 +174,25 @@ export async function openDeveloperProjectSmart(
     // Se o Agent não estiver disponível, o chamador ainda pode usar o protocolo do navegador.
     const message = error instanceof Error ? error.message : "Não foi possível abrir a IDE pelo Devboard Agent."
     return { opened: false, via: "none", error: message }
+  }
+}
+
+
+export async function getDeveloperAgentActivity(): Promise<DeveloperAgentActivity | null> {
+  if (typeof window === "undefined") return null
+  try {
+    return await agentFetch<DeveloperAgentActivity>("/v1/activity", { method: "GET" }, 1200)
+  } catch {
+    return null
+  }
+}
+
+export async function syncDeveloperAgentSession(payload: DeveloperAgentSessionPayload): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  try {
+    await agentFetch<{ ok: boolean }>("/v1/session", { method: "POST", body: JSON.stringify(payload) }, 1500)
+    return true
+  } catch {
+    return false
   }
 }

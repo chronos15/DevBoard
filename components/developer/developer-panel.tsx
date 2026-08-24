@@ -217,13 +217,13 @@ export function DeveloperPanel() {
 
   const loadSettings = React.useCallback(async () => {
     if (!currentUserId || currentUserRole !== "developer") return
-    const { data, error } = await supabase
-      .from("developer_settings")
-      .select("work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes")
-      .eq("user_id", currentUserId)
-      .maybeSingle()
-    if (error) throw error
-    const mapped = mapDeveloperSettings(data)
+    const legacySelect = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
+    let result = await supabase.from("developer_settings").select(`${legacySelect},idle_detection_enabled,idle_threshold_minutes`).eq("user_id", currentUserId).maybeSingle()
+    if (result.error && /idle_detection_enabled|idle_threshold_minutes/i.test(result.error.message)) {
+      result = await supabase.from("developer_settings").select(legacySelect).eq("user_id", currentUserId).maybeSingle()
+    }
+    if (result.error) throw result.error
+    const mapped = mapDeveloperSettings(result.data)
     setSettings(mapped)
     setSavedSettings(mapped)
   }, [currentUserId, currentUserRole, supabase])
@@ -485,11 +485,20 @@ export function DeveloperPanel() {
       breakMinutes: clampNumber(settings.breakMinutes, 5, 60),
       forgottenTimerMinutes: clampNumber(settings.forgottenTimerMinutes, 30, 480),
       wrapupMinutes: clampNumber(settings.wrapupMinutes, 5, 120),
+      idleThresholdMinutes: clampNumber(settings.idleThresholdMinutes, 3, 120),
       workDays: settings.workDays.length ? Array.from(new Set(settings.workDays)).sort() : [1, 2, 3, 4, 5],
     }
     setSaving(true)
     setNotice(null)
-    const { error } = await supabase.from("developer_settings").upsert(developerSettingsRow(currentUserId, normalized), { onConflict: "user_id" })
+    const row = developerSettingsRow(currentUserId, normalized)
+    let { error } = await supabase.from("developer_settings").upsert(row, { onConflict: "user_id" })
+    if (error && /idle_detection_enabled|idle_threshold_minutes/i.test(error.message)) {
+      const legacyRow = { ...row } as Record<string, unknown>
+      delete legacyRow.idle_detection_enabled
+      delete legacyRow.idle_threshold_minutes
+      const fallback = await supabase.from("developer_settings").upsert(legacyRow, { onConflict: "user_id" })
+      error = fallback.error
+    }
     setSaving(false)
     if (error) {
       setNotice(error.message)
@@ -828,10 +837,12 @@ export function DeveloperPanel() {
               <Toggle checked={settings.autoFocusOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoFocusOnTimer: value }))} label="Foco ao iniciar timer" description="Inicia seu bloco de foco automaticamente." />
               <Toggle checked={settings.autoOpenIdeOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenIdeOnTimer: value }))} label="Abrir IDE do contexto" description="Se houver contexto para o projeto, abre a IDE configurada." />
               <Toggle checked={settings.autoOpenMusicOnTimer} onChange={(value) => setSettings((current) => ({ ...current, autoOpenMusicOnTimer: value }))} label="Abrir música do contexto" description="Usa a playlist definida naquele contexto." />
+              <Toggle checked={settings.idleDetectionEnabled} onChange={(value) => setSettings((current) => ({ ...current, idleDetectionEnabled: value }))} label="Detectar ausência pelo Windows" description="Com o Agent ativo, pergunta o que fazer com períodos longos sem teclado ou mouse." />
               <Toggle checked={settings.notifyForgottenTimer} onChange={(value) => setSettings((current) => ({ ...current, notifyForgottenTimer: value }))} label="Detectar timer esquecido" description="Pergunta antes de deixar um cronômetro rodando por horas." />
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-3">
+                <div><FieldLabel>Ausência após</FieldLabel><div className="relative"><input type="number" min={3} max={120} step={1} value={settings.idleThresholdMinutes} onChange={(event) => setSettings((current) => ({ ...current, idleThresholdMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
                 <div><FieldLabel>Alertar timer após</FieldLabel><div className="relative"><input type="number" min={30} max={480} step={15} value={settings.forgottenTimerMinutes} onChange={(event) => setSettings((current) => ({ ...current, forgottenTimerMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
-                <div><FieldLabel>Preparar saída antes</FieldLabel><div className="relative"><input type="number" min={5} max={120} step={5} value={settings.wrapupMinutes} onChange={(event) => setSettings((current) => ({ ...current, wrapupMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
+                <div className="col-span-2 sm:col-span-1"><FieldLabel>Preparar saída antes</FieldLabel><div className="relative"><input type="number" min={5} max={120} step={5} value={settings.wrapupMinutes} onChange={(event) => setSettings((current) => ({ ...current, wrapupMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 pr-10 text-sm outline-none focus:border-primary" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.62rem] text-muted-foreground">min</span></div></div>
               </div>
               <Toggle checked={settings.notifyWrapup} onChange={(value) => setSettings((current) => ({ ...current, notifyWrapup: value }))} label="Preparar fim do expediente" description="Mostra resumo e checklist antes do horário de saída." />
             </div>

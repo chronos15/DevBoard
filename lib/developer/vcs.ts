@@ -67,6 +67,15 @@ export type DeveloperVcsLogResult = {
   code?: string
 }
 
+export type DeveloperVcsDiffResult = {
+  ok: boolean
+  provider: DeveloperVcsProvider
+  path: string
+  content: string
+  truncated: boolean
+  binary: boolean
+}
+
 export type DeveloperVcsActionResult = {
   ok: boolean
   provider: DeveloperVcsProvider
@@ -136,6 +145,17 @@ export async function getDeveloperVcsLog(
     "/v1/vcs/log",
     { ...projectPayload(project, options?.allowFolderPicker === true), limit: Math.max(1, Math.min(100, options?.limit ?? 20)) },
     options?.allowFolderPicker ? 120_000 : 20_000,
+  )
+}
+
+export async function getDeveloperVcsDiff(
+  project: DeveloperLocalProjectRecord,
+  path: string,
+): Promise<DeveloperVcsDiffResult> {
+  return vcsFetch<DeveloperVcsDiffResult>(
+    "/v1/vcs/diff",
+    { ...projectPayload(project, false), path },
+    25_000,
   )
 }
 

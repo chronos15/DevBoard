@@ -26,6 +26,8 @@ export type DeveloperSettings = {
   forgottenTimerMinutes: number
   notifyWrapup: boolean
   wrapupMinutes: number
+  idleDetectionEnabled: boolean
+  idleThresholdMinutes: number
 }
 
 export type DeveloperNote = {
@@ -61,6 +63,8 @@ export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   forgottenTimerMinutes: 120,
   notifyWrapup: true,
   wrapupMinutes: 30,
+  idleDetectionEnabled: true,
+  idleThresholdMinutes: 10,
 }
 
 export const DEVELOPER_SETTINGS_EVENT = "devboard:developer-settings-updated"
@@ -104,6 +108,8 @@ export function mapDeveloperSettings(row: any): DeveloperSettings {
     forgottenTimerMinutes: Number(row.forgotten_timer_minutes || DEFAULT_DEVELOPER_SETTINGS.forgottenTimerMinutes),
     notifyWrapup: row.notify_wrapup !== false,
     wrapupMinutes: Number(row.wrapup_minutes || DEFAULT_DEVELOPER_SETTINGS.wrapupMinutes),
+    idleDetectionEnabled: row.idle_detection_enabled !== false,
+    idleThresholdMinutes: Number(row.idle_threshold_minutes || DEFAULT_DEVELOPER_SETTINGS.idleThresholdMinutes),
   }
 }
 
@@ -134,6 +140,8 @@ export function developerSettingsRow(userId: string, settings: DeveloperSettings
     forgotten_timer_minutes: settings.forgottenTimerMinutes,
     notify_wrapup: settings.notifyWrapup,
     wrapup_minutes: settings.wrapupMinutes,
+    idle_detection_enabled: settings.idleDetectionEnabled,
+    idle_threshold_minutes: settings.idleThresholdMinutes,
   }
 }
 

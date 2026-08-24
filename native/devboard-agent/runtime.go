@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +43,13 @@ type runtimeCapabilities struct {
 	TestLabel   string `json:"testLabel,omitempty"`
 }
 
+type runtimePort struct {
+	Port    int    `json:"port"`
+	Address string `json:"address"`
+	URL     string `json:"url"`
+	PID     int    `json:"pid"`
+}
+
 type runtimeStatus struct {
 	OK            bool                `json:"ok"`
 	Path          string              `json:"path"`
@@ -53,18 +62,21 @@ type runtimeStatus struct {
 	ExitCode      *int                `json:"exitCode,omitempty"`
 	LastResult    string              `json:"lastResult,omitempty"`
 	LogTail       []string            `json:"logTail"`
+	Ports         []runtimePort       `json:"ports"`
 }
 
 type runtimeProcess struct {
-	ProjectID string
-	Action    string
-	Label     string
-	StartedAt time.Time
-	PID       int
-	Cmd       *exec.Cmd
-	LogPath   string
-	ExitCode  *int
-	Result    string
+	ProjectID      string
+	Action         string
+	Label          string
+	StartedAt      time.Time
+	PID            int
+	Cmd            *exec.Cmd
+	LogPath        string
+	ExitCode       *int
+	Result         string
+	Ports          []runtimePort
+	PortsCheckedAt time.Time
 }
 
 var runtimeProcesses = struct {
@@ -86,10 +98,14 @@ func getLocalRuntimeStatus(input localRuntimeRequest) (runtimeStatus, error) {
 		return runtimeStatus{}, err
 	}
 	caps, commands := detectRuntime(folder)
-	status := runtimeStatus{OK: true, Path: folder, Capabilities: caps, LogTail: []string{}}
+	status := runtimeStatus{OK: true, Path: folder, Capabilities: caps, LogTail: []string{}, Ports: []runtimePort{}}
 	runtimeProcesses.Lock()
 	process := runtimeProcesses.items[input.ProjectID]
+	var processRef *runtimeProcess
+	var cachedPorts []runtimePort
+	var portsCheckedAt time.Time
 	if process != nil {
+		processRef = process
 		status.Running = process.ExitCode == nil
 		status.RunningAction = process.Action
 		status.RunningLabel = process.Label
@@ -98,23 +114,66 @@ func getLocalRuntimeStatus(input localRuntimeRequest) (runtimeStatus, error) {
 		status.ExitCode = process.ExitCode
 		status.LastResult = process.Result
 		status.LogTail = tailRuntimeLog(process.LogPath, 28)
-		if process.ExitCode != nil && time.Since(process.StartedAt) > 20*time.Minute {
-			delete(runtimeProcesses.items, input.ProjectID)
-		}
+		cachedPorts = append([]runtimePort(nil), process.Ports...)
+		portsCheckedAt = process.PortsCheckedAt
 	}
 	runtimeProcesses.Unlock()
+	if status.Running {
+		status.Ports = cachedPorts
+		if portsCheckedAt.IsZero() || time.Since(portsCheckedAt) >= 4*time.Second {
+			detected := detectRuntimePorts(status.PID)
+			status.Ports = detected
+			runtimeProcesses.Lock()
+			if current := runtimeProcesses.items[input.ProjectID]; current == processRef {
+				current.Ports = append([]runtimePort(nil), detected...)
+				current.PortsCheckedAt = time.Now()
+			}
+			runtimeProcesses.Unlock()
+		}
+	}
+	if processRef != nil && processRef.ExitCode != nil && time.Since(processRef.StartedAt) > 20*time.Minute {
+		runtimeProcesses.Lock()
+		if runtimeProcesses.items[input.ProjectID] == processRef {
+			delete(runtimeProcesses.items, input.ProjectID)
+		}
+		runtimeProcesses.Unlock()
+	}
 	_ = commands
 	return status, nil
 }
 
 func runLocalRuntimeAction(input localRuntimeRequest) (runtimeStatus, error) {
 	action := strings.ToLower(strings.TrimSpace(input.Action))
-	if action != "run" && action != "build" && action != "test" && action != "terminal" && action != "stop" {
+	if action != "run" && action != "build" && action != "test" && action != "terminal" && action != "stop" && action != "restart" {
 		return runtimeStatus{}, errors.New("ação de runtime não permitida")
 	}
 	folder, err := input.resolveFolder()
 	if err != nil {
 		return runtimeStatus{}, err
+	}
+
+	if action == "restart" {
+		runtimeProcesses.Lock()
+		existing := runtimeProcesses.items[input.ProjectID]
+		restartAction := "run"
+		if existing != nil && existing.Action != "" {
+			restartAction = existing.Action
+		}
+		runtimeProcesses.Unlock()
+		stopRuntimeProcess(input.ProjectID)
+		deadline := time.Now().Add(2500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			runtimeProcesses.Lock()
+			current := runtimeProcesses.items[input.ProjectID]
+			done := current == nil || current.ExitCode != nil
+			runtimeProcesses.Unlock()
+			if done {
+				break
+			}
+			time.Sleep(120 * time.Millisecond)
+		}
+		input.Action = restartAction
+		return runLocalRuntimeAction(input)
 	}
 
 	if action == "terminal" {
@@ -395,4 +454,115 @@ func runtimeHasActiveProcess() bool {
 		}
 	}
 	return false
+}
+
+func stopAllRuntimeProcesses() int {
+	runtimeProcesses.Lock()
+	ids := make([]string, 0, len(runtimeProcesses.items))
+	for id, process := range runtimeProcesses.items {
+		if process != nil && process.ExitCode == nil {
+			ids = append(ids, id)
+		}
+	}
+	runtimeProcesses.Unlock()
+	for _, id := range ids {
+		stopRuntimeProcess(id)
+	}
+	return len(ids)
+}
+
+type processRelation struct {
+	ProcessID       int `json:"ProcessId"`
+	ParentProcessID int `json:"ParentProcessId"`
+}
+
+func runtimeProcessTree(rootPID int) map[int]struct{} {
+	result := map[int]struct{}{}
+	if rootPID <= 0 {
+		return result
+	}
+	result[rootPID] = struct{}{}
+	ctx, cancel := context.WithTimeout(context.Background(), 2200*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "$p=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId; $p | ConvertTo-Json -Compress")
+	hideChildWindow(cmd)
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		return result
+	}
+	var rows []processRelation
+	if err := json.Unmarshal(out, &rows); err != nil {
+		var single processRelation
+		if json.Unmarshal(out, &single) == nil {
+			rows = []processRelation{single}
+		} else {
+			return result
+		}
+	}
+	changed := true
+	for changed {
+		changed = false
+		for _, row := range rows {
+			if _, parentKnown := result[row.ParentProcessID]; !parentKnown {
+				continue
+			}
+			if _, known := result[row.ProcessID]; known {
+				continue
+			}
+			result[row.ProcessID] = struct{}{}
+			changed = true
+		}
+	}
+	return result
+}
+
+func detectRuntimePorts(rootPID int) []runtimePort {
+	pids := runtimeProcessTree(rootPID)
+	if len(pids) == 0 {
+		return []runtimePort{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1800*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "netstat", "-ano", "-p", "tcp")
+	hideChildWindow(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return []runtimePort{}
+	}
+	seen := map[int]runtimePort{}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 5 || !(strings.EqualFold(fields[3], "LISTENING") || strings.EqualFold(fields[3], "ESCUTANDO")) {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[len(fields)-1])
+		if err != nil {
+			continue
+		}
+		if _, ok := pids[pid]; !ok {
+			continue
+		}
+		local := fields[1]
+		colon := strings.LastIndex(local, ":")
+		if colon < 0 || colon == len(local)-1 {
+			continue
+		}
+		port, err := strconv.Atoi(strings.Trim(local[colon+1:], "[]"))
+		if err != nil || port <= 0 || port > 65535 {
+			continue
+		}
+		if _, exists := seen[port]; exists {
+			continue
+		}
+		seen[port] = runtimePort{Port: port, Address: local, URL: fmt.Sprintf("http://127.0.0.1:%d", port), PID: pid}
+	}
+	ports := make([]runtimePort, 0, len(seen))
+	for _, item := range seen {
+		ports = append(ports, item)
+	}
+	sort.Slice(ports, func(i, j int) bool { return ports[i].Port < ports[j].Port })
+	if len(ports) > 8 {
+		ports = ports[:8]
+	}
+	return ports
 }

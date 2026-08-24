@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FolderOpen, Hammer, LoaderCircle, Play, RefreshCw, Square, TerminalSquare, TestTube2 } from "lucide-react"
+import { ExternalLink, FolderOpen, Hammer, LoaderCircle, Play, RefreshCw, RotateCcw, Square, TerminalSquare, TestTube2 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { DeveloperLocalProjectRecord } from "@/lib/developer/context"
@@ -13,7 +13,7 @@ import {
 } from "@/lib/developer/runtime"
 import { getDeveloperAgentHealth } from "@/lib/developer/windows-agent"
 
-const RUNTIME_MIN_AGENT_VERSION = "0.4.0"
+const RUNTIME_MIN_AGENT_VERSION = "0.5.0"
 
 function compareVersions(a: string | null | undefined, b: string) {
   const parse = (value: string | null | undefined) => String(value ?? "")
@@ -101,7 +101,7 @@ export function DeveloperRuntimeDialog({
     return () => window.clearInterval(timer)
   }, [open, project, status?.running])
 
-  async function action(value: "run" | "build" | "test" | "terminal" | "stop") {
+  async function action(value: "run" | "build" | "test" | "terminal" | "stop" | "restart") {
     if (!project || busy) return
     setBusy(value)
     try {
@@ -147,7 +147,7 @@ export function DeveloperRuntimeDialog({
               <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2.5">
                 <span className={cn("size-2 shrink-0 rounded-full", status.running ? "bg-success animate-pulse" : status.exitCode && status.exitCode !== 0 ? "bg-destructive" : "bg-muted-foreground/35")} />
                 <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{status.running ? status.runningLabel || "Processo em execução" : status.lastResult || "Nenhum processo em execução"}</p><p className="mt-0.5 truncate text-[0.62rem] text-muted-foreground" title={status.path}>{status.path}</p></div>
-                {status.running && <button type="button" onClick={() => void action("stop")} disabled={busy !== null} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/25 bg-destructive/5 px-2.5 text-[0.64rem] font-semibold text-destructive"><Square className="size-3" />Parar</button>}
+                {status.running && <div className="flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => void action("restart")} disabled={busy !== null} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[0.64rem] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"><RotateCcw className={cn("size-3", busy === "restart" && "animate-spin")} />Reiniciar</button><button type="button" onClick={() => void action("stop")} disabled={busy !== null} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-destructive/25 bg-destructive/5 px-2.5 text-[0.64rem] font-semibold text-destructive"><Square className="size-3" />Parar</button></div>}
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -156,6 +156,13 @@ export function DeveloperRuntimeDialog({
                 <ActionButton icon={TestTube2} label={caps?.testLabel || "Testes"} disabled={!caps?.canTest || status.running || busy !== null} loading={busy === "test"} onClick={() => void action("test")} />
                 <ActionButton icon={TerminalSquare} label="Terminal" disabled={!caps?.canTerminal || busy !== null} loading={busy === "terminal"} onClick={() => void action("terminal")} />
               </div>
+
+              {status.running && status.ports?.length > 0 && (
+                <div className="rounded-xl border border-border bg-muted/15 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2"><p className="text-[0.62rem] font-semibold text-muted-foreground">Serviços locais detectados</p><span className="text-[0.58rem] text-muted-foreground">{status.ports.length} porta{status.ports.length === 1 ? "" : "s"}</span></div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">{status.ports.map((item) => <a key={`${item.pid}-${item.port}`} href={item.url} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[0.63rem] font-semibold hover:bg-muted" title={item.address}><span className="size-1.5 rounded-full bg-success" />:{item.port}<ExternalLink className="size-3 text-muted-foreground" /></a>)}</div>
+                </div>
+              )}
 
               <div className="rounded-xl border border-border bg-[#0d1117] p-3 text-[#c9d1d9] dark:bg-black/35">
                 <div className="mb-2 flex items-center justify-between gap-2"><p className="font-mono text-[0.62rem] font-semibold">Saída local</p><button type="button" onClick={() => void refresh({ silent: true, pickFolder: false })} className="text-[0.6rem] text-[#8b949e] hover:text-white">Atualizar</button></div>

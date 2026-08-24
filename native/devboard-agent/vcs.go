@@ -33,6 +33,20 @@ type localVCSLogRequest struct {
 	Limit int `json:"limit"`
 }
 
+type localVCSDiffRequest struct {
+	localVCSProjectRequest
+	Path string `json:"path"`
+}
+
+type localVCSDiffResult struct {
+	OK        bool   `json:"ok"`
+	Provider  string `json:"provider"`
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	Truncated bool   `json:"truncated"`
+	Binary    bool   `json:"binary"`
+}
+
 type localVCSNativeRequest struct {
 	localVCSProjectRequest
 	Command string `json:"command"`
@@ -358,6 +372,78 @@ func svnStatusLabel(item string) string {
 	default:
 		return "Modificado"
 	}
+}
+
+func getLocalVCSDiff(input localVCSDiffRequest) (localVCSDiffResult, error) {
+	runtime, _, err := resolveVCSRuntime(input.localVCSProjectRequest)
+	if err != nil {
+		return localVCSDiffResult{}, err
+	}
+	cleanPath := filepath.Clean(strings.TrimSpace(input.Path))
+	if cleanPath == "." || cleanPath == "" || filepath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, ".."+string(os.PathSeparator)) || cleanPath == ".." {
+		return localVCSDiffResult{}, errors.New("arquivo inválido")
+	}
+	fullPath := filepath.Join(runtime.Root, cleanPath)
+	if rel, relErr := filepath.Rel(runtime.Root, fullPath); relErr != nil || strings.HasPrefix(rel, "..") {
+		return localVCSDiffResult{}, errors.New("arquivo fora do repositório")
+	}
+
+	var output string
+	if runtime.Provider == "git" {
+		if runtime.Git == "" {
+			return localVCSDiffResult{}, errors.New("Git não encontrado")
+		}
+		output, err = runVCSCommand(runtime.Root, 15*time.Second, runtime.Git, "diff", "--no-ext-diff", "--unified=3", "HEAD", "--", cleanPath)
+		if err != nil {
+			lower := strings.ToLower(output)
+			if strings.Contains(lower, "bad revision") || strings.Contains(lower, "unknown revision") || strings.Contains(lower, "ambiguous argument 'head'") {
+				output = ""
+			} else if strings.TrimSpace(output) == "" {
+				return localVCSDiffResult{}, fmt.Errorf("não foi possível gerar o diff Git: %s", vcsCommandMessage(err, output))
+			}
+		}
+		if strings.TrimSpace(output) == "" {
+			// Arquivos novos ainda não rastreados não aparecem no git diff HEAD.
+			if data, readErr := os.ReadFile(fullPath); readErr == nil {
+				if len(data) > 0 && !bytesContainZero(data) {
+					output = "Arquivo novo\n\n" + string(data)
+				} else if len(data) > 0 {
+					return localVCSDiffResult{OK: true, Provider: "git", Path: cleanPath, Binary: true}, nil
+				}
+			}
+		}
+	} else if runtime.Provider == "svn" {
+		if runtime.SVN == "" {
+			return localVCSDiffResult{}, errors.New("O cliente SVN de linha de comando não está disponível; use Abrir no TortoiseSVN")
+		}
+		output, err = runVCSCommand(runtime.Root, 20*time.Second, runtime.SVN, "diff", "--", cleanPath)
+		if err != nil && strings.TrimSpace(output) == "" {
+			return localVCSDiffResult{}, fmt.Errorf("não foi possível gerar o diff SVN: %s", vcsCommandMessage(err, output))
+		}
+	} else {
+		return localVCSDiffResult{}, errors.New("nenhum repositório Git/SVN detectado")
+	}
+
+	binary := strings.Contains(strings.ToLower(output), "binary files") || strings.Contains(strings.ToLower(output), "cannot display: file marked as a binary type")
+	const maxDiff = 180000
+	truncated := len(output) > maxDiff
+	if truncated {
+		output = output[:maxDiff] + "\n\n… diff truncado pelo Devboard Agent"
+	}
+	return localVCSDiffResult{OK: true, Provider: runtime.Provider, Path: cleanPath, Content: output, Truncated: truncated, Binary: binary}, nil
+}
+
+func bytesContainZero(data []byte) bool {
+	limit := len(data)
+	if limit > 8192 {
+		limit = 8192
+	}
+	for _, value := range data[:limit] {
+		if value == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func getLocalVCSLog(input localVCSLogRequest) (localVCSLogResult, error) {

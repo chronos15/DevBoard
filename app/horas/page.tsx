@@ -7,7 +7,7 @@ export default function HorasPage() {
       <PageHeading
         eyebrow="Time tracking"
         title="Controle de horas"
-        subtitle="Registre e acompanhe o tempo investido em cada subatividade."
+        subtitle="Consulte e apure as horas registradas por período e projeto, respeitando o nível de acesso de cada usuário."
       />
       <HoursView />
     </div>

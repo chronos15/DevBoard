@@ -643,3 +643,47 @@ begin
   end if;
   raise notice 'Migration 021 OK: baseline Git/SVN por subatividade disponível.';
 end $$;
+
+-- 022 · Detecção de ausência e ajuste seguro do apontamento ativo
+select
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='idle_detection_enabled') as developer_idle_setting_ok,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='idle_threshold_minutes') as developer_idle_threshold_ok,
+  to_regprocedure('public.developer_adjust_active_session(uuid,integer,boolean)') is not null as developer_adjust_active_session_ok,
+  has_function_privilege('authenticated','public.developer_adjust_active_session(uuid,integer,boolean)','EXECUTE') as developer_adjust_active_session_execute_ok;
+
+do $$
+begin
+  if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='developer_settings' and column_name='idle_detection_enabled') then
+    raise exception 'Backend Devboard incompleto: configuração de detecção de ausência ausente (migration 022)';
+  end if;
+  if to_regprocedure('public.developer_adjust_active_session(uuid,integer,boolean)') is null then
+    raise exception 'Backend Devboard incompleto: developer_adjust_active_session(...) ausente (migration 022)';
+  end if;
+  if not has_function_privilege('authenticated','public.developer_adjust_active_session(uuid,integer,boolean)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE no ajuste de sessão (migration 022)';
+  end if;
+  raise notice 'Migration 022 OK: detecção de ausência e ajuste do apontamento disponíveis.';
+end $$;
+
+-- 023 · Apuração de horas por período e privacidade dos registros
+select
+  to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is not null as hours_report_rpc_ok,
+  has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') as hours_report_execute_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select'
+  ) as work_sessions_select_policy_ok;
+
+do $$
+begin
+  if to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: hours_report(...) ausente (migration 023)';
+  end if;
+  if not has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em hours_report(...) (migration 023)';
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select') then
+    raise exception 'Backend Devboard incompleto: policy de leitura de work_sessions ausente (migration 023)';
+  end if;
+  raise notice 'Migration 023 OK: apuração por período/projeto/responsável e privacidade de work_sessions disponíveis.';
+end $$;

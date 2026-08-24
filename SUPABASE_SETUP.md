@@ -598,3 +598,25 @@ supabase/migrations/022_devboard_developer_idle_adjustment.sql
 ```
 
 A 022 adiciona as preferências pessoais de detecção de ausência do Windows (`idle_detection_enabled` e `idle_threshold_minutes`) e o RPC `developer_adjust_active_session(...)`. O RPC só permite que o próprio responsável developer ajuste a sessão ativa: ele pode desconsiderar o período ausente mantendo o timer em execução ou desconsiderar e pausar. O Agent informa somente duração de inatividade/bloqueio; não captura teclas, textos, arquivos ou conteúdo de tela.
+
+### 024 · Hotfix do Controle de horas (RLS)
+
+Se após aplicar a migration `023_devboard_hours_reporting.sql` aparecer:
+
+```text
+permission denied for function is_workspace_admin
+```
+
+aplique também:
+
+```text
+supabase/migrations/024_devboard_hours_reporting_rls_fix.sql
+```
+
+A primeira versão da policy de `work_sessions` chamava `is_workspace_admin(...)` diretamente. O backend base do Devboard revoga `EXECUTE` de helpers internos para evitar que o cliente consulte funções privilegiadas arbitrariamente. A migration 024 troca a policy por `can_read_work_session(subactivity_id, user_id)`, um helper `SECURITY DEFINER` restrito ao próprio `auth.uid()`.
+
+Depois execute novamente:
+
+```text
+supabase/verify_backend.sql
+```

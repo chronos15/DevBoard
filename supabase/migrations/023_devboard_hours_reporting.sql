@@ -2,6 +2,40 @@
 -- Apuração profissional por período/projeto/responsável e isolamento dos registros
 -- para usuários que não são administradores.
 
+-- Helper específico para a policy de work_sessions.
+-- Não expomos is_workspace_admin(...) diretamente ao cliente porque ela aceita um user_id
+-- arbitrário; esta função sempre avalia o usuário autenticado e somente a sessão recebida.
+create or replace function public.can_read_work_session(
+  p_subactivity_id uuid,
+  p_session_user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    auth.uid() is not null
+    and (
+      p_session_user_id = auth.uid()
+      or exists (
+        select 1
+        from public.subactivities s
+        join public.activities a on a.id = s.activity_id
+        join public.projects p on p.id = a.project_id
+        join public.workspace_members wm on wm.workspace_id = p.workspace_id
+        where s.id = p_subactivity_id
+          and wm.user_id = auth.uid()
+          and wm.active
+          and wm.role = 'admin'
+      )
+    );
+$$;
+
+revoke execute on function public.can_read_work_session(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.can_read_work_session(uuid,uuid) to authenticated;
+
 -- A leitura direta de work_sessions segue o mesmo princípio da tela:
 -- administrador pode consultar o workspace; os demais usuários veem somente os próprios registros.
 drop policy if exists cadence_work_sessions_select on public.work_sessions;
@@ -9,12 +43,7 @@ create policy cadence_work_sessions_select
 on public.work_sessions
 for select
 to authenticated
-using (
-  user_id = auth.uid()
-  or public.is_workspace_admin(
-    public.project_workspace_id(public.subactivity_project_id(subactivity_id))
-  )
-);
+using (public.can_read_work_session(subactivity_id, user_id));
 
 create or replace function public.hours_report(
   p_start timestamptz,

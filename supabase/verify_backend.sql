@@ -664,3 +664,38 @@ begin
   end if;
   raise notice 'Migration 022 OK: detecção de ausência e ajuste do apontamento disponíveis.';
 end $$;
+
+-- 023 · Apuração de horas por período e privacidade dos registros
+select
+  to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is not null as hours_report_rpc_ok,
+  has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') as hours_report_execute_ok,
+  to_regprocedure('public.can_read_work_session(uuid,uuid)') is not null as work_session_rls_helper_ok,
+  has_function_privilege('authenticated','public.can_read_work_session(uuid,uuid)','EXECUTE') as work_session_rls_helper_execute_ok,
+  not has_function_privilege('authenticated','public.is_workspace_admin(uuid,uuid)','EXECUTE') as workspace_admin_helper_not_exposed_ok,
+  exists(
+    select 1 from pg_policies
+    where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select'
+  ) as work_sessions_select_policy_ok;
+
+do $$
+begin
+  if to_regprocedure('public.hours_report(timestamptz,timestamptz,uuid,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: hours_report(...) ausente (migration 023)';
+  end if;
+  if not has_function_privilege('authenticated','public.hours_report(timestamptz,timestamptz,uuid,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em hours_report(...) (migration 023)';
+  end if;
+  if to_regprocedure('public.can_read_work_session(uuid,uuid)') is null then
+    raise exception 'Backend Devboard incompleto: can_read_work_session(...) ausente (migration 024)';
+  end if;
+  if not has_function_privilege('authenticated','public.can_read_work_session(uuid,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard incompleto: authenticated sem EXECUTE em can_read_work_session(...) (migration 024)';
+  end if;
+  if has_function_privilege('authenticated','public.is_workspace_admin(uuid,uuid)','EXECUTE') then
+    raise exception 'Backend Devboard inseguro: is_workspace_admin(uuid,uuid) não deve ficar executável pelo cliente (migration 024)';
+  end if;
+  if not exists(select 1 from pg_policies where schemaname='public' and tablename='work_sessions' and policyname='cadence_work_sessions_select') then
+    raise exception 'Backend Devboard incompleto: policy de leitura de work_sessions ausente (migration 023/024)';
+  end if;
+  raise notice 'Migrations 023/024 OK: apuração por período/projeto/responsável e RLS de work_sessions disponíveis.';
+end $$;

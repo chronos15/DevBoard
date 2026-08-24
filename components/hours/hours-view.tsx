@@ -1,270 +1,660 @@
 "use client"
 
 import * as React from "react"
-import { Play, Square, Clock3, Target, Gauge } from "lucide-react"
-import { useStore } from "@/lib/store"
 import {
-  formatHMS,
-  formatHours,
-  projectSubactivities,
-  statusMeta,
-} from "@/lib/project-utils"
-import type { Member, Project, Subactivity } from "@/lib/types"
+  CalendarRange,
+  Clock3,
+  FolderKanban,
+  Gauge,
+  LoaderCircle,
+  Play,
+  RotateCcw,
+  Square,
+  Users,
+} from "lucide-react"
+import { useStore } from "@/lib/store"
+import { formatHMS, statusMeta } from "@/lib/project-utils"
+import type { Member, Status, Subactivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { MemberAvatar } from "@/components/member-avatar"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { createClient } from "@/lib/supabase/client"
+import {
+  loadHoursReport,
+  type HoursReportSession,
+} from "@/lib/supabase/hours-report"
 
-type Row = {
-  sub: Subactivity
-  project: Project
+type PeriodPreset = "today" | "last7" | "month" | "previousMonth" | "last30" | "custom"
+
+type HoursFilters = {
+  startDate: string
+  endDate: string
+  projectFilter: string
+  memberFilter: string
+}
+
+type AggregatedRow = {
+  subactivityId: string
+  userId: string
+  projectId: string
+  projectName: string
   activityTitle: string
-  member: Member | undefined
+  subactivityTitle: string
+  status: Status
+  estimatedHours: number
+  trackedSeconds: number
+  sessions: number
+  latestStartedAt: string
+}
+
+function dateInputValue(date: Date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number)
+  return new Date(year, month - 1, day, 0, 0, 0, 0)
+}
+
+function initialRange() {
+  const today = new Date()
+  return {
+    start: dateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)),
+    end: dateInputValue(today),
+  }
+}
+
+function rangeForPreset(preset: Exclude<PeriodPreset, "custom">) {
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+
+  if (preset === "today") {
+    const value = dateInputValue(startOfToday)
+    return { start: value, end: value }
+  }
+  if (preset === "last7") {
+    const start = new Date(startOfToday)
+    start.setDate(start.getDate() - 6)
+    return { start: dateInputValue(start), end: dateInputValue(startOfToday) }
+  }
+  if (preset === "last30") {
+    const start = new Date(startOfToday)
+    start.setDate(start.getDate() - 29)
+    return { start: dateInputValue(start), end: dateInputValue(startOfToday) }
+  }
+  if (preset === "previousMonth") {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const end = new Date(today.getFullYear(), today.getMonth(), 0)
+    return { start: dateInputValue(start), end: dateInputValue(end) }
+  }
+
+  return {
+    start: dateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)),
+    end: dateInputValue(startOfToday),
+  }
+}
+
+function periodLabel(start: string, end: string) {
+  if (!start || !end) return "Período não definido"
+  const formatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+  const startDate = parseLocalDate(start)
+  const endDate = parseLocalDate(end)
+  if (start === end) return formatter.format(startDate)
+  return `${formatter.format(startDate)} – ${formatter.format(endDate)}`
+}
+
+function formatServiceHours(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${hours}h ${String(minutes).padStart(2, "0")}min`
+}
+
+function formatDecimalHours(totalSeconds: number) {
+  return (Math.max(0, totalSeconds) / 3600).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function sessionSeconds(session: HoursReportSession, start: Date, endExclusive: Date, now: number) {
+  if (session.endedAt) return session.reportedSeconds
+  const started = Math.max(new Date(session.startedAt).getTime(), start.getTime())
+  const stop = Math.min(now, endExclusive.getTime())
+  return Math.max(0, Math.floor((stop - started) / 1000))
 }
 
 export function HoursView() {
-  const { projects, members, runningSubIds, startTimer, stopTimer, canManageSubactivity } = useStore()
-  const [memberFilter, setMemberFilter] = React.useState<string>("all")
+  const {
+    projects,
+    members,
+    currentUserId,
+    currentUserRole,
+    runningSubIds,
+    startTimer,
+    stopTimer,
+    canManageSubactivity,
+  } = useStore()
+  const supabase = React.useMemo(() => createClient(), [])
+  const isAdmin = currentUserRole === "admin"
+  const defaultRange = React.useMemo(initialRange, [])
 
-  const rows: Row[] = React.useMemo(() => {
-    const out: Row[] = []
+  const [preset, setPreset] = React.useState<PeriodPreset>("month")
+  const [startDate, setStartDate] = React.useState(defaultRange.start)
+  const [endDate, setEndDate] = React.useState(defaultRange.end)
+  const [projectFilter, setProjectFilter] = React.useState("all")
+  const [memberFilter, setMemberFilter] = React.useState("all")
+  const [appliedFilters, setAppliedFilters] = React.useState<HoursFilters>(() => ({
+    startDate: defaultRange.start,
+    endDate: defaultRange.end,
+    projectFilter: "all",
+    memberFilter: "all",
+  }))
+  const [sessions, setSessions] = React.useState<HoursReportSession[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+  const requestRef = React.useRef(0)
+
+  const hasRunning = sessions.some((session) => !session.endedAt)
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    if (!hasRunning) return
+    const tick = () => setNow(Date.now())
+    tick()
+    const id = window.setInterval(tick, 1000)
+    const sync = () => tick()
+    window.addEventListener("focus", sync)
+    document.addEventListener("visibilitychange", sync)
+    return () => {
+      window.clearInterval(id)
+      window.removeEventListener("focus", sync)
+      document.removeEventListener("visibilitychange", sync)
+    }
+  }, [hasRunning])
+
+  React.useEffect(() => {
+    if (isAdmin) return
+    if (memberFilter !== "all") setMemberFilter("all")
+    setAppliedFilters((current) => current.memberFilter === "all" ? current : { ...current, memberFilter: "all" })
+  }, [isAdmin, memberFilter])
+
+  const rangeValid = Boolean(startDate && endDate && parseLocalDate(startDate) <= parseLocalDate(endDate))
+  const start = React.useMemo(
+    () => (appliedFilters.startDate ? parseLocalDate(appliedFilters.startDate) : null),
+    [appliedFilters.startDate],
+  )
+  const endExclusive = React.useMemo(() => {
+    if (!appliedFilters.endDate) return null
+    const date = parseLocalDate(appliedFilters.endDate)
+    date.setDate(date.getDate() + 1)
+    return date
+  }, [appliedFilters.endDate])
+
+  const hasPendingFilters =
+    startDate !== appliedFilters.startDate
+    || endDate !== appliedFilters.endDate
+    || projectFilter !== appliedFilters.projectFilter
+    || (isAdmin && memberFilter !== appliedFilters.memberFilter)
+
+  const load = React.useCallback(async () => {
+    if (!start || !endExclusive || !currentUserId) return
+    const requestId = ++requestRef.current
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await loadHoursReport(supabase, {
+        start: start.toISOString(),
+        endExclusive: endExclusive.toISOString(),
+        projectId: appliedFilters.projectFilter === "all" ? undefined : appliedFilters.projectFilter,
+        userId: isAdmin && appliedFilters.memberFilter !== "all" ? appliedFilters.memberFilter : undefined,
+      })
+      if (requestId === requestRef.current) setSessions(next)
+    } catch (cause: any) {
+      if (requestId !== requestRef.current) return
+      const message = String(cause?.message || "Não foi possível carregar a apuração de horas.")
+      setError(
+        /hours_report|schema cache|does not exist/i.test(message)
+          ? "Execute a migration 025 para habilitar a apuração segura de horas e os filtros administrativos."
+          : message,
+      )
+      setSessions([])
+    } finally {
+      if (requestId === requestRef.current) setLoading(false)
+    }
+  }, [appliedFilters.memberFilter, appliedFilters.projectFilter, currentUserId, endExclusive, isAdmin, start, supabase])
+
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  const subactivityMap = React.useMemo(() => {
+    const map = new Map<string, Subactivity>()
     for (const project of projects) {
       for (const activity of project.activities) {
-        for (const sub of activity.subactivities) {
-          out.push({
-            sub,
-            project,
-            activityTitle: activity.title,
-            member: members.find((m) => m.id === sub.assigneeId),
-          })
-        }
+        for (const sub of activity.subactivities) map.set(sub.id, sub)
       }
     }
-    return out
-  }, [projects, members])
+    return map
+  }, [projects])
 
-  const filtered =
-    memberFilter === "all"
-      ? rows
-      : rows.filter((r) => r.sub.assigneeId === memberFilter)
+  const memberMap = React.useMemo(() => new Map(members.map((member) => [member.id, member])), [members])
 
-  const totalTracked = filtered.reduce((a, r) => a + r.sub.trackedSeconds, 0)
-  const totalEstimated = filtered.reduce(
-    (a, r) => a + r.sub.estimatedHours * 3600,
-    0,
+  const rows = React.useMemo(() => {
+    if (!endExclusive) return []
+    const grouped = new Map<string, AggregatedRow>()
+    for (const session of sessions) {
+      const seconds = sessionSeconds(session, start, endExclusive, now)
+      const groupKey = `${session.subactivityId}:${session.userId}`
+      const existing = grouped.get(groupKey)
+      if (existing) {
+        existing.trackedSeconds += seconds
+        existing.sessions += 1
+        if (new Date(session.startedAt) > new Date(existing.latestStartedAt)) existing.latestStartedAt = session.startedAt
+        continue
+      }
+      grouped.set(groupKey, {
+        subactivityId: session.subactivityId,
+        userId: session.userId,
+        projectId: session.projectId,
+        projectName: session.projectName,
+        activityTitle: session.activityTitle,
+        subactivityTitle: session.subactivityTitle,
+        status: session.subactivityStatus as Status,
+        estimatedHours: session.estimatedHours,
+        trackedSeconds: seconds,
+        sessions: 1,
+        latestStartedAt: session.startedAt,
+      })
+    }
+    return [...grouped.values()].sort((a, b) => b.trackedSeconds - a.trackedSeconds)
+  }, [endExclusive, now, sessions, start])
+
+  const totalTracked = rows.reduce((sum, row) => sum + row.trackedSeconds, 0)
+  const projectCount = new Set(rows.map((row) => row.projectId)).size
+  const peopleCount = new Set(rows.map((row) => row.userId)).size
+  const subactivityCount = new Set(rows.map((row) => row.subactivityId)).size
+  const totalSessions = sessions.length
+  const runningSessionKeys = new Set(
+    sessions.filter((session) => !session.endedAt).map((session) => `${session.subactivityId}:${session.userId}`),
   )
-  const utilization = totalEstimated
-    ? Math.round((totalTracked / totalEstimated) * 100)
-    : 0
 
   const summary = [
     {
       label: "Horas registradas",
-      value: formatHours(totalTracked),
-      hint: `${filtered.length} subatividades`,
+      value: formatServiceHours(totalTracked),
+      hint: periodLabel(appliedFilters.startDate, appliedFilters.endDate),
       icon: Clock3,
       tone: "text-primary",
       bg: "bg-primary/12",
     },
     {
-      label: "Horas estimadas",
-      value: formatHours(totalEstimated),
-      hint: "planejado para o escopo",
-      icon: Target,
+      label: "Sessões",
+      value: String(totalSessions),
+      hint: `${subactivityCount} subatividades trabalhadas`,
+      icon: Gauge,
       tone: "text-chart-4",
       bg: "bg-chart-4/12",
     },
     {
-      label: "Utilização",
-      value: `${utilization}%`,
-      hint: "registrado vs. estimado",
-      icon: Gauge,
-      tone: utilization > 100 ? "text-primary" : "text-success",
-      bg: utilization > 100 ? "bg-primary/12" : "bg-success/15",
+      label: "Projetos",
+      value: String(projectCount),
+      hint: appliedFilters.projectFilter === "all" ? "com registro no período" : "projeto selecionado",
+      icon: FolderKanban,
+      tone: "text-success",
+      bg: "bg-success/15",
+    },
+    {
+      label: isAdmin ? "Colaboradores" : "Escopo",
+      value: isAdmin ? String(peopleCount) : "Pessoal",
+      hint: isAdmin ? "com horas no período" : "somente seus registros",
+      icon: Users,
+      tone: "text-foreground",
+      bg: "bg-muted",
     },
   ]
 
+  const selectableMembers = React.useMemo(
+    () => members.filter((member) => member.role === "developer" || member.role === "admin"),
+    [members],
+  )
+
+  const applyPreset = (next: PeriodPreset) => {
+    setPreset(next)
+    if (next === "custom") return
+    const range = rangeForPreset(next)
+    setStartDate(range.start)
+    setEndDate(range.end)
+  }
+
+  const applyFilters = () => {
+    if (!rangeValid) return
+    setAppliedFilters({
+      startDate,
+      endDate,
+      projectFilter,
+      memberFilter: isAdmin ? memberFilter : "all",
+    })
+  }
+
+  const resetFilters = () => {
+    const range = rangeForPreset("month")
+    const reset = {
+      startDate: range.start,
+      endDate: range.end,
+      projectFilter: "all",
+      memberFilter: "all",
+    }
+    setPreset("month")
+    setStartDate(reset.startDate)
+    setEndDate(reset.endDate)
+    setProjectFilter(reset.projectFilter)
+    setMemberFilter(reset.memberFilter)
+    setAppliedFilters(reset)
+  }
+
+  const handleTimer = async (row: AggregatedRow) => {
+    const sub = subactivityMap.get(row.subactivityId)
+    if (!sub) return
+    const running = runningSubIds.includes(sub.id)
+    if (running) await stopTimer(sub.id)
+    else await startTimer(sub.id)
+    await load()
+  }
+
+  const desktopGrid = isAdmin
+    ? "md:grid-cols-[minmax(0,1fr)_minmax(8rem,10rem)_5rem_7rem_7rem_4rem]"
+    : "md:grid-cols-[minmax(0,1fr)_5rem_7rem_7rem_4rem]"
+  const filterGrid = isAdmin
+    ? "xl:grid-cols-[0.9fr_1fr_1fr_1.2fr_1.2fr_auto]"
+    : "xl:grid-cols-[0.9fr_1fr_1fr_1.3fr_auto]"
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="flex min-w-0 flex-col gap-4">
+      <section className="rounded-2xl bg-card ring-1 ring-foreground/8">
+        <div className="flex flex-col gap-1 border-b border-border px-4 py-4 md:px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <CalendarRange className="size-4 text-primary" />
+                <h2 className="text-sm font-semibold">Filtros de apuração</h2>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isAdmin
+                  ? "Consolide as horas da equipe por período, projeto e responsável."
+                  : "Consulte seus próprios apontamentos por período e projeto."}
+              </p>
+            </div>
+            <span className="rounded-full bg-muted px-2.5 py-1 text-[0.68rem] font-medium text-muted-foreground">
+              {isAdmin ? "Visão administrativa" : "Meus registros"}
+            </span>
+          </div>
+        </div>
+
+        <div className={cn("grid min-w-0 gap-3 p-4 md:grid-cols-2 md:p-5 xl:items-end", filterGrid)}>
+          <FilterField label="Período rápido">
+            <select
+              value={preset}
+              onChange={(event) => applyPreset(event.target.value as PeriodPreset)}
+              className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 dark:bg-input/30"
+            >
+              <option value="today">Hoje</option>
+              <option value="last7">Últimos 7 dias</option>
+              <option value="month">Este mês</option>
+              <option value="previousMonth">Mês anterior</option>
+              <option value="last30">Últimos 30 dias</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </FilterField>
+
+          <FilterField label="De">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                setPreset("custom")
+                setStartDate(event.target.value)
+              }}
+            />
+          </FilterField>
+
+          <FilterField label="Até">
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => {
+                setPreset("custom")
+                setEndDate(event.target.value)
+              }}
+            />
+          </FilterField>
+
+          <FilterField label="Projeto">
+            <select
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 dark:bg-input/30"
+            >
+              <option value="all">Todos os projetos</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </FilterField>
+
+          {isAdmin ? (
+            <FilterField label="Responsável">
+              <select
+                value={memberFilter}
+                onChange={(event) => setMemberFilter(event.target.value)}
+                className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 dark:bg-input/30"
+              >
+                <option value="all">Todos os responsáveis</option>
+                {selectableMembers.map((member) => (
+                  <option key={member.id} value={member.id}>{member.name}</option>
+                ))}
+              </select>
+            </FilterField>
+          ) : null}
+
+          <div className="flex min-w-0 gap-2 md:col-span-2 xl:col-span-1 xl:justify-end">
+            <Button
+              onClick={applyFilters}
+              disabled={!rangeValid || !hasPendingFilters}
+              className="min-w-0 flex-1 xl:flex-none"
+            >
+              Aplicar filtros
+            </Button>
+            <Button
+              variant="outline"
+              onClick={resetFilters}
+              disabled={!hasPendingFilters && appliedFilters.projectFilter === "all" && appliedFilters.memberFilter === "all" && appliedFilters.startDate === defaultRange.start && appliedFilters.endDate === defaultRange.end}
+              className="shrink-0 px-3"
+              aria-label="Limpar filtros"
+              title="Limpar filtros"
+            >
+              <RotateCcw className="size-3.5" />
+              <span className="sm:hidden">Limpar</span>
+            </Button>
+          </div>
+        </div>
+
+        {!rangeValid && (
+          <div className="border-t border-border px-4 py-3 text-xs font-medium text-destructive md:px-5">
+            A data inicial precisa ser anterior ou igual à data final.
+          </div>
+        )}
+      </section>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {summary.map((item) => (
           <div
             key={item.label}
-            className="flex items-center gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/8"
+            className="flex min-w-0 items-center gap-3 rounded-2xl bg-card p-4 ring-1 ring-foreground/8 md:gap-4 md:p-5"
           >
-            <span
-              className={cn(
-                "flex size-11 shrink-0 items-center justify-center rounded-xl",
-                item.bg,
-                item.tone,
-              )}
-            >
-              <item.icon className="size-5" />
+            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl md:size-11", item.bg, item.tone)}>
+              <item.icon className="size-4.5 md:size-5" />
             </span>
             <div className="min-w-0">
-              <p className="font-mono text-[0.65rem] tracking-widest text-muted-foreground uppercase">
+              <p className="truncate font-mono text-[0.6rem] tracking-widest text-muted-foreground uppercase md:text-[0.65rem]">
                 {item.label}
               </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight">
-                {item.value}
+              <p className="mt-1 truncate text-xl font-bold tabular-nums tracking-tight md:text-2xl">
+                {loading ? "—" : item.value}
               </p>
-              <p className="text-xs text-muted-foreground">{item.hint}</p>
+              <p className="mt-0.5 line-clamp-1 text-[0.68rem] text-muted-foreground md:text-xs">{item.hint}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-2xl bg-card ring-1 ring-foreground/8">
+      <section className="min-w-0 rounded-2xl bg-card ring-1 ring-foreground/8">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 md:p-5">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-base font-semibold">Registro de horas</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Acompanhe o tempo por subatividade e responsável.
+              {periodLabel(appliedFilters.startDate, appliedFilters.endDate)}{appliedFilters.projectFilter !== "all" ? " · projeto filtrado" : ""}
             </p>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-            <FilterChip
-              active={memberFilter === "all"}
-              onClick={() => setMemberFilter("all")}
-            >
-              Todos
-            </FilterChip>
-            {members.map((m) => (
-              <FilterChip
-                key={m.id}
-                active={memberFilter === m.id}
-                onClick={() => setMemberFilter(m.id)}
-              >
-                {m.name.split(" ")[0]}
-              </FilterChip>
-            ))}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {loading && <LoaderCircle className="size-3.5 animate-spin" />}
+            {!loading && !error && <span>{rows.length} {rows.length === 1 ? "registro consolidado" : "registros consolidados"}</span>}
           </div>
         </div>
 
-        <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-4 px-5 py-3 font-mono text-[0.65rem] tracking-widest text-muted-foreground uppercase md:grid">
-          <span>Subatividade</span>
-          <span className="w-24 text-right">Estimado</span>
-          <span className="w-28 text-right">Registrado</span>
-          <span className="w-28 text-center">Status</span>
-          <span className="w-16 text-center">Timer</span>
-        </div>
+        {error ? (
+          <div className="p-5">
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center gap-2 px-5 py-14 text-sm text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin" />
+            Calculando horas do período...
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-5 py-14 text-center">
+            <Clock3 className="mx-auto size-6 text-muted-foreground/50" />
+            <p className="mt-3 text-sm font-medium">Nenhuma hora registrada neste período</p>
+            <p className="mt-1 text-xs text-muted-foreground">Ajuste o período ou os filtros para consultar outros apontamentos.</p>
+          </div>
+        ) : (
+          <>
+            <div className={cn("hidden items-center gap-4 px-5 py-3 font-mono text-[0.62rem] tracking-widest text-muted-foreground uppercase md:grid", desktopGrid)}>
+              <span>Subatividade</span>
+              {isAdmin && <span>Responsável</span>}
+              <span className="text-right">Sessões</span>
+              <span className="text-right">No período</span>
+              <span className="text-center">Status</span>
+              <span className="text-center">Timer</span>
+            </div>
 
-        <ul>
-          {filtered.map((r) => {
-            const running = runningSubIds.includes(r.sub.id)
-            const done = r.sub.status === "done" || r.sub.status === "cancelled"
-            const canManage = canManageSubactivity(r.sub)
-            const ratio = r.sub.estimatedHours
-              ? r.sub.trackedSeconds / (r.sub.estimatedHours * 3600)
-              : 0
-            return (
-              <li
-                key={r.sub.id}
-                className="grid min-w-0 grid-cols-1 items-center gap-3 border-t border-border px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] md:gap-4"
-              >
-                <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-                  <MemberAvatar member={r.member} className="size-8 rounded-lg text-[0.7rem] ring-0" />
-                  <div className="min-w-0 flex-1 overflow-hidden">
-                    <p className="truncate text-sm font-medium" title={r.sub.title}>
-                      {r.sub.title}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {r.project.name} · {r.activityTitle}
-                    </p>
-                  </div>
-                </div>
+            <ul>
+              {rows.map((row) => {
+                const sub = subactivityMap.get(row.subactivityId)
+                const member = memberMap.get(row.userId)
+                const running = runningSessionKeys.has(`${row.subactivityId}:${row.userId}`)
+                const done = row.status === "done" || row.status === "cancelled"
+                const canManage = sub ? canManageSubactivity(sub) : false
+                const meta = statusMeta[row.status]
 
-                <span className="text-right font-mono text-sm tabular-nums text-muted-foreground md:w-24">
-                  <span className="md:hidden">Estimado: </span>
-                  {r.sub.estimatedHours}h
+                return (
+                  <li
+                    key={`${row.subactivityId}:${row.userId}`}
+                    className={cn("grid min-w-0 grid-cols-1 items-center gap-3 border-t border-border px-4 py-4 md:gap-4 md:px-5", desktopGrid)}
+                  >
+                    <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+                      <MemberAvatar member={member} className="size-8 shrink-0 rounded-lg text-[0.7rem] ring-0" />
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <p className="truncate text-sm font-medium" title={row.subactivityTitle}>{row.subactivityTitle}</p>
+                        <p className="truncate text-xs text-muted-foreground" title={`${row.projectName} · ${row.activityTitle}`}>
+                          {row.projectName} · {row.activityTitle} · Est. {row.estimatedHours}h
+                        </p>
+                        {isAdmin && member && (
+                          <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground md:hidden">{member.name}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {isAdmin && (
+                      <div className="hidden min-w-0 items-center gap-2 md:flex">
+                        <MemberAvatar member={member} className="size-6 shrink-0 rounded-md text-[0.58rem] ring-0" />
+                        <span className="truncate text-xs font-medium" title={member?.name}>{member?.name ?? "Sem responsável"}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between md:block md:text-right">
+                      <span className="text-xs text-muted-foreground md:hidden">Sessões</span>
+                      <span className="font-mono text-sm tabular-nums">{row.sessions}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between md:block md:text-right">
+                      <span className="text-xs text-muted-foreground md:hidden">Registrado no período</span>
+                      <p className={cn("font-mono text-sm font-medium tabular-nums", running && "text-primary")}>{formatHMS(row.trackedSeconds)}</p>
+                    </div>
+
+                    <div className="flex items-center justify-between md:block md:text-center">
+                      <span className="text-xs text-muted-foreground md:hidden">Status</span>
+                      <span className={cn("inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", meta.className)}>
+                        <span className={cn("size-1.5 shrink-0 rounded-full", meta.dot)} />
+                        <span className="truncate">{meta.label}</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between md:justify-center">
+                      <span className="text-xs text-muted-foreground md:hidden">Timer</span>
+                      <button
+                        disabled={done || !canManage || !sub}
+                        onClick={() => void handleTimer(row)}
+                        className={cn(
+                          "flex size-9 items-center justify-center rounded-xl transition-colors",
+                          done || !canManage || !sub
+                            ? "cursor-not-allowed bg-muted text-muted-foreground/50"
+                            : running
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-foreground hover:bg-primary/12 hover:text-primary",
+                        )}
+                        aria-label={!canManage ? "Subatividade protegida" : running ? "Parar timer" : "Iniciar timer"}
+                        title={!canManage ? "Somente o Desenvolvedor responsável ou um Administrador pode controlar esta subatividade" : undefined}
+                      >
+                        {running ? <Square className="size-4 fill-current" /> : <Play className="size-4 fill-current" />}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+
+            <div className="flex flex-col gap-2 border-t border-border bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-5">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Total consolidado do período</p>
+                <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
+                  {totalSessions} {totalSessions === 1 ? "sessão" : "sessões"} · {rows.length} {rows.length === 1 ? "registro" : "registros"}
+                </p>
+              </div>
+              <div className="flex items-baseline gap-3 sm:text-right">
+                <strong className="font-mono text-lg font-semibold tabular-nums">{formatServiceHours(totalTracked)}</strong>
+                <span className="rounded-md bg-background px-2 py-1 font-mono text-xs font-medium tabular-nums ring-1 ring-foreground/8">
+                  {formatDecimalHours(totalTracked)} h
                 </span>
-
-                <div className="md:w-28 md:text-right">
-                  <p
-                    className={cn(
-                      "font-mono text-sm tabular-nums",
-                      running ? "text-primary" : "text-foreground",
-                    )}
-                  >
-                    {formatHMS(r.sub.trackedSeconds)}
-                  </p>
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted md:ml-auto md:w-20">
-                    <div
-                      className={cn(
-                        "h-full rounded-full",
-                        ratio > 1 ? "bg-primary" : "bg-success",
-                      )}
-                      style={{ width: `${Math.min(100, ratio * 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="md:w-28 md:text-center">
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                      statusMeta[r.sub.status].className,
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        statusMeta[r.sub.status].dot,
-                      )}
-                    />
-                    {statusMeta[r.sub.status].label}
-                  </span>
-                </div>
-
-                <div className="md:flex md:w-16 md:justify-center">
-                  <button
-                    disabled={done || !canManage}
-                    onClick={() => (running ? stopTimer(r.sub.id) : startTimer(r.sub.id))}
-                    className={cn(
-                      "flex size-9 items-center justify-center rounded-xl transition-colors",
-                      done || !canManage
-                        ? "cursor-not-allowed bg-muted text-muted-foreground/50"
-                        : running
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-foreground hover:bg-primary/12 hover:text-primary",
-                    )}
-                    aria-label={!canManage ? "Subatividade protegida" : running ? "Parar timer" : "Iniciar timer"}
-                    title={!canManage ? "Somente o Desenvolvedor responsável ou um Administrador pode controlar esta subatividade" : undefined}
-                  >
-                    {running ? (
-                      <Square className="size-4 fill-current" />
-                    ) : (
-                      <Play className="size-4 fill-current" />
-                    )}
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   )
 }
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
+    <label className="grid min-w-0 gap-1.5">
+      <span className="text-[0.68rem] font-medium text-muted-foreground">{label}</span>
       {children}
-    </button>
+    </label>
   )
 }

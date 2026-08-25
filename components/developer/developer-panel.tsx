@@ -1052,13 +1052,13 @@ export function DeveloperPanel() {
       )}
 
       <Dialog open={personalizeOpen} onOpenChange={setPersonalizeOpen}>
-        <DialogContent className="max-h-[92dvh] overflow-hidden p-0 sm:max-w-4xl">
-          <DialogHeader className="border-b border-border px-5 py-5 sm:px-6">
+        <DialogContent className="grid max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[92dvh] sm:max-w-4xl">
+          <DialogHeader className="min-w-0 border-b border-border px-5 py-5 pr-12 sm:px-6 sm:pr-12">
             <DialogTitle>Personalizar Painel Dev</DialogTitle>
             <DialogDescription>Configure sua rotina, automações, música e notificações. Hidratação e Modo foco continuam disponíveis diretamente no painel.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          <div className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4 [scrollbar-gutter:stable] sm:px-6 sm:py-5">
             <div className="space-y-5">
               <section className="rounded-2xl border border-border bg-card">
                 <CardHeader icon={Clock} title="Expediente" subtitle="Defina seu horário e dias de trabalho." action={<span className="font-mono text-xs text-muted-foreground">{settings.workStart}–{settings.workEnd}</span>} />
@@ -1125,7 +1125,7 @@ export function DeveloperPanel() {
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border bg-card px-4 py-4 sm:px-6">
+          <DialogFooter className="mx-0 mb-0 border-t border-border bg-card px-4 py-4 sm:px-6">
             <button type="button" onClick={() => setPersonalizeOpen(false)} className="h-10 rounded-xl border border-border px-4 text-xs font-semibold hover:bg-muted">Fechar</button>
             <button type="button" onClick={() => void saveSettings()} disabled={!settingsDirty || saving || loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45">
               {saving ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Save className="size-3.5" />}

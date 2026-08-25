@@ -205,6 +205,18 @@ function Metric({ label, value, detail, icon: Icon }: { label: string; value: st
   )
 }
 
+function CompactCardHeader({ icon: Icon, title, action }: { icon: React.ElementType; title: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 px-4 pb-2 pt-4">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <h2 className="truncate text-[0.67rem] font-semibold tracking-[0.08em] text-foreground/85 uppercase">{title}</h2>
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  )
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{children}</label>
 }
@@ -785,239 +797,215 @@ export function DeveloperPanel() {
 
         <DeveloperSessionHub onOpenEnvironment={showEnvironment} />
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12">
-          <Surface className="min-w-0 lg:col-span-6">
-            <CardHeader
+        <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-[1.08fr_.88fr_1fr_1fr]">
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader
               icon={ListTodo}
               title="Próximas tarefas"
-              subtitle="Sua fila prioriza atenção, tarefas pausadas, prioridade do projeto e prazo."
-              action={<Link href="/projetos" className="text-[0.68rem] font-semibold text-primary hover:underline">Ver todas</Link>}
+              action={<Link href="/projetos" className="text-[0.64rem] font-semibold text-primary hover:underline">Ver todas</Link>}
             />
-            <div className="p-3 sm:p-4">
+            <div className="px-4 pb-4">
               {nextTasks.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
-                  <Check className="mx-auto size-5 text-success" />
-                  <p className="mt-2 text-xs font-semibold">Nenhuma tarefa pendente na fila</p>
-                  <p className="mt-1 text-[0.67rem] text-muted-foreground">Suas próximas subatividades aparecerão aqui.</p>
+                <div className="rounded-xl border border-dashed border-border px-3 py-7 text-center">
+                  <Check className="mx-auto size-4 text-success" />
+                  <p className="mt-2 text-[0.7rem] font-semibold">Nenhuma tarefa pendente</p>
+                  <p className="mt-1 text-[0.62rem] text-muted-foreground">Sua fila está limpa.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-border/70">
-                  {nextTasks.map((item, index) => {
+                <div className="divide-y divide-border/65">
+                  {nextTasks.slice(0, 5).map((item, index) => {
                     const priority = priorityLabel(item.project.priority)
                     return (
-                      <div key={item.sub.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 first:pt-0 last:pb-0">
-                        <div className="flex min-w-0 items-start gap-2.5">
-                          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-muted text-[0.62rem] font-semibold text-muted-foreground">{index + 1}</span>
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1 text-[0.62rem] text-muted-foreground">
-                              <span className="max-w-[180px] truncate">{item.project.name}</span>
-                              <ArrowRight className="size-2.5 shrink-0" />
-                              <span className="max-w-[180px] truncate">{item.activity.title}</span>
-                            </div>
-                            <Link href={`/projetos/${item.project.id}#sub-${item.sub.id}`} className="mt-1 block truncate text-xs font-semibold hover:text-primary">{item.sub.title}</Link>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              <span className={cn(
-                                "rounded-md px-1.5 py-0.5 text-[0.58rem] font-semibold",
-                                item.project.priority === "high" ? "bg-destructive/10 text-destructive" : item.project.priority === "medium" ? "bg-warning/10 text-warning" : "bg-success/10 text-success",
-                              )}>{priority}</span>
-                              <span className="text-[0.6rem] text-muted-foreground">{subStatusLabel(item.sub.status)}</span>
-                              {item.sub.needsAttention && <span className="text-[0.6rem] font-semibold text-warning">Precisa de atenção</span>}
-                            </div>
-                          </div>
-                        </div>
+                      <div key={item.sub.id} className="group flex min-w-0 items-center gap-2 py-2.5 first:pt-1 last:pb-0">
+                        <span className="w-4 shrink-0 text-center text-[0.62rem] font-semibold text-muted-foreground">{index + 1}</span>
+                        <Link href={`/projetos/${item.project.id}#sub-${item.sub.id}`} className="min-w-0 flex-1">
+                          <p className="truncate text-[0.7rem] font-medium transition-colors group-hover:text-primary">{item.sub.title}</p>
+                          <p className="mt-0.5 truncate text-[0.58rem] text-muted-foreground">{item.project.name} · {item.activity.title}</p>
+                        </Link>
+                        <span className={cn(
+                          "shrink-0 rounded-md px-1.5 py-0.5 text-[0.56rem] font-semibold",
+                          item.project.priority === "high" ? "bg-destructive/10 text-destructive" : item.project.priority === "medium" ? "bg-warning/10 text-warning" : "bg-success/10 text-success",
+                        )}>{priority}</span>
                         <button
                           type="button"
                           disabled={Boolean(activeSubId) || Boolean(pendingTaskId)}
                           onClick={() => void startQueuedTask(item.sub.id)}
+                          className="hidden size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35 sm:flex xl:hidden 2xl:flex"
                           title={activeSubId ? "Pause a sessão atual antes de iniciar outra tarefa." : "Iniciar subatividade"}
-                          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[0.65rem] font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           {pendingTaskId === item.sub.id ? <span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Play className="size-3" />}
-                          <span className="hidden sm:inline">Iniciar</span>
                         </button>
                       </div>
                     )
                   })}
                 </div>
               )}
+              <Link href="/projetos" className="mt-4 inline-flex items-center gap-1 text-[0.62rem] font-semibold text-primary hover:underline">Ver todas as tarefas <ArrowRight className="size-3" /></Link>
             </div>
           </Surface>
 
-          <Surface className="min-w-0 lg:col-span-3">
-            <CardHeader icon={Clock} title="Hoje" subtitle="Resumo rápido do seu trabalho." />
-            <div className="grid grid-cols-2 gap-2 p-3 sm:p-4">
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={Clock} title="Hoje" />
+            <div className="grid grid-cols-2 gap-2 px-4 pb-4">
               {[
-                { label: "Horas", value: formatWorkedTime(todaySummary.seconds), icon: Clock },
+                { label: "Horas trabalhadas", value: formatWorkedTime(todaySummary.seconds), icon: Clock },
                 { label: "Sessões", value: String(todaySummary.sessions), icon: Timer },
                 { label: "Subatividades", value: String(todaySummary.subactivities), icon: ListTodo },
                 { label: "Projetos", value: String(todaySummary.projects), icon: FolderKanban },
               ].map((metric) => (
-                <div key={metric.label} className="min-w-0 rounded-xl border border-border bg-background/45 p-3">
-                  <metric.icon className="size-3.5 text-primary" />
-                  <p className="mt-3 truncate text-base font-semibold">{metric.value}</p>
-                  <p className="mt-0.5 truncate text-[0.62rem] text-muted-foreground">{metric.label}</p>
+                <div key={metric.label} className="min-w-0 rounded-xl border border-border bg-background/40 p-3">
+                  <div className="flex items-center gap-2 text-muted-foreground"><metric.icon className="size-3.5" /><span className="truncate text-[0.58rem]">{metric.label}</span></div>
+                  <p className="mt-2 truncate text-base font-semibold tracking-tight">{metric.value}</p>
                 </div>
               ))}
-            </div>
-            <div className="border-t border-border px-4 py-3">
-              <Link href="/horas" className="inline-flex items-center gap-1 text-[0.66rem] font-semibold text-primary hover:underline">Ver detalhamento do dia <ArrowRight className="size-3" /></Link>
+              <Link href="/horas" className="col-span-2 mt-1 inline-flex items-center gap-1 text-[0.62rem] font-semibold text-primary hover:underline">Ver detalhes do dia <ArrowRight className="size-3" /></Link>
             </div>
           </Surface>
 
-          <Surface className="min-w-0 lg:col-span-3">
-            <CardHeader icon={AlertTriangle} title="Atenção" subtitle="O que vale revisar agora." />
-            <div className="grid gap-2 p-3 sm:p-4">
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={AlertTriangle} title="Atenção" />
+            <div className="px-4 pb-4">
               {alerts.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border px-3 py-7 text-center">
-                  <Check className="mx-auto size-5 text-success" />
-                  <p className="mt-2 text-xs font-semibold">Tudo tranquilo</p>
-                  <p className="mt-1 text-[0.64rem] text-muted-foreground">Nenhum alerta importante.</p>
+                  <Check className="mx-auto size-4 text-success" />
+                  <p className="mt-2 text-[0.7rem] font-semibold">Tudo tranquilo</p>
+                  <p className="mt-1 text-[0.62rem] text-muted-foreground">Nenhum alerta importante.</p>
                 </div>
-              ) : alerts.slice(0, 4).map((alert) => {
-                const content = (
-                  <div className="group flex min-w-0 items-start gap-2.5 rounded-xl border border-border bg-background/35 p-2.5 transition-colors hover:bg-muted/45">
-                    <span className={cn(
-                      "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg",
-                      alert.tone === "warning" ? "bg-warning/10 text-warning" : alert.tone === "success" ? "bg-success/10 text-success" : "bg-primary/10 text-primary",
-                    )}><AlertTriangle className="size-3.5" /></span>
-                    <div className="min-w-0 flex-1">
-                      <p className="line-clamp-1 text-[0.7rem] font-semibold">{alert.title}</p>
-                      <p className="mt-0.5 line-clamp-2 text-[0.62rem] leading-relaxed text-muted-foreground">{alert.description}</p>
-                    </div>
-                    {alert.href && <ArrowRight className="mt-1 size-3 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />}
-                  </div>
-                )
-                return alert.href ? <Link key={alert.id} href={alert.href}>{content}</Link> : <div key={alert.id}>{content}</div>
-              })}
+              ) : (
+                <div className="divide-y divide-border/65">
+                  {alerts.slice(0, 3).map((alert) => {
+                    const content = (
+                      <div className="group flex min-w-0 items-start gap-2.5 py-2.5 first:pt-1 last:pb-0">
+                        <span className={cn(
+                          "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg",
+                          alert.tone === "warning" ? "bg-warning/10 text-warning" : alert.tone === "success" ? "bg-success/10 text-success" : "bg-primary/10 text-primary",
+                        )}><AlertTriangle className="size-3.5" /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-1 text-[0.68rem] font-semibold">{alert.title}</p>
+                          <p className="mt-0.5 line-clamp-2 text-[0.58rem] leading-relaxed text-muted-foreground">{alert.description}</p>
+                        </div>
+                        {alert.href && <ArrowRight className="mt-1 size-3 shrink-0 text-muted-foreground" />}
+                      </div>
+                    )
+                    return alert.href ? <Link key={alert.id} href={alert.href}>{content}</Link> : <div key={alert.id}>{content}</div>
+                  })}
+                </div>
+              )}
+              <button type="button" onClick={showEnvironment} className="mt-4 inline-flex items-center gap-1 text-[0.62rem] font-semibold text-primary hover:underline">Ver todos os alertas <ArrowRight className="size-3" /></button>
+            </div>
+          </Surface>
+
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={Code2} title="Ambiente" action={<button type="button" onClick={showEnvironment} className="text-[0.64rem] font-semibold text-primary hover:underline">Ver completo</button>} />
+            <div className="px-4 pb-4">
+              <div className="divide-y divide-border/65">
+                <div className="flex min-w-0 items-center gap-2.5 py-2.5 first:pt-1">
+                  <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1"><p className="text-[0.56rem] text-muted-foreground">Projeto local</p><p className="truncate text-[0.7rem] font-semibold">{activeProject?.name ?? "Nenhuma sessão ativa"}</p></div>
+                </div>
+                <div className="flex min-w-0 items-center gap-2.5 py-2.5">
+                  <Code2 className="size-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1"><p className="text-[0.56rem] text-muted-foreground">IDE / Agent</p><p className="truncate text-[0.7rem] font-semibold">Integrações locais disponíveis</p></div>
+                </div>
+                <div className="flex min-w-0 items-center gap-2.5 py-2.5 last:pb-0">
+                  <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1"><p className="text-[0.56rem] text-muted-foreground">Controle de versão</p><p className="truncate text-[0.7rem] font-semibold">{dirtyChangeCount > 0 ? `${dirtyChangeCount} alteração${dirtyChangeCount === 1 ? "" : "ões"} sem commit` : activeProject?.repository ? "Repositório configurado" : "Abra o ambiente para configurar"}</p></div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" onClick={showEnvironment} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2 text-[0.62rem] font-semibold hover:bg-muted"><Code2 className="size-3" />Abrir IDE</button>
+                <button type="button" onClick={showEnvironment} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2 text-[0.62rem] font-semibold hover:bg-muted"><GitBranch className="size-3" />Git / SVN</button>
+              </div>
             </div>
           </Surface>
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <Surface className="min-w-0">
-            <CardHeader icon={Code2} title="Ambiente" subtitle="Seu projeto local, repositório e integrações de desenvolvimento." action={<button type="button" onClick={showEnvironment} className="text-[0.68rem] font-semibold text-primary hover:underline">Ver completo</button>} />
-            <div className="p-4">
-              <div className="space-y-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><FolderKanban className="size-4" /></span>
-                  <div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground">Projeto atual</p><p className="truncate text-xs font-semibold">{activeProject?.name ?? "Nenhuma sessão ativa"}</p></div>
+        <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={Droplets} title="Hidratação" action={<button type="button" onClick={() => void resetWater()} className="text-[0.62rem] font-medium text-muted-foreground hover:text-foreground">Zerar</button>} />
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-4 pt-1">
+                <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(#3b82f6 ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
+                  <div className="flex size-[4.65rem] flex-col items-center justify-center rounded-full bg-card">
+                    <Droplets className="size-6 text-blue-500" />
+                    <span className="mt-1 text-[0.62rem] font-semibold text-blue-500">{waterPercent}%</span>
+                  </div>
                 </div>
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><GitBranch className="size-4" /></span>
-                  <div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground">Controle de versão</p><p className="truncate text-xs font-semibold">{dirtyChangeCount > 0 ? `${dirtyChangeCount} alteração${dirtyChangeCount === 1 ? "" : "ões"} sem commit` : activeProject?.repository ? "Repositório configurado" : "Abra o ambiente para configurar"}</p></div>
-                </div>
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success"><span className="size-2 rounded-full bg-success" /></span>
-                  <div className="min-w-0"><p className="text-[0.62rem] text-muted-foreground">Integrações locais</p><p className="truncate text-xs font-semibold">IDE, Agent Windows e contextos</p></div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xl font-semibold tracking-tight">{waterMl.toLocaleString("pt-BR")} ml</p>
+                  <p className="mt-0.5 text-[0.64rem] text-muted-foreground">de {settings.hydrationGoalMl.toLocaleString("pt-BR")} ml</p>
+                  <p className="mt-1.5 line-clamp-1 text-[0.6rem] text-muted-foreground">{lastDrinkLabel}</p>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button type="button" onClick={showEnvironment} className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"><Code2 className="size-3.5" />Ambiente</button>
-                <button type="button" onClick={showEnvironment} className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-semibold hover:bg-muted"><GitBranch className="size-3.5" />Git / SVN</button>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[250, 500, 750].map((amount) => <button key={amount} type="button" onClick={() => void addWater(amount)} className="h-8 rounded-lg border border-border bg-background px-2 text-[0.62rem] font-semibold hover:bg-muted">+{amount} ml</button>)}
+              </div>
+              <button type="button" onClick={() => void addWater(settings.hydrationCupMl)} className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[0.66rem] font-semibold text-primary-foreground"><Droplets className="size-3.5" />Registrar {settings.hydrationCupMl} ml</button>
+            </div>
+          </Surface>
+
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={Timer} title="Modo foco" />
+            <div className="px-4 pb-4">
+              <div className="flex rounded-lg bg-muted p-1">
+                <button type="button" onClick={() => switchFocusMode("focus")} className={cn("h-7 flex-1 rounded-md text-[0.62rem] font-medium transition-colors", focusMode === "focus" ? "bg-card text-foreground shadow-sm ring-1 ring-primary/35" : "text-muted-foreground")}>Foco</button>
+                <button type="button" onClick={() => switchFocusMode("break")} className={cn("h-7 flex-1 rounded-md text-[0.62rem] font-medium transition-colors", focusMode === "break" ? "bg-card text-foreground shadow-sm ring-1 ring-primary/35" : "text-muted-foreground")}>Pausa</button>
+              </div>
+              <div className="py-5 text-center">
+                <p className="font-mono text-4xl font-semibold tracking-[-0.08em] tabular-nums">{formatFocus(focusRemaining)}</p>
+                <p className="mt-1.5 text-[0.62rem] text-muted-foreground">{focusRunning ? "Cronômetro em andamento" : "Tempo restante"}</p>
+              </div>
+              <button type="button" onClick={focusRunning ? pauseFocus : startFocus} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-[0.66rem] font-semibold text-primary-foreground">{focusRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{focusRunning ? "Pausar" : "Iniciar foco"}</button>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button type="button" onClick={pauseFocus} disabled={!focusRunning} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-background text-[0.62rem] font-semibold hover:bg-muted disabled:opacity-40"><Pause className="size-3" />Pausar</button>
+                <button type="button" onClick={resetFocus} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-background text-[0.62rem] font-semibold hover:bg-muted"><RotateCcw className="size-3" />Reiniciar</button>
+              </div>
+              <button type="button" onClick={() => setPersonalizeOpen(true)} className="mt-3 text-[0.62rem] font-semibold text-primary hover:underline">Configurações</button>
+            </div>
+          </Surface>
+
+          <Surface className="min-w-0 self-start">
+            <CompactCardHeader icon={NotebookPen} title="Notas rápidas" action={<span className="text-[0.6rem] text-muted-foreground">{notes.length} notas</span>} />
+            <div className="px-4 pb-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 md:grid-cols-1 2xl:grid-cols-3">
+                {notes.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[0.64rem] text-muted-foreground sm:col-span-3 md:col-span-1 2xl:col-span-3">Nenhuma anotação ainda.</div>
+                ) : notes.slice(0, 3).map((note, index) => (
+                  <article key={note.id} className={cn(
+                    "group relative min-w-0 rounded-xl border border-border p-3",
+                    index % 3 === 0 ? "bg-warning/[0.09]" : index % 3 === 1 ? "bg-primary/[0.07]" : "bg-success/[0.08]",
+                  )}>
+                    <button type="button" onClick={() => void togglePin(note)} className={cn("absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60", note.pinned && "text-primary")} title={note.pinned ? "Desafixar" : "Fixar"}>{note.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}</button>
+                    <p className="line-clamp-3 pr-5 text-[0.64rem] leading-relaxed">{note.content}</p>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[0.54rem] text-muted-foreground"><span>{formatNoteDate(note.updatedAt)}</span><button type="button" onClick={() => void deleteNote(note)} className="opacity-0 transition-opacity group-hover:opacity-100" title="Excluir"><Trash2 className="size-3" /></button></div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-3 rounded-xl border border-dashed border-border p-2.5">
+                <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Nova nota..." rows={2} maxLength={6000} className="min-h-12 w-full resize-none bg-transparent text-[0.68rem] leading-relaxed outline-none placeholder:text-muted-foreground/65" />
+                <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="mt-1 inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-lg bg-muted text-[0.6rem] font-semibold hover:bg-muted/80 disabled:opacity-45"><Plus className="size-3" />Nova nota</button>
               </div>
             </div>
           </Surface>
 
           <Surface className="min-w-0 self-start">
-            <CardHeader icon={Droplets} title="Hidratação" subtitle="Meta diária e lembrete leve durante o expediente." action={<button type="button" onClick={() => void resetWater()} className="text-[0.68rem] font-medium text-muted-foreground hover:text-foreground">Zerar hoje</button>} />
-            <div className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="relative flex size-20 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${waterPercent}%, color-mix(in oklab, var(--muted) 88%, transparent) ${waterPercent}% 100%)` }}>
-                  <div className="flex size-16 flex-col items-center justify-center rounded-full bg-card">
-                    <span className="text-lg font-semibold">{waterPercent}%</span>
-                    <span className="text-[0.62rem] text-muted-foreground">da meta</span>
-                  </div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xl font-semibold tracking-tight">{waterMl.toLocaleString("pt-BR")} <span className="text-sm font-normal text-muted-foreground">/ {settings.hydrationGoalMl} ml</span></p>
-                  <p className="mt-1 text-xs text-muted-foreground">{lastDrinkLabel}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {[200, 300, 500].map((amount) => <button key={amount} type="button" onClick={() => void addWater(amount)} className="h-8 rounded-lg border border-border bg-background px-2.5 text-[0.68rem] font-semibold hover:bg-muted">+ {amount} ml</button>)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><FieldLabel>Meta diária (ml)</FieldLabel><input type="number" min={500} max={10000} step={100} value={settings.hydrationGoalMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationGoalMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-                <div><FieldLabel>Copo padrão (ml)</FieldLabel><input type="number" min={50} max={2000} step={50} value={settings.hydrationCupMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationCupMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-                <div className="col-span-2 sm:col-span-1"><FieldLabel>Lembrete (min)</FieldLabel><input type="number" min={15} max={240} step={5} value={settings.hydrationReminderMinutes} onChange={(event) => setSettings((current) => ({ ...current, hydrationReminderMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-              </div>
-              <div className="mt-3"><Toggle checked={settings.notifyHydration} onChange={(value) => setSettings((current) => ({ ...current, notifyHydration: value }))} label="Lembrete de água" description={`Durante o expediente, lembrar a cada ${settings.hydrationReminderMinutes || 60} minutos.`} /></div>
-              <button type="button" onClick={() => void addWater(settings.hydrationCupMl)} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-xs font-semibold text-primary-foreground"><Droplets className="size-3.5" />Registrar {settings.hydrationCupMl} ml</button>
-            </div>
-          </Surface>
-
-          <Surface className="min-w-0 self-start lg:col-span-2 xl:col-span-1">
-            <CardHeader icon={Timer} title="Modo foco" subtitle="Pomodoro configurável que continua contando mesmo navegando por outras telas." />
-            <div className="p-4">
-              <div className="flex rounded-xl bg-muted p-1">
-                <button type="button" onClick={() => switchFocusMode("focus")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "focus" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Foco</button>
-                <button type="button" onClick={() => switchFocusMode("break")} className={cn("h-8 flex-1 rounded-lg text-xs font-medium transition-colors", focusMode === "break" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Pausa</button>
-              </div>
-              <div className="py-4 text-center">
-                <p className="font-mono text-4xl font-semibold tracking-[-0.08em] tabular-nums sm:text-5xl">{formatFocus(focusRemaining)}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{focusRunning ? "Cronômetro em andamento" : focusMode === "focus" ? "Pronto para um bloco sem distrações" : "Hora de descansar um pouco"}</p>
-              </div>
-              <div className="flex justify-center gap-2">
-                <button type="button" onClick={focusRunning ? pauseFocus : startFocus} className="inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground">{focusRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{focusRunning ? "Pausar" : "Iniciar"}</button>
-                <button type="button" onClick={resetFocus} className="inline-flex size-10 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Reiniciar foco"><RotateCcw className="size-3.5" /></button>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div><FieldLabel>Foco (min)</FieldLabel><input type="number" min={10} max={180} value={settings.focusMinutes} onChange={(event) => setSettings((current) => ({ ...current, focusMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-                <div><FieldLabel>Pausa (min)</FieldLabel><input type="number" min={5} max={60} value={settings.breakMinutes} onChange={(event) => setSettings((current) => ({ ...current, breakMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-              </div>
-            </div>
-          </Surface>
-        </div>
-
-        <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
-          <Surface className="min-w-0">
-            <CardHeader icon={NotebookPen} title="Notas rápidas" subtitle="Rascunhos pessoais para não perder ideias durante o trabalho." action={<span className="rounded-full bg-muted px-2 py-1 text-[0.65rem] text-muted-foreground">{notes.length} notas</span>} />
-            <div className="p-4">
-              <div className="min-w-0">
-                <FieldLabel>Nova anotação</FieldLabel>
-                <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void addNote() } }} placeholder="Anote algo antes que saia da cabeça..." rows={2} maxLength={6000} className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 focus:border-primary" />
-                <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="min-w-0 text-[0.64rem] text-muted-foreground">Ctrl/Cmd + Enter salva rapidamente.</p>
-                  <button type="button" onClick={() => void addNote()} disabled={!noteDraft.trim()} className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-45 sm:w-auto"><Plus className="size-3.5" />Salvar nota</button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {notes.length === 0 && <div className="sm:col-span-2 xl:col-span-3 rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">Nenhuma anotação ainda.</div>}
-                {notes.slice(0, 6).map((note) => (
-                  <article key={note.id} className="group min-w-0 rounded-xl border border-border bg-background/50 p-3.5">
-                    <div className="flex items-start gap-2">
-                      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{note.content}</p>
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        <button type="button" onClick={() => void togglePin(note)} className={cn("flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground", note.pinned && "text-primary")} title={note.pinned ? "Desafixar" : "Fixar"}>{note.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</button>
-                        <button type="button" onClick={() => void deleteNote(note)} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Excluir nota"><Trash2 className="size-3.5" /></button>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2 text-[0.62rem] text-muted-foreground">{note.pinned && <span className="font-semibold text-primary">Fixada</span>}<span>{formatNoteDate(note.updatedAt)}</span></div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </Surface>
-
-          <Surface className="min-w-0">
-            <CardHeader icon={Coffee} title="Fechamento do dia" subtitle="Finalize de forma organizada antes de encerrar." />
-            <div className="p-4">
-              <div className="grid gap-2 text-xs">
+            <CompactCardHeader icon={Coffee} title="Fechamento do dia" />
+            <div className="px-4 pb-4">
+              <p className="pt-1 text-[0.62rem] leading-relaxed text-muted-foreground">Finalize seu dia de forma organizada e mantenha seu histórico sempre em dia.</p>
+              <div className="mt-3 grid gap-2">
                 {[
-                  "Pausar ou finalizar cronômetros ativos",
-                  "Revisar subatividades com atenção",
-                  "Salvar/commit das alterações locais",
-                  "Registrar o que precisa continuar amanhã",
-                ].map((item) => <div key={item} className="flex items-start gap-2 rounded-lg py-1.5"><span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 bg-success/5 text-[0.55rem] text-success">✓</span><span className="leading-relaxed text-muted-foreground">{item}</span></div>)}
+                  "Revisar horas e atividades",
+                  "Pausar ou finalizar cronômetros",
+                  "Revisar alterações Git / SVN",
+                  "Preparar o que continua amanhã",
+                ].map((item) => <div key={item} className="flex items-start gap-2"><span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border border-success/30 bg-success/5 text-[0.52rem] text-success">✓</span><span className="text-[0.64rem] leading-relaxed text-muted-foreground">{item}</span></div>)}
               </div>
-              <div className="mt-4 rounded-xl border border-border bg-background/45 p-3">
-                <p className="text-[0.62rem] text-muted-foreground">Expediente</p>
-                <p className="mt-1 text-sm font-semibold">{shift.label}</p>
-                <p className="mt-0.5 text-[0.65rem] text-muted-foreground">{shiftDetail}</p>
+              <div className="mt-4 rounded-xl border border-border bg-background/40 p-3">
+                <div className="flex items-center justify-between gap-2"><span className="text-[0.58rem] text-muted-foreground">Expediente</span><span className="text-[0.6rem] font-semibold">{settings.workStart}–{settings.workEnd}</span></div>
+                <p className="mt-1 text-[0.68rem] font-semibold">{shift.label}</p>
+                <p className="mt-0.5 text-[0.58rem] text-muted-foreground">{shiftDetail}</p>
               </div>
-              <button type="button" onClick={() => setPersonalizeOpen(true)} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-semibold hover:bg-muted"><Settings className="size-3.5" />Revisar rotina</button>
+              <button type="button" onClick={() => setPersonalizeOpen(true)} className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background text-[0.62rem] font-semibold hover:bg-muted"><Settings className="size-3" />Iniciar fechamento</button>
             </div>
           </Surface>
         </div>
@@ -1055,7 +1043,7 @@ export function DeveloperPanel() {
         <DialogContent className="grid max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[92dvh] sm:max-w-4xl">
           <DialogHeader className="min-w-0 border-b border-border px-5 py-5 pr-12 sm:px-6 sm:pr-12">
             <DialogTitle>Personalizar Painel Dev</DialogTitle>
-            <DialogDescription>Configure sua rotina, automações, música e notificações. Hidratação e Modo foco continuam disponíveis diretamente no painel.</DialogDescription>
+            <DialogDescription>Configure sua rotina, hidratação, foco, automações, música e notificações.</DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4 [scrollbar-gutter:stable] sm:px-6 sm:py-5">
@@ -1076,6 +1064,27 @@ export function DeveloperPanel() {
                   <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div><FieldLabel>Dias de trabalho</FieldLabel><div className="flex flex-wrap gap-1.5">{DAY_OPTIONS.map((day) => { const selected = settings.workDays.includes(day.value); return <button key={day.value} type="button" title={day.title} aria-pressed={selected} onClick={() => toggleWorkDay(day.value)} className={cn("flex h-9 min-w-10 items-center justify-center rounded-xl border px-2 text-[0.68rem] font-semibold transition-colors", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted")}>{day.label}</button> })}</div></div>
                     <div className="min-w-0 flex-1 lg:max-w-md"><Toggle checked={settings.notifyShiftEnd} onChange={(value) => setSettings((current) => ({ ...current, notifyShiftEnd: value }))} label="Avisar quando o expediente terminar" description="Envia uma notificação no horário configurado." /></div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-border bg-card">
+                <CardHeader icon={Droplets} title="Hidratação e foco" subtitle="Ajuste metas e tempos sem ocupar espaço no painel principal." />
+                <div className="grid grid-cols-1 gap-5 p-4 lg:grid-cols-2">
+                  <div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <div><FieldLabel>Meta diária (ml)</FieldLabel><input type="number" min={500} max={10000} step={100} value={settings.hydrationGoalMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationGoalMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+                      <div><FieldLabel>Copo padrão (ml)</FieldLabel><input type="number" min={50} max={2000} step={50} value={settings.hydrationCupMl} onChange={(event) => setSettings((current) => ({ ...current, hydrationCupMl: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+                      <div className="col-span-2 sm:col-span-1"><FieldLabel>Lembrete (min)</FieldLabel><input type="number" min={15} max={240} step={5} value={settings.hydrationReminderMinutes} onChange={(event) => setSettings((current) => ({ ...current, hydrationReminderMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+                    </div>
+                    <div className="mt-3"><Toggle checked={settings.notifyHydration} onChange={(value) => setSettings((current) => ({ ...current, notifyHydration: value }))} label="Lembrete de água" description={`Durante o expediente, lembrar a cada ${settings.hydrationReminderMinutes || 60} minutos.`} /></div>
+                  </div>
+                  <div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><FieldLabel>Foco (min)</FieldLabel><input type="number" min={10} max={180} value={settings.focusMinutes} onChange={(event) => setSettings((current) => ({ ...current, focusMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+                      <div><FieldLabel>Pausa (min)</FieldLabel><input type="number" min={5} max={60} value={settings.breakMinutes} onChange={(event) => setSettings((current) => ({ ...current, breakMinutes: Number(event.target.value) }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Os controles de Hidratação e Modo foco continuam disponíveis diretamente no Painel Dev; aqui ficam apenas os parâmetros de configuração.</p>
                   </div>
                 </div>
               </section>

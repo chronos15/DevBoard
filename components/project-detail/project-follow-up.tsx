@@ -60,14 +60,6 @@ import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/pr
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -381,6 +373,7 @@ export function ProjectFollowUp({
   const messageRef = React.useRef<HTMLTextAreaElement>(null)
   const localSearchInputRef = React.useRef<HTMLInputElement>(null)
   const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
+  const statusMenuRef = React.useRef<HTMLDivElement>(null)
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
   const lastInitialBottomSubRef = React.useRef<string | null>(null)
@@ -425,6 +418,8 @@ export function ProjectFollowUp({
   const [pendingStatus, setPendingStatus] = React.useState<Status | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
+  const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
+  const [composerMultiline, setComposerMultiline] = React.useState(false)
 
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
@@ -771,13 +766,43 @@ export function ProjectFollowUp({
     return () => window.removeEventListener("resize", onResize)
   }, [])
 
+  React.useEffect(() => {
+    if (!statusMenuOpen) return
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null
+      if (target && statusMenuRef.current?.contains(target)) return
+      setStatusMenuOpen(false)
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setStatusMenuOpen(false)
+    }
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [statusMenuOpen])
+
+  React.useEffect(() => {
+    setStatusMenuOpen(false)
+  }, [selectedSubId])
+
   function resizeComposer(textarea = messageRef.current) {
     if (!textarea) return
     textarea.style.height = "auto"
     const maxHeight = Math.max(132, Math.min(440, Math.round(window.innerHeight * 0.48)))
-    const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
+    const naturalHeight = textarea.scrollHeight
+    const nextHeight = Math.min(naturalHeight, maxHeight)
     textarea.style.height = `${Math.max(28, nextHeight)}px`
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden"
+    textarea.style.overflowY = naturalHeight > maxHeight ? "auto" : "hidden"
+
+    const computed = window.getComputedStyle(textarea)
+    const lineHeight = Number.parseFloat(computed.lineHeight) || 20
+    const paddingTop = Number.parseFloat(computed.paddingTop) || 0
+    const paddingBottom = Number.parseFloat(computed.paddingBottom) || 0
+    const contentHeight = Math.max(0, naturalHeight - paddingTop - paddingBottom)
+    setComposerMultiline(contentHeight > lineHeight * 1.45)
   }
 
   function scrollTimelineToBottom() {
@@ -1401,34 +1426,57 @@ export function ProjectFollowUp({
                       </Button>
                     )}
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button type="button" variant="ghost" size="icon-sm" disabled={statusSaving} aria-label="Alterar situação" title="Enviar para outra situação" />}
+                    <div ref={statusMenuRef} className="relative">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={statusSaving}
+                        aria-label="Alterar situação"
+                        title="Enviar para outra situação"
+                        aria-haspopup="menu"
+                        aria-expanded={statusMenuOpen}
+                        onClick={() => setStatusMenuOpen((open) => !open)}
                       >
                         {statusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuLabel className="px-2 py-1.5 text-[0.62rem]">Enviar para situação</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {statusOrder.map((status) => {
-                          const meta = statusMeta[status]
-                          const active = status === selectedSub.status
-                          return (
-                            <DropdownMenuItem
-                              key={status}
-                              disabled={active || statusSaving}
-                              onClick={() => requestSelectedStatus(status)}
-                              className="min-h-8 gap-2 px-2 text-xs"
-                              variant={status === "cancelled" ? "destructive" : "default"}
-                            >
-                              <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
-                              <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                              {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
-                            </DropdownMenuItem>
-                          )
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      </Button>
+
+                      {statusMenuOpen && (
+                        <div
+                          role="menu"
+                          aria-label="Enviar para situação"
+                          className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+                        >
+                          <div className="px-2 py-1.5 text-[0.62rem] font-medium text-muted-foreground">Enviar para situação</div>
+                          <div className="my-1 h-px bg-border" />
+                          {statusOrder.map((status) => {
+                            const meta = statusMeta[status]
+                            const active = status === selectedSub.status
+                            return (
+                              <button
+                                key={status}
+                                type="button"
+                                role="menuitem"
+                                disabled={active || statusSaving}
+                                onClick={() => {
+                                  setStatusMenuOpen(false)
+                                  requestSelectedStatus(status)
+                                }}
+                                className={cn(
+                                  "flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors",
+                                  active ? "cursor-default opacity-55" : "hover:bg-muted",
+                                  status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
+                                )}
+                              >
+                                <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
+                                <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                                {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" onClick={() => setMobileMembersOpen(true)} aria-label="Ver equipe">
@@ -1656,7 +1704,10 @@ export function ProjectFollowUp({
                     </div>
                   )}
 
-                  <div className="flex items-end gap-1.5 rounded-xl border border-border bg-background px-2 py-2 shadow-sm focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
+                  <div className={cn(
+                    "flex gap-1.5 rounded-xl border border-border bg-background px-2 py-2 shadow-sm focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10",
+                    composerMultiline ? "items-start" : "items-center",
+                  )}>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1665,7 +1716,7 @@ export function ProjectFollowUp({
                       onChange={(event) => queueFilesForPreview(Array.from(event.target.files ?? []))}
                     />
                     <Button type="button" variant="ghost" size="icon-sm" disabled={uploading || recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
-                      {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                      <Paperclip className="size-4" />
                     </Button>
                     <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={beginMention} title="Mencionar usuário" aria-label="Mencionar usuário">
                       <AtSign className="size-4" />
@@ -1720,8 +1771,8 @@ export function ProjectFollowUp({
                     >
                       {recording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
                     </Button>
-                    <Button type="button" size="icon-sm" disabled={!message.trim() || sending || recording} onClick={() => void sendMessage()} title="Enviar mensagem" aria-label="Enviar mensagem">
-                      {sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+                    <Button type="button" size="icon-sm" disabled={!message.trim() || sending || uploading || recording} onClick={() => void sendMessage()} title="Enviar mensagem" aria-label="Enviar mensagem">
+                      {sending || uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
                     </Button>
                   </div>
                   {composerError ? (

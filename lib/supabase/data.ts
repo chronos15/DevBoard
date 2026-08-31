@@ -117,7 +117,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
   const { data, error } = await supabase
     .from('projects')
     .select(`
-      id,name,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
+      id,name,icon,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
       project_members(user_id),
       project_comments(id,author_id,content,created_at),
       attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
@@ -192,6 +192,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
     return {
       id: row.id,
       name: row.name,
+      icon: row.icon ?? "folder-kanban",
       client: row.client,
       description: row.description,
       tag: row.tag,

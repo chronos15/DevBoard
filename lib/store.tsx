@@ -899,6 +899,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_member_ids: data.memberIds,
     }, "Não foi possível criar o projeto")
     if (!result) return null
+    const iconResult = await callRpc<unknown>("set_project_icon", {
+      p_project_id: result,
+      p_icon: data.icon ?? "folder-kanban",
+    }, "Projeto criado, mas não foi possível salvar o ícone")
+    if (iconResult === undefined) return result
     await refreshProjects()
     return result
   }, [callRpc, refreshProjects])
@@ -924,6 +929,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_member_ids: data.memberIds,
     }, "Não foi possível atualizar o projeto")
     if (result === undefined) return false
+    const iconResult = await callRpc<unknown>("set_project_icon", {
+      p_project_id: projectId,
+      p_icon: data.icon ?? "folder-kanban",
+    }, "Projeto atualizado, mas não foi possível salvar o ícone")
+    if (iconResult === undefined) return false
     await refreshProjects()
     return true
   }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])

@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store"
 import type { Priority } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { MemberName } from "@/components/member-avatar"
+import { ProjectIcon, ProjectIconPicker, normalizeProjectIcon } from "@/components/projects/project-icon"
 
 export function ProjectForm({ projectId }: { projectId?: string }) {
   const router = useRouter()
@@ -16,6 +17,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   const editing = Boolean(projectId)
 
   const [name, setName] = React.useState(project?.name ?? "")
+  const [icon, setIcon] = React.useState(normalizeProjectIcon(project?.icon))
   const [client, setClient] = React.useState(project?.client ?? "")
   const [description, setDescription] = React.useState(project?.description ?? "")
   const [tag, setTag] = React.useState(project?.tag ?? "Desenvolvimento")
@@ -29,6 +31,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   React.useEffect(() => {
     if (!project) return
     setName(project.name)
+    setIcon(normalizeProjectIcon(project.icon))
     setClient(project.client)
     setDescription(project.description)
     setTag(project.tag)
@@ -95,6 +98,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
 
     const data = {
       name: name.trim(),
+      icon,
       client: client.trim() || "Projeto interno",
       description: description.trim(),
       tag: tag.trim() || "Desenvolvimento",
@@ -222,6 +226,19 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
         </div>
 
         <aside className="space-y-5">
+          <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <ProjectIcon icon={icon} className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">Ícone do projeto</h2>
+                <p className="text-[0.68rem] text-muted-foreground">Identifique o projeto rapidamente no painel e no acompanhamento.</p>
+              </div>
+            </div>
+            <ProjectIconPicker value={icon} onChange={setIcon} />
+          </section>
+
           <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
             <div className="mb-4 flex items-center gap-2">
               <Users className="size-4 text-primary" />

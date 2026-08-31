@@ -51,6 +51,7 @@ import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
+import { ProjectIcon } from "@/components/projects/project-icon"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -753,7 +754,7 @@ export function ProjectFollowUp({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-3">
         <div className="flex items-center gap-2">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">{project.name.charAt(0)}</span>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} className="size-4" /></span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{project.name}</p>
             <p className="truncate text-[0.65rem] text-muted-foreground">Atividades e subatividades</p>
@@ -861,7 +862,7 @@ export function ProjectFollowUp({
                       : "bg-card text-muted-foreground ring-1 ring-foreground/8 hover:rounded-[14px] hover:bg-primary/10 hover:text-primary",
                   )}
                 >
-                  {item.name.charAt(0).toUpperCase()}
+                  <ProjectIcon icon={item.icon} className="size-4" />
                   {item.id === project.id && <span className="absolute -left-2.5 h-6 w-1 rounded-r-full bg-primary" />}
                 </button>
               ))}

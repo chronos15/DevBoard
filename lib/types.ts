@@ -153,6 +153,7 @@ export type ProjectVersionEntry = {
 export type Project = {
   id: string
   name: string
+  icon?: string
   client: string
   description: string
   tag: string

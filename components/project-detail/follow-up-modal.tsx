@@ -135,7 +135,7 @@ export function FollowUpModal() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent showCloseButton={false} className="grid h-[min(94dvh,960px)] w-[calc(100vw-0.75rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl p-0 sm:w-[calc(100vw-2rem)]">
+      <DialogContent showCloseButton={false} className="grid h-[min(94dvh,960px)] w-[calc(100vw-0.75rem)] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl p-0 sm:w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] 2xl:w-[min(1680px,calc(100vw-3rem))] 2xl:max-w-[1680px]">
         <DialogHeader className="shrink-0 border-b border-border bg-card px-3 py-2.5 pr-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

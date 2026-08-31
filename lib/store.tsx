@@ -129,6 +129,7 @@ export type StoreContextValue = {
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
   addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyToCommentId?: string) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
+  deleteFollowUpAttachment: (attachmentId: string, storagePath?: string) => Promise<boolean>
   addProjectAttachments: (projectId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setProjectAttachmentActive: (projectId: string, attachmentId: string, active: boolean) => Promise<boolean>
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
@@ -1118,6 +1119,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshProjects])
 
+  const deleteFollowUpAttachment = React.useCallback(async (attachmentId: string, storagePath?: string) => {
+    const result = await callRpc<boolean>("delete_followup_attachment", { p_attachment_id: attachmentId }, "Não foi possível excluir o anexo")
+    if (result === undefined) return false
+    if (storagePath) {
+      const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
+      if (error) console.warn("Não foi possível remover o objeto do Storage após excluir o anexo:", error.message)
+    }
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects, supabase])
+
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; subactivityId?: string },
     files: AttachmentUploadInput[],
@@ -1789,6 +1801,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addSubactivityComment,
     addFollowUpComment,
     deleteFollowUpComment,
+    deleteFollowUpAttachment,
     addProjectAttachments,
     setProjectAttachmentActive,
     addSubactivityAttachments,
@@ -1815,7 +1828,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
-    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, deleteFollowUpAttachment, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,

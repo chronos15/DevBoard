@@ -60,6 +60,8 @@ import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/pr
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
+import { followUpHref } from "@/lib/follow-up-launcher"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -341,14 +343,18 @@ export function ProjectFollowUp({
   project,
   filter = "all",
   assigneeId = "all",
+  initialActivityId,
   initialSubactivityId,
+  initialTimelineId,
   onProjectChange,
 }: {
   project: Project
   filter?: ActivityFilter
   assigneeId?: string
+  initialActivityId?: string | null
   initialSubactivityId?: string | null
-  onProjectChange?: (projectId: string, subactivityId?: string | null) => void
+  initialTimelineId?: string | null
+  onProjectChange?: (projectId: string, subactivityId?: string | null, timelineId?: string | null, activityId?: string | null) => void
 }) {
   const {
     projects,
@@ -362,6 +368,7 @@ export function ProjectFollowUp({
     canManageSubactivity,
     addFollowUpComment,
     deleteFollowUpComment,
+    deleteFollowUpAttachment,
     addSubactivityAttachments,
     deleteActivity,
     startTimer,
@@ -377,7 +384,7 @@ export function ProjectFollowUp({
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
   const lastInitialBottomSubRef = React.useRef<string | null>(null)
-  const pendingTimelineFocusRef = React.useRef<string | null>(null)
+  const pendingTimelineFocusRef = React.useRef<string | null>(initialTimelineId ?? null)
   const initialBottomLockRef = React.useRef(false)
   const bottomLockTimerRef = React.useRef<number | null>(null)
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
@@ -414,6 +421,8 @@ export function ProjectFollowUp({
   const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
   const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null)
+  const [deletingAttachmentId, setDeletingAttachmentId] = React.useState<string | null>(null)
+  const [focusedActivityId, setFocusedActivityId] = React.useState<string | null>(null)
   const [clockNow, setClockNow] = React.useState(() => Date.now())
   const [pendingStatus, setPendingStatus] = React.useState<Status | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
@@ -509,7 +518,7 @@ export function ProjectFollowUp({
     for (const comment of selectedSub.comments ?? []) {
       items.push({ kind: "comment", id: `comment-${comment.id}`, createdAt: comment.createdAt, authorId: comment.authorId, comment })
     }
-    for (const attachment of selectedSub.attachments ?? []) {
+    for (const attachment of (selectedSub.attachments ?? []).filter((item) => item.active)) {
       items.push({ kind: "attachment", id: `attachment-${attachment.id}`, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
     }
     for (const session of workSessions.filter((item) => item.subactivityId === selectedSub.id)) {
@@ -519,7 +528,7 @@ export function ProjectFollowUp({
     const needle = selectedSub.title.trim().toLocaleLowerCase("pt-BR")
     if (needle) {
       for (const log of project.logs ?? []) {
-        if (log.title === "Mensagem adicionada no acompanhamento") continue
+        if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
         const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
         if (!haystack.includes(needle)) continue
         items.push({ kind: "log", id: `log-${log.id}`, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
@@ -621,7 +630,7 @@ export function ProjectFollowUp({
   }, [currentUserId, project.id, projectMemberIdsKey, selectedSubId, supabase, workspaceId])
 
   React.useEffect(() => {
-    const attachments = selectedSub?.attachments ?? []
+    const attachments = (selectedSub?.attachments ?? []).filter((attachment) => attachment.active)
     const pending = attachments.filter((attachment) => attachment.storagePath && !attachment.dataUrl && !resolvedUrls[attachment.id])
     if (!pending.length) return
     let cancelled = false
@@ -638,6 +647,14 @@ export function ProjectFollowUp({
   React.useLayoutEffect(() => {
     if (!selectedSubId) return
     lastInitialBottomSubRef.current = null
+    if (pendingTimelineFocusRef.current) {
+      initialBottomLockRef.current = false
+      if (bottomLockTimerRef.current) {
+        window.clearTimeout(bottomLockTimerRef.current)
+        bottomLockTimerRef.current = null
+      }
+      return
+    }
     initialBottomLockRef.current = true
     if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
 
@@ -658,6 +675,10 @@ export function ProjectFollowUp({
   React.useEffect(() => {
     if (!selectedSubId || !timeline.length || lastInitialBottomSubRef.current === selectedSubId) return
     lastInitialBottomSubRef.current = selectedSubId
+    if (pendingTimelineFocusRef.current) {
+      initialBottomLockRef.current = false
+      return
+    }
     initialBottomLockRef.current = true
     const frame = window.requestAnimationFrame(() => {
       scrollTimelineToBottom()
@@ -725,6 +746,29 @@ export function ProjectFollowUp({
   }, [pinnedPickerOpen])
 
   React.useEffect(() => {
+    if (!initialTimelineId) return
+    pendingTimelineFocusRef.current = initialTimelineId
+    initialBottomLockRef.current = false
+  }, [initialTimelineId, selectedSubId])
+
+  React.useEffect(() => {
+    if (!initialActivityId) return
+    setExpandedActivities((current) => {
+      if (current.has(initialActivityId)) return current
+      const next = new Set(current)
+      next.add(initialActivityId)
+      return next
+    })
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(`followup-activity-${initialActivityId}`)
+      element?.scrollIntoView({ block: "nearest" })
+      setFocusedActivityId(initialActivityId)
+      window.setTimeout(() => setFocusedActivityId((current) => current === initialActivityId ? null : current), 1600)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [initialActivityId, project.id])
+
+  React.useEffect(() => {
     const pending = pendingTimelineFocusRef.current
     if (!pending || !timeline.some((item) => item.id === pending)) return
     const timer = window.setTimeout(() => {
@@ -732,7 +776,7 @@ export function ProjectFollowUp({
       pendingTimelineFocusRef.current = null
     }, 80)
     return () => window.clearTimeout(timer)
-  }, [selectedSubId, timeline])
+  }, [initialTimelineId, selectedSubId, timeline])
 
   React.useEffect(() => {
     function handleSearchShortcut(event: KeyboardEvent) {
@@ -838,7 +882,7 @@ export function ProjectFollowUp({
 
   function openGlobalSearchResult(target: FollowUpSearchTarget) {
     if (target.projectId !== project.id) {
-      onProjectChange?.(target.projectId, target.subactivityId ?? null)
+      onProjectChange?.(target.projectId, target.subactivityId ?? null, target.timelineId ?? null, target.activityId ?? null)
       return
     }
 
@@ -848,6 +892,10 @@ export function ProjectFollowUp({
       return
     }
 
+    if (target.activityId && !target.subactivityId) {
+      setExpandedActivities((current) => new Set(current).add(target.activityId!))
+      window.requestAnimationFrame(() => document.getElementById(`followup-activity-${target.activityId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }))
+    }
     if (target.timelineId) focusTimelineItem(target.timelineId)
   }
 
@@ -871,6 +919,8 @@ export function ProjectFollowUp({
     if (window.location.pathname.startsWith("/acompanhamento")) {
       url.searchParams.set("project", project.id)
       url.searchParams.set("sub", subId)
+      url.searchParams.delete("activity")
+      url.searchParams.delete("focus")
       url.hash = ""
       window.history.replaceState({}, "", url)
     } else if (window.location.pathname === `/projetos/${project.id}`) {
@@ -963,6 +1013,23 @@ export function ProjectFollowUp({
     if (currentUserRole === "admin") return true
     if (comment.authorId !== currentUserId) return false
     return clockNow - new Date(comment.createdAt).getTime() <= 30 * 60 * 1000
+  }
+
+  function canDeleteAttachment(attachment: AttachmentEntry) {
+    if (currentUserRole === "admin") return true
+    if (attachment.uploadedBy !== currentUserId) return false
+    return clockNow - new Date(attachment.createdAt).getTime() <= 30 * 60 * 1000
+  }
+
+  async function deleteAttachment(attachment: AttachmentEntry) {
+    if (deletingAttachmentId || !canDeleteAttachment(attachment)) return
+    if (!window.confirm(`Excluir o anexo “${attachment.name}”?`)) return
+    setDeletingAttachmentId(attachment.id)
+    try {
+      await deleteFollowUpAttachment(attachment.id, attachment.storagePath)
+    } finally {
+      setDeletingAttachmentId(null)
+    }
   }
 
   async function sendMessage() {
@@ -1147,7 +1214,7 @@ export function ProjectFollowUp({
           const expanded = expandedActivities.has(activity.id)
           const runningCount = activity.subactivities.filter((sub) => runningSubIds.includes(sub.id)).length
           return (
-            <div key={activity.id} className="mb-1">
+            <div id={`followup-activity-${activity.id}`} key={activity.id} className={cn("mb-1 rounded-lg transition-all", focusedActivityId === activity.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
               <div className="group/activity flex min-w-0 items-center gap-0.5">
                 <button
                   type="button"
@@ -1159,6 +1226,11 @@ export function ProjectFollowUp({
                   <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
                   {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
                 </button>
+                <CopyEntityLinkButton
+                  href={followUpHref({ projectId: project.id, activityId: activity.id })}
+                  label={`Copiar link da atividade ${activity.title}`}
+                  className="size-7 opacity-100 sm:opacity-0 sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:opacity-100"
+                />
                 {canManageStructure && (
                   <div className="flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:opacity-100">
                     <FollowUpAddSubactivityDialog projectId={project.id} activityId={activity.id} />
@@ -1187,26 +1259,32 @@ export function ProjectFollowUp({
                     const running = runningSubIds.includes(sub.id)
                     const assignee = members.find((member) => member.id === sub.assigneeId)
                     return (
-                      <button
-                        type="button"
-                        key={sub.id}
-                        onClick={() => selectSubactivity(sub.id)}
-                        className={cn(
-                          "group my-0.5 flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
-                          selected ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
-                        )}
-                      >
-                        <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-success" : meta.columnClassName)} />
-                        <div className="min-w-0 flex-1">
-                          <p className={cn("truncate text-[0.72rem]", selected && "font-medium")}>{sub.title}</p>
-                          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                            <span className="truncate">{meta.label}</span>
-                            <span>·</span>
-                            <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
+                      <div key={sub.id} className="group/sub my-0.5 flex min-w-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => selectSubactivity(sub.id)}
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
+                            selected ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
+                          )}
+                        >
+                          <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-success" : meta.columnClassName)} />
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("truncate text-[0.72rem]", selected && "font-medium")}>{sub.title}</p>
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                              <span className="truncate">{meta.label}</span>
+                              <span>·</span>
+                              <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
+                            </div>
                           </div>
-                        </div>
-                        <MemberAvatar member={assignee} profileEnabled={false} className="size-5 text-[0.48rem] ring-1 ring-card" />
-                      </button>
+                          <MemberAvatar member={assignee} profileEnabled={false} className="size-5 text-[0.48rem] ring-1 ring-card" />
+                        </button>
+                        <CopyEntityLinkButton
+                          href={followUpHref({ projectId: project.id, activityId: activity.id, subactivityId: sub.id })}
+                          label={`Copiar link da subatividade ${sub.title}`}
+                          className="size-7 opacity-100 sm:opacity-0 sm:group-hover/sub:opacity-100 sm:group-focus-within/sub:opacity-100"
+                        />
+                      </div>
                     )
                   }) : (
                     <p className="px-2 py-2 text-[0.65rem] text-muted-foreground/70">Sem subatividades neste filtro.</p>
@@ -1599,8 +1677,8 @@ export function ProjectFollowUp({
                               )}
                             >
                               <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
-                              <div className="min-w-0 flex-1 pr-1 sm:pr-20">
-                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-28 sm:pr-32">
                                   <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                   <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                                   {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Pin className="size-3 fill-current" /> fixada</span>}
@@ -1628,6 +1706,11 @@ export function ProjectFollowUp({
                               <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
                                 <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
+                                <CopyEntityLinkButton
+                                  href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
+                                  label="Copiar link da mensagem"
+                                  className="size-7 rounded-md"
+                                />
                                 {canDeleteComment(comment) && (
                                   <button type="button" disabled={deletingCommentId === comment.id} onClick={() => void deleteComment(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
                                     {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
@@ -1639,9 +1722,9 @@ export function ProjectFollowUp({
                         }
 
                         return (
-                          <article id={`followup-timeline-${item.id}`} key={item.id} className={cn("group flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
+                          <article id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-0 flex-1 pr-14 sm:pr-16">
                               <div className="flex min-w-0 items-baseline gap-2">
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
@@ -1652,6 +1735,25 @@ export function ProjectFollowUp({
                                 resolvedUrl={resolvedUrls[item.attachment.id]}
                                 onMediaReady={handleTimelineMediaReady}
                               />
+                            </div>
+                            <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/attachment:opacity-100 sm:group-focus-within/attachment:opacity-100">
+                              <CopyEntityLinkButton
+                                href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
+                                label="Copiar link do anexo"
+                                className="size-7 rounded-md"
+                              />
+                              {canDeleteAttachment(item.attachment) && (
+                                <button
+                                  type="button"
+                                  disabled={deletingAttachmentId === item.attachment.id}
+                                  onClick={() => void deleteAttachment(item.attachment)}
+                                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                  title={currentUserRole === "admin" ? "Excluir anexo" : "Excluir anexo (até 30 min)"}
+                                  aria-label="Excluir anexo"
+                                >
+                                  {deletingAttachmentId === item.attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                </button>
+                              )}
                             </div>
                           </article>
                         )

@@ -68,15 +68,23 @@ export function FollowUpPage() {
   const projectId = requestedProjectId && projects.some((project) => project.id === requestedProjectId)
     ? requestedProjectId
     : fallbackProjectId
-  const initialSubactivityId = searchParams.get("sub")
+  const requestedActivityId = searchParams.get("activity")
+  const requestedSubactivityId = searchParams.get("sub")
+  const initialTimelineId = searchParams.get("focus")
   const selectedProject = projects.find((project) => project.id === projectId) ?? null
+  const resolvedActivity = selectedProject?.activities.find((activity) => activity.id === requestedActivityId) ?? null
+  const initialSubactivityId = requestedSubactivityId && selectedProject?.activities.some((activity) => activity.subactivities.some((sub) => sub.id === requestedSubactivityId))
+    ? requestedSubactivityId
+    : resolvedActivity?.subactivities[0]?.id ?? null
 
-  const showProject = React.useCallback((nextProjectId: string, subactivityId?: string | null) => {
+  const showProject = React.useCallback((nextProjectId: string, subactivityId?: string | null, timelineId?: string | null, activityId?: string | null) => {
     if (!nextProjectId) return
     setLoading(true)
     const params = new URLSearchParams()
     params.set("project", nextProjectId)
+    if (activityId) params.set("activity", activityId)
     if (subactivityId) params.set("sub", subactivityId)
+    if (timelineId) params.set("focus", timelineId)
     router.replace(`/acompanhamento?${params.toString()}`, { scroll: false })
   }, [router])
 
@@ -97,9 +105,11 @@ export function FollowUpPage() {
     if (!projectId || requestedProjectId === projectId) return
     const params = new URLSearchParams()
     params.set("project", projectId)
+    if (requestedActivityId) params.set("activity", requestedActivityId)
     if (initialSubactivityId) params.set("sub", initialSubactivityId)
+    if (initialTimelineId) params.set("focus", initialTimelineId)
     router.replace(`/acompanhamento?${params.toString()}`, { scroll: false })
-  }, [initialSubactivityId, projectId, requestedProjectId, router])
+  }, [initialSubactivityId, initialTimelineId, projectId, requestedActivityId, requestedProjectId, router])
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-background" aria-label="Acompanhamento de projetos">
@@ -159,8 +169,10 @@ export function FollowUpPage() {
           <ProjectFollowUp
             key={selectedProject.id}
             project={selectedProject}
+            initialActivityId={requestedActivityId}
             initialSubactivityId={initialSubactivityId}
-            onProjectChange={(nextId, nextSubId) => showProject(nextId, nextSubId ?? null)}
+            initialTimelineId={initialTimelineId}
+            onProjectChange={(nextId, nextSubId, nextTimelineId, nextActivityId) => showProject(nextId, nextSubId ?? null, nextTimelineId ?? null, nextActivityId ?? null)}
           />
         )}
       </div>

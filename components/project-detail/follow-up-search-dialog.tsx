@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type SearchKind = "all" | "projects" | "messages" | "attachments" | "activities" | "subactivities" | "logs"
 type SearchPeriod = "all" | "today" | "7d" | "30d"
@@ -100,6 +101,39 @@ function ResultKindIcon({ kind }: { kind: Exclude<SearchKind, "all"> }) {
   if (kind === "activities") return <Activity className="size-4" />
   if (kind === "subactivities") return <Hash className="size-4" />
   return <FileText className="size-4" />
+}
+
+function FilterSelect({
+  icon,
+  value,
+  onValueChange,
+  children,
+  ariaLabel,
+}: {
+  icon: React.ReactNode
+  value: string
+  onValueChange: (value: string) => void
+  children: React.ReactNode
+  ariaLabel: string
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => next && onValueChange(String(next))}>
+      <SelectTrigger
+        aria-label={ariaLabel}
+        className="h-9 w-full min-w-0 justify-start gap-2 rounded-lg border-border bg-background px-2.5 text-[0.7rem] font-medium text-foreground shadow-none hover:bg-muted/45 dark:bg-background dark:hover:bg-muted/45"
+      >
+        <span className="shrink-0 text-muted-foreground">{icon}</span>
+        <SelectValue className="min-w-0 flex-1 truncate" />
+      </SelectTrigger>
+      <SelectContent
+        align="start"
+        alignItemWithTrigger={false}
+        className="max-h-72 w-(--anchor-width) min-w-48 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-xl ring-0"
+      >
+        {children}
+      </SelectContent>
+    </Select>
+  )
 }
 
 export function FollowUpSearchDialog({
@@ -215,7 +249,7 @@ export function FollowUpSearchDialog({
             })
           }
 
-          for (const attachment of sub.attachments ?? []) {
+          for (const attachment of (sub.attachments ?? []).filter((item) => item.active)) {
             const author = members.find((member) => member.id === attachment.uploadedBy)
             results.push({
               id: `attachment:${project.id}:${attachment.id}`,
@@ -240,6 +274,7 @@ export function FollowUpSearchDialog({
       }
 
       for (const log of project.logs ?? []) {
+        if (log.type === "attachment-added" || log.type === "attachment-status" || log.title === "Mensagem adicionada no acompanhamento") continue
         const author = members.find((member) => member.id === log.actorId)
         results.push({
           id: `log:${project.id}:${log.id}`,
@@ -381,48 +416,37 @@ export function FollowUpSearchDialog({
 
           {filtersOpen && (
             <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5">
-                <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
-                <select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent text-[0.7rem] outline-none">
-                  <option value="all">Todos os projetos</option>
-                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                </select>
-              </label>
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5">
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <select value={kind} onChange={(event) => setKind(event.target.value as SearchKind)} className="h-9 min-w-0 flex-1 bg-transparent text-[0.7rem] outline-none">
-                  <option value="all">Todos os tipos</option>
-                  <option value="projects">Projetos</option>
-                  <option value="messages">Mensagens</option>
-                  <option value="attachments">Arquivos</option>
-                  <option value="activities">Atividades</option>
-                  <option value="subactivities">Subatividades</option>
-                  <option value="logs">Logs</option>
-                </select>
-              </label>
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5">
-                <UserRound className="size-3.5 shrink-0 text-muted-foreground" />
-                <select value={authorId} onChange={(event) => setAuthorId(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent text-[0.7rem] outline-none">
-                  <option value="all">Qualquer autor</option>
-                  {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-                </select>
-              </label>
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5">
-                <AtSign className="size-3.5 shrink-0 text-muted-foreground" />
-                <select value={mentionUserId} onChange={(event) => setMentionUserId(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent text-[0.7rem] outline-none">
-                  <option value="all">Qualquer menção</option>
-                  {members.map((member) => <option key={member.id} value={member.id}>Menciona {member.name}</option>)}
-                </select>
-              </label>
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5">
-                <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />
-                <select value={period} onChange={(event) => setPeriod(event.target.value as SearchPeriod)} className="h-9 min-w-0 flex-1 bg-transparent text-[0.7rem] outline-none">
-                  <option value="all">Qualquer período</option>
-                  <option value="today">Hoje</option>
-                  <option value="7d">Últimos 7 dias</option>
-                  <option value="30d">Últimos 30 dias</option>
-                </select>
-              </label>
+              <FilterSelect icon={<FolderKanban className="size-3.5" />} value={projectId} onValueChange={setProjectId} ariaLabel="Filtrar por projeto">
+                <SelectItem value="all" className="text-[0.7rem]">Todos os projetos</SelectItem>
+                {projects.map((project) => <SelectItem key={project.id} value={project.id} className="text-[0.7rem]">{project.name}</SelectItem>)}
+              </FilterSelect>
+
+              <FilterSelect icon={<FileText className="size-3.5" />} value={kind} onValueChange={(value) => setKind(value as SearchKind)} ariaLabel="Filtrar por tipo">
+                <SelectItem value="all" className="text-[0.7rem]">Todos os tipos</SelectItem>
+                <SelectItem value="projects" className="text-[0.7rem]">Projetos</SelectItem>
+                <SelectItem value="messages" className="text-[0.7rem]">Mensagens</SelectItem>
+                <SelectItem value="attachments" className="text-[0.7rem]">Arquivos</SelectItem>
+                <SelectItem value="activities" className="text-[0.7rem]">Atividades</SelectItem>
+                <SelectItem value="subactivities" className="text-[0.7rem]">Subatividades</SelectItem>
+                <SelectItem value="logs" className="text-[0.7rem]">Logs</SelectItem>
+              </FilterSelect>
+
+              <FilterSelect icon={<UserRound className="size-3.5" />} value={authorId} onValueChange={setAuthorId} ariaLabel="Filtrar por autor">
+                <SelectItem value="all" className="text-[0.7rem]">Qualquer autor</SelectItem>
+                {members.map((member) => <SelectItem key={member.id} value={member.id} className="text-[0.7rem]">{member.name}</SelectItem>)}
+              </FilterSelect>
+
+              <FilterSelect icon={<AtSign className="size-3.5" />} value={mentionUserId} onValueChange={setMentionUserId} ariaLabel="Filtrar por menção">
+                <SelectItem value="all" className="text-[0.7rem]">Qualquer menção</SelectItem>
+                {members.map((member) => <SelectItem key={member.id} value={member.id} className="text-[0.7rem]">Menciona {member.name}</SelectItem>)}
+              </FilterSelect>
+
+              <FilterSelect icon={<CalendarDays className="size-3.5" />} value={period} onValueChange={(value) => setPeriod(value as SearchPeriod)} ariaLabel="Filtrar por período">
+                <SelectItem value="all" className="text-[0.7rem]">Qualquer período</SelectItem>
+                <SelectItem value="today" className="text-[0.7rem]">Hoje</SelectItem>
+                <SelectItem value="7d" className="text-[0.7rem]">Últimos 7 dias</SelectItem>
+                <SelectItem value="30d" className="text-[0.7rem]">Últimos 30 dias</SelectItem>
+              </FilterSelect>
             </div>
           )}
         </div>

@@ -132,9 +132,13 @@ export function FollowUpPage() {
           </label>
         </div>
 
-        <div className="hidden shrink-0 items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-[0.62rem] text-muted-foreground lg:flex">
+        <div className="hidden shrink-0 items-center gap-2 rounded-lg bg-muted px-2 py-1 text-[0.6rem] text-muted-foreground lg:flex">
           <Keyboard className="size-3.5" />
-          <kbd className="font-mono">Ctrl + P</kbd>
+          <span><kbd className="font-mono">Ctrl F</kbd> local</span>
+          <span className="text-border">·</span>
+          <span><kbd className="font-mono">Ctrl K</kbd> geral</span>
+          <span className="text-border">·</span>
+          <span><kbd className="font-mono">Ctrl P</kbd> abrir</span>
         </div>
       </header>
 
@@ -156,7 +160,7 @@ export function FollowUpPage() {
             key={selectedProject.id}
             project={selectedProject}
             initialSubactivityId={initialSubactivityId}
-            onProjectChange={(nextId) => showProject(nextId, null)}
+            onProjectChange={(nextId, nextSubId) => showProject(nextId, nextSubId ?? null)}
           />
         )}
       </div>

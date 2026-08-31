@@ -7,6 +7,7 @@ import {
   Bookmark,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock3,
   Download,
   FileAudio,
@@ -23,6 +24,7 @@ import {
   Reply,
   Pause,
   Play,
+  Search,
   Send,
   Square,
   Trash2,
@@ -52,6 +54,7 @@ import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -109,6 +112,14 @@ function statusIsTerminal(status: Status) {
 
 function mentionToken(mention: ChatMention) {
   return `@${mention.label}`
+}
+
+function normalizeFollowUpSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim()
 }
 
 function renderMentionedText(content: string, mentions: ChatMention[] = []) {
@@ -301,7 +312,7 @@ export function ProjectFollowUp({
   filter?: ActivityFilter
   assigneeId?: string
   initialSubactivityId?: string | null
-  onProjectChange?: (projectId: string) => void
+  onProjectChange?: (projectId: string, subactivityId?: string | null) => void
 }) {
   const {
     projects,
@@ -322,7 +333,9 @@ export function ProjectFollowUp({
   const supabase = React.useMemo(() => createClient(), [])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const messageRef = React.useRef<HTMLTextAreaElement>(null)
+  const localSearchInputRef = React.useRef<HTMLInputElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
+  const pendingTimelineFocusRef = React.useRef<string | null>(null)
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
   const mediaStreamRef = React.useRef<MediaStream | null>(null)
   const audioChunksRef = React.useRef<Blob[]>([])
@@ -347,6 +360,11 @@ export function ProjectFollowUp({
   const [replyingTo, setReplyingTo] = React.useState<CommentEntry | null>(null)
   const [markedCommentIds, setMarkedCommentIds] = React.useState<Set<string>>(() => new Set())
   const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
+  const [focusedTimelineId, setFocusedTimelineId] = React.useState<string | null>(null)
+  const [localSearchOpen, setLocalSearchOpen] = React.useState(false)
+  const [localSearchQuery, setLocalSearchQuery] = React.useState("")
+  const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
+  const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
   const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null)
   const [clockNow, setClockNow] = React.useState(() => Date.now())
 
@@ -443,6 +461,31 @@ export function ProjectFollowUp({
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   }, [project.logs, selectedSub, workSessions])
+
+  const localSearchMatches = React.useMemo(() => {
+    const needle = normalizeFollowUpSearch(localSearchQuery)
+    if (!needle) return []
+    const tokens = needle.split(/\s+/).filter(Boolean)
+
+    return timeline.filter((item) => {
+      const author = item.authorId ? members.find((member) => member.id === item.authorId) : undefined
+      let searchable = `${author?.name ?? ""} ${author?.email ?? ""}`
+      if (item.kind === "comment") {
+        searchable += ` ${item.comment.content} ${(item.comment.mentions ?? []).map((mention) => mention.label).join(" ")} ${item.comment.replyTo?.content ?? ""}`
+      } else if (item.kind === "attachment") {
+        searchable += ` ${item.attachment.name} ${item.attachment.mimeType} ${item.attachment.textContent ?? ""}`
+      } else if (item.kind === "session") {
+        searchable += ` trabalho sessão cronômetro ${formatHMS(item.durationSeconds)}`
+      } else {
+        searchable += ` ${item.title} ${item.description ?? ""}`
+      }
+      const haystack = normalizeFollowUpSearch(searchable)
+      return tokens.every((token) => haystack.includes(token))
+    }).map((item) => item.id)
+  }, [localSearchQuery, members, timeline])
+
+  const currentLocalMatchId = localSearchMatches[localSearchIndex] ?? null
+  const localSearchMatchSet = React.useMemo(() => new Set(localSearchMatches), [localSearchMatches])
 
   React.useEffect(() => {
     const commentIds = (selectedSub?.comments ?? []).map((comment) => comment.id)
@@ -550,6 +593,93 @@ export function ProjectFollowUp({
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
   }, [])
 
+  React.useEffect(() => {
+    setLocalSearchIndex(0)
+  }, [localSearchQuery, selectedSubId])
+
+  React.useEffect(() => {
+    const pending = pendingTimelineFocusRef.current
+    if (!pending || !timeline.some((item) => item.id === pending)) return
+    const timer = window.setTimeout(() => {
+      focusTimelineItem(pending)
+      pendingTimelineFocusRef.current = null
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [selectedSubId, timeline])
+
+  React.useEffect(() => {
+    function handleSearchShortcut(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+      const key = event.key.toLocaleLowerCase("pt-BR")
+      if (key === "f") {
+        event.preventDefault()
+        setLocalSearchOpen(true)
+        window.requestAnimationFrame(() => {
+          localSearchInputRef.current?.focus()
+          localSearchInputRef.current?.select()
+        })
+        return
+      }
+      if (key === "k") {
+        event.preventDefault()
+        setGlobalSearchOpen(true)
+      }
+    }
+    window.addEventListener("keydown", handleSearchShortcut, { capture: true })
+    return () => window.removeEventListener("keydown", handleSearchShortcut, { capture: true })
+  }, [])
+
+  React.useEffect(() => {
+    resizeComposer()
+  }, [message, selectedSubId])
+
+  React.useEffect(() => {
+    function onResize() { resizeComposer() }
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
+
+  function resizeComposer(textarea = messageRef.current) {
+    if (!textarea) return
+    textarea.style.height = "auto"
+    const maxHeight = Math.max(132, Math.min(440, Math.round(window.innerHeight * 0.48)))
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
+    textarea.style.height = `${Math.max(28, nextHeight)}px`
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden"
+  }
+
+  function focusTimelineItem(itemId: string) {
+    const element = document.getElementById(`followup-timeline-${itemId}`)
+    if (!element) return
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+    setFocusedTimelineId(itemId)
+    window.setTimeout(() => setFocusedTimelineId((current) => current === itemId ? null : current), 1600)
+  }
+
+  function moveLocalSearch(direction: 1 | -1) {
+    if (!localSearchMatches.length) return
+    const focusedIndex = focusedTimelineId ? localSearchMatches.indexOf(focusedTimelineId) : -1
+    const base = focusedIndex >= 0 ? focusedIndex : (direction > 0 ? -1 : 0)
+    const next = (base + direction + localSearchMatches.length) % localSearchMatches.length
+    setLocalSearchIndex(next)
+    focusTimelineItem(localSearchMatches[next])
+  }
+
+  function openGlobalSearchResult(target: FollowUpSearchTarget) {
+    if (target.projectId !== project.id) {
+      onProjectChange?.(target.projectId, target.subactivityId ?? null)
+      return
+    }
+
+    if (target.subactivityId && target.subactivityId !== selectedSubId) {
+      if (target.timelineId) pendingTimelineFocusRef.current = target.timelineId
+      selectSubactivity(target.subactivityId)
+      return
+    }
+
+    if (target.timelineId) focusTimelineItem(target.timelineId)
+  }
+
   function toggleActivity(activityId: string) {
     setExpandedActivities((current) => {
       const next = new Set(current)
@@ -622,9 +752,7 @@ export function ProjectFollowUp({
   }
 
   function focusComment(commentId: string) {
-    const element = document.getElementById(`followup-comment-${commentId}`)
-    if (!element) return
-    element.scrollIntoView({ behavior: "smooth", block: "center" })
+    focusTimelineItem(`comment-${commentId}`)
     setFocusedCommentId(commentId)
     window.setTimeout(() => setFocusedCommentId((current) => current === commentId ? null : current), 1500)
   }
@@ -904,6 +1032,22 @@ export function ProjectFollowUp({
                   </span>
                   <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground tabular-nums">{formatHMS(selectedSub.trackedSeconds)}</span>
                 </div>
+                <Button
+                  type="button"
+                  variant={localSearchOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  onClick={() => {
+                    setLocalSearchOpen((current) => {
+                      const next = !current
+                      if (next) window.requestAnimationFrame(() => localSearchInputRef.current?.focus())
+                      return next
+                    })
+                  }}
+                  title="Pesquisar nesta subatividade (Ctrl + F)"
+                  aria-label="Pesquisar nesta subatividade"
+                >
+                  <Search className="size-4" />
+                </Button>
                 {markedCommentIds.size > 0 && (
                   <Button
                     type="button"
@@ -936,6 +1080,43 @@ export function ProjectFollowUp({
                 </Button>
               </header>
 
+              {localSearchOpen && (
+                <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-2.5 py-2 sm:px-3">
+                  <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    ref={localSearchInputRef}
+                    value={localSearchQuery}
+                    onChange={(event) => setLocalSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault()
+                        setLocalSearchOpen(false)
+                        messageRef.current?.focus()
+                        return
+                      }
+                      if (event.key === "Enter" && currentLocalMatchId) {
+                        event.preventDefault()
+                        moveLocalSearch(event.shiftKey ? -1 : 1)
+                      }
+                    }}
+                    placeholder={`Pesquisar em “${selectedSub.title}”`}
+                    className="h-8 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/65"
+                  />
+                  <span className="shrink-0 font-mono text-[0.6rem] text-muted-foreground">
+                    {localSearchQuery.trim() ? `${localSearchMatches.length ? localSearchIndex + 1 : 0}/${localSearchMatches.length}` : "Ctrl F"}
+                  </span>
+                  <button type="button" disabled={!localSearchMatches.length} onClick={() => moveLocalSearch(-1)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35" title="Resultado anterior" aria-label="Resultado anterior">
+                    <ChevronUp className="size-3.5" />
+                  </button>
+                  <button type="button" disabled={!localSearchMatches.length} onClick={() => moveLocalSearch(1)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35" title="Próximo resultado" aria-label="Próximo resultado">
+                    <ChevronDown className="size-3.5" />
+                  </button>
+                  <button type="button" onClick={() => setLocalSearchOpen(false)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Fechar pesquisa" aria-label="Fechar pesquisa">
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+
               <div
                 className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy" }}
@@ -967,10 +1148,12 @@ export function ProjectFollowUp({
                   ) : (
                     <div className="space-y-0.5">
                       {timeline.map((item) => {
+                        const isLocalMatch = localSearchMatchSet.has(item.id)
+                        const isCurrentLocalMatch = currentLocalMatchId === item.id
                         if (item.kind === "session") {
                           const member = members.find((entry) => entry.id === item.authorId)
                           return (
-                            <div key={item.id} className="my-2 flex items-center gap-2 px-1 py-1 text-[0.68rem] text-muted-foreground">
+                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("my-2 flex items-center gap-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <Clock3 className="size-3.5 shrink-0" />
                               <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
                               <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
@@ -980,7 +1163,7 @@ export function ProjectFollowUp({
 
                         if (item.kind === "log") {
                           return (
-                            <div key={item.id} className="my-2 flex items-start gap-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground">
+                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("my-2 flex items-start gap-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                               <div className="min-w-0 flex-1">
                                 <p className="font-medium text-foreground/80">{item.title}</p>
@@ -999,12 +1182,15 @@ export function ProjectFollowUp({
                           return (
                             <article
                               key={item.id}
-                              id={`followup-comment-${comment.id}`}
+                              id={`followup-timeline-${item.id}`}
                               onContextMenu={(event) => { event.preventDefault(); setReplyingTo(comment); messageRef.current?.focus() }}
                               className={cn(
                                 "group/message relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all hover:bg-muted/25 sm:px-3",
                                 marked && "border-primary/15 bg-primary/[0.035]",
                                 focusedCommentId === comment.id && "border-primary/30 bg-primary/[0.07] ring-2 ring-primary/10",
+                                isLocalMatch && "border-warning/20 bg-warning/[0.035]",
+                                isCurrentLocalMatch && "border-warning/35 bg-warning/[0.07] ring-2 ring-warning/10",
+                                focusedTimelineId === item.id && "border-primary/30 bg-primary/[0.07] ring-2 ring-primary/10",
                               )}
                             >
                               <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
@@ -1048,7 +1234,7 @@ export function ProjectFollowUp({
                         }
 
                         return (
-                          <article key={item.id} className="group flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-muted/25 sm:px-2">
+                          <article id={`followup-timeline-${item.id}`} key={item.id} className={cn("group flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-baseline gap-2">
@@ -1131,6 +1317,7 @@ export function ProjectFollowUp({
                         setMessage(value)
                         setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
                         detectMention(value, event.target.selectionStart)
+                        resizeComposer(event.currentTarget)
                       }}
                       onKeyDown={(event) => {
                         if (mentionRange && mentionCandidates.length > 0) {
@@ -1153,7 +1340,7 @@ export function ProjectFollowUp({
                       }}
                       rows={1}
                       placeholder={`Conversar em “${selectedSub.title}” · use @ para mencionar`}
-                      className="max-h-32 min-h-7 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted-foreground/70"
+                      className="min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-1 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70"
                     />
                     {recording ? (
                       <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
@@ -1179,7 +1366,7 @@ export function ProjectFollowUp({
                   {composerError ? (
                     <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
                   ) : (
-                    <p className="mt-1.5 px-1 text-[0.58rem] text-muted-foreground/70">Enter envia · Shift+Enter quebra linha · @ menciona e adiciona ao projeto · botão direito responde</p>
+                    <p className="mt-1.5 px-1 text-[0.58rem] text-muted-foreground/70">Enter envia · Shift+Enter quebra linha · @ menciona · Ctrl+F pesquisa aqui · Ctrl+K pesquisa geral</p>
                   )}
                 </div>
               </footer>
@@ -1203,6 +1390,15 @@ export function ProjectFollowUp({
           {membersContent}
         </aside>
       </div>
+
+      <FollowUpSearchDialog
+        open={globalSearchOpen}
+        onOpenChange={setGlobalSearchOpen}
+        projects={accessibleProjects}
+        members={members}
+        currentProjectId={project.id}
+        onOpenResult={openGlobalSearchResult}
+      />
 
       <MobilePanel open={mobileNavigatorOpen} title="Atividades" onClose={() => setMobileNavigatorOpen(false)}>
         {navigatorContent}

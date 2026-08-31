@@ -1,26 +1,14 @@
 begin;
 
--- 030 · Acompanhamento como página + imagem customizada por projeto
--- A rota do Acompanhamento é uma alteração de frontend. Esta migration adiciona
--- somente a persistência/Storage necessários para a imagem personalizada do projeto.
-
-alter table public.projects
-  add column if not exists icon_image_path text;
-
-insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
-values(
-  'devboard-project-icons',
-  'devboard-project-icons',
-  true,
-  3145728,
-  array['image/jpeg','image/png','image/webp','image/gif']
-)
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
-
--- Helper seguro: consulta apenas a permissão do usuário atual e não aceita user_id arbitrário.
+-- 031 · Corrige upload de imagem do projeto após o hardening da migration 024.
+--
+-- A migration 024 remove EXECUTE de is_workspace_admin(uuid,uuid) do role
+-- authenticated de propósito. As policies do Storage criadas na 030 chamavam
+-- esse helper diretamente e, por isso, o upload falhava com:
+--   permission denied for function is_workspace_admin
+--
+-- Este helper expõe somente a pergunta "o usuário atual pode alterar a identidade
+-- visual deste projeto?". Ele nunca aceita um user_id arbitrário.
 create or replace function public.can_manage_project_visual(p_project_id_text text)
 returns boolean
 language sql
@@ -44,8 +32,10 @@ as $$
           or (
             wm.role = 'developer'
             and exists (
-              select 1 from public.project_members pm
-              where pm.project_id = p.id and pm.user_id = auth.uid()
+              select 1
+              from public.project_members pm
+              where pm.project_id = p.id
+                and pm.user_id = auth.uid()
             )
           )
         )
@@ -55,6 +45,7 @@ $$;
 revoke execute on function public.can_manage_project_visual(text) from public, anon;
 grant execute on function public.can_manage_project_visual(text) to authenticated;
 
+-- Recria as policies sem chamar is_workspace_admin diretamente.
 drop policy if exists devboard_project_icons_select on storage.objects;
 drop policy if exists devboard_project_icons_insert on storage.objects;
 drop policy if exists devboard_project_icons_update on storage.objects;
@@ -94,6 +85,7 @@ using (
   and public.can_manage_project_visual(split_part(name,'/',2))
 );
 
+-- Também remove a dependência do helper restrito dentro da RPC da identidade visual.
 create or replace function public.set_project_visual(
   p_project_id uuid,
   p_icon text,
@@ -106,10 +98,13 @@ set search_path = public, storage, pg_temp
 as $$
 declare
   v_project public.projects%rowtype;
-  v_workspace uuid;
   v_icon text := coalesce(nullif(btrim(p_icon),''),'folder-kanban');
   v_image_path text := nullif(btrim(coalesce(p_icon_image_path,'')),'');
 begin
+  if auth.uid() is null then
+    raise exception 'Não autenticado';
+  end if;
+
   select * into v_project
   from public.projects
   where id = p_project_id
@@ -119,9 +114,7 @@ begin
     raise exception 'Projeto não encontrado';
   end if;
 
-  v_workspace := v_project.workspace_id;
-
-  if auth.uid() is null or not public.can_manage_project_visual(p_project_id::text) then
+  if not public.can_manage_project_visual(p_project_id::text) then
     raise exception 'Você precisa estar integrado ao projeto para alterar a identidade visual';
   end if;
 

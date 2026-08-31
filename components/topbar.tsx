@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   CheckCircle2,
   ClipboardCheck,
@@ -96,6 +96,7 @@ function ResultIcon({ kind }: { kind: GlobalSearchKind }) {
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const router = useRouter()
+  const pathname = usePathname()
   const {
     members,
     projects,
@@ -219,6 +220,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
 
   React.useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
+      if (pathname.startsWith("/acompanhamento")) return
       if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase("pt-BR") !== "k") return
       event.preventDefault()
       inputRef.current?.focus()
@@ -227,7 +229,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     }
     window.addEventListener("keydown", handleShortcut)
     return () => window.removeEventListener("keydown", handleShortcut)
-  }, [])
+  }, [pathname])
 
   function openResult(result: GlobalSearchResult) {
     setQuery("")

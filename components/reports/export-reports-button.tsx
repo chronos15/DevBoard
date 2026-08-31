@@ -1,11 +1,11 @@
 "use client"
 
 import { Download } from "lucide-react"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { projectEstimated, projectProgress, projectTracked } from "@/lib/project-utils"
 
 export function ExportReportsButton() {
-  const { projects } = useStore()
+  const { projects } = useAnalyticsScope()
 
   function exportCsv() {
     const rows = [

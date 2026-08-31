@@ -263,7 +263,8 @@ export function ActivityItem({
   focusActivityId?: string | null
   focusSubactivityId?: string | null
 }) {
-  const { deleteActivity, supportTopics } = useStore()
+  const { deleteActivity, supportTopics, currentUserRole } = useStore()
+  const canManageStructure = currentUserRole === "admin"
   const activityRef = React.useRef<HTMLDivElement>(null)
   const hasFocusedSubactivity = Boolean(
     focusSubactivityId && activity.subactivities.some((sub) => sub.id === focusSubactivityId),
@@ -381,7 +382,7 @@ export function ActivityItem({
             />
           </div>
 
-          {canDelete && (
+          {canDelete && canManageStructure && (
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
@@ -421,9 +422,11 @@ export function ActivityItem({
                 </p>
               )}
             </div>
-            <div className="px-1 pt-1">
-              <AddSubactivityDialog projectId={projectId} activityId={activity.id} />
-            </div>
+            {canManageStructure && (
+              <div className="px-1 pt-1">
+                <AddSubactivityDialog projectId={projectId} activityId={activity.id} />
+              </div>
+            )}
           </div>
         )}
       </div>

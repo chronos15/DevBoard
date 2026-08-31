@@ -846,6 +846,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserRole, projects, refreshWorkSessions, schedule])
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem criar subatividades."), "Sem permissão para criar subatividades")
+      return false
+    }
     const result = await callRpc<string>("add_subactivity", {
       p_project_id: projectId,
       p_activity_id: activityId,
@@ -857,21 +861,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!result) return false
     await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
     return true
-  }, [callRpc, refreshNotifications, refreshProjects, refreshWorkSessions])
+  }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshWorkSessions])
 
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = []) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem criar atividades."), "Sem permissão para criar atividades")
+      return false
+    }
     const result = await callRpc<string>("add_activity", { p_project_id: projectId, p_title: title, p_assignee_ids: assigneeIds }, "Não foi possível adicionar a atividade")
     if (!result) return false
     await refreshProjects()
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, currentUserRole, fail, refreshProjects])
 
   const deleteActivity = React.useCallback(async (_projectId: string, activityId: string) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem excluir atividades."), "Sem permissão para excluir atividades")
+      return false
+    }
     const result = await callRpc<unknown>("delete_activity", { p_activity_id: activityId }, "Não foi possível excluir a atividade")
     if (result === undefined) return false
     await refreshProjects()
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, currentUserRole, fail, refreshProjects])
 
   const addProject = React.useCallback(async (data: ProjectInput) => {
     const result = await callRpc<string>("create_project", {
@@ -890,6 +902,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshProjects])
 
   const updateProject = React.useCallback(async (projectId: string, data: ProjectInput) => {
+    const project = projects.find((item) => item.id === projectId)
+    const canEdit = currentUserRole === "admin" || Boolean(
+      project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
+    )
+    if (!canEdit) {
+      fail(new Error("Você precisa estar integrado ao projeto para editá-lo."), "Sem permissão para editar este projeto")
+      return false
+    }
     const result = await callRpc<unknown>("update_project", {
       p_project_id: projectId,
       p_name: data.name,
@@ -904,14 +924,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (result === undefined) return false
     await refreshProjects()
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
   const versionProject = React.useCallback(async (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => {
+    const project = projects.find((item) => item.id === projectId)
+    const canEdit = currentUserRole === "admin" || Boolean(
+      project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
+    )
+    if (!canEdit) {
+      fail(new Error("Você precisa estar integrado ao projeto para versioná-lo."), "Sem permissão para versionar este projeto")
+      return false
+    }
     const result = await callRpc<unknown>("version_project", { p_project_id: projectId, p_version: data.version, p_build: data.build, p_allow_pending: data.allowPending ?? false }, "Não foi possível versionar o projeto")
     if (result === undefined) return false
     await refreshProjects()
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
   const addProjectComment = React.useCallback(async (projectId: string, content: string) => {
     const result = await callRpc<string>("add_project_comment", { p_project_id: projectId, p_content: content }, "Não foi possível salvar o comentário")
@@ -1528,6 +1556,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshNotifications, refreshSupportTopics])
 
   const sendSupportTopicToActivity = React.useCallback(async (topicId: string, projectId: string, developerId?: string) => {
+    const topic = supportTopics.find((item) => item.id === topicId)
+    const canSend = currentUserRole === "admin" || (currentUserRole === "aqs" && topic?.status === "analyzing" && topic.assignedAnalystId === currentUserId)
+    if (!canSend) {
+      fail(new Error("Apenas o administrador ou o analista AQS responsável pela análise podem encaminhar tópicos para desenvolvimento."), "Sem permissão para encaminhar")
+      return null
+    }
     const activityId = await callRpc<string>("send_topic_to_activity", {
       p_topic_id: topicId,
       p_project_id: projectId,
@@ -1536,7 +1570,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!activityId) return null
     await Promise.all([refreshSupportTopics(), refreshProjects(), refreshNotifications()])
     return activityId
-  }, [callRpc, refreshNotifications, refreshProjects, refreshSupportTopics])
+  }, [callRpc, currentUserId, currentUserRole, fail, refreshNotifications, refreshProjects, refreshSupportTopics, supportTopics])
 
   const signOut = React.useCallback(async () => {
     await supabase.auth.signOut()

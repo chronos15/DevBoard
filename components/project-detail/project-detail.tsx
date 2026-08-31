@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Columns3,
   List,
+  MessageSquareText,
   ListTree,
   PanelRightClose,
   PanelRightOpen,
@@ -37,6 +38,7 @@ import { ActivityItem } from "./activity-item"
 import { ActiveTimerHero } from "./active-timer-hero"
 import { ProjectLogDialog } from "./project-log"
 import { SubactivityKanban } from "./subactivity-kanban"
+import { ProjectFollowUp } from "./project-follow-up"
 import { VersionProjectDialog } from "./version-project-dialog"
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
@@ -52,12 +54,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     addProjectAttachments,
     setProjectAttachmentActive,
     currentUserId,
+    currentUserRole,
     hydrated,
   } = useStore()
   const project = projects.find((p) => p.id === projectId)
   const [newActivity, setNewActivity] = React.useState("")
   const [newActivityAssignee, setNewActivityAssignee] = React.useState(currentUserId)
-  const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
+  const [viewMode, setViewMode] = React.useState<"list" | "kanban" | "followup">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
   const [assigneeFilter, setAssigneeFilter] = React.useState("all")
   const [activitySort, setActivitySort] = React.useState<"newest" | "oldest">("newest")
@@ -86,6 +89,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     if (currentUserId) setNewActivityAssignee(currentUserId)
   }, [currentUserId])
 
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("view") === "followup") {
+      setViewMode("followup")
+      setSidePanelExpanded(false)
+    }
+  }, [])
+
   if (!hydrated) {
     return (
       <div className="rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/8">
@@ -112,6 +123,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const estimated = projectEstimated(project)
 
   const currentMember = members.find((member) => member.id === currentUserId)
+  const canCreateWorkStructure = currentUserRole === "admin"
+  const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
   const personalDone = personalSubs.filter((sub) => sub.status === "done").length
@@ -177,9 +190,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     }
   }
 
-  function changeView(mode: "list" | "kanban") {
+  function changeView(mode: "list" | "kanban" | "followup") {
     setViewMode(mode)
     setSidePanelExpanded(mode === "list")
+    const url = new URL(window.location.href)
+    if (mode === "followup") url.searchParams.set("view", "followup")
+    else url.searchParams.delete("view")
+    window.history.replaceState({}, "", url)
   }
 
   const progressCard = (
@@ -319,15 +336,17 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 void setProjectAttachmentActive(project.id, attachmentId, active)
               }
             />
-            <VersionProjectDialog project={project} />
+            {canEditProject && <VersionProjectDialog project={project} />}
             <ProjectLogDialog project={project} />
-            <Link
-              href={`/projetos/${project.id}/editar`}
-              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted"
-            >
-              <Pencil className="size-3.5" />
-              Editar
-            </Link>
+            {canEditProject && (
+              <Link
+                href={`/projetos/${project.id}/editar`}
+                className="flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted"
+              >
+                <Pencil className="size-3.5" />
+                Editar
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -335,9 +354,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       <div
         className={cn(
           "grid gap-4 transition-[grid-template-columns] duration-200",
-          sidePanelExpanded
-            ? "lg:grid-cols-[minmax(0,1fr)_320px]"
-            : "lg:grid-cols-[minmax(0,1fr)_88px]",
+          viewMode === "followup"
+            ? "grid-cols-1"
+            : sidePanelExpanded
+              ? "lg:grid-cols-[minmax(0,1fr)_320px]"
+              : "lg:grid-cols-[minmax(0,1fr)_88px]",
         )}
       >
         <div className="min-w-0 space-y-3 lg:order-1">
@@ -421,6 +442,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 <Columns3 className="size-3.5" />
                 Kanban
               </button>
+              <button
+                type="button"
+                onClick={() => changeView("followup")}
+                className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "followup" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <MessageSquareText className="size-3.5" />
+                Acompanhamento
+              </button>
             </div>
           </div>
 
@@ -454,38 +483,47 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 )}
               </div>
 
-              <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
-                <Input value={newActivity} onChange={(e) => setNewActivity(e.target.value)} placeholder="Nova atividade..." className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
-                <label className="relative min-w-0">
-                  <span className="sr-only">Responsável pela atividade</span>
-                  <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <select
-                    value={newActivityAssignee}
-                    onChange={(event) => setNewActivityAssignee(event.target.value)}
-                    className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
-                    aria-label="Responsável pela nova atividade"
-                  >
-                    {executionMembers.map((member) => (
-                      <option key={member.id} value={member.id}>{member.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <Button type="submit" size="sm" className="gap-1.5" loading={addingActivity} loadingText="Adicionando...">
-                  <Plus className="size-4" />
-                  Adicionar
-                </Button>
-              </form>
+              {canCreateWorkStructure && (
+                <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
+                  <Input value={newActivity} onChange={(e) => setNewActivity(e.target.value)} placeholder="Nova atividade..." className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                  <label className="relative min-w-0">
+                    <span className="sr-only">Responsável pela atividade</span>
+                    <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <select
+                      value={newActivityAssignee}
+                      onChange={(event) => setNewActivityAssignee(event.target.value)}
+                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
+                      aria-label="Responsável pela nova atividade"
+                    >
+                      {executionMembers.map((member) => (
+                        <option key={member.id} value={member.id}>{member.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button type="submit" size="sm" className="gap-1.5" loading={addingActivity} loadingText="Adicionando...">
+                    <Plus className="size-4" />
+                    Adicionar
+                  </Button>
+                </form>
+              )}
             </>
-          ) : (
+          ) : viewMode === "kanban" ? (
             <SubactivityKanban
               project={project}
               filter={activityFilter}
               assigneeId={assigneeFilter}
             />
+          ) : (
+            <ProjectFollowUp
+              project={project}
+              filter={activityFilter}
+              assigneeId={assigneeFilter}
+              initialSubactivityId={focusTarget.subactivityId}
+            />
           )}
         </div>
 
-        <aside className="space-y-2.5 lg:order-2">
+        {viewMode !== "followup" && <aside className="space-y-2.5 lg:order-2">
           <div className="hidden lg:flex lg:justify-end">
             <button
               type="button"
@@ -530,7 +568,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
             </>
           )}
-        </aside>
+        </aside>}
       </div>
     </div>
   )

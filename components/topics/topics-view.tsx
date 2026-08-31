@@ -232,6 +232,7 @@ export function TopicsView() {
     supportTopics,
     members,
     projects,
+    currentUserId,
     currentUserRole,
     startSupportTopicAnalysis,
     revokeSupportTopic,
@@ -266,6 +267,11 @@ export function TopicsView() {
 
   const canCreate = currentUserRole === "admin" || currentUserRole === "support" || currentUserRole === "member"
   const canAnalyze = currentUserRole === "admin" || currentUserRole === "developer" || currentUserRole === "aqs"
+  const canSendSelectedToDev = Boolean(
+    selected &&
+      (currentUserRole === "admin" ||
+        (currentUserRole === "aqs" && selected.status === "analyzing" && selected.assignedAnalystId === currentUserId))
+  )
   const developers = members.filter((member) => member.role === "developer")
   const topicStatus = React.useCallback((topic: SupportTopic) => supportTopicDisplayStatus(topic, projects), [projects])
 
@@ -594,8 +600,10 @@ export function TopicsView() {
                         {canAnalyze && selected.status !== "sent-to-dev" && selected.status !== "revoked" ? (
                           <div className="grid grid-cols-2 gap-2">
                             {selected.status === "open" ? <Button variant="outline" loading={busy === selected.id} onClick={() => void startAnalysis(selected)} className="col-span-2">Iniciar análise</Button> : null}
-                            <Button variant="outline" onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
-                            <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar</Button>
+                            <Button variant="outline" className={currentUserRole === "admin" ? undefined : "col-span-2"} onClick={() => { setReason(""); setRevokeOpen(true) }}>Revogar</Button>
+                            {canSendSelectedToDev ? (
+                              <Button onClick={() => { setProjectId(projects[0]?.id ?? ""); setDeveloperId(""); setSendOpen(true) }}><Send className="size-3.5" />Enviar ao dev</Button>
+                            ) : null}
                           </div>
                         ) : null}
 

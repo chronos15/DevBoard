@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import {
   formatHours,
   priorityMeta,
@@ -13,7 +13,7 @@ import { MemberStack } from "@/components/member-avatar"
 import { cn } from "@/lib/utils"
 
 export function ProjectsProgress() {
-  const { projects } = useStore()
+  const { projects } = useAnalyticsScope()
 
   return (
     <div className="flex flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8">

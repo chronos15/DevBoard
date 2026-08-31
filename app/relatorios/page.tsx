@@ -8,7 +8,7 @@ export default function RelatoriosPage() {
       <PageHeading
         eyebrow="Análises"
         title="Relatórios"
-        subtitle="Visão consolidada de horas, carga do time e desempenho dos projetos."
+        subtitle="Horas, carga e desempenho dos projetos respeitando o seu nível de acesso."
         action={<ExportReportsButton />}
       />
       <ReportsView />

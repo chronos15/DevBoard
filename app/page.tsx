@@ -35,12 +35,13 @@ function StatCard({ label, value, Icon }: { label: string; value: number; Icon: 
 }
 
 function AqsDashboard({ firstName }: { firstName: string }) {
-  const { aqsReviews, projects } = useStore()
-  const awaiting = aqsReviews.filter((item) => item.status === "awaiting").length
-  const evaluating = aqsReviews.filter((item) => item.status === "evaluating").length
-  const completed = aqsReviews.filter((item) => item.status === "completed").length
-  const revoked = aqsReviews.filter((item) => item.status === "revoked").length
-  const active = aqsReviews.filter((item) => item.status === "awaiting" || item.status === "evaluating").slice(0, 6)
+  const { aqsReviews, currentUserId, projects } = useStore()
+  const visibleReviews = aqsReviews.filter((item) => item.assignedAqsId === currentUserId)
+  const awaiting = visibleReviews.filter((item) => item.status === "awaiting").length
+  const evaluating = visibleReviews.filter((item) => item.status === "evaluating").length
+  const completed = visibleReviews.filter((item) => item.status === "completed").length
+  const revoked = visibleReviews.filter((item) => item.status === "revoked").length
+  const active = visibleReviews.filter((item) => item.status === "awaiting" || item.status === "evaluating").slice(0, 6)
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -62,7 +63,7 @@ function AqsDashboard({ firstName }: { firstName: string }) {
       </div>
       <section className="rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <div><h2 className="text-sm font-semibold">Próximas análises</h2><p className="mt-0.5 text-xs text-muted-foreground">Itens ativos na fila AQS.</p></div>
+          <div><h2 className="text-sm font-semibold">Próximas análises</h2><p className="mt-0.5 text-xs text-muted-foreground">Itens ativos atribuídos a você.</p></div>
           <Link href="/analise" className="flex items-center gap-1 text-xs font-medium text-primary">Ver Kanban <ArrowRight className="size-3.5" /></Link>
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -94,8 +95,13 @@ const topicLabels = {
 } as const
 
 function TopicsDashboard({ firstName }: { firstName: string }) {
-  const { supportTopics, currentUserRole, projects } = useStore()
-  const topicStatuses = supportTopics.map((item) => supportTopicDisplayStatus(item, projects))
+  const { supportTopics, currentUserId, currentUserRole, projects } = useStore()
+  const visibleTopics = supportTopics.filter((topic) =>
+    topic.createdBy === currentUserId ||
+    topic.assignedAnalystId === currentUserId ||
+    topic.developerId === currentUserId
+  )
+  const topicStatuses = visibleTopics.map((item) => supportTopicDisplayStatus(item, projects))
   const open = topicStatuses.filter((status) => status === "open").length
   const analyzing = topicStatuses.filter((status) => status === "analyzing").length
   const sent = topicStatuses.filter((status) => status === "sent-to-dev").length
@@ -122,9 +128,9 @@ function TopicsDashboard({ firstName }: { firstName: string }) {
         <StatCard label="Revogados" value={revoked} Icon={RotateCcw} />
       </div>
       <section className="rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Tópicos recentes</h2><p className="mt-0.5 text-xs text-muted-foreground">Últimas solicitações visíveis para sua role.</p></div><Link href="/topicos" className="flex items-center gap-1 text-xs font-medium text-primary">Abrir fila <ArrowRight className="size-3.5" /></Link></div>
+        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Tópicos recentes</h2><p className="mt-0.5 text-xs text-muted-foreground">Últimas solicitações relacionadas ao seu usuário.</p></div><Link href="/topicos" className="flex items-center gap-1 text-xs font-medium text-primary">Abrir fila <ArrowRight className="size-3.5" /></Link></div>
         <div className="mt-4 space-y-2">
-          {supportTopics.slice(0, 6).map((topic) => {
+          {visibleTopics.slice(0, 6).map((topic) => {
             const displayStatus = supportTopicDisplayStatus(topic, projects)
             return (
               <Link key={topic.id} href="/topicos" className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
@@ -133,7 +139,7 @@ function TopicsDashboard({ firstName }: { firstName: string }) {
               </Link>
             )
           })}
-          {supportTopics.length === 0 && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nenhum tópico aberto ainda.</div>}
+          {visibleTopics.length === 0 && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nenhum tópico relacionado a você no momento.</div>}
         </div>
       </section>
     </div>

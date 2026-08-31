@@ -63,7 +63,7 @@ const faqs = [
   },
   {
     q: "É possível exportar os relatórios?",
-    a: "Na página de Relatórios use o botão Exportar no topo para baixar um resumo consolidado das horas e do progresso dos projetos.",
+    a: "Na página de Relatórios use o botão Exportar no topo para baixar um resumo de horas e progresso respeitando o seu nível de acesso.",
   },
   {
     q: "Como convidar novos membros para o time?",

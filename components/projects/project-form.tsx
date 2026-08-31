@@ -11,7 +11,7 @@ import { MemberName } from "@/components/member-avatar"
 
 export function ProjectForm({ projectId }: { projectId?: string }) {
   const router = useRouter()
-  const { projects, members, addProject, updateProject, currentUserId, hydrated } = useStore()
+  const { projects, members, addProject, updateProject, currentUserId, currentUserRole, hydrated } = useStore()
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined
   const editing = Boolean(projectId)
 
@@ -58,6 +58,25 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
         <p className="text-sm text-muted-foreground">Projeto não encontrado.</p>
         <Link href="/projetos" className="mt-4 inline-flex text-sm font-medium text-primary hover:underline">
           Voltar para projetos
+        </Link>
+      </div>
+    )
+  }
+
+  const canEditProject = !editing || currentUserRole === "admin" || Boolean(
+    project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
+  )
+
+  if (editing && !canEditProject) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/8">
+        <p className="text-sm font-semibold">Você não pode editar este projeto.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Somente administradores ou Desenvolvedores integrados ao projeto podem alterar suas configurações.
+          Comentários e anexos continuam disponíveis na tela do projeto.
+        </p>
+        <Link href={`/projetos/${projectId}`} className="mt-4 inline-flex text-sm font-medium text-primary hover:underline">
+          Voltar ao projeto
         </Link>
       </div>
     )

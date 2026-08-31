@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import {
   formatHours,
   projectEstimated,
@@ -52,7 +52,7 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 export function ReportsView() {
-  const { projects, members } = useStore()
+  const { isAdmin, projects, members } = useAnalyticsScope()
 
   const byProject = projects.map((p) => ({
     name: p.name,
@@ -139,9 +139,9 @@ export function ReportsView() {
 
         <div className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
           <div className="mb-5">
-            <h2 className="text-base font-semibold">Carga por pessoa</h2>
+            <h2 className="text-base font-semibold">{isAdmin ? "Carga por pessoa" : "Sua carga"}</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Horas registradas por membro do time.
+              {isAdmin ? "Horas registradas por membro do time." : "Suas horas registradas no escopo dos seus projetos."}
             </p>
           </div>
           <ul className="flex flex-col gap-4">

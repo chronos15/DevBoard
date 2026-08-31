@@ -1,11 +1,11 @@
 "use client"
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { statusCounts } from "@/lib/project-utils"
 
 export function StatusDonut() {
-  const { projects } = useStore()
+  const { projects } = useAnalyticsScope()
   const counts = statusCounts(projects)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
 

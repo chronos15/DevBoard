@@ -13,9 +13,12 @@ import {
   projectTracked,
 } from "@/lib/project-utils"
 import { MemberStack } from "@/components/member-avatar"
+import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function ProjectCard({ project }: { project: Project }) {
+  const { currentUserId, currentUserRole } = useStore()
+  const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   const progress = projectProgress(project)
   const prio = priorityMeta[project.priority]
   const subs = projectSubactivities(project)
@@ -44,14 +47,16 @@ export function ProjectCard({ project }: { project: Project }) {
           >
             {prio.label}
           </span>
-          <Link
-            href={`/projetos/${project.id}/editar`}
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label={`Editar ${project.name}`}
-            title="Editar projeto"
-          >
-            <Pencil className="size-3.5" />
-          </Link>
+          {canEditProject && (
+            <Link
+              href={`/projetos/${project.id}/editar`}
+              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={`Editar ${project.name}`}
+              title="Editar projeto"
+            >
+              <Pencil className="size-3.5" />
+            </Link>
+          )}
         </div>
       </div>
 

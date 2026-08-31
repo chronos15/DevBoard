@@ -3,12 +3,14 @@
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { formatHMS } from "@/lib/project-utils"
 import { TimerButton } from "@/components/timer-button"
 import { MemberAvatar } from "@/components/member-avatar"
 
 export function FocusPanel() {
-  const { projects, members, activeSubId, runningSubIds } = useStore()
+  const { activeSubId, runningSubIds } = useStore()
+  const { projects, members } = useAnalyticsScope()
 
   const items = projects
     .flatMap((p) =>

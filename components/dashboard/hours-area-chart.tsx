@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { cn } from "@/lib/utils"
 
 function startOfLocalDay(value: Date) {
@@ -49,7 +49,7 @@ function TooltipContent({ active, payload, label }: any) {
 }
 
 export function HoursAreaChart() {
-  const { workSessions } = useStore()
+  const { workSessions } = useAnalyticsScope()
   const [range, setRange] = React.useState<"7d" | "30d">("7d")
   const [now, setNow] = React.useState(() => Date.now())
 

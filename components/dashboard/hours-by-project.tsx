@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { projectTracked } from "@/lib/project-utils"
 
 const palette = [
@@ -35,7 +35,7 @@ function TooltipContent({ active, payload }: any) {
 }
 
 export function HoursByProject() {
-  const { projects } = useStore()
+  const { projects } = useAnalyticsScope()
 
   const data = projects.map((p, i) => ({
     name: p.name.length > 12 ? p.name.slice(0, 11) + "…" : p.name,

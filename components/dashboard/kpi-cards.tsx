@@ -1,7 +1,7 @@
 "use client"
 
 import { FolderKanban, Timer, CheckCircle2, TrendingUp } from "lucide-react"
-import { useStore } from "@/lib/store"
+import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import {
   projectSubactivities,
   projectTracked,
@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils"
 
 export function KpiCards() {
-  const { projects } = useStore()
+  const { isAdmin, projects } = useAnalyticsScope()
 
   const allSubs = projects.flatMap(projectSubactivities)
   const totalSeconds = projects.reduce((acc, p) => acc + projectTracked(p), 0)
@@ -25,7 +25,7 @@ export function KpiCards() {
       value: String(projects.length),
       hint: `${allSubs.length} subatividades`,
       icon: FolderKanban,
-      trend: "+2 este mês",
+      trend: isAdmin ? "workspace" : "seu escopo",
       tone: "text-chart-4",
       bg: "bg-chart-4/12",
     },
@@ -35,7 +35,7 @@ export function KpiCards() {
       suffix: "h",
       hint: "acumulado no período",
       icon: Timer,
-      trend: "+8.4% vs. semana",
+      trend: isAdmin ? "equipe" : "suas horas",
       tone: "text-primary",
       bg: "bg-primary/12",
     },
@@ -44,7 +44,7 @@ export function KpiCards() {
       value: String(inProgress),
       hint: "subatividades abertas",
       icon: TrendingUp,
-      trend: "foco da semana",
+      trend: "foco atual",
       tone: "text-chart-3",
       bg: "bg-chart-3/15",
     },
@@ -54,7 +54,7 @@ export function KpiCards() {
       suffix: "%",
       hint: `${done} concluídas`,
       icon: CheckCircle2,
-      trend: "+5% vs. mês",
+      trend: "do escopo",
       tone: "text-success",
       bg: "bg-success/15",
     },

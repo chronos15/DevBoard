@@ -131,6 +131,7 @@ export type StoreContextValue = {
   addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyToCommentId?: string) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
   deleteFollowUpAttachment: (attachmentId: string, storagePath?: string) => Promise<boolean>
+  removeFollowUpMember: (subId: string, userId: string) => Promise<boolean>
   addProjectAttachments: (projectId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setProjectAttachmentActive: (projectId: string, attachmentId: string, active: boolean) => Promise<boolean>
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
@@ -1131,6 +1132,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshProjects, supabase])
 
+  const removeFollowUpMember = React.useCallback(async (subId: string, userId: string) => {
+    const result = await callRpc<boolean>("remove_followup_subactivity_member", {
+      p_subactivity_id: subId,
+      p_user_id: userId,
+    }, "Não foi possível remover o usuário do acompanhamento")
+    if (result === undefined) return false
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects])
+
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; subactivityId?: string },
     files: AttachmentUploadInput[],
@@ -1803,6 +1814,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addFollowUpComment,
     deleteFollowUpComment,
     deleteFollowUpAttachment,
+    removeFollowUpMember,
     addProjectAttachments,
     setProjectAttachmentActive,
     addSubactivityAttachments,
@@ -1829,7 +1841,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
-    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, deleteFollowUpAttachment, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,

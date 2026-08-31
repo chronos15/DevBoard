@@ -58,6 +58,7 @@ import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
@@ -209,10 +210,16 @@ const MemberLine = React.memo(function MemberLine({
   member,
   online,
   isResponsible,
+  canRemove = false,
+  removing = false,
+  onRemove,
 }: {
   member: ReturnType<typeof useStore>["members"][number]
   online: boolean
   isResponsible: boolean
+  canRemove?: boolean
+  removing?: boolean
+  onRemove?: () => void
 }) {
 
   return (
@@ -237,6 +244,20 @@ const MemberLine = React.memo(function MemberLine({
           )}
         </div>
       </div>
+      {canRemove && onRemove && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={removing}
+          onClick={onRemove}
+          className="shrink-0 text-muted-foreground opacity-100 transition-opacity hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+          title={`Remover ${member.name} desta subatividade`}
+          aria-label={`Remover ${member.name} do acompanhamento`}
+        >
+          {removing ? <LoaderCircle className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+        </Button>
+      )}
     </div>
   )
 })
@@ -394,6 +415,7 @@ export function ProjectFollowUp({
     addFollowUpComment,
     deleteFollowUpComment,
     deleteFollowUpAttachment,
+    removeFollowUpMember,
     addSubactivityAttachments,
     deleteActivity,
     startTimer,
@@ -461,6 +483,8 @@ export function ProjectFollowUp({
   const [reactions, setReactions] = React.useState<FollowUpReaction[]>([])
   const [reactionPickerItemId, setReactionPickerItemId] = React.useState<string | null>(null)
   const [reactionSavingItemId, setReactionSavingItemId] = React.useState<string | null>(null)
+  const [memberRemovalTargetId, setMemberRemovalTargetId] = React.useState<string | null>(null)
+  const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     try {
@@ -564,6 +588,13 @@ export function ProjectFollowUp({
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
+  const canManageFollowUpMembers = Boolean(
+    selectedSub && selectedActivity && (
+      currentUserRole === "admin"
+      || selectedSub.assigneeId === currentUserId
+      || Boolean(selectedActivity.assigneeIds?.includes(currentUserId))
+    )
+  )
 
   const projectMemberIds = React.useMemo(() => {
     const ids = new Set(project.memberIds)
@@ -578,6 +609,19 @@ export function ProjectFollowUp({
     if (!selectedSub) return []
     return Array.from(new Set([selectedSub.assigneeId, ...(selectedSub.memberIds ?? [])].filter(Boolean)))
   }, [selectedSub])
+
+  const memberRemovalTarget = React.useMemo(
+    () => members.find((member) => member.id === memberRemovalTargetId) ?? null,
+    [memberRemovalTargetId, members],
+  )
+
+  const canRemoveFollowUpMember = React.useCallback((memberId: string) => {
+    if (!selectedSub || !canManageFollowUpMembers) return false
+    if (memberId === selectedSub.assigneeId) return false
+    const member = members.find((item) => item.id === memberId)
+    if (member?.role === "admin") return false
+    return Boolean(selectedSub.memberIds?.includes(memberId))
+  }, [canManageFollowUpMembers, members, selectedSub])
 
   const presenceAllowedMemberIds = React.useMemo(() => {
     const adminIds = members.filter((member) => member.role === "admin").map((member) => member.id)
@@ -1584,6 +1628,14 @@ export function ProjectFollowUp({
     </div>
   )
 
+  async function confirmRemoveFollowUpMember() {
+    if (!selectedSub || !memberRemovalTargetId || removingMemberId) return
+    setRemovingMemberId(memberRemovalTargetId)
+    const ok = await removeFollowUpMember(selectedSub.id, memberRemovalTargetId)
+    setRemovingMemberId(null)
+    if (ok) setMemberRemovalTargetId(null)
+  }
+
   const membersContent = (
     <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
       <div className="mb-4">
@@ -1597,6 +1649,9 @@ export function ProjectFollowUp({
               member={member}
               online={Boolean(memberPresence[id]?.online)}
               isResponsible={selectedSub?.assigneeId === id}
+              canRemove={canRemoveFollowUpMember(id)}
+              removing={removingMemberId === id}
+              onRemove={() => setMemberRemovalTargetId(id)}
             />
           )
         })}
@@ -1613,6 +1668,9 @@ export function ProjectFollowUp({
               member={member}
               online
               isResponsible={selectedSub?.assigneeId === id}
+              canRemove={canRemoveFollowUpMember(id)}
+              removing={removingMemberId === id}
+              onRemove={() => setMemberRemovalTargetId(id)}
             />
           )
         })}
@@ -1629,6 +1687,9 @@ export function ProjectFollowUp({
               member={member}
               online={false}
               isResponsible={selectedSub?.assigneeId === id}
+              canRemove={canRemoveFollowUpMember(id)}
+              removing={removingMemberId === id}
+              onRemove={() => setMemberRemovalTargetId(id)}
             />
           )
         })}
@@ -2342,6 +2403,33 @@ export function ProjectFollowUp({
         currentProjectId={project.id}
         onOpenResult={openGlobalSearchResult}
       />
+
+      <Dialog open={Boolean(memberRemovalTarget)} onOpenChange={(open) => {
+        if (!open && !removingMemberId) setMemberRemovalTargetId(null)
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remover do acompanhamento?</DialogTitle>
+            <DialogDescription>
+              {memberRemovalTarget && selectedSub ? (
+                <>
+                  <strong className="font-medium text-foreground">{memberRemovalTarget.name}</strong> deixará de visualizar
+                  <strong className="font-medium text-foreground"> “{selectedSub.title}”</strong> no Acompanhamento. Uma nova menção nessa subatividade poderá adicioná-lo novamente.
+                </>
+              ) : "O usuário deixará de acompanhar esta subatividade."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={Boolean(removingMemberId)} onClick={() => setMemberRemovalTargetId(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="destructive" disabled={Boolean(removingMemberId)} onClick={() => { void confirmRemoveFollowUpMember() }}>
+              {removingMemberId ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Remover usuário
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <MobilePanel open={mobileNavigatorOpen} title="Atividades" onClose={() => setMobileNavigatorOpen(false)}>
         {navigatorContent}

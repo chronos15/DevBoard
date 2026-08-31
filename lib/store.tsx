@@ -850,8 +850,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserRole, projects, refreshWorkSessions, schedule])
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
-    if (currentUserRole !== "admin") {
-      fail(new Error("Apenas administradores podem criar subatividades."), "Sem permissão para criar subatividades")
+    const project = projects.find((item) => item.id === projectId)
+    const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+    if (!canManageStructure) {
+      fail(new Error("Você precisa estar integrado ao projeto para criar subatividades."), "Sem permissão para criar subatividades")
       return false
     }
     const result = await callRpc<string>("add_subactivity", {
@@ -865,29 +867,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!result) return false
     await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
     return true
-  }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshWorkSessions])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshWorkSessions])
 
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = []) => {
-    if (currentUserRole !== "admin") {
-      fail(new Error("Apenas administradores podem criar atividades."), "Sem permissão para criar atividades")
+    const project = projects.find((item) => item.id === projectId)
+    const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+    if (!canManageStructure) {
+      fail(new Error("Você precisa estar integrado ao projeto para criar atividades."), "Sem permissão para criar atividades")
       return false
     }
     const result = await callRpc<string>("add_activity", { p_project_id: projectId, p_title: title, p_assignee_ids: assigneeIds }, "Não foi possível adicionar a atividade")
     if (!result) return false
     await refreshProjects()
     return true
-  }, [callRpc, currentUserRole, fail, refreshProjects])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
-  const deleteActivity = React.useCallback(async (_projectId: string, activityId: string) => {
-    if (currentUserRole !== "admin") {
-      fail(new Error("Apenas administradores podem excluir atividades."), "Sem permissão para excluir atividades")
+  const deleteActivity = React.useCallback(async (projectId: string, activityId: string) => {
+    const project = projects.find((item) => item.id === projectId)
+    const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+    if (!canManageStructure) {
+      fail(new Error("Você precisa estar integrado ao projeto para excluir atividades."), "Sem permissão para excluir atividades")
       return false
     }
     const result = await callRpc<unknown>("delete_activity", { p_activity_id: activityId }, "Não foi possível excluir a atividade")
     if (result === undefined) return false
     await refreshProjects()
     return true
-  }, [callRpc, currentUserRole, fail, refreshProjects])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
   const uploadProjectIconImage = React.useCallback(async (projectId: string, file: File) => {
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])

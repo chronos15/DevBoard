@@ -263,8 +263,9 @@ export function ActivityItem({
   focusActivityId?: string | null
   focusSubactivityId?: string | null
 }) {
-  const { deleteActivity, supportTopics, currentUserRole } = useStore()
-  const canManageStructure = currentUserRole === "admin"
+  const { deleteActivity, supportTopics, currentUserId, currentUserRole, projects } = useStore()
+  const currentProject = projects.find((project) => project.id === projectId)
+  const canManageStructure = currentUserRole === "admin" || Boolean(currentProject?.memberIds.includes(currentUserId))
   const activityRef = React.useRef<HTMLDivElement>(null)
   const hasFocusedSubactivity = Boolean(
     focusSubactivityId && activity.subactivities.some((sub) => sub.id === focusSubactivityId),

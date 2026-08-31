@@ -35,6 +35,7 @@ import { MemberAvatar, MemberName, MemberStack } from "@/components/member-avata
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { ActivityItem } from "./activity-item"
+import { AddSubactivityDialog } from "./add-subactivity-dialog"
 import { ActiveTimerHero } from "./active-timer-hero"
 import { ProjectLogDialog } from "./project-log"
 import { SubactivityKanban } from "./subactivity-kanban"
@@ -67,6 +68,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [activitySort, setActivitySort] = React.useState<"newest" | "oldest">("newest")
   const [sidePanelExpanded, setSidePanelExpanded] = React.useState(true)
   const [addingActivity, setAddingActivity] = React.useState(false)
+  const [kanbanActivityId, setKanbanActivityId] = React.useState("")
 
   React.useEffect(() => {
     function readFocusFromHash() {
@@ -87,8 +89,22 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   }, [])
 
   React.useEffect(() => {
-    if (currentUserId) setNewActivityAssignee(currentUserId)
-  }, [currentUserId])
+    const currentExecutionMember = members.find(
+      (member) => member.id === currentUserId && (member.role === "developer" || member.role === "admin"),
+    )
+    const fallbackExecutionMember = members.find((member) => member.role === "developer" || member.role === "admin")
+    setNewActivityAssignee(currentExecutionMember?.id ?? fallbackExecutionMember?.id ?? "")
+  }, [currentUserId, members])
+
+  React.useEffect(() => {
+    if (!project?.activities.length) {
+      if (kanbanActivityId) setKanbanActivityId("")
+      return
+    }
+    if (!project.activities.some((activity) => activity.id === kanbanActivityId)) {
+      setKanbanActivityId(project.activities[0].id)
+    }
+  }, [kanbanActivityId, project])
 
   if (!hydrated) {
     return (
@@ -116,7 +132,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const estimated = projectEstimated(project)
 
   const currentMember = members.find((member) => member.id === currentUserId)
-  const canCreateWorkStructure = currentUserRole === "admin"
+  const canCreateWorkStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
   const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
@@ -170,8 +186,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     return activitySort === "newest" ? bNumber - aNumber : aNumber - bNumber
   })
 
-  const handleAddActivity = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAddActivity = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     const title = newActivity.trim()
     if (!title || addingActivity) return
     setAddingActivity(true)
@@ -503,11 +519,68 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               )}
             </>
           ) : (
-            <SubactivityKanban
-              project={project}
-              filter={activityFilter}
-              assigneeId={assigneeFilter}
-            />
+            <>
+              {canCreateWorkStructure && (
+                <div className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 lg:grid-cols-[minmax(0,1fr)_190px_auto_minmax(220px,280px)_auto] lg:items-center">
+                  <Input
+                    value={newActivity}
+                    onChange={(e) => setNewActivity(e.target.value)}
+                    placeholder="Nova atividade..."
+                    className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                  />
+                  <label className="relative min-w-0">
+                    <span className="sr-only">Responsável pela atividade</span>
+                    <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <select
+                      value={newActivityAssignee}
+                      onChange={(event) => setNewActivityAssignee(event.target.value)}
+                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
+                      aria-label="Responsável pela nova atividade"
+                    >
+                      {executionMembers.map((member) => (
+                        <option key={member.id} value={member.id}>{member.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1.5"
+                    loading={addingActivity}
+                    loadingText="Adicionando..."
+                    disabled={!newActivity.trim()}
+                    onClick={() => void handleAddActivity()}
+                  >
+                    <Plus className="size-4" />
+                    Atividade
+                  </Button>
+
+                  <select
+                    value={kanbanActivityId}
+                    onChange={(event) => setKanbanActivityId(event.target.value)}
+                    className="h-8 min-w-0 rounded-lg border border-border bg-card px-2 text-xs outline-none focus:border-ring"
+                    aria-label="Atividade para nova subatividade"
+                  >
+                    {project.activities.map((activity, index) => (
+                      <option key={activity.id} value={activity.id}>{index + 1}. {activity.title}</option>
+                    ))}
+                  </select>
+                  <div className="flex justify-end">
+                    {kanbanActivityId ? (
+                      <AddSubactivityDialog projectId={project.id} activityId={kanbanActivityId} />
+                    ) : (
+                      <span className="px-2 text-xs text-muted-foreground">Crie uma atividade primeiro</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <SubactivityKanban
+                project={project}
+                filter={activityFilter}
+                assigneeId={assigneeFilter}
+              />
+            </>
           )}
         </div>
 

@@ -413,7 +413,7 @@ export function ProjectFollowUp({
   const selectedActivity = selectedContext?.activity
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
-  const canManageStructure = currentUserRole === "admin"
+  const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
 
   const projectMemberIds = React.useMemo(() => {
     const ids = new Set(project.memberIds)

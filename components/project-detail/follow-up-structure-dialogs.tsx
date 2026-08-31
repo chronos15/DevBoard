@@ -21,18 +21,24 @@ function executionMembersOnly<T extends { role?: string }>(members: T[]) {
 }
 
 export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) {
-  const { members, currentUserId, currentUserRole, addActivity } = useStore()
+  const { members, projects, currentUserId, currentUserRole, addActivity } = useStore()
   const executionMembers = executionMembersOnly(members)
+  const project = projects.find((item) => item.id === projectId)
+  const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
-  const [assigneeId, setAssigneeId] = React.useState(currentUserId || executionMembers[0]?.id || "")
+  const [assigneeId, setAssigneeId] = React.useState(
+    executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
+  )
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
-    if (!assigneeId && currentUserId) setAssigneeId(currentUserId)
-  }, [assigneeId, currentUserId])
+    if (!assigneeId) {
+      setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+    }
+  }, [assigneeId, currentUserId, executionMembers])
 
-  if (currentUserRole !== "admin") return null
+  if (!canManageStructure) return null
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -54,7 +60,7 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) setAssigneeId(currentUserId || executionMembers[0]?.id || "")
+        if (next) setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
       }}
     >
       <Button
@@ -120,20 +126,29 @@ export function FollowUpAddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, addSubactivity, currentUserId, currentUserRole } = useStore()
+  const { members, projects, addSubactivity, currentUserId, currentUserRole } = useStore()
   const executionMembers = executionMembersOnly(members)
+  const project = projects.find((item) => item.id === projectId)
+  const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("4")
-  const [assigneeId, setAssigneeId] = React.useState(currentUserId || executionMembers[0]?.id || "")
+  const [assigneeId, setAssigneeId] = React.useState(
+    executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
+  )
   const [status, setStatus] = React.useState<Status>("backlog")
   const [saving, setSaving] = React.useState(false)
+  const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
 
   React.useEffect(() => {
-    if (!assigneeId && currentUserId) setAssigneeId(currentUserId)
-  }, [assigneeId, currentUserId])
+    if (!assigneeId) {
+      setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+    }
+    const canChooseStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
+    if (!canChooseStatus && status !== "backlog") setStatus("backlog")
+  }, [assigneeId, currentUserId, currentUserRole, executionMembers, status])
 
-  if (currentUserRole !== "admin") return null
+  if (!canManageStructure) return null
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -164,7 +179,7 @@ export function FollowUpAddSubactivityDialog({
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) setAssigneeId(currentUserId || executionMembers[0]?.id || "")
+        if (next) setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
       }}
     >
       <Button
@@ -218,8 +233,17 @@ export function FollowUpAddSubactivityDialog({
                 onChange={(event) => setStatus(event.target.value as Status)}
                 className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
               >
-                {statusOrder.map((item) => <option key={item} value={item}>{statusMeta[item].label}</option>)}
+                {statusOrder.map((item) => (
+                  <option key={item} value={item} disabled={!canSetInitialStatus && item !== "backlog"}>
+                    {statusMeta[item].label}
+                  </option>
+                ))}
               </select>
+              {!canSetInitialStatus && (
+                <p className="text-[0.68rem] leading-snug text-muted-foreground">
+                  Para outro responsável, a nova subatividade começa no Backlog.
+                </p>
+              )}
             </div>
           </div>
 

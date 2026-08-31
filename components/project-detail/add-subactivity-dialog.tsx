@@ -28,17 +28,19 @@ export function AddSubactivityDialog({
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("4")
-  const [assignee, setAssignee] = React.useState(currentUserId || executionMembers[0]?.id || "")
+  const [assignee, setAssignee] = React.useState(
+    executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
+  )
   const [status, setStatus] = React.useState<Status>("backlog")
   const [terminalConfirmOpen, setTerminalConfirmOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
+  const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assignee === currentUserId)
 
   React.useEffect(() => {
-    if (!assignee && currentUserId) setAssignee(currentUserId)
-    if (assignee && assignee !== currentUserId && currentUserRole !== "admin" && (status === "in-progress" || status === "waiting-aqs")) {
-      setStatus("backlog")
-    }
-  }, [assignee, currentUserId, currentUserRole, status])
+    if (!assignee) setAssignee(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+    const canChooseStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assignee === currentUserId)
+    if (!canChooseStatus && status !== "backlog") setStatus("backlog")
+  }, [assignee, currentUserId, currentUserRole, executionMembers, status])
 
   async function saveSubactivity() {
     if (!title.trim() || !assignee || saving) return
@@ -77,7 +79,7 @@ export function AddSubactivityDialog({
       open={open}
       onOpenChange={(value) => {
         setOpen(value)
-        if (value) setAssignee(currentUserId || executionMembers[0]?.id || "")
+        if (value) setAssignee(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
       }}
     >
       <button
@@ -132,17 +134,21 @@ export function AddSubactivityDialog({
                   <option
                     key={item}
                     value={item}
-                    disabled={(item === "in-progress" || item === "waiting-aqs") && assignee !== currentUserId && currentUserRole !== "admin"}
+                    disabled={!canSetInitialStatus && item !== "backlog"}
                   >
                     {statusMeta[item].label}
                   </option>
                 ))}
               </select>
-              {status === "in-progress" && (
+              {!canSetInitialStatus ? (
+                <span className="text-[0.68rem] leading-snug text-muted-foreground">
+                  Como você está criando para outro responsável, a subatividade começa no Backlog. O responsável poderá iniciar o fluxo normalmente.
+                </span>
+              ) : status === "in-progress" ? (
                 <span className="text-[0.68rem] leading-snug text-primary">
                   O cronômetro inicia automaticamente. Se este responsável já estiver executando outra subatividade, ela será pausada.
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
 

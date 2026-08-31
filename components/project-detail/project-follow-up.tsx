@@ -29,6 +29,7 @@ import {
   Play,
   Search,
   Send,
+  SmilePlus,
   Square,
   Trash2,
   UsersRound,
@@ -183,11 +184,26 @@ function KindIcon({ kind, className }: { kind: AttachmentKind; className?: strin
   return <Icon className={className} />
 }
 
+type ReactionTargetKind = "comment" | "attachment" | "session" | "log"
+
+type FollowUpReaction = {
+  targetKind: ReactionTargetKind
+  targetId: string
+  userId: string
+  emoji: string
+  createdAt: string
+}
+
 type TimelineItem =
-  | { kind: "comment"; id: string; createdAt: string; authorId: string; comment: CommentEntry }
-  | { kind: "attachment"; id: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
-  | { kind: "session"; id: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
-  | { kind: "log"; id: string; createdAt: string; authorId?: string; title: string; description?: string }
+  | { kind: "comment"; id: string; targetId: string; createdAt: string; authorId: string; comment: CommentEntry }
+  | { kind: "attachment"; id: string; targetId: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
+  | { kind: "session"; id: string; targetId: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
+  | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string }
+
+const FOLLOW_UP_REACTION_EMOJIS = [
+  "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "🚀",
+  "👀", "✅", "💯", "🤔", "🙏", "👏", "💪", "💡", "⚠️", "⭐",
+] as const
 
 const MemberLine = React.memo(function MemberLine({
   member,
@@ -388,6 +404,7 @@ export function ProjectFollowUp({
   const localSearchInputRef = React.useRef<HTMLInputElement>(null)
   const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
   const statusMenuRef = React.useRef<HTMLDivElement>(null)
+  const reactionPickerRef = React.useRef<HTMLDivElement>(null)
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
   const lastInitialBottomSubRef = React.useRef<string | null>(null)
@@ -439,6 +456,9 @@ export function ProjectFollowUp({
   const [navigatorWidth, setNavigatorWidth] = React.useState(FOLLOW_UP_NAV_DEFAULT_WIDTH)
   const [resizingNavigator, setResizingNavigator] = React.useState(false)
   const [membersCollapsed, setMembersCollapsed] = React.useState(false)
+  const [reactions, setReactions] = React.useState<FollowUpReaction[]>([])
+  const [reactionPickerItemId, setReactionPickerItemId] = React.useState<string | null>(null)
+  const [reactionSavingItemId, setReactionSavingItemId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     try {
@@ -596,13 +616,13 @@ export function ProjectFollowUp({
     const items: TimelineItem[] = []
 
     for (const comment of selectedSub.comments ?? []) {
-      items.push({ kind: "comment", id: `comment-${comment.id}`, createdAt: comment.createdAt, authorId: comment.authorId, comment })
+      items.push({ kind: "comment", id: `comment-${comment.id}`, targetId: comment.id, createdAt: comment.createdAt, authorId: comment.authorId, comment })
     }
     for (const attachment of (selectedSub.attachments ?? []).filter((item) => item.active)) {
-      items.push({ kind: "attachment", id: `attachment-${attachment.id}`, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
+      items.push({ kind: "attachment", id: `attachment-${attachment.id}`, targetId: attachment.id, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
     }
     for (const session of workSessions.filter((item) => item.subactivityId === selectedSub.id)) {
-      items.push({ kind: "session", id: `session-${session.id}`, createdAt: session.startedAt, authorId: session.userId, durationSeconds: session.durationSeconds, endedAt: session.endedAt })
+      items.push({ kind: "session", id: `session-${session.id}`, targetId: session.id, createdAt: session.startedAt, authorId: session.userId, durationSeconds: session.durationSeconds, endedAt: session.endedAt })
     }
 
     const needle = selectedSub.title.trim().toLocaleLowerCase("pt-BR")
@@ -611,12 +631,42 @@ export function ProjectFollowUp({
         if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
         const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
         if (!haystack.includes(needle)) continue
-        items.push({ kind: "log", id: `log-${log.id}`, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
+        items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
       }
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   }, [project.logs, selectedSub, workSessions])
+
+  const reactionsByTimelineItem = React.useMemo(() => {
+    const map = new Map<string, FollowUpReaction[]>()
+    for (const reaction of reactions) {
+      const key = `${reaction.targetKind}-${reaction.targetId}`
+      const bucket = map.get(key)
+      if (bucket) bucket.push(reaction)
+      else map.set(key, [reaction])
+    }
+    return map
+  }, [reactions])
+
+  const loadFollowUpReactions = React.useCallback(async () => {
+    if (!selectedSubId) {
+      setReactions([])
+      return
+    }
+    const { data, error } = await supabase
+      .from("followup_reactions")
+      .select("target_kind,target_id,user_id,emoji,created_at")
+      .eq("subactivity_id", selectedSubId)
+    if (error) return
+    setReactions((data ?? []).map((row: any) => ({
+      targetKind: row.target_kind as ReactionTargetKind,
+      targetId: row.target_id,
+      userId: row.user_id,
+      emoji: row.emoji,
+      createdAt: row.created_at,
+    })))
+  }, [selectedSubId, supabase])
 
   const localSearchMatches = React.useMemo(() => {
     const needle = normalizeFollowUpSearch(localSearchQuery)
@@ -659,6 +709,41 @@ export function ProjectFollowUp({
       })
     return () => { cancelled = true }
   }, [currentUserId, selectedSub?.comments, supabase])
+
+  React.useEffect(() => {
+    setReactionPickerItemId(null)
+    void loadFollowUpReactions()
+    if (!selectedSubId) return
+
+    const channel = supabase
+      .channel(`devboard-followup-reactions:${selectedSubId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "followup_reactions" },
+        () => { void loadFollowUpReactions() },
+      )
+      .subscribe()
+
+    return () => { void supabase.removeChannel(channel) }
+  }, [loadFollowUpReactions, selectedSubId, supabase])
+
+  React.useEffect(() => {
+    if (!reactionPickerItemId) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest?.("[data-followup-reaction-trigger]")) return
+      if (!reactionPickerRef.current?.contains(event.target as Node)) setReactionPickerItemId(null)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setReactionPickerItemId(null)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [reactionPickerItemId])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId || !selectedSubId) {
@@ -1036,6 +1121,107 @@ export function ProjectFollowUp({
       messageRef.current?.focus()
       messageRef.current?.setSelectionRange(caret, caret)
     })
+  }
+
+  function itemReactions(item: TimelineItem) {
+    return reactionsByTimelineItem.get(`${item.kind}-${item.targetId}`) ?? []
+  }
+
+  function renderReactionSummary(item: TimelineItem) {
+    const itemReactionRows = itemReactions(item)
+    if (!itemReactionRows.length) return null
+    const grouped = new Map<string, FollowUpReaction[]>()
+    for (const reaction of itemReactionRows) {
+      const bucket = grouped.get(reaction.emoji)
+      if (bucket) bucket.push(reaction)
+      else grouped.set(reaction.emoji, [reaction])
+    }
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {Array.from(grouped.entries()).map(([emoji, rows]) => {
+          const mine = rows.some((row) => row.userId === currentUserId)
+          const names = rows
+            .map((row) => members.find((member) => member.id === row.userId)?.name ?? "Usuário")
+            .join(", ")
+          return (
+            <button
+              key={emoji}
+              type="button"
+              disabled={reactionSavingItemId === item.id}
+              onClick={() => void setTimelineReaction(item, mine ? null : emoji)}
+              title={names}
+              className={cn(
+                "inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-[0.68rem] transition-colors disabled:opacity-50",
+                mine
+                  ? "border-primary/35 bg-primary/10 text-primary hover:bg-primary/15"
+                  : "border-border bg-muted/25 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              )}
+            >
+              <span className="text-[0.82rem] leading-none">{emoji}</span>
+              <span className="font-mono text-[0.58rem]">{rows.length}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderReactionPicker(item: TimelineItem, className?: string) {
+    if (reactionPickerItemId !== item.id) return null
+    const mine = itemReactions(item).find((row) => row.userId === currentUserId)
+    return (
+      <div
+        ref={reactionPickerRef}
+        className={cn(
+          "absolute right-1 top-9 z-40 w-[236px] rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl",
+          className,
+        )}
+      >
+        <div className="mb-1.5 flex items-center justify-between px-1">
+          <span className="text-[0.62rem] font-semibold">Adicionar reação</span>
+          {mine && <span className="text-[0.56rem] text-muted-foreground">clique na mesma para remover</span>}
+        </div>
+        <div className="grid grid-cols-5 gap-1">
+          {FOLLOW_UP_REACTION_EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              disabled={reactionSavingItemId === item.id}
+              onClick={() => void setTimelineReaction(item, mine?.emoji === emoji ? null : emoji)}
+              className={cn(
+                "flex size-9 items-center justify-center rounded-lg text-lg transition-colors hover:bg-muted disabled:opacity-50",
+                mine?.emoji === emoji && "bg-primary/12 ring-1 ring-primary/25",
+              )}
+              title={mine?.emoji === emoji ? `Remover ${emoji}` : `Reagir com ${emoji}`}
+              aria-label={mine?.emoji === emoji ? `Remover reação ${emoji}` : `Reagir com ${emoji}`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  async function setTimelineReaction(item: TimelineItem, emoji: string | null) {
+    if (!selectedSubId || reactionSavingItemId) return
+    setReactionSavingItemId(item.id)
+    const previous = reactions
+    const next = previous.filter((row) => !(row.targetKind === item.kind && row.targetId === item.targetId && row.userId === currentUserId))
+    if (emoji) next.push({ targetKind: item.kind, targetId: item.targetId, userId: currentUserId, emoji, createdAt: new Date().toISOString() })
+    setReactions(next)
+    setReactionPickerItemId(null)
+    const { error } = await supabase.rpc("set_followup_reaction", {
+      p_subactivity_id: selectedSubId,
+      p_target_kind: item.kind,
+      p_target_id: item.targetId,
+      p_emoji: emoji,
+    })
+    if (error) {
+      setReactions(previous)
+      setComposerError(error.message || "Não foi possível salvar a reação.")
+    }
+    setReactionSavingItemId(null)
   }
 
   function beginMention() {
@@ -1774,23 +1960,33 @@ export function ProjectFollowUp({
                         if (item.kind === "session") {
                           const member = members.find((entry) => entry.id === item.authorId)
                           return (
-                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("my-2 flex items-center gap-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
-                              <Clock3 className="size-3.5 shrink-0" />
-                              <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
-                              <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
+                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/reaction relative my-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                              <div className="flex items-center gap-2">
+                                <Clock3 className="size-3.5 shrink-0" />
+                                <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
+                                <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
+                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                              </div>
+                              <div className="pl-5">{renderReactionSummary(item)}</div>
+                              {renderReactionPicker(item, "right-0 top-8")}
                             </div>
                           )
                         }
 
                         if (item.kind === "log") {
                           return (
-                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("my-2 flex items-start gap-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
-                              <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                              <div className="min-w-0 flex-1">
-                                <p className="font-medium text-foreground/80">{item.title}</p>
-                                {item.description && <p className="mt-0.5 break-words leading-relaxed">{item.description}</p>}
+                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                              <div className="flex items-start gap-2">
+                                <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-medium text-foreground/80">{item.title}</p>
+                                  {item.description && <p className="mt-0.5 break-words leading-relaxed">{item.description}</p>}
+                                </div>
+                                <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
+                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                               </div>
-                              <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
+                              <div className="pl-5">{renderReactionSummary(item)}</div>
+                              {renderReactionPicker(item, "right-1 top-9")}
                             </div>
                           )
                         }
@@ -1840,8 +2036,10 @@ export function ProjectFollowUp({
                                 <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
                                   {renderMentionedText(comment.content, comment.mentions)}
                                 </p>
+                                {renderReactionSummary(item)}
                               </div>
                               <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
+                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
                                 <CopyEntityLinkButton
@@ -1855,6 +2053,7 @@ export function ProjectFollowUp({
                                   </button>
                                 )}
                               </div>
+                              {renderReactionPicker(item)}
                             </article>
                           )
                         }
@@ -1873,8 +2072,10 @@ export function ProjectFollowUp({
                                 resolvedUrl={resolvedUrls[item.attachment.id]}
                                 onMediaReady={handleTimelineMediaReady}
                               />
+                              {renderReactionSummary(item)}
                             </div>
                             <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/attachment:opacity-100 sm:group-focus-within/attachment:opacity-100">
+                              <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                               <CopyEntityLinkButton
                                 href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
                                 label="Copiar link do anexo"
@@ -1893,6 +2094,7 @@ export function ProjectFollowUp({
                                 </button>
                               )}
                             </div>
+                            {renderReactionPicker(item)}
                           </article>
                         )
                       })}

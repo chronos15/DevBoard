@@ -20,6 +20,7 @@ import { useStore } from "@/lib/store"
 import type { NotificationEntry } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { MemberName } from "@/components/member-avatar"
+import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 
 const iconByType = {
   "project-assigned": FolderKanban,
@@ -34,6 +35,7 @@ const iconByType = {
   "topic-status": ClipboardList,
   "topic-sent": ClipboardList,
   "chat-mention": AtSign,
+  "followup-mention": AtSign,
 } satisfies Record<NotificationEntry["type"], React.ComponentType<{ className?: string }>>
 
 function formatNotificationDate(value: string) {
@@ -95,6 +97,10 @@ export function NotificationCenter() {
     void markNotificationRead(notification.id)
     if (notification.type === "chat-mention" && notification.conversationId) {
       router.push(`/chat?conversation=${encodeURIComponent(notification.conversationId)}`)
+      return
+    }
+    if (notification.type === "followup-mention" && notification.projectId) {
+      openProjectFollowUp({ projectId: notification.projectId, subactivityId: notification.subactivityId })
       return
     }
     if (notification.type === "aqs-awaiting") {

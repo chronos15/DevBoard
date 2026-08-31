@@ -15,6 +15,7 @@ import { BrowserNotifications } from "@/components/notifications/browser-notific
 import { MemberProfileProvider } from "@/components/member-profile-popover"
 import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-notifier"
 import { DeveloperAutomationAgent } from "@/components/developer/developer-automation-agent"
+import { FollowUpModal } from "@/components/project-detail/follow-up-modal"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -86,6 +87,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         <DeveloperShiftNotifier />
         <DeveloperAutomationAgent />
         <IncomingCallCenter />
+        <FollowUpModal />
       </div>
     </div>
   )

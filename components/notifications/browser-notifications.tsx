@@ -68,6 +68,36 @@ export function BrowserNotifications() {
     }
   }, [chatMeetings, currentUserId, hydrated, members, notifications, permission])
 
+  React.useEffect(() => {
+    if (!hydrated || permission !== "granted") return
+    const pending = notifications
+      .filter((notification) => notification.type === "followup-mention" && notification.recipientId === currentUserId && !notification.readAt && notification.projectId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+    for (const notification of pending) {
+      if (shownRef.current.has(notification.id)) continue
+      shownRef.current.add(notification.id)
+      const actor = members.find((member) => member.id === notification.actorId)
+      const hash = notification.subactivityId ? `#sub-${notification.subactivityId}` : ""
+      const target = `/projetos/${notification.projectId}?view=followup${hash}`
+      const options: NotificationOptions = {
+        body: notification.description || `${actor?.name ?? "Um usuário"} mencionou você no acompanhamento.`,
+        icon: "/devboard-icon-192.png",
+        badge: "/devboard-icon-64.png",
+        tag: `devboard-followup-${notification.id}`,
+        data: { url: target },
+      }
+      void (async () => {
+        try {
+          const registration = registrationRef.current ?? await navigator.serviceWorker.ready
+          await registration.showNotification(notification.title || "Menção no acompanhamento", options)
+        } catch {
+          try { new Notification(notification.title || "Menção no acompanhamento", options) } catch {}
+        }
+      })()
+    }
+  }, [currentUserId, hydrated, members, notifications, permission])
+
   async function enable() {
     if (!("Notification" in window)) return
     const next = await Notification.requestPermission()
@@ -84,9 +114,9 @@ export function BrowserNotifications() {
           <BellRing className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold">Ativar chamadas do navegador</p>
+          <p className="text-xs font-semibold">Ativar notificações do navegador</p>
           <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">
-            Permita notificações para receber o aviso do Chrome quando alguém chamar você enquanto o Devboard estiver aberto ou em segundo plano.
+            Permita notificações para receber chamadas e menções do acompanhamento mesmo quando o Devboard estiver em segundo plano.
           </p>
           <Button type="button" size="sm" className="mt-2 h-8" onClick={() => void enable()}>
             Ativar notificações

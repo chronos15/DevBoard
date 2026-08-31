@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import {
   Activity as ActivityIcon,
+  AtSign,
+  Bookmark,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -19,10 +20,12 @@ import {
   Menu,
   Mic,
   Paperclip,
+  Reply,
   Pause,
   Play,
   Send,
   Square,
+  Trash2,
   UsersRound,
   X,
 } from "lucide-react"
@@ -30,6 +33,8 @@ import type {
   AttachmentEntry,
   AttachmentKind,
   AttachmentUploadInput,
+  ChatMention,
+  CommentEntry,
   Project,
   Status,
   Subactivity,
@@ -101,6 +106,48 @@ function statusIsTerminal(status: Status) {
   return status === "done" || status === "cancelled"
 }
 
+function mentionToken(mention: ChatMention) {
+  return `@${mention.label}`
+}
+
+function renderMentionedText(content: string, mentions: ChatMention[] = []) {
+  if (!mentions.length) return content
+  const unique = Array.from(new Map(mentions.map((mention) => [`${mention.kind}:${mention.id}`, mention])).values())
+    .sort((a, b) => mentionToken(b).length - mentionToken(a).length)
+  const nodes: React.ReactNode[] = []
+  let cursor = 0
+  let key = 0
+  while (cursor < content.length) {
+    let foundIndex = -1
+    let found: ChatMention | null = null
+    for (const mention of unique) {
+      const index = content.indexOf(mentionToken(mention), cursor)
+      if (index >= 0 && (foundIndex < 0 || index < foundIndex)) {
+        foundIndex = index
+        found = mention
+      }
+    }
+    if (!found || foundIndex < 0) {
+      nodes.push(content.slice(cursor))
+      break
+    }
+    if (foundIndex > cursor) nodes.push(content.slice(cursor, foundIndex))
+    const token = mentionToken(found)
+    nodes.push(
+      <span key={`mention-${key++}`} className="rounded bg-primary/12 px-1 py-0.5 font-medium text-primary">
+        {token}
+      </span>,
+    )
+    cursor = foundIndex + token.length
+  }
+  return nodes
+}
+
+function commentReplySummary(comment: CommentEntry) {
+  const text = comment.content.trim()
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text
+}
+
 function KindIcon({ kind, className }: { kind: AttachmentKind; className?: string }) {
   const Icon =
     kind === "image" ? FileImage :
@@ -111,7 +158,7 @@ function KindIcon({ kind, className }: { kind: AttachmentKind; className?: strin
 }
 
 type TimelineItem =
-  | { kind: "comment"; id: string; createdAt: string; authorId: string; content: string }
+  | { kind: "comment"; id: string; createdAt: string; authorId: string; comment: CommentEntry }
   | { kind: "attachment"; id: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
   | { kind: "session"; id: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
   | { kind: "log"; id: string; createdAt: string; authorId?: string; title: string; description?: string }
@@ -227,7 +274,7 @@ function MobilePanel({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 xl:hidden">
+    <div className="fixed inset-0 z-[60] xl:hidden">
       <button type="button" aria-label="Fechar painel" className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
       <section className="absolute inset-y-0 left-0 flex w-[min(88vw,340px)] flex-col border-r border-border bg-card shadow-2xl">
         <header className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -247,11 +294,13 @@ export function ProjectFollowUp({
   filter = "all",
   assigneeId = "all",
   initialSubactivityId,
+  onProjectChange,
 }: {
   project: Project
   filter?: ActivityFilter
   assigneeId?: string
   initialSubactivityId?: string | null
+  onProjectChange?: (projectId: string) => void
 }) {
   const {
     projects,
@@ -263,7 +312,8 @@ export function ProjectFollowUp({
     currentUserId,
     currentUserRole,
     canManageSubactivity,
-    addSubactivityComment,
+    addFollowUpComment,
+    deleteFollowUpComment,
     addSubactivityAttachments,
     startTimer,
     stopTimer,
@@ -290,6 +340,14 @@ export function ProjectFollowUp({
   const [mobileMembersOpen, setMobileMembersOpen] = React.useState(false)
   const [watchingIds, setWatchingIds] = React.useState<string[]>([])
   const [composerError, setComposerError] = React.useState("")
+  const [draftMentions, setDraftMentions] = React.useState<ChatMention[]>([])
+  const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
+  const [mentionIndex, setMentionIndex] = React.useState(0)
+  const [replyingTo, setReplyingTo] = React.useState<CommentEntry | null>(null)
+  const [markedCommentIds, setMarkedCommentIds] = React.useState<Set<string>>(() => new Set())
+  const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
+  const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null)
+  const [clockNow, setClockNow] = React.useState(() => Date.now())
 
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
@@ -340,21 +398,31 @@ export function ProjectFollowUp({
     return Array.from(ids).filter((id) => members.some((member) => member.id === id))
   }, [members, project.activities, project.memberIds])
 
+  const mentionCandidates = React.useMemo(() => {
+    if (!mentionRange) return []
+    const query = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
+    return members
+      .filter((member) => member.id !== currentUserId)
+      .filter((member) => !query || member.name.toLocaleLowerCase("pt-BR").includes(query) || member.email?.toLocaleLowerCase("pt-BR").includes(query))
+      .sort((a, b) => {
+        const aMember = projectMemberIds.includes(a.id) ? 0 : 1
+        const bMember = projectMemberIds.includes(b.id) ? 0 : 1
+        return aMember - bMember || a.name.localeCompare(b.name, "pt-BR")
+      })
+      .slice(0, 8)
+  }, [currentUserId, members, mentionRange, projectMemberIds])
+
   const onlineMemberIds = projectMemberIds.filter((id) => memberPresence[id]?.online)
   const offlineMemberIds = projectMemberIds.filter((id) => !memberPresence[id]?.online)
 
-  const accessibleProjects = React.useMemo(() => projects.filter((item) => {
-    if (currentUserRole === "admin") return true
-    if (item.memberIds.includes(currentUserId)) return true
-    return item.activities.some((activity) => activity.subactivities.some((sub) => sub.assigneeId === currentUserId))
-  }), [currentUserId, currentUserRole, projects])
+  const accessibleProjects = projects
 
   const timeline = React.useMemo<TimelineItem[]>(() => {
     if (!selectedSub) return []
     const items: TimelineItem[] = []
 
     for (const comment of selectedSub.comments ?? []) {
-      items.push({ kind: "comment", id: `comment-${comment.id}`, createdAt: comment.createdAt, authorId: comment.authorId, content: comment.content })
+      items.push({ kind: "comment", id: `comment-${comment.id}`, createdAt: comment.createdAt, authorId: comment.authorId, comment })
     }
     for (const attachment of selectedSub.attachments ?? []) {
       items.push({ kind: "attachment", id: `attachment-${attachment.id}`, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
@@ -374,6 +442,23 @@ export function ProjectFollowUp({
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   }, [project.logs, selectedSub, workSessions])
+
+  React.useEffect(() => {
+    const commentIds = (selectedSub?.comments ?? []).map((comment) => comment.id)
+    setMarkedCommentIds(new Set())
+    if (!currentUserId || !commentIds.length) return
+    let cancelled = false
+    void supabase
+      .from("followup_comment_marks")
+      .select("comment_id")
+      .eq("user_id", currentUserId)
+      .in("comment_id", commentIds)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setMarkedCommentIds(new Set((data ?? []).map((row: any) => row.comment_id)))
+      })
+    return () => { cancelled = true }
+  }, [currentUserId, selectedSub?.comments, supabase])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId || !selectedSubId) {
@@ -438,6 +523,15 @@ export function ProjectFollowUp({
   }, [selectedSubId, timeline.length])
 
   React.useEffect(() => {
+    setMentionIndex(0)
+  }, [mentionRange?.query])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 30000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  React.useEffect(() => {
     if (!recording) {
       setRecordingSeconds(0)
       return
@@ -466,21 +560,118 @@ export function ProjectFollowUp({
 
   function selectSubactivity(subId: string) {
     setSelectedSubId(subId)
+    setReplyingTo(null)
+    setDraftMentions([])
+    setMentionRange(null)
     setMobileNavigatorOpen(false)
-    const url = new URL(window.location.href)
-    url.hash = `sub-${subId}`
-    window.history.replaceState({}, "", url)
+    if (window.location.pathname === `/projetos/${project.id}`) {
+      const url = new URL(window.location.href)
+      url.hash = `sub-${subId}`
+      window.history.replaceState({}, "", url)
+    }
+  }
+
+  function detectMention(value: string, caret: number | null) {
+    const position = caret ?? value.length
+    const before = value.slice(0, position)
+    const match = before.match(/(?:^|\s)@([^\s@]*)$/)
+    if (!match) {
+      setMentionRange(null)
+      return
+    }
+    const query = match[1] ?? ""
+    setMentionRange({ start: position - query.length - 1, end: position, query })
+  }
+
+  function selectMention(memberId: string) {
+    if (!mentionRange) return
+    const member = members.find((item) => item.id === memberId)
+    if (!member) return
+    const mention: ChatMention = { kind: "user", id: member.id, label: member.name }
+    const token = mentionToken(mention)
+    const next = `${message.slice(0, mentionRange.start)}${token} ${message.slice(mentionRange.end)}`
+    const caret = mentionRange.start + token.length + 1
+    setMessage(next)
+    setDraftMentions((current) => current.some((item) => item.kind === "user" && item.id === member.id) ? current : [...current, mention])
+    setMentionRange(null)
+    window.requestAnimationFrame(() => {
+      messageRef.current?.focus()
+      messageRef.current?.setSelectionRange(caret, caret)
+    })
+  }
+
+  function beginMention() {
+    const textarea = messageRef.current
+    const caret = textarea?.selectionStart ?? message.length
+    const needsSpace = caret > 0 && !/\s/.test(message.charAt(caret - 1))
+    const insertion = `${needsSpace ? " " : ""}@`
+    const next = `${message.slice(0, caret)}${insertion}${message.slice(caret)}`
+    const nextCaret = caret + insertion.length
+    setMessage(next)
+    setMentionRange({ start: nextCaret - 1, end: nextCaret, query: "" })
+    window.requestAnimationFrame(() => {
+      textarea?.focus()
+      textarea?.setSelectionRange(nextCaret, nextCaret)
+    })
+  }
+
+  function focusComment(commentId: string) {
+    const element = document.getElementById(`followup-comment-${commentId}`)
+    if (!element) return
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+    setFocusedCommentId(commentId)
+    window.setTimeout(() => setFocusedCommentId((current) => current === commentId ? null : current), 1500)
+  }
+
+  async function toggleCommentMark(commentId: string) {
+    const nextMarked = !markedCommentIds.has(commentId)
+    const { error } = await supabase.rpc("toggle_followup_comment_mark", {
+      p_comment_id: commentId,
+      p_marked: nextMarked,
+    })
+    if (error) {
+      setComposerError(error.message || "Não foi possível marcar a mensagem.")
+      return
+    }
+    setMarkedCommentIds((current) => {
+      const next = new Set(current)
+      if (nextMarked) next.add(commentId)
+      else next.delete(commentId)
+      return next
+    })
+  }
+
+  async function deleteComment(comment: CommentEntry) {
+    if (deletingCommentId) return
+    if (!window.confirm("Excluir esta mensagem do acompanhamento?")) return
+    setDeletingCommentId(comment.id)
+    try {
+      const ok = await deleteFollowUpComment(comment.id)
+      if (ok && replyingTo?.id === comment.id) setReplyingTo(null)
+    } finally {
+      setDeletingCommentId(null)
+    }
+  }
+
+  function canDeleteComment(comment: CommentEntry) {
+    if (currentUserRole === "admin") return true
+    if (comment.authorId !== currentUserId) return false
+    return clockNow - new Date(comment.createdAt).getTime() <= 30 * 60 * 1000
   }
 
   async function sendMessage() {
     if (!selectedSub || sending) return
     const content = message.trim()
     if (!content) return
+    const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
     setSending(true)
     try {
-      const ok = await addSubactivityComment(selectedSub.id, content)
+      const ok = await addFollowUpComment(selectedSub.id, content, validMentions, replyingTo?.id)
       if (ok) {
         setMessage("")
+        setDraftMentions([])
+        setMentionRange(null)
+        setReplyingTo(null)
         messageRef.current?.focus()
       }
     } finally {
@@ -650,7 +841,7 @@ export function ProjectFollowUp({
 
   return (
     <>
-      <div className="grid h-[calc(100dvh-14.75rem)] min-h-[620px] w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm md:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[64px_290px_minmax(0,1fr)_245px]">
+      <div className="grid h-full min-h-0 w-full min-w-0 overflow-hidden bg-card md:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[64px_290px_minmax(0,1fr)_245px]">
         <nav className="hidden min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
           <div className="flex h-12 items-center justify-center border-b border-border">
             <FolderKanban className="size-4 text-muted-foreground" />
@@ -658,10 +849,11 @@ export function ProjectFollowUp({
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col items-center gap-2">
               {accessibleProjects.map((item) => (
-                <Link
+                <button
+                  type="button"
                   key={item.id}
-                  href={`/projetos/${item.id}?view=followup`}
-                  title={item.name}
+                  onClick={() => item.id !== project.id && onProjectChange?.(item.id)}
+                  title={`Abrir ${item.name}`}
                   className={cn(
                     "relative flex size-10 items-center justify-center rounded-xl text-xs font-semibold transition-all",
                     item.id === project.id
@@ -671,7 +863,7 @@ export function ProjectFollowUp({
                 >
                   {item.name.charAt(0).toUpperCase()}
                   {item.id === project.id && <span className="absolute -left-2.5 h-6 w-1 rounded-r-full bg-primary" />}
-                </Link>
+                </button>
               ))}
             </div>
           </div>
@@ -706,6 +898,21 @@ export function ProjectFollowUp({
                   </span>
                   <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground tabular-nums">{formatHMS(selectedSub.trackedSeconds)}</span>
                 </div>
+                {markedCommentIds.size > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="hidden h-8 gap-1.5 px-2 text-[0.62rem] text-primary lg:flex"
+                    onClick={() => {
+                      const first = (selectedSub.comments ?? []).find((comment) => markedCommentIds.has(comment.id))
+                      if (first) focusComment(first.id)
+                    }}
+                    title="Ir para uma mensagem marcada"
+                  >
+                    <Bookmark className="size-3.5 fill-current" /> {markedCommentIds.size}
+                  </Button>
+                )}
                 {selectedCanManage && !statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
                   <Button
                     type="button"
@@ -779,6 +986,61 @@ export function ProjectFollowUp({
                         }
 
                         const author = members.find((entry) => entry.id === item.authorId)
+                        if (item.kind === "comment") {
+                          const comment = item.comment
+                          const marked = markedCommentIds.has(comment.id)
+                          const replyAuthor = comment.replyTo?.authorId ? members.find((entry) => entry.id === comment.replyTo?.authorId) : undefined
+                          return (
+                            <article
+                              key={item.id}
+                              id={`followup-comment-${comment.id}`}
+                              onContextMenu={(event) => { event.preventDefault(); setReplyingTo(comment); messageRef.current?.focus() }}
+                              className={cn(
+                                "group/message relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all hover:bg-muted/25 sm:px-3",
+                                marked && "border-primary/15 bg-primary/[0.035]",
+                                focusedCommentId === comment.id && "border-primary/30 bg-primary/[0.07] ring-2 ring-primary/10",
+                              )}
+                            >
+                              <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
+                              <div className="min-w-0 flex-1 pr-1 sm:pr-20">
+                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
+                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                  {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Bookmark className="size-3 fill-current" /> marcada</span>}
+                                </div>
+                                {comment.replyTo && (
+                                  <button
+                                    type="button"
+                                    disabled={comment.replyTo.unavailable}
+                                    onClick={() => !comment.replyTo?.unavailable && focusComment(comment.replyTo!.commentId)}
+                                    className={cn(
+                                      "mt-1.5 block max-w-full overflow-hidden rounded-lg border border-border bg-muted/35 px-2.5 py-2 text-left text-[0.68rem] transition-colors",
+                                      comment.replyTo.unavailable ? "cursor-default opacity-60" : "hover:bg-muted/60",
+                                    )}
+                                  >
+                                    <span className="block truncate font-medium text-foreground/75">
+                                      {comment.replyTo.unavailable ? "Mensagem original indisponível" : <><MemberName member={replyAuthor} fallback="Usuário" /> · resposta</>}
+                                    </span>
+                                    {!comment.replyTo.unavailable && <span className="mt-0.5 block truncate text-muted-foreground">{comment.replyTo.content || "Mensagem"}</span>}
+                                  </button>
+                                )}
+                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                                  {renderMentionedText(comment.content, comment.mentions)}
+                                </p>
+                              </div>
+                              <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
+                                <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desmarcar mensagem" : "Marcar mensagem"} aria-label={marked ? "Desmarcar mensagem" : "Marcar mensagem"}><Bookmark className={cn("size-3.5", marked && "fill-current")} /></button>
+                                {canDeleteComment(comment) && (
+                                  <button type="button" disabled={deletingCommentId === comment.id} onClick={() => void deleteComment(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
+                                    {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          )
+                        }
+
                         return (
                           <article key={item.id} className="group flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-muted/25 sm:px-2">
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
@@ -787,14 +1049,8 @@ export function ProjectFollowUp({
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                               </div>
-                              {item.kind === "comment" ? (
-                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{item.content}</p>
-                              ) : (
-                                <>
-                                  <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
-                                  <AttachmentCard attachment={item.attachment} resolvedUrl={resolvedUrls[item.attachment.id]} />
-                                </>
-                              )}
+                              <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
+                              <AttachmentCard attachment={item.attachment} resolvedUrl={resolvedUrls[item.attachment.id]} />
                             </div>
                           </article>
                         )
@@ -805,64 +1061,121 @@ export function ProjectFollowUp({
                 </div>
               </div>
 
-              <footer className="border-t border-border bg-card/95 p-2.5 sm:p-3">
-                <div className="mx-auto flex w-full max-w-4xl items-end gap-2 rounded-xl border border-border bg-background px-2 py-2 shadow-sm focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))}
-                  />
-                  <Button type="button" variant="ghost" size="icon-sm" disabled={uploading || recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
-                    {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
-                  </Button>
-                  <textarea
-                    ref={messageRef}
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault()
-                        void sendMessage()
-                      }
-                    }}
-                    onPaste={(event) => {
-                      const files = Array.from(event.clipboardData.files ?? [])
-                      if (!files.length) return
-                      event.preventDefault()
-                      void uploadFiles(files)
-                    }}
-                    rows={1}
-                    placeholder={`Conversar em “${selectedSub.title}”`}
-                    className="max-h-32 min-h-7 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted-foreground/70"
-                  />
-                  {recording ? (
-                    <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
-                      <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
-                      {formatHMS(recordingSeconds)}
+              <footer className="relative border-t border-border bg-card/95 p-2.5 sm:p-3">
+                <div className="mx-auto w-full max-w-4xl">
+                  {replyingTo && (
+                    <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.045] px-3 py-2">
+                      <Reply className="size-3.5 shrink-0 text-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[0.62rem] font-semibold text-primary">Respondendo a <MemberName member={members.find((member) => member.id === replyingTo.authorId)} fallback="Usuário" /></p>
+                        <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{commentReplySummary(replyingTo)}</p>
+                      </div>
+                      <button type="button" onClick={() => setReplyingTo(null)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Cancelar resposta"><X className="size-3.5" /></button>
                     </div>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant={recording ? "destructive" : "ghost"}
-                    size="icon-sm"
-                    disabled={uploading}
-                    onClick={recording ? stopRecording : startRecording}
-                    title={recording ? "Parar e enviar áudio" : "Gravar áudio"}
-                    aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
-                  >
-                    {recording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
-                  </Button>
-                  <Button type="button" size="icon-sm" disabled={!message.trim() || sending || recording} onClick={() => void sendMessage()} title="Enviar mensagem" aria-label="Enviar mensagem">
-                    {sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
-                  </Button>
+                  )}
+
+                  {mentionRange && mentionCandidates.length > 0 && (
+                    <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 mx-auto max-h-72 max-w-4xl overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl sm:left-4 sm:right-4">
+                      <div className="px-2 py-1 text-[0.6rem] font-semibold tracking-wide text-muted-foreground uppercase">Mencionar usuário</div>
+                      {mentionCandidates.map((member, index) => {
+                        const alreadyInProject = projectMemberIds.includes(member.id)
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectMention(member.id)}
+                            className={cn(
+                              "flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
+                              index === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-muted",
+                            )}
+                          >
+                            <MemberAvatar member={member} profileEnabled={false} className="size-7 text-[0.55rem]" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium">{member.name}</p>
+                              <p className="truncate text-[0.6rem] text-muted-foreground">{member.email}</p>
+                            </div>
+                            {!alreadyInProject && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[0.58rem] font-medium text-primary">adicionar ao projeto</span>}
+                            {index === mentionIndex && <span className="hidden text-[0.58rem] text-muted-foreground sm:inline">Enter</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex items-end gap-1.5 rounded-xl border border-border bg-background px-2 py-2 shadow-sm focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))}
+                    />
+                    <Button type="button" variant="ghost" size="icon-sm" disabled={uploading || recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
+                      {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={beginMention} title="Mencionar usuário" aria-label="Mencionar usuário">
+                      <AtSign className="size-4" />
+                    </Button>
+                    <textarea
+                      ref={messageRef}
+                      value={message}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setMessage(value)
+                        setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
+                        detectMention(value, event.target.selectionStart)
+                      }}
+                      onKeyDown={(event) => {
+                        if (mentionRange && mentionCandidates.length > 0) {
+                          if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
+                          if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
+                          if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex]?.id ?? mentionCandidates[0].id); return }
+                          if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
+                        }
+                        if (event.key === "Escape" && replyingTo) { event.preventDefault(); setReplyingTo(null); return }
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault()
+                          void sendMessage()
+                        }
+                      }}
+                      onPaste={(event) => {
+                        const files = Array.from(event.clipboardData.files ?? [])
+                        if (!files.length) return
+                        event.preventDefault()
+                        void uploadFiles(files)
+                      }}
+                      rows={1}
+                      placeholder={`Conversar em “${selectedSub.title}” · use @ para mencionar`}
+                      className="max-h-32 min-h-7 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted-foreground/70"
+                    />
+                    {recording ? (
+                      <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
+                        <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
+                        {formatHMS(recordingSeconds)}
+                      </div>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant={recording ? "destructive" : "ghost"}
+                      size="icon-sm"
+                      disabled={uploading}
+                      onClick={recording ? stopRecording : startRecording}
+                      title={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+                      aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+                    >
+                      {recording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
+                    </Button>
+                    <Button type="button" size="icon-sm" disabled={!message.trim() || sending || recording} onClick={() => void sendMessage()} title="Enviar mensagem" aria-label="Enviar mensagem">
+                      {sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+                    </Button>
+                  </div>
+                  {composerError ? (
+                    <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
+                  ) : (
+                    <p className="mt-1.5 px-1 text-[0.58rem] text-muted-foreground/70">Enter envia · Shift+Enter quebra linha · @ menciona e adiciona ao projeto · botão direito responde</p>
+                  )}
                 </div>
-                {composerError ? (
-                  <p className="mx-auto mt-1.5 max-w-4xl px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
-                ) : (
-                  <p className="mx-auto mt-1.5 max-w-4xl px-1 text-[0.58rem] text-muted-foreground/70">Enter envia · Shift+Enter quebra linha · cole ou arraste arquivos diretamente</p>
-                )}
               </footer>
             </>
           ) : (

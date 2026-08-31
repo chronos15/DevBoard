@@ -38,8 +38,8 @@ import { ActivityItem } from "./activity-item"
 import { ActiveTimerHero } from "./active-timer-hero"
 import { ProjectLogDialog } from "./project-log"
 import { SubactivityKanban } from "./subactivity-kanban"
-import { ProjectFollowUp } from "./project-follow-up"
 import { VersionProjectDialog } from "./version-project-dialog"
+import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const [focusTarget, setFocusTarget] = React.useState<{ activityId: string | null; subactivityId: string | null }>({
@@ -60,7 +60,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const project = projects.find((p) => p.id === projectId)
   const [newActivity, setNewActivity] = React.useState("")
   const [newActivityAssignee, setNewActivityAssignee] = React.useState(currentUserId)
-  const [viewMode, setViewMode] = React.useState<"list" | "kanban" | "followup">("list")
+  const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
   const [assigneeFilter, setAssigneeFilter] = React.useState("all")
   const [activitySort, setActivitySort] = React.useState<"newest" | "oldest">("newest")
@@ -88,14 +88,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   React.useEffect(() => {
     if (currentUserId) setNewActivityAssignee(currentUserId)
   }, [currentUserId])
-
-  React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get("view") === "followup") {
-      setViewMode("followup")
-      setSidePanelExpanded(false)
-    }
-  }, [])
 
   if (!hydrated) {
     return (
@@ -190,13 +182,16 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     }
   }
 
-  function changeView(mode: "list" | "kanban" | "followup") {
+  function changeView(mode: "list" | "kanban") {
     setViewMode(mode)
     setSidePanelExpanded(mode === "list")
     const url = new URL(window.location.href)
-    if (mode === "followup") url.searchParams.set("view", "followup")
-    else url.searchParams.delete("view")
+    url.searchParams.delete("view")
     window.history.replaceState({}, "", url)
+  }
+
+  function openFollowUp() {
+    openProjectFollowUp({ projectId: project.id, subactivityId: focusTarget.subactivityId })
   }
 
   const progressCard = (
@@ -354,11 +349,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       <div
         className={cn(
           "grid gap-4 transition-[grid-template-columns] duration-200",
-          viewMode === "followup"
-            ? "grid-cols-1"
-            : sidePanelExpanded
-              ? "lg:grid-cols-[minmax(0,1fr)_320px]"
-              : "lg:grid-cols-[minmax(0,1fr)_88px]",
+          sidePanelExpanded
+            ? "lg:grid-cols-[minmax(0,1fr)_320px]"
+            : "lg:grid-cols-[minmax(0,1fr)_88px]",
         )}
       >
         <div className="min-w-0 space-y-3 lg:order-1">
@@ -444,8 +437,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => changeView("followup")}
-                className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "followup" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                onClick={openFollowUp}
+                className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:flex-none"
+                title="Abrir acompanhamento em janela ampliada"
               >
                 <MessageSquareText className="size-3.5" />
                 Acompanhamento
@@ -507,23 +501,16 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </form>
               )}
             </>
-          ) : viewMode === "kanban" ? (
+          ) : (
             <SubactivityKanban
               project={project}
               filter={activityFilter}
               assigneeId={assigneeFilter}
             />
-          ) : (
-            <ProjectFollowUp
-              project={project}
-              filter={activityFilter}
-              assigneeId={assigneeFilter}
-              initialSubactivityId={focusTarget.subactivityId}
-            />
           )}
         </div>
 
-        {viewMode !== "followup" && <aside className="space-y-2.5 lg:order-2">
+        <aside className="space-y-2.5 lg:order-2">
           <div className="hidden lg:flex lg:justify-end">
             <button
               type="button"
@@ -568,7 +555,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
             </>
           )}
-        </aside>}
+        </aside>
       </div>
     </div>
   )

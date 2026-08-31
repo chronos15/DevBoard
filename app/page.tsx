@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Clock3,
   Plus,
+  MessageSquareText,
   RotateCcw,
   SearchCheck,
 } from "lucide-react"
@@ -21,6 +22,23 @@ import { HoursByProject } from "@/components/dashboard/hours-by-project"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { supportTopicDisplayStatus } from "@/lib/project-utils"
+import { openProjectFollowUp } from "@/lib/follow-up-launcher"
+
+
+function FollowUpQuickButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => openProjectFollowUp()}
+      className="flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+      title="Abrir acompanhamento · Ctrl + P"
+    >
+      <MessageSquareText className="size-4 text-primary" />
+      Acompanhamento
+      <kbd className="ml-1 hidden rounded bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] font-normal text-muted-foreground sm:inline">Ctrl P</kbd>
+    </button>
+  )
+}
 
 function StatCard({ label, value, Icon }: { label: string; value: number; Icon: typeof ClipboardCheck }) {
   return (
@@ -161,9 +179,12 @@ export default function DashboardPage() {
         title={firstName ? `Olá, ${firstName}` : "Painel"}
         subtitle="Aqui está o panorama dos seus projetos e do tempo investido."
         action={
-          <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            <Plus className="size-4" /> Novo projeto
-          </Link>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <FollowUpQuickButton />
+            <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+              <Plus className="size-4" /> Novo projeto
+            </Link>
+          </div>
         }
       />
       <KpiCards />

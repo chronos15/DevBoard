@@ -38,11 +38,20 @@ export type MemberPresence = {
   connections: number
 }
 
+export type FollowUpReplyReference = {
+  commentId: string
+  authorId?: string
+  content?: string
+  unavailable?: boolean
+}
+
 export type CommentEntry = {
   id: string
   authorId: string
   content: string
   createdAt: string
+  mentions?: ChatMention[]
+  replyTo?: FollowUpReplyReference
 }
 
 export type AttachmentKind =
@@ -180,6 +189,7 @@ export type NotificationType =
   | "topic-status"
   | "topic-sent"
   | "chat-mention"
+  | "followup-mention"
 
 export type NotificationEntry = {
   id: string

@@ -128,7 +128,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         subactivities(
           id,title,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
-          subactivity_comments(id,author_id,content,created_at),
+          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
         )
       )
@@ -158,14 +158,33 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             assigneeId: sub.assignee_id,
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,
-            comments: (sub.subactivity_comments ?? [])
-              .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
-              .map((comment: any) => ({
-                id: comment.id,
-                authorId: comment.author_id,
-                content: comment.content,
-                createdAt: comment.created_at,
-              })),
+            comments: (() => {
+              const rows = [...(sub.subactivity_comments ?? [])]
+                .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
+              const byId = new Map(rows.map((comment: any) => [comment.id, comment]))
+              return rows.map((comment: any) => {
+                const replyId = typeof comment.reply_to_comment_id === "string" && comment.reply_to_comment_id
+                  ? comment.reply_to_comment_id
+                  : undefined
+                const reply = replyId ? byId.get(replyId) : undefined
+                return {
+                  id: comment.id,
+                  authorId: comment.author_id,
+                  content: comment.content,
+                  createdAt: comment.created_at,
+                  mentions: Array.isArray(comment.mentions)
+                    ? comment.mentions
+                        .filter((mention: any) => mention && mention.kind === "user" && typeof mention.id === "string" && typeof mention.label === "string")
+                        .map((mention: any) => ({ kind: "user" as const, id: mention.id, label: mention.label }))
+                    : [],
+                  replyTo: replyId ? (reply ? {
+                    commentId: replyId,
+                    authorId: reply.author_id,
+                    content: reply.content,
+                  } : { commentId: replyId, unavailable: true }) : undefined,
+                }
+              })
+            })(),
             attachments: await Promise.all((sub.attachments ?? []).map((item: any) => mapAttachment(supabase, item))),
           }))),
       })))

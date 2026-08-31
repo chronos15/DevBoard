@@ -124,6 +124,8 @@ export type StoreContextValue = {
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
+  addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyToCommentId?: string) => Promise<boolean>
+  deleteFollowUpComment: (commentId: string) => Promise<boolean>
   addProjectAttachments: (projectId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setProjectAttachmentActive: (projectId: string, attachmentId: string, active: boolean) => Promise<boolean>
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
@@ -955,6 +957,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshProjects])
 
+  const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyToCommentId?: string) => {
+    const result = await callRpc<string>("add_followup_comment", {
+      p_subactivity_id: subId,
+      p_content: content,
+      p_mentions: mentions,
+      p_reply_to_comment_id: replyToCommentId ?? null,
+    }, "Não foi possível enviar a mensagem")
+    if (!result) return false
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects])
+
+  const deleteFollowUpComment = React.useCallback(async (commentId: string) => {
+    const result = await callRpc<boolean>("delete_followup_comment", { p_comment_id: commentId }, "Não foi possível excluir a mensagem")
+    if (result === undefined) return false
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects])
+
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; subactivityId?: string },
     files: AttachmentUploadInput[],
@@ -1624,6 +1645,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     versionProject,
     addProjectComment,
     addSubactivityComment,
+    addFollowUpComment,
+    deleteFollowUpComment,
     addProjectAttachments,
     setProjectAttachmentActive,
     addSubactivityAttachments,
@@ -1650,7 +1673,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
-    addSubactivityAttachments, addSubactivityComment, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,

@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   AtSign,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock3,
@@ -16,6 +17,7 @@ import {
   FileText,
   FileVideo,
   FolderKanban,
+  GripVertical,
   Hash,
   LoaderCircle,
   Menu,
@@ -70,6 +72,11 @@ const textExtensions = new Set([
 const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"])
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
+const FOLLOW_UP_NAV_MIN_WIDTH = 240
+const FOLLOW_UP_NAV_MAX_WIDTH = 420
+const FOLLOW_UP_NAV_DEFAULT_WIDTH = 290
+const FOLLOW_UP_MEMBERS_EXPANDED_WIDTH = 245
+const FOLLOW_UP_MEMBERS_COLLAPSED_WIDTH = 58
 
 function extensionOf(name: string) {
   const index = name.lastIndexOf(".")
@@ -429,6 +436,71 @@ export function ProjectFollowUp({
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
   const [composerMultiline, setComposerMultiline] = React.useState(false)
+  const [navigatorWidth, setNavigatorWidth] = React.useState(FOLLOW_UP_NAV_DEFAULT_WIDTH)
+  const [resizingNavigator, setResizingNavigator] = React.useState(false)
+  const [membersCollapsed, setMembersCollapsed] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      const storedWidth = Number(window.localStorage.getItem("devboard:followup:navigator-width"))
+      if (Number.isFinite(storedWidth) && storedWidth > 0) {
+        setNavigatorWidth(Math.min(FOLLOW_UP_NAV_MAX_WIDTH, Math.max(FOLLOW_UP_NAV_MIN_WIDTH, storedWidth)))
+      }
+      setMembersCollapsed(window.localStorage.getItem("devboard:followup:members-collapsed") === "1")
+    } catch {
+      // Prefer a stable default when storage is unavailable.
+    }
+  }, [])
+
+  const setMembersPanelCollapsed = React.useCallback((collapsed: boolean) => {
+    setMembersCollapsed(collapsed)
+    try {
+      window.localStorage.setItem("devboard:followup:members-collapsed", collapsed ? "1" : "0")
+    } catch {
+      // Layout preference is best-effort only.
+    }
+  }, [])
+
+  const beginNavigatorResize = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = navigatorWidth
+    let lastX = startX
+    setResizingNavigator(true)
+
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      lastX = moveEvent.clientX
+      setNavigatorWidth(Math.min(
+        FOLLOW_UP_NAV_MAX_WIDTH,
+        Math.max(FOLLOW_UP_NAV_MIN_WIDTH, startWidth + lastX - startX),
+      ))
+    }
+
+    const onPointerUp = () => {
+      const finalWidth = Math.min(
+        FOLLOW_UP_NAV_MAX_WIDTH,
+        Math.max(FOLLOW_UP_NAV_MIN_WIDTH, startWidth + lastX - startX),
+      )
+      setNavigatorWidth(finalWidth)
+      setResizingNavigator(false)
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener("pointermove", onPointerMove)
+      window.removeEventListener("pointerup", onPointerUp)
+      window.removeEventListener("pointercancel", onPointerUp)
+      try { window.localStorage.setItem("devboard:followup:navigator-width", String(finalWidth)) } catch {}
+    }
+
+    window.addEventListener("pointermove", onPointerMove)
+    window.addEventListener("pointerup", onPointerUp)
+    window.addEventListener("pointercancel", onPointerUp)
+  }, [navigatorWidth])
 
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
@@ -501,6 +573,14 @@ export function ProjectFollowUp({
 
   const onlineMemberIds = projectMemberIds.filter((id) => memberPresence[id]?.online)
   const offlineMemberIds = projectMemberIds.filter((id) => !memberPresence[id]?.online)
+  const compactMemberIds = React.useMemo(
+    () => Array.from(new Set([
+      ...watchingIds,
+      ...onlineMemberIds.filter((id) => !watchingIds.includes(id)),
+      ...offlineMemberIds.filter((id) => !watchingIds.includes(id)),
+    ])),
+    [offlineMemberIds, onlineMemberIds, watchingIds],
+  )
 
   const pinnedComments = React.useMemo(
     () => (selectedSub?.comments ?? [])
@@ -1215,41 +1295,46 @@ export function ProjectFollowUp({
           const runningCount = activity.subactivities.filter((sub) => runningSubIds.includes(sub.id)).length
           return (
             <div id={`followup-activity-${activity.id}`} key={activity.id} className={cn("mb-1 rounded-lg transition-all", focusedActivityId === activity.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
-              <div className="group/activity flex min-w-0 items-center gap-0.5">
+              <div className="group/activity relative flex min-w-0 items-center">
                 <button
                   type="button"
                   onClick={() => toggleActivity(activity.id)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-2 pl-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    canManageStructure ? "pr-[5.75rem]" : "pr-9",
+                  )}
                 >
                   {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
                   <Hash className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
                   {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
                 </button>
-                <CopyEntityLinkButton
-                  href={followUpHref({ projectId: project.id, activityId: activity.id })}
-                  label={`Copiar link da atividade ${activity.title}`}
-                  className="size-7 opacity-100 sm:opacity-0 sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:opacity-100"
-                />
-                {canManageStructure && (
-                  <div className="flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:opacity-100">
-                    <FollowUpAddSubactivityDialog projectId={project.id} activityId={activity.id} />
-                    {activity.subactivities.length === 0 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={deletingActivityId === activity.id}
-                        onClick={() => void removeEmptyActivity(activity.id, activity.title)}
-                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        title="Excluir atividade vazia"
-                        aria-label={`Excluir atividade ${activity.title}`}
-                      >
-                        {deletingActivityId === activity.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                      </Button>
-                    )}
-                  </div>
-                )}
+                <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center rounded-md bg-muted/90 opacity-100 shadow-sm ring-1 ring-border/60 backdrop-blur-sm transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-hover/activity:pointer-events-auto sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:pointer-events-auto sm:group-focus-within/activity:opacity-100">
+                  <CopyEntityLinkButton
+                    href={followUpHref({ projectId: project.id, activityId: activity.id })}
+                    label={`Copiar link da atividade ${activity.title}`}
+                    className="size-7"
+                  />
+                  {canManageStructure && (
+                    <>
+                      <FollowUpAddSubactivityDialog projectId={project.id} activityId={activity.id} />
+                      {activity.subactivities.length === 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={deletingActivityId === activity.id}
+                          onClick={() => void removeEmptyActivity(activity.id, activity.title)}
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          title="Excluir atividade vazia"
+                          aria-label={`Excluir atividade ${activity.title}`}
+                        >
+                          {deletingActivityId === activity.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               {expanded && (
                 <div className="ml-2 border-l border-border pl-1.5">
@@ -1259,12 +1344,12 @@ export function ProjectFollowUp({
                     const running = runningSubIds.includes(sub.id)
                     const assignee = members.find((member) => member.id === sub.assigneeId)
                     return (
-                      <div key={sub.id} className="group/sub my-0.5 flex min-w-0 items-center gap-0.5">
+                      <div key={sub.id} className="group/sub relative my-0.5 flex min-w-0 items-center">
                         <button
                           type="button"
                           onClick={() => selectSubactivity(sub.id)}
                           className={cn(
-                            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
+                            "flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-2 pr-10 text-left transition-colors",
                             selected ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
                           )}
                         >
@@ -1282,7 +1367,7 @@ export function ProjectFollowUp({
                         <CopyEntityLinkButton
                           href={followUpHref({ projectId: project.id, activityId: activity.id, subactivityId: sub.id })}
                           label={`Copiar link da subatividade ${sub.title}`}
-                          className="size-7 opacity-100 sm:opacity-0 sm:group-hover/sub:opacity-100 sm:group-focus-within/sub:opacity-100"
+                          className="absolute right-1 top-1/2 z-10 size-7 -translate-y-1/2 bg-muted/90 opacity-100 shadow-sm ring-1 ring-border/60 backdrop-blur-sm transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-hover/sub:pointer-events-auto sm:group-hover/sub:opacity-100 sm:group-focus-within/sub:pointer-events-auto sm:group-focus-within/sub:opacity-100"
                         />
                       </div>
                     )
@@ -1353,10 +1438,43 @@ export function ProjectFollowUp({
     </div>
   )
 
+  const membersRailContent = (
+    <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-1.5 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex flex-col items-center gap-2">
+        {compactMemberIds.map((id) => {
+          const member = members.find((item) => item.id === id)
+          if (!member) return null
+          const watching = watchingIds.includes(id)
+          const online = Boolean(memberPresence[id]?.online)
+          return (
+            <button
+              key={`rail-${id}`}
+              type="button"
+              onClick={() => setMembersPanelCollapsed(false)}
+              className={cn(
+                "relative flex size-10 items-center justify-center rounded-xl transition-colors hover:bg-muted",
+                watching && "bg-primary/[0.07]",
+              )}
+              title={`${member.name} · ${watching ? "acompanhando" : online ? "online" : "offline"}`}
+              aria-label={`Expandir painel de usuários · ${member.name}`}
+            >
+              <MemberAvatar member={member} profileEnabled={false} className="size-8 text-[0.62rem]" />
+              <span className={cn(
+                "absolute bottom-1 right-1 size-2.5 rounded-full border-2 border-card",
+                online ? "bg-success" : "bg-muted-foreground/35",
+              )} />
+              {watching && <span className="absolute -left-1 h-5 w-0.5 rounded-r-full bg-primary" />}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   return (
     <>
-      <div className="grid h-full min-h-0 w-full min-w-0 overflow-hidden bg-card md:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[64px_290px_minmax(0,1fr)_245px]">
-        <nav className="hidden min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
+      <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-card">
+        <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
           <div className="flex h-12 items-center justify-center border-b border-border">
             <FolderKanban className="size-4 text-muted-foreground" />
           </div>
@@ -1383,11 +1501,31 @@ export function ProjectFollowUp({
           </div>
         </nav>
 
-        <aside className="hidden min-h-0 flex-col border-r border-border bg-muted/20 md:flex">
+        <aside
+          className="relative hidden min-h-0 shrink-0 flex-col border-r border-border bg-muted/20 md:flex"
+          style={{ width: navigatorWidth }}
+        >
           {navigatorContent}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Redimensionar painel de atividades"
+            onPointerDown={beginNavigatorResize}
+            className={cn(
+              "group/resize absolute -right-[4px] inset-y-0 z-30 hidden w-2 cursor-col-resize touch-none md:flex md:items-center md:justify-center",
+              resizingNavigator && "bg-primary/5",
+            )}
+          >
+            <span className={cn(
+              "flex h-10 w-1 items-center justify-center rounded-full bg-border/80 opacity-0 transition-all group-hover/resize:opacity-100",
+              resizingNavigator && "h-14 bg-primary/50 opacity-100",
+            )}>
+              <GripVertical className="size-3 -translate-x-[1px] text-muted-foreground" />
+            </span>
+          </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-col bg-background/55">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background/55">
           {selectedSub && selectedActivity ? (
             <>
               <header className="flex min-h-12 min-w-0 items-center gap-2 border-b border-border bg-card/90 px-2.5 py-2 backdrop-blur sm:px-3">
@@ -1609,7 +1747,7 @@ export function ProjectFollowUp({
                   if (files.length) queueFilesForPreview(files)
                 }}
               >
-                <div className="mx-auto w-full max-w-4xl">
+                <div className="w-full min-w-0">
                   <div className="mb-6 border-b border-border pb-5">
                     <div className="flex items-start gap-3">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Hash className="size-5" /></span>
@@ -1765,7 +1903,7 @@ export function ProjectFollowUp({
               </div>
 
               <footer className="relative border-t border-border bg-card/95 p-2.5 sm:p-3">
-                <div className="mx-auto w-full max-w-4xl">
+                <div className="w-full min-w-0">
                   {replyingTo && (
                     <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.045] px-3 py-2">
                       <Reply className="size-3.5 shrink-0 text-primary" />
@@ -1778,7 +1916,7 @@ export function ProjectFollowUp({
                   )}
 
                   {mentionRange && mentionCandidates.length > 0 && (
-                    <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 mx-auto max-h-72 max-w-4xl overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl sm:left-4 sm:right-4">
+                    <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 max-h-72 max-w-4xl overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl sm:left-4 sm:right-4">
                       <div className="px-2 py-1 text-[0.6rem] font-semibold tracking-wide text-muted-foreground uppercase">Mencionar usuário</div>
                       {mentionCandidates.map((member, index) => {
                         const alreadyInProject = projectMemberIds.includes(member.id)
@@ -1895,13 +2033,46 @@ export function ProjectFollowUp({
           )}
         </main>
 
-        <aside className="hidden min-h-0 flex-col border-l border-border bg-muted/20 xl:flex">
-          <div className="flex h-12 items-center gap-2 border-b border-border px-3">
-            <UsersRound className="size-4 text-muted-foreground" />
-            <span className="text-xs font-semibold">Acompanhando</span>
-            <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{watchingIds.length}</span>
-          </div>
-          {membersContent}
+        <aside
+          className="hidden min-h-0 shrink-0 flex-col border-l border-border bg-muted/20 transition-[width] duration-200 ease-out xl:flex"
+          style={{ width: membersCollapsed ? FOLLOW_UP_MEMBERS_COLLAPSED_WIDTH : FOLLOW_UP_MEMBERS_EXPANDED_WIDTH }}
+        >
+          {membersCollapsed ? (
+            <>
+              <div className="flex h-12 shrink-0 items-center justify-center border-b border-border">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setMembersPanelCollapsed(false)}
+                  title="Expandir Acompanhando"
+                  aria-label="Expandir painel Acompanhando"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+              </div>
+              {membersRailContent}
+            </>
+          ) : (
+            <>
+              <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2.5">
+                <UsersRound className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold">Acompanhando</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{watchingIds.length}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setMembersPanelCollapsed(true)}
+                  title="Recolher para avatares"
+                  aria-label="Recolher painel Acompanhando"
+                >
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+              {membersContent}
+            </>
+          )}
         </aside>
       </div>
 

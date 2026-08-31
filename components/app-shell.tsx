@@ -15,7 +15,8 @@ import { BrowserNotifications } from "@/components/notifications/browser-notific
 import { MemberProfileProvider } from "@/components/member-profile-popover"
 import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-notifier"
 import { DeveloperAutomationAgent } from "@/components/developer/developer-automation-agent"
-import { FollowUpModal } from "@/components/project-detail/follow-up-modal"
+import { OPEN_FOLLOW_UP_EVENT, followUpHref, type FollowUpOpenDetail } from "@/lib/follow-up-launcher"
+import { cn } from "@/lib/utils"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -52,6 +53,39 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
   const router = useRouter()
 
   React.useEffect(() => {
+    function navigateToFollowUp(detail: FollowUpOpenDetail = {}) {
+      router.push(followUpHref(detail))
+    }
+
+    function onOpenFollowUp(event: Event) {
+      navigateToFollowUp((event as CustomEvent<FollowUpOpenDetail>).detail ?? {})
+    }
+
+    function onFollowUpShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat) return
+      if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || event.code !== "KeyP") return
+      event.preventDefault()
+      if (window.location.pathname.startsWith("/acompanhamento")) return
+
+      const projectMatch = window.location.pathname.match(/^\/projetos\/([^/]+)/)
+      const subactivityId = window.location.hash.startsWith("#sub-")
+        ? window.location.hash.slice("#sub-".length)
+        : null
+      navigateToFollowUp({
+        projectId: projectMatch?.[1],
+        subactivityId,
+      })
+    }
+
+    window.addEventListener(OPEN_FOLLOW_UP_EVENT, onOpenFollowUp)
+    window.addEventListener("keydown", onFollowUpShortcut)
+    return () => {
+      window.removeEventListener(OPEN_FOLLOW_UP_EVENT, onOpenFollowUp)
+      window.removeEventListener("keydown", onFollowUpShortcut)
+    }
+  }, [router])
+
+  React.useEffect(() => {
     if (!hydrated || currentUserRole !== "developer") return
 
     function focusDeveloperPanel() {
@@ -74,12 +108,22 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [currentUserRole, hydrated, router])
 
+  const followUpPage = pathname.startsWith("/acompanhamento")
+
   return (
-    <div className="flex min-h-screen max-w-full overflow-x-clip">
+    <div className={cn(
+      "flex max-w-full overflow-x-clip",
+      followUpPage ? "h-dvh overflow-hidden" : "min-h-screen",
+    )}>
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
-      <div className="flex min-w-0 max-w-full flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col">
         <Topbar onMenu={() => setMenuOpen(true)} />
-        <main className="min-w-0 max-w-full flex-1 px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8">
+        <main className={cn(
+          "min-w-0 max-w-full flex-1",
+          followUpPage
+            ? "min-h-0 overflow-hidden p-0"
+            : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
+        )}>
           {hydrated ? (canAccessPath(currentUserRole, pathname) ? children : <AccessDenied role={currentUserRole} />) : <AppLoadingSkeleton />}
         </main>
         <BackendErrorBanner />
@@ -87,7 +131,6 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         <DeveloperShiftNotifier />
         <DeveloperAutomationAgent />
         <IncomingCallCenter />
-        <FollowUpModal />
       </div>
     </div>
   )

@@ -31,8 +31,8 @@ export function ProjectCard({ project }: { project: Project }) {
     <article className="group flex flex-col gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5 hover:ring-foreground/15">
       <div className="flex items-start justify-between gap-3">
         <Link href={`/projetos/${project.id}`} className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-            <ProjectIcon icon={project.icon} className="size-5" />
+          <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary">
+            <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-5" imageClassName="size-full rounded-none object-cover" />
           </span>
           <div className="min-w-0">
             <h3 className="truncate font-semibold leading-tight transition-colors hover:text-primary">{project.name}</h3>

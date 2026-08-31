@@ -291,8 +291,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       <div className="flex min-w-0 flex-col gap-4 rounded-2xl bg-card p-3 ring-1 ring-foreground/8 sm:p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary" aria-hidden>
-            <ProjectIcon icon={project.icon} className="size-5" />
+          <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary" aria-hidden>
+            <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-5" imageClassName="size-full rounded-none object-cover" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -440,7 +440,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 type="button"
                 onClick={openFollowUp}
                 className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:flex-none"
-                title="Abrir acompanhamento em janela ampliada"
+                title="Abrir página de acompanhamento"
               >
                 <MessageSquareText className="size-3.5" />
                 Acompanhamento

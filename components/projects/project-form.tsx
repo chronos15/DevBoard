@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, FolderKanban, GitBranch, LoaderCircle, PackageCheck, Users } from "lucide-react"
+import { ArrowLeft, Check, FolderKanban, GitBranch, ImageIcon, LoaderCircle, PackageCheck, Trash2, Upload, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import type { Priority } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -18,6 +18,12 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
 
   const [name, setName] = React.useState(project?.name ?? "")
   const [icon, setIcon] = React.useState(normalizeProjectIcon(project?.icon))
+  const [useCustomImage, setUseCustomImage] = React.useState(Boolean(project?.iconImagePath))
+  const [iconImageFile, setIconImageFile] = React.useState<File | null>(null)
+  const [iconImagePreview, setIconImagePreview] = React.useState<string | null>(project?.iconImageUrl ?? null)
+  const [iconImageError, setIconImageError] = React.useState("")
+  const imageInputRef = React.useRef<HTMLInputElement>(null)
+  const objectUrlRef = React.useRef<string | null>(null)
   const [client, setClient] = React.useState(project?.client ?? "")
   const [description, setDescription] = React.useState(project?.description ?? "")
   const [tag, setTag] = React.useState(project?.tag ?? "Desenvolvimento")
@@ -32,6 +38,10 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     if (!project) return
     setName(project.name)
     setIcon(normalizeProjectIcon(project.icon))
+    setUseCustomImage(Boolean(project.iconImagePath))
+    setIconImageFile(null)
+    setIconImagePreview(project.iconImageUrl ?? null)
+    setIconImageError("")
     setClient(project.client)
     setDescription(project.description)
     setTag(project.tag)
@@ -46,6 +56,10 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     setMemberIds(currentUserId ? [currentUserId] : members[0] ? [members[0].id] : [])
     initializedNewMembers.current = true
   }, [currentUserId, editing, hydrated, members])
+
+  React.useEffect(() => () => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+  }, [])
 
   if (editing && !hydrated) {
     return (
@@ -85,6 +99,31 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     )
   }
 
+  function chooseCustomImage(file?: File | null) {
+    if (!file) return
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+    if (!allowedTypes.has(file.type)) {
+      setIconImageError("Use uma imagem JPG, PNG, WEBP ou GIF.")
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setIconImageError("A imagem deve ter no máximo 3 MB.")
+      return
+    }
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    const preview = URL.createObjectURL(file)
+    objectUrlRef.current = preview
+    setIconImageFile(file)
+    setIconImagePreview(preview)
+    setUseCustomImage(true)
+    setIconImageError("")
+  }
+
+  function usePresetIcon() {
+    setUseCustomImage(false)
+    setIconImageError("")
+  }
+
   function toggleMember(id: string) {
     setMemberIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
@@ -94,6 +133,10 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !dueDate || saving) return
+    if (useCustomImage && !iconImageFile && !project?.iconImagePath) {
+      setIconImageError("Selecione uma imagem para usar como ícone do projeto.")
+      return
+    }
     setSaving(true)
 
     const data = {
@@ -113,13 +156,13 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
 
     try {
       if (projectId) {
-        const ok = await updateProject(projectId, data)
+        const ok = await updateProject(projectId, data, { useCustomImage, imageFile: iconImageFile })
         if (!ok) return
         router.push(`/projetos/${projectId}`)
         return
       }
 
-      const id = await addProject(data)
+      const id = await addProject(data, { useCustomImage, imageFile: iconImageFile })
       if (!id) return
       router.push(`/projetos/${id}`)
     } finally {
@@ -228,15 +271,95 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
         <aside className="space-y-5">
           <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
             <div className="mb-4 flex items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <ProjectIcon icon={icon} className="size-5" />
+              <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-primary">
+                <ProjectIcon
+                  icon={icon}
+                  imageUrl={useCustomImage ? iconImagePreview : undefined}
+                  className="size-5"
+                  imageClassName="size-full rounded-none object-cover"
+                />
               </span>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold">Ícone do projeto</h2>
-                <p className="text-[0.68rem] text-muted-foreground">Identifique o projeto rapidamente no painel e no acompanhamento.</p>
+                <h2 className="text-sm font-semibold">Identidade do projeto</h2>
+                <p className="text-[0.68rem] text-muted-foreground">Use um ícone do Devboard ou envie sua própria imagem.</p>
               </div>
             </div>
-            <ProjectIconPicker value={icon} onChange={setIcon} />
+
+            <div className="mb-4 grid grid-cols-2 rounded-xl bg-muted p-1">
+              <button
+                type="button"
+                onClick={usePresetIcon}
+                className={cn(
+                  "flex h-8 items-center justify-center gap-1.5 rounded-lg text-[0.7rem] font-medium transition-colors",
+                  !useCustomImage ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <FolderKanban className="size-3.5" /> Ícone
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUseCustomImage(true); setIconImageError("") }}
+                className={cn(
+                  "flex h-8 items-center justify-center gap-1.5 rounded-lg text-[0.7rem] font-medium transition-colors",
+                  useCustomImage ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <ImageIcon className="size-3.5" /> Imagem
+              </button>
+            </div>
+
+            {!useCustomImage ? (
+              <ProjectIconPicker
+                value={icon}
+                onChange={(value) => {
+                  setIcon(value)
+                  setUseCustomImage(false)
+                }}
+              />
+            ) : (
+              <div className="space-y-3">
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(event) => {
+                    chooseCustomImage(event.target.files?.[0])
+                    event.currentTarget.value = ""
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-dashed border-border bg-background p-3 text-left transition-colors hover:border-primary/30 hover:bg-muted/35"
+                >
+                  <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted text-muted-foreground ring-1 ring-foreground/8">
+                    {iconImagePreview ? (
+                      <img src={iconImagePreview} alt="Prévia do ícone do projeto" className="size-full object-cover" />
+                    ) : (
+                      <Upload className="size-4" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold">{iconImagePreview ? "Trocar imagem" : "Enviar imagem"}</span>
+                    <span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">JPG, PNG, WEBP ou GIF · até 3 MB. Formato quadrado fica melhor.</span>
+                  </span>
+                  <Upload className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                </button>
+
+                {iconImagePreview && (
+                  <button
+                    type="button"
+                    onClick={usePresetIcon}
+                    className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" /> Remover imagem e usar ícone
+                  </button>
+                )}
+                {iconImageError && <p className="text-[0.68rem] font-medium text-destructive">{iconImageError}</p>}
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8">

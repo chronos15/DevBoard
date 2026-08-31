@@ -54,11 +54,26 @@ export function normalizeProjectIcon(value?: string | null): ProjectIconKey {
 
 export function ProjectIcon({
   icon,
+  imageUrl,
   className,
+  imageClassName,
 }: {
   icon?: string | null
+  imageUrl?: string | null
   className?: string
+  imageClassName?: string
 }) {
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        aria-hidden
+        className={cn("size-4 shrink-0 rounded-[0.3rem] object-cover", className, imageClassName)}
+      />
+    )
+  }
+
   const Icon = iconMap[normalizeProjectIcon(icon)] ?? FolderKanban
   return <Icon aria-hidden className={cn("size-4", className)} />
 }

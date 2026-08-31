@@ -78,8 +78,9 @@ export function BrowserNotifications() {
       if (shownRef.current.has(notification.id)) continue
       shownRef.current.add(notification.id)
       const actor = members.find((member) => member.id === notification.actorId)
-      const hash = notification.subactivityId ? `#sub-${notification.subactivityId}` : ""
-      const target = `/projetos/${notification.projectId}?view=followup${hash}`
+      const params = new URLSearchParams({ project: notification.projectId! })
+      if (notification.subactivityId) params.set("sub", notification.subactivityId)
+      const target = `/acompanhamento?${params.toString()}`
       const options: NotificationOptions = {
         body: notification.description || `${actor?.name ?? "Um usuário"} mencionou você no acompanhamento.`,
         icon: "/devboard-icon-192.png",

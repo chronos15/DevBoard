@@ -154,6 +154,8 @@ export type Project = {
   id: string
   name: string
   icon?: string
+  iconImagePath?: string
+  iconImageUrl?: string
   client: string
   description: string
   tag: string

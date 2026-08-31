@@ -565,8 +565,13 @@ export function ProjectFollowUp({
     setDraftMentions([])
     setMentionRange(null)
     setMobileNavigatorOpen(false)
-    if (window.location.pathname === `/projetos/${project.id}`) {
-      const url = new URL(window.location.href)
+    const url = new URL(window.location.href)
+    if (window.location.pathname.startsWith("/acompanhamento")) {
+      url.searchParams.set("project", project.id)
+      url.searchParams.set("sub", subId)
+      url.hash = ""
+      window.history.replaceState({}, "", url)
+    } else if (window.location.pathname === `/projetos/${project.id}`) {
       url.hash = `sub-${subId}`
       window.history.replaceState({}, "", url)
     }
@@ -754,7 +759,7 @@ export function ProjectFollowUp({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-3">
         <div className="flex items-center gap-2">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} className="size-4" /></span>
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" /></span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{project.name}</p>
             <p className="truncate text-[0.65rem] text-muted-foreground">Atividades e subatividades</p>
@@ -856,13 +861,13 @@ export function ProjectFollowUp({
                   onClick={() => item.id !== project.id && onProjectChange?.(item.id)}
                   title={`Abrir ${item.name}`}
                   className={cn(
-                    "relative flex size-10 items-center justify-center rounded-xl text-xs font-semibold transition-all",
+                    "relative flex size-10 items-center justify-center overflow-hidden rounded-xl text-xs font-semibold transition-all",
                     item.id === project.id
                       ? "rounded-[14px] bg-primary text-primary-foreground shadow-sm"
                       : "bg-card text-muted-foreground ring-1 ring-foreground/8 hover:rounded-[14px] hover:bg-primary/10 hover:text-primary",
                   )}
                 >
-                  <ProjectIcon icon={item.icon} className="size-4" />
+                  <ProjectIcon icon={item.icon} imageUrl={item.iconImageUrl} className="size-4" imageClassName="size-full rounded-[inherit] object-cover" />
                   {item.id === project.id && <span className="absolute -left-2.5 h-6 w-1 rounded-r-full bg-primary" />}
                 </button>
               ))}

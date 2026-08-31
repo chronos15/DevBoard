@@ -21,6 +21,7 @@ import {
   AVATARS_BUCKET,
   CHAT_MEDIA_BUCKET,
   TOPIC_MEDIA_BUCKET,
+  PROJECT_ICONS_BUCKET,
   chatAudioStoragePath,
   chatMediaKind,
   chatMediaStoragePath,
@@ -28,6 +29,7 @@ import {
   dataUrlToBlob,
   safeFileName,
   topicMediaStoragePath,
+  projectIconStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import type {
@@ -119,8 +121,8 @@ export type StoreContextValue = {
   ) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[]) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
-  addProject: (data: ProjectInput) => Promise<string | null>
-  updateProject: (projectId: string, data: ProjectInput) => Promise<boolean>
+  addProject: (data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<string | null>
+  updateProject: (projectId: string, data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<boolean>
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
@@ -887,7 +889,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, currentUserRole, fail, refreshProjects])
 
-  const addProject = React.useCallback(async (data: ProjectInput) => {
+  const uploadProjectIconImage = React.useCallback(async (projectId: string, file: File) => {
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+    if (!allowedTypes.has(file.type)) throw new Error("Use uma imagem JPG, PNG, WEBP ou GIF.")
+    if (file.size > 3 * 1024 * 1024) throw new Error("A imagem do projeto deve ter no máximo 3 MB.")
+
+    const path = projectIconStoragePath(currentUserId, projectId, file.name)
+    const { error } = await supabase.storage.from(PROJECT_ICONS_BUCKET).upload(path, file, {
+      contentType: file.type || "image/jpeg",
+      cacheControl: "3600",
+      upsert: false,
+    })
+    if (error) throw error
+    return path
+  }, [currentUserId, supabase])
+
+  const removeProjectIconImage = React.useCallback(async (path?: string | null) => {
+    if (!path) return
+    const { error } = await supabase.storage.from(PROJECT_ICONS_BUCKET).remove([path])
+    if (error) console.warn("[Devboard/ProjectIcon] Não foi possível remover a imagem anterior do projeto.", error)
+  }, [supabase])
+
+  const addProject = React.useCallback<StoreContextValue["addProject"]>(async (data, visual) => {
     const result = await callRpc<string>("create_project", {
       p_name: data.name,
       p_client: data.client,
@@ -899,16 +922,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_member_ids: data.memberIds,
     }, "Não foi possível criar o projeto")
     if (!result) return null
-    const iconResult = await callRpc<unknown>("set_project_icon", {
-      p_project_id: result,
-      p_icon: data.icon ?? "folder-kanban",
-    }, "Projeto criado, mas não foi possível salvar o ícone")
-    if (iconResult === undefined) return result
-    await refreshProjects()
-    return result
-  }, [callRpc, refreshProjects])
 
-  const updateProject = React.useCallback(async (projectId: string, data: ProjectInput) => {
+    let uploadedPath: string | null = null
+    try {
+      if (visual?.useCustomImage && visual.imageFile) {
+        uploadedPath = await uploadProjectIconImage(result, visual.imageFile)
+      }
+
+      const iconResult = await callRpc<unknown>("set_project_visual", {
+        p_project_id: result,
+        p_icon: data.icon ?? "folder-kanban",
+        p_icon_image_path: visual?.useCustomImage ? uploadedPath : null,
+      }, "Projeto criado, mas não foi possível salvar a identidade visual")
+
+      if (iconResult === undefined) {
+        if (uploadedPath) await removeProjectIconImage(uploadedPath)
+        await refreshProjects()
+        return result
+      }
+
+      await refreshProjects()
+      return result
+    } catch (error) {
+      if (uploadedPath) await removeProjectIconImage(uploadedPath)
+      fail(error, "Projeto criado, mas não foi possível enviar a imagem personalizada")
+      await refreshProjects()
+      return result
+    }
+  }, [callRpc, fail, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
+
+  const updateProject = React.useCallback<StoreContextValue["updateProject"]>(async (projectId, data, visual) => {
     const project = projects.find((item) => item.id === projectId)
     const canEdit = currentUserRole === "admin" || Boolean(
       project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
@@ -917,26 +960,54 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fail(new Error("Você precisa estar integrado ao projeto para editá-lo."), "Sem permissão para editar este projeto")
       return false
     }
-    const result = await callRpc<unknown>("update_project", {
-      p_project_id: projectId,
-      p_name: data.name,
-      p_client: data.client,
-      p_description: data.description,
-      p_tag: data.tag,
-      p_priority: data.priority,
-      p_due_date: data.dueDate,
-      p_repository: data.repository ?? "",
-      p_member_ids: data.memberIds,
-    }, "Não foi possível atualizar o projeto")
-    if (result === undefined) return false
-    const iconResult = await callRpc<unknown>("set_project_icon", {
-      p_project_id: projectId,
-      p_icon: data.icon ?? "folder-kanban",
-    }, "Projeto atualizado, mas não foi possível salvar o ícone")
-    if (iconResult === undefined) return false
-    await refreshProjects()
-    return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
+
+    let uploadedPath: string | null = null
+    try {
+      if (visual?.useCustomImage && visual.imageFile) {
+        uploadedPath = await uploadProjectIconImage(projectId, visual.imageFile)
+      }
+
+      const result = await callRpc<unknown>("update_project", {
+        p_project_id: projectId,
+        p_name: data.name,
+        p_client: data.client,
+        p_description: data.description,
+        p_tag: data.tag,
+        p_priority: data.priority,
+        p_due_date: data.dueDate,
+        p_repository: data.repository ?? "",
+        p_member_ids: data.memberIds,
+      }, "Não foi possível atualizar o projeto")
+      if (result === undefined) {
+        if (uploadedPath) await removeProjectIconImage(uploadedPath)
+        return false
+      }
+
+      const useCustomImage = visual?.useCustomImage ?? Boolean(project?.iconImagePath)
+      const nextImagePath = useCustomImage
+        ? (uploadedPath ?? project?.iconImagePath ?? null)
+        : null
+      const iconResult = await callRpc<unknown>("set_project_visual", {
+        p_project_id: projectId,
+        p_icon: data.icon ?? "folder-kanban",
+        p_icon_image_path: nextImagePath,
+      }, "Projeto atualizado, mas não foi possível salvar a identidade visual")
+      if (iconResult === undefined) {
+        if (uploadedPath) await removeProjectIconImage(uploadedPath)
+        return false
+      }
+
+      if (project?.iconImagePath && project.iconImagePath !== nextImagePath) {
+        await removeProjectIconImage(project.iconImagePath)
+      }
+      await refreshProjects()
+      return true
+    } catch (error) {
+      if (uploadedPath) await removeProjectIconImage(uploadedPath)
+      fail(error, "Não foi possível atualizar a imagem personalizada do projeto")
+      return false
+    }
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
 
   const versionProject = React.useCallback(async (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => {
     const project = projects.find((item) => item.id === projectId)

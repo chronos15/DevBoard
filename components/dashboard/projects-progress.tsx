@@ -40,8 +40,8 @@ export function ProjectsProgress() {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <ProjectIcon icon={p.icon} className="size-4" />
+                  <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary">
+                    <ProjectIcon icon={p.icon} imageUrl={p.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" />
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{p.name}</p>

@@ -4,6 +4,7 @@ export const ATTACHMENTS_BUCKET = 'cadence-attachments'
 export const AVATARS_BUCKET = 'cadence-avatars'
 export const CHAT_MEDIA_BUCKET = 'devboard-chat-media'
 export const TOPIC_MEDIA_BUCKET = 'devboard-topic-media'
+export const PROJECT_ICONS_BUCKET = 'devboard-project-icons'
 
 export function colorForUser(id: string) {
   const palette = [
@@ -105,6 +106,17 @@ export function chatMediaKind(file: Pick<File, 'name' | 'type'>): AttachmentKind
   return 'other'
 }
 
+
+export function projectIconStoragePath(
+  uploaderId: string,
+  projectId: string,
+  fileName: string,
+) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${uploaderId}/${projectId}/${random}-${safeFileName(fileName)}`
+}
 
 export function topicMediaStoragePath(
   workspaceId: string,

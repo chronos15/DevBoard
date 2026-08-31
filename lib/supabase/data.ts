@@ -13,7 +13,7 @@ import type {
   UserPreferences,
   WorkSession,
 } from '@/lib/types'
-import { AVATARS_BUCKET, isAttachmentKind, mapMember } from './helpers'
+import { AVATARS_BUCKET, PROJECT_ICONS_BUCKET, isAttachmentKind, mapMember } from './helpers'
 
 export type BackendSnapshot = {
   user: User
@@ -117,7 +117,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
   const { data, error } = await supabase
     .from('projects')
     .select(`
-      id,name,icon,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
+      id,name,icon,icon_image_path,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
       project_members(user_id),
       project_comments(id,author_id,content,created_at),
       attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
@@ -189,10 +189,17 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
           }))),
       })))
 
+    const iconImagePath = row.icon_image_path || undefined
+    const iconImageUrl = iconImagePath
+      ? supabase.storage.from(PROJECT_ICONS_BUCKET).getPublicUrl(iconImagePath).data.publicUrl
+      : undefined
+
     return {
       id: row.id,
       name: row.name,
       icon: row.icon ?? "folder-kanban",
+      iconImagePath,
+      iconImageUrl,
       client: row.client,
       description: row.description,
       tag: row.tag,

@@ -62,6 +62,7 @@ const PROJECT_TABLES = new Set([
   "activities",
   "activity_assignees",
   "subactivities",
+  "subactivity_members",
   "project_comments",
   "subactivity_comments",
   "attachments",

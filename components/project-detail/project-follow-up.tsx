@@ -364,6 +364,7 @@ function MobilePanel({
 
 export function ProjectFollowUp({
   project,
+  availableProjects,
   filter = "all",
   assigneeId = "all",
   initialActivityId,
@@ -372,6 +373,7 @@ export function ProjectFollowUp({
   onProjectChange,
 }: {
   project: Project
+  availableProjects?: Project[]
   filter?: ActivityFilter
   assigneeId?: string
   initialActivityId?: string | null
@@ -572,9 +574,19 @@ export function ProjectFollowUp({
     return Array.from(ids).filter((id) => members.some((member) => member.id === id))
   }, [members, project.activities, project.memberIds])
 
-  const projectMemberIdsKey = React.useMemo(
-    () => [...projectMemberIds].sort().join("|"),
-    [projectMemberIds],
+  const selectedSubMemberIds = React.useMemo(() => {
+    if (!selectedSub) return []
+    return Array.from(new Set([selectedSub.assigneeId, ...(selectedSub.memberIds ?? [])].filter(Boolean)))
+  }, [selectedSub])
+
+  const presenceAllowedMemberIds = React.useMemo(() => {
+    const adminIds = members.filter((member) => member.role === "admin").map((member) => member.id)
+    return Array.from(new Set([...selectedSubMemberIds, ...adminIds]))
+  }, [members, selectedSubMemberIds])
+
+  const presenceAllowedMemberIdsKey = React.useMemo(
+    () => [...presenceAllowedMemberIds].sort().join("|"),
+    [presenceAllowedMemberIds],
   )
 
   const mentionCandidates = React.useMemo(() => {
@@ -584,15 +596,15 @@ export function ProjectFollowUp({
       .filter((member) => member.id !== currentUserId)
       .filter((member) => !query || member.name.toLocaleLowerCase("pt-BR").includes(query) || member.email?.toLocaleLowerCase("pt-BR").includes(query))
       .sort((a, b) => {
-        const aMember = projectMemberIds.includes(a.id) ? 0 : 1
-        const bMember = projectMemberIds.includes(b.id) ? 0 : 1
-        return aMember - bMember || a.name.localeCompare(b.name, "pt-BR")
+        const aRank = selectedSubMemberIds.includes(a.id) ? 0 : projectMemberIds.includes(a.id) ? 1 : 2
+        const bRank = selectedSubMemberIds.includes(b.id) ? 0 : projectMemberIds.includes(b.id) ? 1 : 2
+        return aRank - bRank || a.name.localeCompare(b.name, "pt-BR")
       })
       .slice(0, 8)
-  }, [currentUserId, members, mentionRange, projectMemberIds])
+  }, [currentUserId, members, mentionRange, projectMemberIds, selectedSubMemberIds])
 
-  const onlineMemberIds = projectMemberIds.filter((id) => memberPresence[id]?.online)
-  const offlineMemberIds = projectMemberIds.filter((id) => !memberPresence[id]?.online)
+  const onlineMemberIds = selectedSubMemberIds.filter((id) => memberPresence[id]?.online)
+  const offlineMemberIds = selectedSubMemberIds.filter((id) => !memberPresence[id]?.online)
   const compactMemberIds = React.useMemo(
     () => Array.from(new Set([
       ...watchingIds,
@@ -609,7 +621,7 @@ export function ProjectFollowUp({
     [markedCommentIds, selectedSub?.comments],
   )
 
-  const accessibleProjects = projects
+  const accessibleProjects = availableProjects ?? projects
 
   const timeline = React.useMemo<TimelineItem[]>(() => {
     if (!selectedSub) return []
@@ -751,7 +763,7 @@ export function ProjectFollowUp({
       return
     }
 
-    const allowedMemberIds = new Set(projectMemberIdsKey ? projectMemberIdsKey.split("|") : [])
+    const allowedMemberIds = new Set(presenceAllowedMemberIdsKey ? presenceAllowedMemberIdsKey.split("|") : [])
 
     const channel = supabase.channel(`devboard-followup:${workspaceId}:${project.id}:${selectedSubId}`, {
       config: { presence: { key: currentUserId } },
@@ -792,7 +804,7 @@ export function ProjectFollowUp({
       void channel.untrack()
       void supabase.removeChannel(channel)
     }
-  }, [currentUserId, project.id, projectMemberIdsKey, selectedSubId, supabase, workspaceId])
+  }, [currentUserId, presenceAllowedMemberIdsKey, project.id, selectedSubId, supabase, workspaceId])
 
   React.useEffect(() => {
     const attachments = (selectedSub?.attachments ?? []).filter((attachment) => attachment.active)
@@ -2122,6 +2134,7 @@ export function ProjectFollowUp({
                       <div className="px-2 py-1 text-[0.6rem] font-semibold tracking-wide text-muted-foreground uppercase">Mencionar usuário</div>
                       {mentionCandidates.map((member, index) => {
                         const alreadyInProject = projectMemberIds.includes(member.id)
+                        const alreadyInSubactivity = selectedSubMemberIds.includes(member.id)
                         return (
                           <button
                             key={member.id}
@@ -2138,7 +2151,11 @@ export function ProjectFollowUp({
                               <p className="truncate text-xs font-medium">{member.name}</p>
                               <p className="truncate text-[0.6rem] text-muted-foreground">{member.email}</p>
                             </div>
-                            {!alreadyInProject && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[0.58rem] font-medium text-primary">adicionar ao projeto</span>}
+                            {!alreadyInSubactivity && (
+                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[0.58rem] font-medium text-primary">
+                                {alreadyInProject ? "adicionar à subatividade" : "adicionar à subatividade e projeto"}
+                              </span>
+                            )}
                             {index === mentionIndex && <span className="hidden text-[0.58rem] text-muted-foreground sm:inline">Enter</span>}
                           </button>
                         )

@@ -128,6 +128,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         subactivities(
           id,title,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
+          subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
         )
@@ -156,6 +157,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             timerStartedAt: sub.timer_started_at ?? undefined,
             createdAt: sub.created_at ?? undefined,
             assigneeId: sub.assignee_id,
+            memberIds: Array.from(new Set([sub.assignee_id, ...(sub.subactivity_members ?? []).map((item: any) => item.user_id)].filter(Boolean))),
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,
             comments: (() => {

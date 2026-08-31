@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useStore } from "@/lib/store"
 import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 
 function FollowUpPageSkeleton() {
   return (
@@ -49,29 +50,34 @@ function FollowUpPageSkeleton() {
 }
 
 export function FollowUpPage() {
-  const { projects, runningSubIds } = useStore()
+  const { projects, runningSubIds, currentUserId, currentUserRole } = useStore()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = React.useState(true)
   const switchTimerRef = React.useRef<number | null>(null)
 
+  const scopedProjects = React.useMemo(
+    () => scopeFollowUpProjects(projects, currentUserId, currentUserRole),
+    [currentUserId, currentUserRole, projects],
+  )
+
   const fallbackProjectId = React.useMemo(() => {
-    for (const project of projects) {
+    for (const project of scopedProjects) {
       if (project.activities.some((activity) => activity.subactivities.some((sub) => runningSubIds.includes(sub.id)))) {
         return project.id
       }
     }
-    return projects[0]?.id ?? null
-  }, [projects, runningSubIds])
+    return scopedProjects[0]?.id ?? null
+  }, [runningSubIds, scopedProjects])
 
   const requestedProjectId = searchParams.get("project")
-  const projectId = requestedProjectId && projects.some((project) => project.id === requestedProjectId)
+  const projectId = requestedProjectId && scopedProjects.some((project) => project.id === requestedProjectId)
     ? requestedProjectId
     : fallbackProjectId
   const requestedActivityId = searchParams.get("activity")
   const requestedSubactivityId = searchParams.get("sub")
   const initialTimelineId = searchParams.get("focus")
-  const selectedProject = projects.find((project) => project.id === projectId) ?? null
+  const selectedProject = scopedProjects.find((project) => project.id === projectId) ?? null
   const resolvedActivity = selectedProject?.activities.find((activity) => activity.id === requestedActivityId) ?? null
   const initialSubactivityId = requestedSubactivityId && selectedProject?.activities.some((activity) => activity.subactivities.some((sub) => sub.id === requestedSubactivityId))
     ? requestedSubactivityId
@@ -89,7 +95,7 @@ export function FollowUpPage() {
   }, [router])
 
   React.useEffect(() => {
-    if (!projects.length || !projectId) {
+    if (!scopedProjects.length || !projectId) {
       setLoading(false)
       return
     }
@@ -99,7 +105,7 @@ export function FollowUpPage() {
     return () => {
       if (switchTimerRef.current) window.clearTimeout(switchTimerRef.current)
     }
-  }, [projectId, projects.length])
+  }, [projectId, scopedProjects.length])
 
   React.useEffect(() => {
     if (!projectId || requestedProjectId === projectId) return
@@ -133,11 +139,11 @@ export function FollowUpPage() {
             <select
               value={projectId ?? ""}
               onChange={(event) => showProject(event.target.value, null)}
-              disabled={!projects.length}
+              disabled={!scopedProjects.length}
               className="h-9 w-full min-w-0 rounded-xl border border-border bg-background px-3 text-xs font-medium outline-none transition-colors hover:bg-muted focus:border-primary/40 disabled:opacity-60"
             >
-              {!projects.length && <option value="">Nenhum projeto disponível</option>}
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              {!scopedProjects.length && <option value="">Nenhum acompanhamento disponível</option>}
+              {scopedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
         </div>
@@ -153,14 +159,14 @@ export function FollowUpPage() {
       </header>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {!projects.length ? (
+        {!scopedProjects.length ? (
           <div className="flex h-full items-center justify-center p-6 text-center">
             <div>
               <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                 <MessageSquareText className="size-5" />
               </span>
-              <h2 className="mt-4 text-sm font-semibold">Nenhum projeto disponível</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Quando houver projetos no workspace, eles aparecerão aqui para acompanhamento.</p>
+              <h2 className="mt-4 text-sm font-semibold">Nenhum acompanhamento disponível</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Você verá aqui apenas atividades e subatividades relacionadas a você.</p>
             </div>
           </div>
         ) : !selectedProject || loading ? (
@@ -169,6 +175,7 @@ export function FollowUpPage() {
           <ProjectFollowUp
             key={selectedProject.id}
             project={selectedProject}
+            availableProjects={scopedProjects}
             initialActivityId={requestedActivityId}
             initialSubactivityId={initialSubactivityId}
             initialTimelineId={initialTimelineId}

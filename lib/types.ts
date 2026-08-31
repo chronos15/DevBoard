@@ -104,6 +104,7 @@ export type Subactivity = {
   timerStartedAt?: string
   createdAt?: string
   assigneeId: string
+  memberIds?: string[]
   needsAttention?: boolean
   attentionMessage?: string
   comments?: CommentEntry[]

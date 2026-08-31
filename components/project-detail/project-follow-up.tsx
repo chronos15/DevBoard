@@ -55,6 +55,8 @@ import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
+import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
+import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -327,6 +329,7 @@ export function ProjectFollowUp({
     addFollowUpComment,
     deleteFollowUpComment,
     addSubactivityAttachments,
+    deleteActivity,
     startTimer,
     stopTimer,
   } = useStore()
@@ -348,6 +351,9 @@ export function ProjectFollowUp({
   const [sending, setSending] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
   const [recording, setRecording] = React.useState(false)
+  const [pendingFiles, setPendingFiles] = React.useState<File[]>([])
+  const [attachmentPreviewOpen, setAttachmentPreviewOpen] = React.useState(false)
+  const [deletingActivityId, setDeletingActivityId] = React.useState<string | null>(null)
   const [recordingSeconds, setRecordingSeconds] = React.useState(0)
   const [resolvedUrls, setResolvedUrls] = React.useState<Record<string, string>>({})
   const [mobileNavigatorOpen, setMobileNavigatorOpen] = React.useState(false)
@@ -407,6 +413,7 @@ export function ProjectFollowUp({
   const selectedActivity = selectedContext?.activity
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
+  const canManageStructure = currentUserRole === "admin"
 
   const projectMemberIds = React.useMemo(() => {
     const ids = new Set(project.memberIds)
@@ -453,6 +460,7 @@ export function ProjectFollowUp({
     const needle = selectedSub.title.trim().toLocaleLowerCase("pt-BR")
     if (needle) {
       for (const log of project.logs ?? []) {
+        if (log.title === "Mensagem adicionada no acompanhamento") continue
         const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
         if (!haystack.includes(needle)) continue
         items.push({ kind: "log", id: `log-${log.id}`, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
@@ -813,27 +821,59 @@ export function ProjectFollowUp({
     }
   }
 
-  async function uploadFiles(files: File[]) {
-    if (!selectedSub || !files.length || uploading) return
+  function validateFiles(files: File[]) {
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
-    if (files.some((file) => file.size > MAX_FILE_BYTES)) {
-      setComposerError("Cada arquivo pode ter no máximo 50 MB.")
+    if (files.some((file) => file.size > MAX_FILE_BYTES)) return "Cada arquivo pode ter no máximo 50 MB."
+    if (totalBytes > MAX_BATCH_BYTES) return "O envio pode ter no máximo 150 MB por vez."
+    return ""
+  }
+
+  function queueFilesForPreview(files: File[]) {
+    if (!selectedSub || !files.length || uploading) return
+    const error = validateFiles(files)
+    if (error) {
+      setComposerError(error)
       return
     }
-    if (totalBytes > MAX_BATCH_BYTES) {
-      setComposerError("O envio pode ter no máximo 150 MB por vez.")
-      return
+    setComposerError("")
+    setPendingFiles(files)
+    setAttachmentPreviewOpen(true)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  async function uploadFiles(files: File[], caption = "") {
+    if (!selectedSub || !files.length || uploading) return false
+    const error = validateFiles(files)
+    if (error) {
+      setComposerError(error)
+      return false
     }
     setComposerError("")
     setUploading(true)
     try {
       const prepared = await Promise.all(files.map(fileToUpload))
       const ok = await addSubactivityAttachments(selectedSub.id, prepared)
-      if (!ok) setComposerError("Não foi possível enviar os arquivos.")
+      if (!ok) {
+        setComposerError("Não foi possível enviar os arquivos.")
+        return false
+      }
+      const cleanCaption = caption.trim()
+      if (cleanCaption) {
+        const captionOk = await addFollowUpComment(selectedSub.id, cleanCaption, [], undefined)
+        if (!captionOk) setComposerError("Os arquivos foram enviados, mas não foi possível salvar a legenda.")
+      }
+      return true
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
     }
+  }
+
+  async function sendPendingFiles(caption: string) {
+    const ok = await uploadFiles(pendingFiles, caption)
+    if (!ok) return
+    setPendingFiles([])
+    setAttachmentPreviewOpen(false)
   }
 
   async function startRecording() {
@@ -883,6 +923,20 @@ export function ProjectFollowUp({
     if (recorder && recorder.state !== "inactive") recorder.stop()
   }
 
+  async function removeEmptyActivity(activityId: string, title: string) {
+    if (!canManageStructure || deletingActivityId) return
+    const activity = project.activities.find((item) => item.id === activityId)
+    if (!activity || activity.subactivities.length > 0) return
+    if (!window.confirm(`Excluir a atividade “${title}”? Esta ação só está disponível porque ela ainda não possui subatividades.`)) return
+    setDeletingActivityId(activityId)
+    try {
+      const ok = await deleteActivity(project.id, activityId)
+      if (ok && selectedActivity?.id === activityId) setSelectedSubId(null)
+    } finally {
+      setDeletingActivityId(null)
+    }
+  }
+
   const navigatorContent = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-3">
@@ -892,6 +946,7 @@ export function ProjectFollowUp({
             <p className="truncate text-sm font-semibold">{project.name}</p>
             <p className="truncate text-[0.65rem] text-muted-foreground">Atividades e subatividades</p>
           </div>
+          {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
@@ -900,16 +955,37 @@ export function ProjectFollowUp({
           const runningCount = activity.subactivities.filter((sub) => runningSubIds.includes(sub.id)).length
           return (
             <div key={activity.id} className="mb-1">
-              <button
-                type="button"
-                onClick={() => toggleActivity(activity.id)}
-                className="flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
-                <Hash className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
-                {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
-              </button>
+              <div className="group/activity flex min-w-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => toggleActivity(activity.id)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
+                  <Hash className="size-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
+                  {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
+                </button>
+                {canManageStructure && (
+                  <div className="flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:opacity-100">
+                    <FollowUpAddSubactivityDialog projectId={project.id} activityId={activity.id} />
+                    {activity.subactivities.length === 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={deletingActivityId === activity.id}
+                        onClick={() => void removeEmptyActivity(activity.id, activity.title)}
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="Excluir atividade vazia"
+                        aria-label={`Excluir atividade ${activity.title}`}
+                      >
+                        {deletingActivityId === activity.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
               {expanded && (
                 <div className="ml-2 border-l border-border pl-1.5">
                   {activity.visibleSubs.length ? activity.visibleSubs.map((sub) => {
@@ -1123,7 +1199,7 @@ export function ProjectFollowUp({
                 onDrop={(event) => {
                   event.preventDefault()
                   const files = Array.from(event.dataTransfer.files ?? [])
-                  if (files.length) void uploadFiles(files)
+                  if (files.length) queueFilesForPreview(files)
                 }}
               >
                 <div className="mx-auto w-full max-w-4xl">
@@ -1301,7 +1377,7 @@ export function ProjectFollowUp({
                       type="file"
                       multiple
                       className="hidden"
-                      onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))}
+                      onChange={(event) => queueFilesForPreview(Array.from(event.target.files ?? []))}
                     />
                     <Button type="button" variant="ghost" size="icon-sm" disabled={uploading || recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
                       {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
@@ -1336,7 +1412,7 @@ export function ProjectFollowUp({
                         const files = Array.from(event.clipboardData.files ?? [])
                         if (!files.length) return
                         event.preventDefault()
-                        void uploadFiles(files)
+                        queueFilesForPreview(files)
                       }}
                       rows={1}
                       placeholder={`Conversar em “${selectedSub.title}” · use @ para mencionar`}
@@ -1390,6 +1466,26 @@ export function ProjectFollowUp({
           {membersContent}
         </aside>
       </div>
+
+      <ChatAttachmentPreviewDialog
+        files={pendingFiles}
+        open={attachmentPreviewOpen}
+        sending={uploading}
+        onOpenChange={(open) => {
+          setAttachmentPreviewOpen(open)
+          if (!open && !uploading) setPendingFiles([])
+        }}
+        onFilesChange={(files) => {
+          const error = validateFiles(files)
+          if (error) {
+            setComposerError(error)
+            return
+          }
+          setComposerError("")
+          setPendingFiles(files)
+        }}
+        onSend={sendPendingFiles}
+      />
 
       <FollowUpSearchDialog
         open={globalSearchOpen}

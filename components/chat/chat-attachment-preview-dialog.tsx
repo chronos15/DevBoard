@@ -170,7 +170,7 @@ export function ChatAttachmentPreviewDialog({
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[min(94dvh,820px)] w-[min(96vw,1180px)] max-w-none flex-col gap-0 overflow-hidden p-0"
+        className="flex h-[min(94dvh,820px)] w-[min(96vw,1180px)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-4">
           <Button type="button" variant="ghost" size="icon" onClick={() => onOpenChange(false)} disabled={sending}>

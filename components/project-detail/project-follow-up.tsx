@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   Activity as ActivityIcon,
+  ArrowRightLeft,
   AtSign,
   ChevronDown,
   ChevronRight,
@@ -46,6 +47,7 @@ import {
   formatHMS,
   matchesActivityFilter,
   statusMeta,
+  statusOrder,
 } from "@/lib/project-utils"
 import type { ActivityFilter } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -57,6 +59,15 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
+import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -363,6 +374,7 @@ export function ProjectFollowUp({
     deleteActivity,
     startTimer,
     stopTimer,
+    setSubStatus,
   } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -410,6 +422,9 @@ export function ProjectFollowUp({
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
   const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null)
   const [clockNow, setClockNow] = React.useState(() => Date.now())
+  const [pendingStatus, setPendingStatus] = React.useState<Status | null>(null)
+  const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
+  const [statusSaving, setStatusSaving] = React.useState(false)
 
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
@@ -1047,6 +1062,35 @@ export function ProjectFollowUp({
     if (recorder && recorder.state !== "inactive") recorder.stop()
   }
 
+  function requestSelectedStatus(nextStatus: Status) {
+    if (!selectedSub || !selectedCanManage || statusSaving || nextStatus === selectedSub.status) return
+    const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
+    const currentTerminal = selectedSub.status === "done" || selectedSub.status === "cancelled"
+
+    if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
+      setPendingFromStatus(selectedSub.status)
+      setPendingStatus(nextStatus)
+      return
+    }
+
+    setStatusSaving(true)
+    void setSubStatus(selectedSub.id, nextStatus).finally(() => setStatusSaving(false))
+  }
+
+  async function confirmSelectedStatus() {
+    if (!selectedSub || !pendingStatus || statusSaving) return
+    setStatusSaving(true)
+    try {
+      const ok = await setSubStatus(selectedSub.id, pendingStatus)
+      if (ok) {
+        setPendingStatus(null)
+        setPendingFromStatus(null)
+      }
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
   async function removeEmptyActivity(activityId: string, title: string) {
     if (!canManageStructure || deletingActivityId) return
     const activity = project.activities.find((item) => item.id === activityId)
@@ -1342,17 +1386,50 @@ export function ProjectFollowUp({
                     )}
                   </div>
                 )}
-                {selectedCanManage && !statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
-                  <Button
-                    type="button"
-                    variant={selectedRunning ? "outline" : "default"}
-                    size="icon-sm"
-                    onClick={() => void (selectedRunning ? stopTimer(selectedSub.id) : startTimer(selectedSub.id))}
-                    title={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
-                    aria-label={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
-                  >
-                    {selectedRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                  </Button>
+                {selectedCanManage && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
+                      <Button
+                        type="button"
+                        variant={selectedRunning ? "outline" : "default"}
+                        size="icon-sm"
+                        onClick={() => void (selectedRunning ? stopTimer(selectedSub.id) : startTimer(selectedSub.id))}
+                        title={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
+                        aria-label={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
+                      >
+                        {selectedRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                      </Button>
+                    )}
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={<Button type="button" variant="ghost" size="icon-sm" disabled={statusSaving} aria-label="Alterar situação" title="Enviar para outra situação" />}
+                      >
+                        {statusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuLabel className="px-2 py-1.5 text-[0.62rem]">Enviar para situação</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {statusOrder.map((status) => {
+                          const meta = statusMeta[status]
+                          const active = status === selectedSub.status
+                          return (
+                            <DropdownMenuItem
+                              key={status}
+                              disabled={active || statusSaving}
+                              onClick={() => requestSelectedStatus(status)}
+                              className="min-h-8 gap-2 px-2 text-xs"
+                              variant={status === "cancelled" ? "destructive" : "default"}
+                            >
+                              <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
+                              <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                              {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
+                            </DropdownMenuItem>
+                          )
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
                 <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" onClick={() => setMobileMembersOpen(true)} aria-label="Ver equipe">
                   <UsersRound className="size-4" />
@@ -1674,6 +1751,25 @@ export function ProjectFollowUp({
           {membersContent}
         </aside>
       </div>
+
+      {selectedSub && pendingStatus && (
+        <SubactivityStatusConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !statusSaving) {
+              setPendingStatus(null)
+              setPendingFromStatus(null)
+            }
+          }}
+          subactivityTitle={selectedSub.title}
+          fromStatus={pendingFromStatus ?? selectedSub.status}
+          toStatus={pendingStatus}
+          isAdmin={currentUserRole === "admin"}
+          projectId={project.id}
+          loading={statusSaving}
+          onConfirm={() => { void confirmSelectedStatus() }}
+        />
+      )}
 
       <ChatAttachmentPreviewDialog
         files={pendingFiles}

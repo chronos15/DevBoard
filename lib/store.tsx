@@ -32,6 +32,7 @@ import {
   projectIconStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
+import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
   AqsReview,
@@ -160,6 +161,18 @@ function findSubInProjects(projects: Project[], subId: string) {
   for (const project of projects) {
     for (const activity of project.activities) {
       const sub = activity.subactivities.find((item) => item.id === subId)
+      if (sub) return { project, activityId: activity.id, sub }
+    }
+  }
+  return null
+}
+
+function findRunningSubForAssignee(projects: Project[], assigneeId: string, exceptSubId: string) {
+  for (const project of projects) {
+    for (const activity of project.activities) {
+      const sub = activity.subactivities.find((item) =>
+        item.id !== exceptSubId && item.assigneeId === assigneeId && item.status === "in-progress",
+      )
       if (sub) return { project, activityId: activity.id, sub }
     }
   }
@@ -362,6 +375,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [chatHydrated, setChatHydrated] = React.useState(false)
   const [refreshing, setRefreshing] = React.useState(false)
   const [lastError, setLastError] = React.useState<string | null>(null)
+  const [timerConflict, setTimerConflict] = React.useState<TimerStartConflict | null>(null)
+  const [timerConflictLoading, setTimerConflictLoading] = React.useState(false)
+  const timerConflictResolverRef = React.useRef<((value: boolean) => void) | null>(null)
   const refreshTimers = React.useRef<Record<string, number>>({})
   const loadedChatHistoryIdsRef = React.useRef<Set<string>>(new Set())
   const chatMessageDeliveriesRef = React.useRef<Set<string>>(new Set())
@@ -784,7 +800,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fail, supabase])
 
-  const startTimer = React.useCallback(async (subId: string) => {
+  const startTimerDirect = React.useCallback(async (subId: string) => {
     const found = findSubInProjects(projects, subId)
     const target = found?.sub
     if (!target || !found || !canManageSubactivity(target)) return false
@@ -809,6 +825,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, canManageSubactivity, currentUserRole, projects, refreshWorkSessions, schedule])
 
+  const startTimer = React.useCallback(async (subId: string) => {
+    const found = findSubInProjects(projects, subId)
+    const target = found?.sub
+    if (!found || !target || !canManageSubactivity(target)) return false
+    if (target.status === "in-progress") return true
+
+    const current = findRunningSubForAssignee(projects, target.assigneeId, subId)
+    if (!current) return startTimerDirect(subId)
+
+    return await new Promise<boolean>((resolve) => {
+      timerConflictResolverRef.current?.(false)
+      timerConflictResolverRef.current = resolve
+      setTimerConflict({
+        currentSubId: current.sub.id,
+        currentSubTitle: current.sub.title,
+        currentProjectName: current.project.name,
+        targetSubId: target.id,
+        targetSubTitle: target.title,
+        targetProjectName: found.project.name,
+      })
+    })
+  }, [canManageSubactivity, projects, startTimerDirect])
+
   const stopTimer = React.useCallback(async (subId?: string) => {
     // Proteção contra handlers React passados diretamente (ex.: onClick={stopTimer}).
     // Somente strings são tratadas como IDs; qualquer outro valor cai no timer ativo.
@@ -828,14 +867,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [activeSubId, callRpc, projects, refreshWorkSessions, schedule])
 
   const setSubStatus = React.useCallback(async (subId: string, status: Status) => {
-    if (status === "in-progress" && currentUserRole === "developer" && typeof window !== "undefined") {
-      const found = findSubInProjects(projects, subId)
-      if (found) window.dispatchEvent(new CustomEvent(DEVELOPER_TIMER_STARTED_EVENT, { detail: {
-        subactivityId: subId,
-        activityId: found.activityId,
-        projectId: found.project.id,
-      } }))
-    }
+    if (status === "in-progress") return startTimer(subId)
+
     const rollback = captureOptimisticSubs(projects, subId, status)
     setProjects((current) => optimisticSubStatus(current, subId, status))
 
@@ -847,7 +880,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     schedule("sessions-after-status", refreshWorkSessions)
     return true
-  }, [callRpc, currentUserRole, projects, refreshWorkSessions, schedule])
+  }, [callRpc, projects, refreshWorkSessions, schedule, startTimer])
+
+  const cancelTimerConflict = React.useCallback(() => {
+    if (timerConflictLoading) return
+    timerConflictResolverRef.current?.(false)
+    timerConflictResolverRef.current = null
+    setTimerConflict(null)
+  }, [timerConflictLoading])
+
+  const confirmTimerConflict = React.useCallback(async () => {
+    if (!timerConflict || timerConflictLoading) return
+    setTimerConflictLoading(true)
+    let ok = false
+    try {
+      const paused = await stopTimer(timerConflict.currentSubId)
+      if (paused) ok = await startTimerDirect(timerConflict.targetSubId)
+    } finally {
+      setTimerConflictLoading(false)
+      timerConflictResolverRef.current?.(ok)
+      timerConflictResolverRef.current = null
+      setTimerConflict(null)
+    }
+  }, [startTimerDirect, stopTimer, timerConflict, timerConflictLoading])
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
     const project = projects.find((item) => item.id === projectId)
@@ -1769,7 +1824,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
   ])
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+  return (
+    <StoreContext.Provider value={value}>
+      {children}
+      <TimerStartConflictDialog
+        conflict={timerConflict}
+        loading={timerConflictLoading}
+        onCancel={cancelTimerConflict}
+        onConfirm={() => { void confirmTimerConflict() }}
+      />
+    </StoreContext.Provider>
+  )
 }
 
 export function useStore() {

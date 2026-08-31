@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   Activity as ActivityIcon,
   AtSign,
-  Bookmark,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -21,6 +20,7 @@ import {
   Menu,
   Mic,
   Paperclip,
+  Pin,
   Reply,
   Pause,
   Play,
@@ -177,19 +177,15 @@ type TimelineItem =
   | { kind: "session"; id: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
   | { kind: "log"; id: string; createdAt: string; authorId?: string; title: string; description?: string }
 
-function MemberLine({
-  memberId,
-  selectedSub,
+const MemberLine = React.memo(function MemberLine({
+  member,
+  online,
+  isResponsible,
 }: {
-  memberId: string
-  selectedSub?: Subactivity
+  member: ReturnType<typeof useStore>["members"][number]
+  online: boolean
+  isResponsible: boolean
 }) {
-  const { members, memberPresence } = useStore()
-  const member = members.find((item) => item.id === memberId)
-  if (!member) return null
-  const presence = memberPresence[member.id]
-  const online = Boolean(presence?.online)
-  const isResponsible = selectedSub?.assigneeId === member.id
 
   return (
     <div className="group flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/60">
@@ -215,28 +211,63 @@ function MemberLine({
       </div>
     </div>
   )
-}
+})
 
 function AttachmentCard({
   attachment,
   resolvedUrl,
+  onMediaReady,
 }: {
   attachment: AttachmentEntry
   resolvedUrl?: string
+  onMediaReady?: () => void
 }) {
   const href = resolvedUrl ?? attachment.dataUrl
 
-  if (attachment.kind === "image" && href) {
+  if (attachment.kind === "image") {
     return (
-      <a href={href} target="_blank" rel="noreferrer" className="mt-2 block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/25">
-        <img src={href} alt={attachment.name} className="max-h-[360px] max-w-full object-contain" />
+      <a
+        href={href || undefined}
+        target={href ? "_blank" : undefined}
+        rel={href ? "noreferrer" : undefined}
+        className={cn(
+          "mt-2 block aspect-[16/10] w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-muted/25",
+          !href && "cursor-default",
+        )}
+      >
+        {href ? (
+          <img
+            src={href}
+            alt={attachment.name}
+            onLoad={onMediaReady}
+            className="size-full object-contain"
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-foreground/55">
+            <FileImage className="size-7" />
+          </div>
+        )}
       </a>
     )
   }
 
-  if (attachment.kind === "video" && href) {
+  if (attachment.kind === "video") {
     return (
-      <video src={href} controls className="mt-2 max-h-[360px] max-w-full rounded-xl border border-border bg-black" />
+      <div className="mt-2 aspect-video w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-black">
+        {href ? (
+          <video
+            src={href}
+            controls
+            preload="metadata"
+            onLoadedMetadata={onMediaReady}
+            className="size-full object-contain"
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center text-white/45">
+            <FileVideo className="size-7" />
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -337,8 +368,13 @@ export function ProjectFollowUp({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const messageRef = React.useRef<HTMLTextAreaElement>(null)
   const localSearchInputRef = React.useRef<HTMLInputElement>(null)
+  const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
+  const timelineViewportRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
+  const lastInitialBottomSubRef = React.useRef<string | null>(null)
   const pendingTimelineFocusRef = React.useRef<string | null>(null)
+  const initialBottomLockRef = React.useRef(false)
+  const bottomLockTimerRef = React.useRef<number | null>(null)
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
   const mediaStreamRef = React.useRef<MediaStream | null>(null)
   const audioChunksRef = React.useRef<Blob[]>([])
@@ -365,6 +401,7 @@ export function ProjectFollowUp({
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const [replyingTo, setReplyingTo] = React.useState<CommentEntry | null>(null)
   const [markedCommentIds, setMarkedCommentIds] = React.useState<Set<string>>(() => new Set())
+  const [pinnedPickerOpen, setPinnedPickerOpen] = React.useState(false)
   const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
   const [focusedTimelineId, setFocusedTimelineId] = React.useState<string | null>(null)
   const [localSearchOpen, setLocalSearchOpen] = React.useState(false)
@@ -424,6 +461,11 @@ export function ProjectFollowUp({
     return Array.from(ids).filter((id) => members.some((member) => member.id === id))
   }, [members, project.activities, project.memberIds])
 
+  const projectMemberIdsKey = React.useMemo(
+    () => [...projectMemberIds].sort().join("|"),
+    [projectMemberIds],
+  )
+
   const mentionCandidates = React.useMemo(() => {
     if (!mentionRange) return []
     const query = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
@@ -440,6 +482,13 @@ export function ProjectFollowUp({
 
   const onlineMemberIds = projectMemberIds.filter((id) => memberPresence[id]?.online)
   const offlineMemberIds = projectMemberIds.filter((id) => !memberPresence[id]?.online)
+
+  const pinnedComments = React.useMemo(
+    () => (selectedSub?.comments ?? [])
+      .filter((comment) => markedCommentIds.has(comment.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [markedCommentIds, selectedSub?.comments],
+  )
 
   const accessibleProjects = projects
 
@@ -514,9 +563,11 @@ export function ProjectFollowUp({
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId || !selectedSubId) {
-      setWatchingIds([])
+      setWatchingIds((current) => current.length ? [] : current)
       return
     }
+
+    const allowedMemberIds = new Set(projectMemberIdsKey ? projectMemberIdsKey.split("|") : [])
 
     const channel = supabase.channel(`devboard-followup:${workspaceId}:${project.id}:${selectedSubId}`, {
       config: { presence: { key: currentUserId } },
@@ -531,7 +582,12 @@ export function ProjectFollowUp({
           if (presence?.user_id) ids.add(presence.user_id)
         }
       }
-      setWatchingIds(Array.from(ids).filter((id) => projectMemberIds.includes(id)))
+      const next = Array.from(ids).filter((id) => allowedMemberIds.has(id)).sort()
+      setWatchingIds((current) => {
+        const previous = [...current].sort()
+        if (previous.length === next.length && previous.every((id, index) => id === next[index])) return current
+        return next
+      })
     }
 
     channel
@@ -552,7 +608,7 @@ export function ProjectFollowUp({
       void channel.untrack()
       void supabase.removeChannel(channel)
     }
-  }, [currentUserId, project.id, projectMemberIds, selectedSubId, supabase, workspaceId])
+  }, [currentUserId, project.id, projectMemberIdsKey, selectedSubId, supabase, workspaceId])
 
   React.useEffect(() => {
     const attachments = selectedSub?.attachments ?? []
@@ -569,10 +625,42 @@ export function ProjectFollowUp({
     return () => { cancelled = true }
   }, [resolvedUrls, selectedSub?.attachments, supabase])
 
+  React.useLayoutEffect(() => {
+    if (!selectedSubId) return
+    lastInitialBottomSubRef.current = null
+    initialBottomLockRef.current = true
+    if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
+
+    const firstFrame = window.requestAnimationFrame(() => {
+      scrollTimelineToBottom()
+      window.requestAnimationFrame(scrollTimelineToBottom)
+    })
+
+    bottomLockTimerRef.current = window.setTimeout(() => {
+      scrollTimelineToBottom()
+      initialBottomLockRef.current = false
+      bottomLockTimerRef.current = null
+    }, 2200)
+
+    return () => window.cancelAnimationFrame(firstFrame)
+  }, [selectedSubId])
+
   React.useEffect(() => {
-    const timer = window.setTimeout(() => timelineEndRef.current?.scrollIntoView({ block: "end" }), 60)
-    return () => window.clearTimeout(timer)
+    if (!selectedSubId || !timeline.length || lastInitialBottomSubRef.current === selectedSubId) return
+    lastInitialBottomSubRef.current = selectedSubId
+    initialBottomLockRef.current = true
+    const frame = window.requestAnimationFrame(() => {
+      scrollTimelineToBottom()
+      window.requestAnimationFrame(scrollTimelineToBottom)
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [selectedSubId, timeline.length])
+
+  React.useEffect(() => {
+    if (!initialBottomLockRef.current) return
+    const frame = window.requestAnimationFrame(scrollTimelineToBottom)
+    return () => window.cancelAnimationFrame(frame)
+  }, [timeline.length, resolvedUrls])
 
   React.useEffect(() => {
     setMentionIndex(0)
@@ -596,6 +684,7 @@ export function ProjectFollowUp({
 
   React.useEffect(() => () => {
     unmountedRef.current = true
+    if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state !== "inactive") recorder.stop()
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -604,6 +693,26 @@ export function ProjectFollowUp({
   React.useEffect(() => {
     setLocalSearchIndex(0)
   }, [localSearchQuery, selectedSubId])
+
+  React.useEffect(() => {
+    if (pinnedComments.length <= 1) setPinnedPickerOpen(false)
+  }, [pinnedComments.length])
+
+  React.useEffect(() => {
+    if (!pinnedPickerOpen) return
+    const close = (event: PointerEvent) => {
+      if (!pinnedPickerRef.current?.contains(event.target as Node)) setPinnedPickerOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPinnedPickerOpen(false)
+    }
+    document.addEventListener("pointerdown", close)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", close)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [pinnedPickerOpen])
 
   React.useEffect(() => {
     const pending = pendingTimelineFocusRef.current
@@ -656,6 +765,20 @@ export function ProjectFollowUp({
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden"
   }
 
+  function scrollTimelineToBottom() {
+    const viewport = timelineViewportRef.current
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight
+      return
+    }
+    timelineEndRef.current?.scrollIntoView({ block: "end" })
+  }
+
+  function handleTimelineMediaReady() {
+    if (!initialBottomLockRef.current) return
+    window.requestAnimationFrame(scrollTimelineToBottom)
+  }
+
   function focusTimelineItem(itemId: string) {
     const element = document.getElementById(`followup-timeline-${itemId}`)
     if (!element) return
@@ -699,6 +822,7 @@ export function ProjectFollowUp({
 
   function selectSubactivity(subId: string) {
     setSelectedSubId(subId)
+    setPinnedPickerOpen(false)
     setReplyingTo(null)
     setDraftMentions([])
     setMentionRange(null)
@@ -1034,17 +1158,50 @@ export function ProjectFollowUp({
     <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
       <div className="mb-4">
         <p className="mb-1.5 px-2 text-[0.62rem] font-semibold tracking-wide text-muted-foreground uppercase">Nesta subatividade — {watchingIds.length}</p>
-        {watchingIds.map((id) => <MemberLine key={`watching-${id}`} memberId={id} selectedSub={selectedSub} />)}
+        {watchingIds.map((id) => {
+          const member = members.find((item) => item.id === id)
+          if (!member) return null
+          return (
+            <MemberLine
+              key={`watching-${id}`}
+              member={member}
+              online={Boolean(memberPresence[id]?.online)}
+              isResponsible={selectedSub?.assigneeId === id}
+            />
+          )
+        })}
         {!watchingIds.length && <p className="px-2 py-2 text-[0.65rem] text-muted-foreground/60">Nenhum outro usuário acompanhando agora.</p>}
       </div>
       <div className="mb-4 border-t border-border pt-3">
         <p className="mb-1.5 px-2 text-[0.62rem] font-semibold tracking-wide text-muted-foreground uppercase">Online — {onlineMemberIds.length}</p>
-        {onlineMemberIds.map((id) => <MemberLine key={id} memberId={id} selectedSub={selectedSub} />)}
+        {onlineMemberIds.map((id) => {
+          const member = members.find((item) => item.id === id)
+          if (!member) return null
+          return (
+            <MemberLine
+              key={id}
+              member={member}
+              online
+              isResponsible={selectedSub?.assigneeId === id}
+            />
+          )
+        })}
         {!onlineMemberIds.length && <p className="px-2 py-2 text-[0.65rem] text-muted-foreground/60">Ninguém online agora.</p>}
       </div>
       <div>
         <p className="mb-1.5 px-2 text-[0.62rem] font-semibold tracking-wide text-muted-foreground uppercase">Offline — {offlineMemberIds.length}</p>
-        {offlineMemberIds.map((id) => <MemberLine key={id} memberId={id} selectedSub={selectedSub} />)}
+        {offlineMemberIds.map((id) => {
+          const member = members.find((item) => item.id === id)
+          if (!member) return null
+          return (
+            <MemberLine
+              key={id}
+              member={member}
+              online={false}
+              isResponsible={selectedSub?.assigneeId === id}
+            />
+          )
+        })}
       </div>
     </div>
   )
@@ -1125,19 +1282,65 @@ export function ProjectFollowUp({
                   <Search className="size-4" />
                 </Button>
                 {markedCommentIds.size > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 gap-1.5 px-2 text-[0.62rem] text-primary lg:flex"
-                    onClick={() => {
-                      const first = (selectedSub.comments ?? []).find((comment) => markedCommentIds.has(comment.id))
-                      if (first) focusComment(first.id)
-                    }}
-                    title="Ir para uma mensagem marcada"
-                  >
-                    <Bookmark className="size-3.5 fill-current" /> {markedCommentIds.size}
-                  </Button>
+                  <div ref={pinnedPickerRef} className="relative">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="relative text-primary lg:h-8 lg:w-auto lg:gap-1.5 lg:px-2 lg:text-[0.62rem]"
+                      onClick={() => {
+                        if (pinnedComments.length === 1) {
+                          focusComment(pinnedComments[0].id)
+                          setPinnedPickerOpen(false)
+                          return
+                        }
+                        setPinnedPickerOpen((current) => !current)
+                      }}
+                      title={pinnedComments.length > 1 ? "Ver mensagens fixadas" : "Ir para mensagem fixada"}
+                      aria-expanded={pinnedPickerOpen}
+                    >
+                      <Pin className="size-3.5 fill-current" />
+                      <span className="hidden lg:inline">{markedCommentIds.size}</span>
+                      <span className="absolute -right-0.5 -top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[0.48rem] leading-3.5 text-primary-foreground lg:hidden">{markedCommentIds.size}</span>
+                    </Button>
+                    {pinnedPickerOpen && pinnedComments.length > 1 && (
+                      <div className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
+                        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+                          <Pin className="size-3.5 text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold">Mensagens fixadas</p>
+                            <p className="text-[0.6rem] text-muted-foreground">Escolha uma mensagem para ir até ela</p>
+                          </div>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{pinnedComments.length}</span>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto p-1.5 [scrollbar-width:thin]">
+                          {pinnedComments.map((comment) => {
+                            const author = members.find((member) => member.id === comment.authorId)
+                            return (
+                              <button
+                                key={comment.id}
+                                type="button"
+                                onClick={() => {
+                                  setPinnedPickerOpen(false)
+                                  focusComment(comment.id)
+                                }}
+                                className="flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted"
+                              >
+                                <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-7 shrink-0 text-[0.55rem]" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <strong className="truncate text-[0.68rem]"><MemberName member={author} fallback="Usuário" /></strong>
+                                    <time className="shrink-0 text-[0.56rem] text-muted-foreground">{formatDate(comment.createdAt)}</time>
+                                  </span>
+                                  <span className="mt-0.5 block line-clamp-2 text-[0.65rem] leading-relaxed text-muted-foreground">{commentReplySummary(comment) || "Mensagem"}</span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {selectedCanManage && !statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
                   <Button
@@ -1194,6 +1397,7 @@ export function ProjectFollowUp({
               )}
 
               <div
+                ref={timelineViewportRef}
                 className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy" }}
                 onDrop={(event) => {
@@ -1274,7 +1478,7 @@ export function ProjectFollowUp({
                                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                   <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                   <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
-                                  {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Bookmark className="size-3 fill-current" /> marcada</span>}
+                                  {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Pin className="size-3 fill-current" /> fixada</span>}
                                 </div>
                                 {comment.replyTo && (
                                   <button
@@ -1298,7 +1502,7 @@ export function ProjectFollowUp({
                               </div>
                               <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
                                 <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
-                                <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desmarcar mensagem" : "Marcar mensagem"} aria-label={marked ? "Desmarcar mensagem" : "Marcar mensagem"}><Bookmark className={cn("size-3.5", marked && "fill-current")} /></button>
+                                <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
                                 {canDeleteComment(comment) && (
                                   <button type="button" disabled={deletingCommentId === comment.id} onClick={() => void deleteComment(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
                                     {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
@@ -1318,7 +1522,11 @@ export function ProjectFollowUp({
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                               </div>
                               <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
-                              <AttachmentCard attachment={item.attachment} resolvedUrl={resolvedUrls[item.attachment.id]} />
+                              <AttachmentCard
+                                attachment={item.attachment}
+                                resolvedUrl={resolvedUrls[item.attachment.id]}
+                                onMediaReady={handleTimelineMediaReady}
+                              />
                             </div>
                           </article>
                         )

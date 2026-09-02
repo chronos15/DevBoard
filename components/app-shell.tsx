@@ -18,6 +18,7 @@ import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-n
 import { DeveloperAutomationAgent } from "@/components/developer/developer-automation-agent"
 import { OPEN_FOLLOW_UP_EVENT, followUpHref, type FollowUpOpenDetail } from "@/lib/follow-up-launcher"
 import { cn } from "@/lib/utils"
+import { PrimaryColorSync } from "@/components/primary-color-sync"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -149,6 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <StoreProvider>
       <MemberProfileProvider>
+        <PrimaryColorSync />
         <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
           {children}
         </AppShellContent>

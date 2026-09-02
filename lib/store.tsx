@@ -1850,6 +1850,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [currentUserId, fail, members, refreshMembers, supabase])
 
   const updatePreferences = React.useCallback(async (next: UserPreferences) => {
+    const previous = preferences
+    // Preferências de interface são aplicadas de forma otimista. Isso deixa
+    // densidade/cor primária instantâneas e só desfaz em caso de falha real.
+    setPreferences(next)
     const result = await callRpc<unknown>("update_my_preferences", {
       p_notify_assignments: next.notifyAssignments,
       p_notify_comments: next.notifyComments,
@@ -1858,11 +1862,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_timer_sticky: next.timerSticky,
       p_reduced_motion: next.reducedMotion,
       p_density: next.density,
+      p_primary_color: next.primaryColor,
     }, "Não foi possível salvar suas preferências")
-    if (result === undefined) return false
-    setPreferences(next)
+    if (result === undefined) {
+      setPreferences(previous)
+      return false
+    }
     return true
-  }, [callRpc])
+  }, [callRpc, preferences])
 
   const setMemberRole = React.useCallback(async (memberId: string, role: AccessRole) => {
     const result = await callRpc<unknown>("set_workspace_member_role", { p_user_id: memberId, p_role: role }, "Não foi possível alterar a permissão")

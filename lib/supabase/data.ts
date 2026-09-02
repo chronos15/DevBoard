@@ -36,6 +36,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   timerSticky: true,
   reducedMotion: false,
   density: "comfortable",
+  primaryColor: null,
 }
 
 function assertNoError(error: any, fallback: string) {
@@ -457,7 +458,7 @@ export async function loadWorkSessions(supabase: SupabaseClient): Promise<WorkSe
 export async function loadPreferences(supabase: SupabaseClient, userId: string): Promise<UserPreferences> {
   const { data, error } = await supabase
     .from('user_preferences')
-    .select('notify_assignments,notify_comments,notify_team_activity,notify_deadlines,timer_sticky,reduced_motion,density')
+    .select('notify_assignments,notify_comments,notify_team_activity,notify_deadlines,timer_sticky,reduced_motion,density,primary_color')
     .eq('user_id', userId)
     .maybeSingle()
   assertNoError(error, 'Não foi possível carregar suas preferências')
@@ -470,6 +471,7 @@ export async function loadPreferences(supabase: SupabaseClient, userId: string):
     timerSticky: data.timer_sticky !== false,
     reducedMotion: data.reduced_motion === true,
     density: data.density === 'compact' ? 'compact' : 'comfortable',
+    primaryColor: /^#[0-9a-f]{6}$/i.test(data.primary_color ?? '') ? String(data.primary_color).toUpperCase() : null,
   }
 }
 

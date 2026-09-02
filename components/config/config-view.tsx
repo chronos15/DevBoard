@@ -26,6 +26,25 @@ const roleDescriptions: Record<AccessRole, string> = {
   member: "Acompanha o workspace, Chat e os próprios tópicos enviados para análise.",
 }
 
+
+const primaryColors = [
+  { value: "#F45A3C", label: "Coral" },
+  { value: "#F59E0B", label: "Âmbar" },
+  { value: "#10B981", label: "Esmeralda" },
+  { value: "#14B8A6", label: "Turquesa" },
+  { value: "#0EA5E9", label: "Céu" },
+  { value: "#3B82F6", label: "Azul" },
+  { value: "#6366F1", label: "Índigo" },
+  { value: "#8B5CF6", label: "Violeta" },
+  { value: "#D946EF", label: "Magenta" },
+  { value: "#F43F5E", label: "Rosa" },
+] as const
+
+const DEFAULT_PRIMARY_PREVIEW = "#F45A3C"
+
+function normalizedPrimaryColor(value?: string | null) {
+  return /^#[0-9a-f]{6}$/i.test(value ?? "") ? String(value).toUpperCase() : null
+}
 const avatarColors = [
   { value: "#F45A3C", label: "Coral" },
   { value: "#E5484D", label: "Vermelho" },
@@ -475,9 +494,116 @@ function NotificationsSection() {
 
 function AppearanceSection() {
   const { draft, saving, patch } = usePreferenceEditor()
+  const selectedPrimary = normalizedPrimaryColor(draft.primaryColor)
+  const customPickerColor = selectedPrimary ?? DEFAULT_PRIMARY_PREVIEW
+
   return (
     <div>
       <SectionTitle title="Aparência" subtitle="Preferências de interface sincronizadas com sua conta." />
+
+      <div className="mb-6 rounded-2xl border border-border bg-card/55 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Palette className="size-4 text-primary" />
+              <p className="text-sm font-semibold">Cor primária</p>
+            </div>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              Personaliza destaques, botões, seleção, foco e elementos de navegação. A mesma identidade é ajustada automaticamente para os temas claro e escuro.
+            </p>
+          </div>
+
+          {selectedPrimary && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void patch({ primaryColor: null })}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-border bg-background px-2.5 text-[0.68rem] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+            >
+              <RotateCcw className="size-3.5" />
+              Restaurar padrão
+            </button>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            aria-pressed={!selectedPrimary}
+            onClick={() => void patch({ primaryColor: null })}
+            className={cn(
+              "group flex h-9 items-center gap-2 rounded-full border px-2.5 text-[0.68rem] font-semibold transition-all disabled:opacity-60",
+              !selectedPrimary ? "border-primary bg-primary/10 text-foreground ring-2 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span className="size-4 rounded-full border border-black/5" style={{ backgroundColor: DEFAULT_PRIMARY_PREVIEW }} />
+            Padrão Devboard
+            {!selectedPrimary && <Check className="size-3.5 text-primary" />}
+          </button>
+
+          {primaryColors.map((swatch) => {
+            const selected = selectedPrimary === swatch.value
+            return (
+              <button
+                key={swatch.value}
+                type="button"
+                disabled={saving}
+                title={swatch.label}
+                aria-label={`Usar ${swatch.label} como cor primária`}
+                aria-pressed={selected}
+                onClick={() => void patch({ primaryColor: swatch.value })}
+                className={cn(
+                  "relative size-9 rounded-full border-2 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-60",
+                  selected ? "border-card ring-2 ring-foreground ring-offset-2 ring-offset-card" : "border-transparent",
+                )}
+                style={{ backgroundColor: swatch.value }}
+              >
+                {selected && <Check className="absolute inset-0 m-auto size-4" style={{ color: avatarColorForeground(swatch.value) }} />}
+              </button>
+            )
+          })}
+
+          <label
+            title="Escolher cor primária personalizada"
+            className={cn(
+              "relative inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 text-[0.68rem] font-semibold transition-colors hover:bg-muted",
+              selectedPrimary && !primaryColors.some((item) => item.value === selectedPrimary) ? "border-primary ring-2 ring-primary/15" : "border-border",
+              saving && "pointer-events-none opacity-60",
+            )}
+          >
+            <span className="size-3.5 rounded-full border border-foreground/10" style={{ backgroundColor: customPickerColor }} />
+            <Pipette className="size-3.5 text-muted-foreground" />
+            Personalizar
+            <input
+              type="color"
+              value={customPickerColor}
+              disabled={saving}
+              onChange={(event) => void patch({ primaryColor: event.target.value.toUpperCase() })}
+              className="absolute inset-0 cursor-pointer opacity-0"
+              aria-label="Escolher cor primária personalizada"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-md">
+          <div className="overflow-hidden rounded-xl border border-border bg-[#fbfaf8] p-2.5">
+            <div className="mb-2 text-[0.58rem] font-semibold uppercase tracking-wide text-[#6b665f]">Tema claro</div>
+            <div className="flex items-center gap-2">
+              <span className="h-7 flex-1 rounded-lg" style={{ backgroundColor: selectedPrimary ?? DEFAULT_PRIMARY_PREVIEW }} />
+              <span className="size-7 rounded-lg border border-black/10 bg-white" />
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-border bg-[#171717] p-2.5">
+            <div className="mb-2 text-[0.58rem] font-semibold uppercase tracking-wide text-[#a3a3a3]">Tema escuro</div>
+            <div className="flex items-center gap-2">
+              <span className="h-7 flex-1 rounded-lg" style={{ backgroundColor: selectedPrimary ?? DEFAULT_PRIMARY_PREVIEW }} />
+              <span className="size-7 rounded-lg border border-white/10 bg-[#262626]" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <PreferenceToggle label="Timer sempre visível" description="Mantém o cronômetro em execução destacado no topo." checked={draft.timerSticky} disabled={saving} onChange={(value) => void patch({ timerSticky: value })} />
       <PreferenceToggle label="Animações reduzidas" description="Reduz transições e movimentos na interface." checked={draft.reducedMotion} disabled={saving} onChange={(value) => void patch({ reducedMotion: value })} />
       <div className="mt-6">

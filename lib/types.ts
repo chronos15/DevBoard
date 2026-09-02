@@ -18,6 +18,7 @@ export type UserPreferences = {
   timerSticky: boolean
   reducedMotion: boolean
   density: "comfortable" | "compact"
+  primaryColor: string | null
 }
 export type ActivityFilter = "all" | "open" | "waiting" | "waiting-aqs" | "in-progress" | "done"
 

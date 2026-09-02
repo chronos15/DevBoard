@@ -12,6 +12,7 @@ import { ShieldAlert } from "lucide-react"
 import { ACCESS_ROLE_LABELS, type AccessRole } from "@/lib/types"
 import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { BrowserNotifications } from "@/components/notifications/browser-notifications"
+import { FollowUpAppBadge } from "@/components/notifications/follow-up-app-badge"
 import { MemberProfileProvider } from "@/components/member-profile-popover"
 import { DeveloperShiftNotifier } from "@/components/developer/developer-shift-notifier"
 import { DeveloperAutomationAgent } from "@/components/developer/developer-automation-agent"
@@ -128,6 +129,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         </main>
         <BackendErrorBanner />
         <BrowserNotifications />
+        <FollowUpAppBadge />
         <DeveloperShiftNotifier />
         <DeveloperAutomationAgent />
         <IncomingCallCenter />

@@ -36,6 +36,8 @@ const iconByType = {
   "topic-sent": ClipboardList,
   "chat-mention": AtSign,
   "followup-mention": AtSign,
+  "followup-update": MessageSquareText,
+  "followup-subactivity-opened": UserPlus,
 } satisfies Record<NotificationEntry["type"], React.ComponentType<{ className?: string }>>
 
 function formatNotificationDate(value: string) {
@@ -65,7 +67,7 @@ export function NotificationCenter() {
   const myNotifications = React.useMemo(
     () =>
       notifications
-        .filter((notification) => notification.recipientId === currentUserId)
+        .filter((notification) => notification.recipientId === currentUserId && notification.type !== "followup-update")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, currentUserId],
   )
@@ -99,7 +101,7 @@ export function NotificationCenter() {
       router.push(`/chat?conversation=${encodeURIComponent(notification.conversationId)}`)
       return
     }
-    if (notification.type === "followup-mention" && notification.projectId) {
+    if ((notification.type === "followup-mention" || notification.type === "followup-subactivity-opened") && notification.projectId) {
       openProjectFollowUp({ projectId: notification.projectId, subactivityId: notification.subactivityId })
       return
     }

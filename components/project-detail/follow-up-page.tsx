@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store"
 import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
+import { followUpUnreadLevel, isFollowUpUnreadNotification } from "@/lib/follow-up-unread"
 
 function FollowUpPageSkeleton() {
   return (
@@ -50,7 +51,7 @@ function FollowUpPageSkeleton() {
 }
 
 export function FollowUpPage() {
-  const { projects, runningSubIds, currentUserId, currentUserRole } = useStore()
+  const { projects, runningSubIds, currentUserId, currentUserRole, notifications } = useStore()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = React.useState(true)
@@ -78,6 +79,11 @@ export function FollowUpPage() {
   const requestedSubactivityId = searchParams.get("sub")
   const initialTimelineId = searchParams.get("focus")
   const selectedProject = scopedProjects.find((project) => project.id === projectId) ?? null
+  const selectedProjectUnread = React.useMemo(() => followUpUnreadLevel(
+    notifications.filter((notification) =>
+      isFollowUpUnreadNotification(notification, currentUserId) && notification.projectId === projectId,
+    ),
+  ), [currentUserId, notifications, projectId])
   const resolvedActivity = selectedProject?.activities.find((activity) => activity.id === requestedActivityId) ?? null
   const initialSubactivityId = requestedSubactivityId && selectedProject?.activities.some((activity) => activity.subactivities.some((sub) => sub.id === requestedSubactivityId))
     ? requestedSubactivityId
@@ -130,8 +136,18 @@ export function FollowUpPage() {
 
         <div className="ml-0 flex min-w-0 flex-1 items-center gap-2 md:ml-4">
           {selectedProject && (
-            <span className="hidden size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary sm:flex">
-              <ProjectIcon icon={selectedProject.icon} imageUrl={selectedProject.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" />
+            <span className="relative hidden size-8 shrink-0 items-center justify-center overflow-visible rounded-lg bg-primary/10 text-primary sm:flex">
+              <span className="flex size-full items-center justify-center overflow-hidden rounded-lg">
+                <ProjectIcon icon={selectedProject.icon} imageUrl={selectedProject.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" />
+              </span>
+              {selectedProjectUnread && (
+                <span
+                  className={`absolute -right-1 -top-1 rounded-full ring-2 ring-card ${selectedProjectUnread === "mention" ? "flex size-4 items-center justify-center bg-rose-500 text-[0.55rem] font-bold text-white" : "size-2.5 bg-sky-400"}`}
+                  title={selectedProjectUnread === "mention" ? "Você foi mencionado neste projeto" : "Há alterações não vistas neste projeto"}
+                >
+                  {selectedProjectUnread === "mention" ? "@" : null}
+                </span>
+              )}
             </span>
           )}
           <label className="min-w-0 flex-1 md:max-w-lg">

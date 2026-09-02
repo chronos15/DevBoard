@@ -194,6 +194,8 @@ export type NotificationType =
   | "topic-sent"
   | "chat-mention"
   | "followup-mention"
+  | "followup-update"
+  | "followup-subactivity-opened"
 
 export type NotificationEntry = {
   id: string

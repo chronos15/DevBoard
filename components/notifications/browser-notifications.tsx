@@ -71,7 +71,12 @@ export function BrowserNotifications() {
   React.useEffect(() => {
     if (!hydrated || permission !== "granted") return
     const pending = notifications
-      .filter((notification) => notification.type === "followup-mention" && notification.recipientId === currentUserId && !notification.readAt && notification.projectId)
+      .filter((notification) => {
+        if (notification.recipientId !== currentUserId || notification.readAt || !notification.projectId) return false
+        if (notification.type === "followup-mention") return true
+        if (notification.type !== "followup-subactivity-opened") return false
+        return Date.now() - new Date(notification.createdAt).getTime() <= 10 * 60 * 1000
+      })
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
     for (const notification of pending) {
@@ -81,8 +86,11 @@ export function BrowserNotifications() {
       const params = new URLSearchParams({ project: notification.projectId! })
       if (notification.subactivityId) params.set("sub", notification.subactivityId)
       const target = `/acompanhamento?${params.toString()}`
+      const isMention = notification.type === "followup-mention"
       const options: NotificationOptions = {
-        body: notification.description || `${actor?.name ?? "Um usuário"} mencionou você no acompanhamento.`,
+        body: notification.description || (isMention
+          ? `${actor?.name ?? "Um usuário"} mencionou você no acompanhamento.`
+          : `${actor?.name ?? "Um usuário"} abriu uma nova subatividade.`),
         icon: "/devboard-icon-192.png",
         badge: "/devboard-icon-64.png",
         tag: `devboard-followup-${notification.id}`,
@@ -91,9 +99,9 @@ export function BrowserNotifications() {
       void (async () => {
         try {
           const registration = registrationRef.current ?? await navigator.serviceWorker.ready
-          await registration.showNotification(notification.title || "Menção no acompanhamento", options)
+          await registration.showNotification(notification.title || (isMention ? "Menção no acompanhamento" : "Nova subatividade"), options)
         } catch {
-          try { new Notification(notification.title || "Menção no acompanhamento", options) } catch {}
+          try { new Notification(notification.title || (isMention ? "Menção no acompanhamento" : "Nova subatividade"), options) } catch {}
         }
       })()
     }
@@ -117,7 +125,7 @@ export function BrowserNotifications() {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold">Ativar notificações do navegador</p>
           <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">
-            Permita notificações para receber chamadas e menções do acompanhamento mesmo quando o Devboard estiver em segundo plano.
+            Permita notificações para receber chamadas, menções e alertas importantes do acompanhamento mesmo quando o Devboard estiver em segundo plano.
           </p>
           <Button type="button" size="sm" className="mt-2 h-8" onClick={() => void enable()}>
             Ativar notificações

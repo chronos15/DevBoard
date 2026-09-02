@@ -68,6 +68,7 @@ import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/compo
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
+import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -526,6 +527,7 @@ export function ProjectFollowUp({
   const {
     projects,
     members,
+    notifications,
     memberPresence,
     workspaceId,
     workSessions,
@@ -538,6 +540,7 @@ export function ProjectFollowUp({
     deleteFollowUpComment,
     deleteFollowUpAttachment,
     removeFollowUpMember,
+    markFollowUpContextRead,
     addSubactivityAttachments,
     deleteActivity,
     startTimer,
@@ -709,6 +712,72 @@ export function ProjectFollowUp({
 
   const selectedSub = selectedContext?.sub
   const selectedActivity = selectedContext?.activity
+
+  const unreadFollowUpNotifications = React.useMemo(
+    () => notifications.filter((notification) => isFollowUpUnreadNotification(notification, currentUserId)),
+    [currentUserId, notifications],
+  )
+
+  const unreadMaps = React.useMemo(() => {
+    const byProject = new Map<string, FollowUpUnreadLevel>()
+    const byActivity = new Map<string, FollowUpUnreadLevel>()
+    const bySubactivity = new Map<string, FollowUpUnreadLevel>()
+
+    const promote = (map: Map<string, FollowUpUnreadLevel>, key: string | undefined, level: Exclude<FollowUpUnreadLevel, null>) => {
+      if (!key) return
+      const current = map.get(key)
+      if (current === "mention") return
+      if (level === "mention" || !current) map.set(key, level)
+    }
+
+    for (const notification of unreadFollowUpNotifications) {
+      const level: Exclude<FollowUpUnreadLevel, null> = notification.type === "followup-mention" ? "mention" : "unread"
+      promote(byProject, notification.projectId, level)
+      promote(byActivity, notification.activityId, level)
+      promote(bySubactivity, notification.subactivityId, level)
+    }
+
+    return { byProject, byActivity, bySubactivity }
+  }, [unreadFollowUpNotifications])
+
+  const selectedUnreadIdsKey = React.useMemo(() => {
+    if (!selectedSub) return ""
+    return unreadFollowUpNotifications
+      .filter((notification) => notification.projectId === project.id && notification.subactivityId === selectedSub.id)
+      .map((notification) => notification.id)
+      .sort()
+      .join("|")
+  }, [project.id, selectedSub, unreadFollowUpNotifications])
+
+  React.useEffect(() => {
+    if (!selectedSub || !selectedActivity || !selectedUnreadIdsKey) return
+    let timer: number | null = null
+
+    const scheduleRead = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        void markFollowUpContextRead({
+          projectId: project.id,
+          activityId: selectedActivity.id,
+          subactivityId: selectedSub.id,
+        })
+      }, 650)
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") scheduleRead()
+    }
+    scheduleRead()
+    window.addEventListener("focus", scheduleRead)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      window.removeEventListener("focus", scheduleRead)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [markFollowUpContextRead, project.id, selectedActivity, selectedSub, selectedUnreadIdsKey])
+
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
@@ -1771,7 +1840,22 @@ export function ProjectFollowUp({
         <div className="flex items-center gap-2">
           <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" /></span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{project.name}</p>
+            <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+              <span className="truncate">{project.name}</span>
+              {unreadMaps.byProject.get(project.id) && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full",
+                    unreadMaps.byProject.get(project.id) === "mention"
+                      ? "flex size-4 items-center justify-center bg-rose-500 text-[0.52rem] font-bold text-white"
+                      : "size-2 bg-sky-400",
+                  )}
+                  title={unreadMaps.byProject.get(project.id) === "mention" ? "Você foi mencionado neste projeto" : "Alterações não vistas"}
+                >
+                  {unreadMaps.byProject.get(project.id) === "mention" ? "@" : null}
+                </span>
+              )}
+            </p>
             <p className="truncate text-[0.65rem] text-muted-foreground">Atividades e subatividades</p>
           </div>
           {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
@@ -1781,6 +1865,7 @@ export function ProjectFollowUp({
         {visibleActivities.map((activity, index) => {
           const expanded = expandedActivities.has(activity.id)
           const runningCount = activity.subactivities.filter((sub) => runningSubIds.includes(sub.id)).length
+          const activityUnread = unreadMaps.byActivity.get(activity.id)
           return (
             <div id={`followup-activity-${activity.id}`} key={activity.id} className={cn("mb-1 rounded-lg transition-all", focusedActivityId === activity.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
               <div className="group/activity relative flex min-w-0 items-center">
@@ -1795,6 +1880,19 @@ export function ProjectFollowUp({
                   {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
                   <Hash className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
+                  {activityUnread && (
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full",
+                        activityUnread === "mention"
+                          ? "flex size-4 items-center justify-center bg-rose-500 text-[0.5rem] font-bold text-white"
+                          : "size-2 bg-sky-400",
+                      )}
+                      title={activityUnread === "mention" ? "Você foi mencionado nesta atividade" : "Alterações não vistas nesta atividade"}
+                    >
+                      {activityUnread === "mention" ? "@" : null}
+                    </span>
+                  )}
                   {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
                 </button>
                 <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center rounded-md bg-muted/90 opacity-100 shadow-sm ring-1 ring-border/60 backdrop-blur-sm transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-hover/activity:pointer-events-auto sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:pointer-events-auto sm:group-focus-within/activity:opacity-100">
@@ -1831,8 +1929,18 @@ export function ProjectFollowUp({
                     const selected = sub.id === selectedSubId
                     const running = runningSubIds.includes(sub.id)
                     const assignee = members.find((member) => member.id === sub.assigneeId)
+                    const subUnread = unreadMaps.bySubactivity.get(sub.id)
                     return (
                       <div key={sub.id} className="group/sub relative my-0.5 flex min-w-0 items-center">
+                        {subUnread && (
+                          <span
+                            className={cn(
+                              "pointer-events-none absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r-full",
+                              subUnread === "mention" ? "h-5 w-1 bg-rose-500" : "h-3 w-0.5 bg-sky-400",
+                            )}
+                            title={subUnread === "mention" ? "Você foi mencionado nesta subatividade" : "Alterações não vistas nesta subatividade"}
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => selectSubactivity(sub.id)}
@@ -1985,23 +2093,40 @@ export function ProjectFollowUp({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex flex-col items-center gap-2">
-              {accessibleProjects.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  onClick={() => item.id !== project.id && onProjectChange?.(item.id)}
-                  title={`Abrir ${item.name}`}
-                  className={cn(
-                    "relative flex size-10 items-center justify-center overflow-hidden rounded-xl text-xs font-semibold transition-all",
-                    item.id === project.id
-                      ? "rounded-[14px] bg-primary text-primary-foreground shadow-sm"
-                      : "bg-card text-muted-foreground ring-1 ring-foreground/8 hover:rounded-[14px] hover:bg-primary/10 hover:text-primary",
-                  )}
-                >
-                  <ProjectIcon icon={item.icon} imageUrl={item.iconImageUrl} className="size-4" imageClassName="size-full rounded-[inherit] object-cover" />
-                  {item.id === project.id && <span className="absolute -left-2.5 h-6 w-1 rounded-r-full bg-primary" />}
-                </button>
-              ))}
+              {accessibleProjects.map((item) => {
+                const projectUnread = unreadMaps.byProject.get(item.id)
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    onClick={() => item.id !== project.id && onProjectChange?.(item.id)}
+                    title={`${item.name}${projectUnread ? projectUnread === "mention" ? " · menção não vista" : " · alterações não vistas" : ""}`}
+                    className={cn(
+                      "relative flex size-10 items-center justify-center overflow-visible rounded-xl text-xs font-semibold transition-all",
+                      item.id === project.id
+                        ? "rounded-[14px] bg-primary text-primary-foreground shadow-sm"
+                        : "bg-card text-muted-foreground ring-1 ring-foreground/8 hover:rounded-[14px] hover:bg-primary/10 hover:text-primary",
+                    )}
+                  >
+                    <span className="flex size-full items-center justify-center overflow-hidden rounded-[inherit]">
+                      <ProjectIcon icon={item.icon} imageUrl={item.iconImageUrl} className="size-4" imageClassName="size-full rounded-[inherit] object-cover" />
+                    </span>
+                    {item.id === project.id && <span className="absolute -left-2.5 h-6 w-1 rounded-r-full bg-primary" />}
+                    {projectUnread && (
+                      <span
+                        className={cn(
+                          "absolute -right-1 -top-1 rounded-full ring-2 ring-card",
+                          projectUnread === "mention"
+                            ? "flex size-4 items-center justify-center bg-rose-500 text-[0.52rem] font-bold text-white"
+                            : "size-2.5 bg-sky-400",
+                        )}
+                      >
+                        {projectUnread === "mention" ? "@" : null}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           </div>
         </nav>

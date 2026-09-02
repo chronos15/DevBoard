@@ -32,6 +32,7 @@ import {
   projectIconStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
+import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
@@ -155,6 +156,7 @@ export type StoreContextValue = {
   leaveMeeting: (meetingId: string) => Promise<boolean>
   heartbeatMeeting: (meetingId: string) => Promise<boolean>
   markNotificationRead: (notificationId: string) => Promise<void>
+  markFollowUpContextRead: (scope: { projectId: string; activityId?: string; subactivityId?: string }) => Promise<void>
   markAllNotificationsRead: () => Promise<void>
   findSub: (subId: string) => { project: Project; activityId: string; sub: Subactivity } | null
 }
@@ -1584,6 +1586,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     else setNotifications((prev) => prev.map((item) => item.id === notificationId ? { ...item, readAt: new Date().toISOString() } : item))
   }, [currentUserId, fail, supabase])
 
+  const markFollowUpContextRead = React.useCallback(async ({ projectId, activityId, subactivityId }: { projectId: string; activityId?: string; subactivityId?: string }) => {
+    if (!projectId) return
+    const now = new Date().toISOString()
+    let query = supabase
+      .from("notifications")
+      .update({ read_at: now })
+      .eq("recipient_id", currentUserId)
+      .eq("project_id", projectId)
+      .is("read_at", null)
+      .in("type", FOLLOW_UP_UNREAD_NOTIFICATION_TYPES)
+
+    if (subactivityId) query = query.eq("subactivity_id", subactivityId)
+    else if (activityId) query = query.eq("activity_id", activityId)
+
+    const { error } = await query
+    if (error) {
+      console.warn("[Devboard/Acompanhamento] Não foi possível atualizar a leitura", error)
+      return
+    }
+
+    setNotifications((prev) => prev.map((item) => {
+      if (item.recipientId !== currentUserId || item.readAt || item.projectId !== projectId) return item
+      if (!FOLLOW_UP_UNREAD_NOTIFICATION_TYPES.includes(item.type)) return item
+      if (subactivityId && item.subactivityId !== subactivityId) return item
+      if (!subactivityId && activityId && item.activityId !== activityId) return item
+      return { ...item, readAt: now }
+    }))
+  }, [currentUserId, supabase])
+
   const markAllNotificationsRead = React.useCallback(async () => {
     const now = new Date().toISOString()
     const { error } = await supabase.from("notifications").update({ read_at: now }).eq("recipient_id", currentUserId).is("read_at", null)
@@ -1858,6 +1889,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     leaveMeeting,
     heartbeatMeeting,
     markNotificationRead,
+    markFollowUpContextRead,
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
@@ -1865,7 +1897,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
-    markAllNotificationsRead, markNotificationRead,
+    markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,

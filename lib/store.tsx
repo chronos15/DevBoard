@@ -78,6 +78,17 @@ const MEETING_TABLES = new Set(["meetings", "meeting_members"])
 const AQS_TABLES = new Set(["aqs_reviews"])
 const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 
+const REALTIME_CONNECTION_ERROR =
+  "A conexão em tempo real com o Supabase continua indisponível. O Devboard seguirá tentando reconectar automaticamente."
+
+const REALTIME_RECONNECT_DELAYS = [800, 1500, 3000, 5000, 8000, 12000, 18000, 30000] as const
+
+function realtimeReconnectDelay(attempt: number) {
+  const base = REALTIME_RECONNECT_DELAYS[Math.min(Math.max(0, attempt - 1), REALTIME_RECONNECT_DELAYS.length - 1)]
+  // Pequeno jitter evita várias abas/PWAs do mesmo usuário reconectarem exatamente no mesmo instante.
+  return base + Math.floor(Math.random() * Math.min(900, Math.max(120, base * 0.15)))
+}
+
 export type StoreContextValue = {
   projects: Project[]
   members: Member[]
@@ -574,7 +585,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!workspaceId || !currentUserId) return
 
-    const channel = supabase.channel(`devboard-db-${workspaceId}-${currentUserId}`)
+    let disposed = false
+    let subscribed = false
+    let hasSubscribedBefore = false
+    let reconnectAttempt = 0
+    let reconnectTimer: number | null = null
+    let errorTimer: number | null = null
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let channelGeneration = 0
+
     const tables = [
       ...PROJECT_TABLES,
       ...MEMBER_TABLES,
@@ -587,40 +606,182 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       "notifications",
     ]
 
-    for (const table of Array.from(new Set(tables))) {
-      channel.on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        (payload: any) => {
-          // Status/timer é a interação mais frequente do Kanban. Para UPDATEs,
-          // aplica o payload do Realtime diretamente e evita uma nova leitura
-          // pesada de todo o projeto apenas para mover um card.
-          if (table === "subactivities" && payload?.eventType === "UPDATE" && payload?.new?.id) {
-            setProjects((current) => applyRealtimeSubactivity(current, payload.new))
-          } else if (table === "project_logs" && payload?.eventType === "INSERT" && payload?.new?.id) {
-            setProjects((current) => applyRealtimeProjectLog(current, payload.new))
-          } else if (PROJECT_TABLES.has(table)) {
-            schedule("projects", refreshProjects)
-          }
-          if (MEMBER_TABLES.has(table)) schedule("members", refreshMembers)
-          if (CHAT_TABLES.has(table)) schedule("chat", refreshChat)
-          if (MEETING_TABLES.has(table)) schedule("meetings", refreshMeetings)
-          if (table === "notifications") schedule("notifications", refreshNotifications)
-          if (PREFERENCE_TABLES.has(table)) schedule("preferences", refreshPreferences)
-          if (TIME_TABLES.has(table)) schedule("work-sessions", refreshWorkSessions)
-          if (AQS_TABLES.has(table)) schedule("aqs-reviews", refreshAqsReviews)
-          if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
-        },
-      )
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+      reconnectTimer = null
     }
 
-    channel.subscribe((status) => {
-      if (status === "CHANNEL_ERROR") setLastError("A conexão em tempo real com o Supabase foi interrompida. Tentando reconectar...")
-    })
+    const clearErrorTimer = () => {
+      if (errorTimer !== null) window.clearTimeout(errorTimer)
+      errorTimer = null
+    }
+
+    const clearRealtimeError = () => {
+      clearErrorTimer()
+      setLastError((current) => current === REALTIME_CONNECTION_ERROR ? null : current)
+    }
+
+    const syncMissedChanges = () => {
+      // Um canal pode ficar alguns segundos fora. Ao voltar, fazemos uma
+      // reconciliação pontual para recuperar qualquer evento perdido durante
+      // a desconexão, sem colocar a aplicação inteira em loading.
+      void Promise.allSettled([
+        refreshProjects(),
+        refreshMembers(),
+        refreshChat(),
+        refreshMeetings(),
+        refreshNotifications(),
+        refreshPreferences(),
+        refreshWorkSessions(),
+        refreshAqsReviews(),
+        refreshSupportTopics(),
+      ])
+    }
+
+    const showReconnectErrorLater = () => {
+      if (errorTimer !== null || disposed) return
+      // Não pisca um alerta para quedas curtas de Wi-Fi/4G/PWA. Só avisamos
+      // quando a reconexão automática realmente está demorando.
+      errorTimer = window.setTimeout(() => {
+        errorTimer = null
+        if (!disposed && !subscribed) setLastError(REALTIME_CONNECTION_ERROR)
+      }, 9000)
+    }
+
+    const attachDatabaseListeners = (nextChannel: ReturnType<typeof supabase.channel>) => {
+      for (const table of Array.from(new Set(tables))) {
+        nextChannel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table },
+          (payload: any) => {
+            // Status/timer é a interação mais frequente do Kanban. Para UPDATEs,
+            // aplica o payload do Realtime diretamente e evita uma nova leitura
+            // pesada de todo o projeto apenas para mover um card.
+            if (table === "subactivities" && payload?.eventType === "UPDATE" && payload?.new?.id) {
+              setProjects((current) => applyRealtimeSubactivity(current, payload.new))
+            } else if (table === "project_logs" && payload?.eventType === "INSERT" && payload?.new?.id) {
+              setProjects((current) => applyRealtimeProjectLog(current, payload.new))
+            } else if (PROJECT_TABLES.has(table)) {
+              schedule("projects", refreshProjects)
+            }
+            if (MEMBER_TABLES.has(table)) schedule("members", refreshMembers)
+            if (CHAT_TABLES.has(table)) schedule("chat", refreshChat)
+            if (MEETING_TABLES.has(table)) schedule("meetings", refreshMeetings)
+            if (table === "notifications") schedule("notifications", refreshNotifications)
+            if (PREFERENCE_TABLES.has(table)) schedule("preferences", refreshPreferences)
+            if (TIME_TABLES.has(table)) schedule("work-sessions", refreshWorkSessions)
+            if (AQS_TABLES.has(table)) schedule("aqs-reviews", refreshAqsReviews)
+            if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
+          },
+        )
+      }
+    }
+
+    const removeCurrentChannel = async (expected?: ReturnType<typeof supabase.channel>) => {
+      const current = channel
+      if (!current || (expected && current !== expected)) return
+      channel = null
+      try {
+        await supabase.removeChannel(current)
+      } catch (error) {
+        console.warn("[Devboard/Realtime] Falha ao remover canal antigo:", error)
+      }
+    }
+
+    const connectRealtime = async (reason: "initial" | "retry" | "online" | "resume") => {
+      if (disposed) return
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        subscribed = false
+        showReconnectErrorLater()
+        return
+      }
+
+      clearReconnectTimer()
+      const previous = channel
+      if (previous) await removeCurrentChannel(previous)
+      if (disposed) return
+
+      try {
+        // O socket pode sobreviver a uma troca/renovação de sessão. Atualiza o
+        // JWT antes de recriar o canal para evitar loop de CHANNEL_ERROR.
+        await supabase.realtime.setAuth()
+      } catch (error) {
+        console.warn("[Devboard/Realtime] Não foi possível atualizar a autenticação do Realtime:", error)
+      }
+
+      if (disposed) return
+      const generation = ++channelGeneration
+      const nextChannel = supabase.channel(`devboard-db-${workspaceId}-${currentUserId}-${generation}`)
+      channel = nextChannel
+      subscribed = false
+      attachDatabaseListeners(nextChannel)
+
+      nextChannel.subscribe((status) => {
+        if (disposed || channel !== nextChannel || generation !== channelGeneration) return
+
+        if (status === "SUBSCRIBED") {
+          const recovered = hasSubscribedBefore || reconnectAttempt > 0 || reason !== "initial"
+          subscribed = true
+          hasSubscribedBefore = true
+          reconnectAttempt = 0
+          clearReconnectTimer()
+          clearRealtimeError()
+          if (recovered) syncMissedChanges()
+          return
+        }
+
+        if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") return
+
+        subscribed = false
+        reconnectAttempt += 1
+        if (reconnectAttempt >= 2) showReconnectErrorLater()
+
+        // O client do Supabase já tenta recuperar o websocket, mas recriar o
+        // canal aqui cobre sessões renovadas, suspensão do PWA e redes que
+        // trocaram de interface (Wi-Fi <-> cabo/4G).
+        void removeCurrentChannel(nextChannel).finally(() => {
+          if (disposed || reconnectTimer !== null) return
+          const delay = realtimeReconnectDelay(reconnectAttempt)
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            void connectRealtime("retry")
+          }, delay)
+        })
+      })
+    }
+
+    const reconnectNow = (reason: "online" | "resume") => {
+      if (disposed || subscribed) return
+      clearReconnectTimer()
+      void connectRealtime(reason)
+    }
+
+    const handleOnline = () => reconnectNow("online")
+    const handleResume = () => reconnectNow("resume")
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") reconnectNow("resume")
+    }
+
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("focus", handleResume)
+    window.addEventListener("pageshow", handleResume)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    void connectRealtime("initial")
 
     return () => {
+      disposed = true
+      subscribed = false
+      clearReconnectTimer()
+      clearErrorTimer()
       Object.values(refreshTimers.current).forEach((timer) => window.clearTimeout(timer))
-      void supabase.removeChannel(channel)
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("focus", handleResume)
+      window.removeEventListener("pageshow", handleResume)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      const current = channel
+      channel = null
+      if (current) void supabase.removeChannel(current)
     }
   }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, schedule, supabase, workspaceId])
 

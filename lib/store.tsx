@@ -129,6 +129,7 @@ export type StoreContextValue = {
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
   addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyToCommentId?: string) => Promise<boolean>
+  addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
   deleteFollowUpAttachment: (attachmentId: string, storagePath?: string) => Promise<boolean>
   removeFollowUpMember: (subId: string, userId: string) => Promise<boolean>
@@ -1103,16 +1104,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshProjects])
 
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyToCommentId?: string) => {
-    const result = await callRpc<string>("add_followup_comment", {
-      p_subactivity_id: subId,
-      p_content: content,
-      p_mentions: mentions,
-      p_reply_to_comment_id: replyToCommentId ?? null,
-    }, "Não foi possível enviar a mensagem")
-    if (!result) return false
-    await refreshProjects()
-    return true
-  }, [callRpc, refreshProjects])
+    try {
+      const { data, error } = await supabase.rpc("add_followup_comment", {
+        p_subactivity_id: subId,
+        p_content: content,
+        p_mentions: mentions,
+        p_reply_to_comment_id: replyToCommentId ?? null,
+      })
+      if (error) throw error
+      if (!data) throw new Error("O servidor não confirmou o envio da mensagem.")
+      await refreshProjects()
+      return true
+    } catch (error) {
+      // O acompanhamento usa entrega otimista. Falhas aparecem no próprio item
+      // da timeline, então não devemos abrir o banner global de sincronização.
+      console.error("[Devboard/Acompanhamento] Falha ao entregar mensagem", error)
+      return false
+    }
+  }, [refreshProjects, supabase])
 
   const deleteFollowUpComment = React.useCallback(async (commentId: string) => {
     const result = await callRpc<boolean>("delete_followup_comment", { p_comment_id: commentId }, "Não foi possível excluir a mensagem")
@@ -1145,6 +1154,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; subactivityId?: string },
     files: AttachmentUploadInput[],
+    options?: { silent?: boolean },
   ) => {
     if (!workspaceId || files.length === 0) return false
     try {
@@ -1180,7 +1190,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await refreshProjects()
       return true
     } catch (error) {
-      fail(error, "Não foi possível enviar o anexo")
+      if (options?.silent) {
+        console.error("[Devboard/Acompanhamento] Falha ao entregar anexo", error)
+      } else {
+        fail(error, "Não foi possível enviar o anexo")
+      }
       return false
     }
   }, [currentUserId, fail, refreshProjects, supabase, workspaceId])
@@ -1191,6 +1205,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const found = findSubInProjects(projects, subId)
     if (!found) return false
     return uploadAttachments({ projectId: found.project.id, subactivityId: subId }, files)
+  }, [projects, uploadAttachments])
+
+  const addFollowUpAttachments = React.useCallback(async (subId: string, files: AttachmentUploadInput[]) => {
+    const found = findSubInProjects(projects, subId)
+    if (!found) return false
+    return uploadAttachments({ projectId: found.project.id, subactivityId: subId }, files, { silent: true })
   }, [projects, uploadAttachments])
 
   const setAttachmentActive = React.useCallback(async (attachmentId: string, active: boolean) => {
@@ -1812,6 +1832,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addProjectComment,
     addSubactivityComment,
     addFollowUpComment,
+    addFollowUpAttachments,
     deleteFollowUpComment,
     deleteFollowUpAttachment,
     removeFollowUpMember,
@@ -1841,7 +1862,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
-    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markNotificationRead,

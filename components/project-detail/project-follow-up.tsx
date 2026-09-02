@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import {
   Activity as ActivityIcon,
   ArrowRightLeft,
@@ -9,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleAlert,
   Clock3,
   Download,
   FileAudio,
@@ -27,6 +29,7 @@ import {
   Reply,
   Pause,
   Play,
+  Plus,
   Search,
   Send,
   SmilePlus,
@@ -61,7 +64,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
-import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
@@ -195,16 +197,135 @@ type FollowUpReaction = {
   createdAt: string
 }
 
+type PendingDeliveryStatus = "sending" | "failed"
+
+type PendingFollowUpComment = {
+  id: string
+  subactivityId: string
+  content: string
+  mentions: ChatMention[]
+  replyTo?: CommentEntry["replyTo"]
+  createdAt: string
+  status: PendingDeliveryStatus
+}
+
+type PendingFollowUpUpload = {
+  id: string
+  subactivityId: string
+  files: File[]
+  createdAt: string
+  status: PendingDeliveryStatus
+}
+
 type TimelineItem =
   | { kind: "comment"; id: string; targetId: string; createdAt: string; authorId: string; comment: CommentEntry }
   | { kind: "attachment"; id: string; targetId: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
   | { kind: "session"; id: string; targetId: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
   | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string }
+  | { kind: "pending-comment"; id: string; targetId: string; createdAt: string; authorId: string; pending: PendingFollowUpComment }
+  | { kind: "pending-attachment"; id: string; targetId: string; createdAt: string; authorId: string; batchId: string; file: File; status: PendingDeliveryStatus }
 
 const FOLLOW_UP_REACTION_EMOJIS = [
   "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "🚀",
   "👀", "✅", "💯", "🤔", "🙏", "👏", "💪", "💡", "⚠️", "⭐",
 ] as const
+
+function compactComposerTitle(value: string, maxLength = 34) {
+  const clean = value.replace(/\s+/g, " ").trim()
+  if (clean.length <= maxLength) return clean
+  return `${clean.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`
+}
+
+function pendingFollowUpId(kind: "message" | "upload") {
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `local:${kind}:${id}`
+}
+
+function InlineComposerFilePreview({
+  file,
+  onRemove,
+}: {
+  file: File
+  onRemove: () => void
+}) {
+  const [url, setUrl] = React.useState<string | null>(null)
+  const kind = detectKind(file)
+
+  React.useEffect(() => {
+    if (kind !== "image" && kind !== "video") return
+    const next = URL.createObjectURL(file)
+    setUrl(next)
+    return () => URL.revokeObjectURL(next)
+  }, [file, kind])
+
+  return (
+    <div className="group/preview relative h-28 w-40 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/35 sm:h-32 sm:w-44">
+      {kind === "image" && url ? (
+        <img src={url} alt={file.name} className="h-full w-full object-cover" />
+      ) : kind === "video" && url ? (
+        <video src={url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-background text-muted-foreground ring-1 ring-border">
+            <KindIcon kind={kind} className="size-5" />
+          </span>
+          <span className="line-clamp-2 max-w-full break-all text-[0.62rem] font-medium text-foreground/80">{file.name}</span>
+          <span className="text-[0.56rem] text-muted-foreground">{formatBytes(file.size)}</span>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-1.5 top-1.5 flex size-7 items-center justify-center rounded-lg border border-border/80 bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        title="Remover arquivo"
+        aria-label={`Remover ${file.name}`}
+      >
+        <X className="size-3.5" />
+      </button>
+      {(kind === "image" || kind === "video") && (
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-7 text-[0.58rem] text-white">
+          <p className="truncate font-medium">{file.name}</p>
+          <p className="mt-0.5 opacity-75">{formatBytes(file.size)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PendingTimelineFile({ file }: { file: File }) {
+  const [url, setUrl] = React.useState<string | null>(null)
+  const kind = detectKind(file)
+
+  React.useEffect(() => {
+    if (kind !== "image" && kind !== "video" && kind !== "audio") return
+    const next = URL.createObjectURL(file)
+    setUrl(next)
+    return () => URL.revokeObjectURL(next)
+  }, [file, kind])
+
+  if (kind === "image" && url) {
+    return <img src={url} alt={file.name} className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border object-contain" />
+  }
+  if (kind === "video" && url) {
+    return <video src={url} controls playsInline className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border bg-black" />
+  }
+  if (kind === "audio" && url) {
+    return <audio src={url} controls preload="metadata" className="mt-2 w-full max-w-xl" />
+  }
+  return (
+    <div className="mt-2 flex max-w-xl items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground ring-1 ring-border">
+        <KindIcon kind={kind} className="size-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-medium">{file.name}</span>
+        <span className="mt-0.5 block text-[0.6rem] text-muted-foreground">{formatBytes(file.size)}</span>
+      </span>
+    </div>
+  )
+}
 
 const MemberLine = React.memo(function MemberLine({
   member,
@@ -413,6 +534,7 @@ export function ProjectFollowUp({
     currentUserRole,
     canManageSubactivity,
     addFollowUpComment,
+    addFollowUpAttachments,
     deleteFollowUpComment,
     deleteFollowUpAttachment,
     removeFollowUpMember,
@@ -428,6 +550,8 @@ export function ProjectFollowUp({
   const localSearchInputRef = React.useRef<HTMLInputElement>(null)
   const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
   const statusMenuRef = React.useRef<HTMLDivElement>(null)
+  const statusMenuButtonRef = React.useRef<HTMLButtonElement>(null)
+  const statusMenuPortalRef = React.useRef<HTMLDivElement>(null)
   const reactionPickerRef = React.useRef<HTMLDivElement>(null)
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
@@ -444,11 +568,10 @@ export function ProjectFollowUp({
   const [selectedSubId, setSelectedSubId] = React.useState<string | null>(initialSubactivityId ?? null)
   const [expandedActivities, setExpandedActivities] = React.useState<Set<string>>(() => new Set(project.activities.map((activity) => activity.id)))
   const [message, setMessage] = React.useState("")
-  const [sending, setSending] = React.useState(false)
-  const [uploading, setUploading] = React.useState(false)
   const [recording, setRecording] = React.useState(false)
   const [pendingFiles, setPendingFiles] = React.useState<File[]>([])
-  const [attachmentPreviewOpen, setAttachmentPreviewOpen] = React.useState(false)
+  const [pendingComments, setPendingComments] = React.useState<PendingFollowUpComment[]>([])
+  const [pendingUploads, setPendingUploads] = React.useState<PendingFollowUpUpload[]>([])
   const [deletingActivityId, setDeletingActivityId] = React.useState<string | null>(null)
   const [recordingSeconds, setRecordingSeconds] = React.useState(0)
   const [resolvedUrls, setResolvedUrls] = React.useState<Record<string, string>>({})
@@ -476,6 +599,7 @@ export function ProjectFollowUp({
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
+  const [statusMenuPosition, setStatusMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [composerMultiline, setComposerMultiline] = React.useState(false)
   const [navigatorWidth, setNavigatorWidth] = React.useState(FOLLOW_UP_NAV_DEFAULT_WIDTH)
   const [resizingNavigator, setResizingNavigator] = React.useState(false)
@@ -677,6 +801,32 @@ export function ProjectFollowUp({
     for (const attachment of (selectedSub.attachments ?? []).filter((item) => item.active)) {
       items.push({ kind: "attachment", id: `attachment-${attachment.id}`, targetId: attachment.id, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
     }
+
+    for (const pending of pendingComments.filter((item) => item.subactivityId === selectedSub.id)) {
+      items.push({
+        kind: "pending-comment",
+        id: pending.id,
+        targetId: pending.id,
+        createdAt: pending.createdAt,
+        authorId: currentUserId,
+        pending,
+      })
+    }
+
+    for (const batch of pendingUploads.filter((item) => item.subactivityId === selectedSub.id)) {
+      batch.files.forEach((file, index) => {
+        items.push({
+          kind: "pending-attachment",
+          id: `${batch.id}:${index}`,
+          targetId: `${batch.id}:${index}`,
+          createdAt: new Date(new Date(batch.createdAt).getTime() + index).toISOString(),
+          authorId: currentUserId,
+          batchId: batch.id,
+          file,
+          status: batch.status,
+        })
+      })
+    }
     for (const session of workSessions.filter((item) => item.subactivityId === selectedSub.id)) {
       items.push({ kind: "session", id: `session-${session.id}`, targetId: session.id, createdAt: session.startedAt, authorId: session.userId, durationSeconds: session.durationSeconds, endedAt: session.endedAt })
     }
@@ -692,7 +842,7 @@ export function ProjectFollowUp({
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  }, [project.logs, selectedSub, workSessions])
+  }, [currentUserId, pendingComments, pendingUploads, project.logs, selectedSub, workSessions])
 
   const reactionsByTimelineItem = React.useMemo(() => {
     const map = new Map<string, FollowUpReaction[]>()
@@ -736,6 +886,10 @@ export function ProjectFollowUp({
         searchable += ` ${item.comment.content} ${(item.comment.mentions ?? []).map((mention) => mention.label).join(" ")} ${item.comment.replyTo?.content ?? ""}`
       } else if (item.kind === "attachment") {
         searchable += ` ${item.attachment.name} ${item.attachment.mimeType} ${item.attachment.textContent ?? ""}`
+      } else if (item.kind === "pending-comment") {
+        searchable += ` ${item.pending.content} ${item.pending.mentions.map((mention) => mention.label).join(" ")} ${item.pending.replyTo?.content ?? ""}`
+      } else if (item.kind === "pending-attachment") {
+        searchable += ` ${item.file.name} ${item.file.type}`
       } else if (item.kind === "session") {
         searchable += ` trabalho sessão cronômetro ${formatHMS(item.durationSeconds)}`
       } else {
@@ -1036,22 +1190,52 @@ export function ProjectFollowUp({
     function handlePointerDown(event: PointerEvent) {
       const target = event.target as Node | null
       if (target && statusMenuRef.current?.contains(target)) return
+      if (target && statusMenuPortalRef.current?.contains(target)) return
       setStatusMenuOpen(false)
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setStatusMenuOpen(false)
     }
+    function handleViewportChange() {
+      setStatusMenuOpen(false)
+    }
     document.addEventListener("pointerdown", handlePointerDown)
     document.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", handleViewportChange)
+    window.addEventListener("scroll", handleViewportChange, true)
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown)
       document.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", handleViewportChange)
+      window.removeEventListener("scroll", handleViewportChange, true)
     }
   }, [statusMenuOpen])
 
   React.useEffect(() => {
     setStatusMenuOpen(false)
+    setStatusMenuPosition(null)
+    setPendingFiles([])
+    setComposerError("")
   }, [selectedSubId])
+
+  function toggleStatusMenu() {
+    if (statusMenuOpen) {
+      setStatusMenuOpen(false)
+      setStatusMenuPosition(null)
+      return
+    }
+    const rect = statusMenuButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const width = 208
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width))
+    const estimatedHeight = 298
+    const openAbove = rect.bottom + estimatedHeight > window.innerHeight - 8 && rect.top > estimatedHeight
+    setStatusMenuPosition({
+      left,
+      top: openAbove ? Math.max(8, rect.top - estimatedHeight - 6) : rect.bottom + 6,
+    })
+    setStatusMenuOpen(true)
+  }
 
   function resizeComposer(textarea = messageRef.current) {
     if (!textarea) return
@@ -1180,6 +1364,7 @@ export function ProjectFollowUp({
   }
 
   function itemReactions(item: TimelineItem) {
+    if (item.kind === "pending-comment" || item.kind === "pending-attachment") return []
     return reactionsByTimelineItem.get(`${item.kind}-${item.targetId}`) ?? []
   }
 
@@ -1261,6 +1446,7 @@ export function ProjectFollowUp({
 
   async function setTimelineReaction(item: TimelineItem, emoji: string | null) {
     if (!selectedSubId || reactionSavingItemId) return
+    if (item.kind === "pending-comment" || item.kind === "pending-attachment") return
     setReactionSavingItemId(item.id)
     const previous = reactions
     const next = previous.filter((row) => !(row.targetKind === item.kind && row.targetId === item.targetId && row.userId === currentUserId))
@@ -1354,24 +1540,44 @@ export function ProjectFollowUp({
     }
   }
 
-  async function sendMessage() {
-    if (!selectedSub || sending) return
-    const content = message.trim()
-    if (!content) return
-    const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
-    setSending(true)
-    try {
-      const ok = await addFollowUpComment(selectedSub.id, content, validMentions, replyingTo?.id)
-      if (ok) {
-        setMessage("")
-        setDraftMentions([])
-        setMentionRange(null)
-        setReplyingTo(null)
-        messageRef.current?.focus()
-      }
-    } finally {
-      setSending(false)
+  function scrollAfterOptimisticInsert() {
+    window.requestAnimationFrame(() => {
+      scrollTimelineToBottom()
+      window.requestAnimationFrame(scrollTimelineToBottom)
+    })
+  }
+
+  async function deliverPendingComment(pending: PendingFollowUpComment) {
+    setPendingComments((current) => current.map((item) => item.id === pending.id ? { ...item, status: "sending" } : item))
+    const ok = await addFollowUpComment(
+      pending.subactivityId,
+      pending.content,
+      pending.mentions,
+      pending.replyTo?.commentId,
+    )
+    if (ok) {
+      setPendingComments((current) => current.filter((item) => item.id !== pending.id))
+      return true
     }
+    setPendingComments((current) => current.map((item) => item.id === pending.id ? { ...item, status: "failed" } : item))
+    return false
+  }
+
+  function enqueueMessageOptimistically(content: string, mentions: ChatMention[], replyTo?: CommentEntry["replyTo"]) {
+    if (!selectedSub) return null
+    const pending: PendingFollowUpComment = {
+      id: pendingFollowUpId("message"),
+      subactivityId: selectedSub.id,
+      content,
+      mentions,
+      replyTo,
+      createdAt: new Date().toISOString(),
+      status: "sending",
+    }
+    setPendingComments((current) => [...current, pending])
+    scrollAfterOptimisticInsert()
+    window.setTimeout(() => { void deliverPendingComment(pending) }, 0)
+    return pending.id
   }
 
   function validateFiles(files: File[]) {
@@ -1382,55 +1588,95 @@ export function ProjectFollowUp({
   }
 
   function queueFilesForPreview(files: File[]) {
-    if (!selectedSub || !files.length || uploading) return
-    const error = validateFiles(files)
+    if (!selectedSub || !files.length || recording) return
+    const merged = [...pendingFiles, ...files]
+    const error = validateFiles(merged)
     if (error) {
       setComposerError(error)
       return
     }
     setComposerError("")
-    setPendingFiles(files)
-    setAttachmentPreviewOpen(true)
+    setPendingFiles(merged)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  async function uploadFiles(files: File[], caption = "") {
-    if (!selectedSub || !files.length || uploading) return false
-    const error = validateFiles(files)
-    if (error) {
-      setComposerError(error)
-      return false
-    }
-    setComposerError("")
-    setUploading(true)
+  async function deliverPendingUpload(batch: PendingFollowUpUpload) {
+    setPendingUploads((current) => current.map((item) => item.id === batch.id ? { ...item, status: "sending" } : item))
     try {
-      const prepared = await Promise.all(files.map(fileToUpload))
-      const ok = await addSubactivityAttachments(selectedSub.id, prepared)
-      if (!ok) {
-        setComposerError("Não foi possível enviar os arquivos.")
-        return false
+      const prepared = await Promise.all(batch.files.map(fileToUpload))
+      const ok = await addFollowUpAttachments(batch.subactivityId, prepared)
+      if (ok) {
+        setPendingUploads((current) => current.filter((item) => item.id !== batch.id))
+        return true
       }
-      const cleanCaption = caption.trim()
-      if (cleanCaption) {
-        const captionOk = await addFollowUpComment(selectedSub.id, cleanCaption, [], undefined)
-        if (!captionOk) setComposerError("Os arquivos foram enviados, mas não foi possível salvar a legenda.")
-      }
-      return true
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
+    } catch (error) {
+      console.error("[Devboard/Acompanhamento] Falha ao preparar anexo", error)
     }
+    setPendingUploads((current) => current.map((item) => item.id === batch.id ? { ...item, status: "failed" } : item))
+    return false
   }
 
-  async function sendPendingFiles(caption: string) {
-    const ok = await uploadFiles(pendingFiles, caption)
-    if (!ok) return
-    setPendingFiles([])
-    setAttachmentPreviewOpen(false)
+  function enqueueFilesOptimistically(files: File[]) {
+    if (!selectedSub || !files.length) return null
+    const baseTime = Date.now()
+    const batches: PendingFollowUpUpload[] = files.map((file, index) => ({
+      id: pendingFollowUpId("upload"),
+      subactivityId: selectedSub.id,
+      files: [file],
+      createdAt: new Date(baseTime + index).toISOString(),
+      status: "sending",
+    }))
+    setPendingUploads((current) => [...current, ...batches])
+    scrollAfterOptimisticInsert()
+    batches.forEach((batch) => window.setTimeout(() => { void deliverPendingUpload(batch) }, 0))
+    return batches.map((batch) => batch.id)
+  }
+
+  function sendComposerContent() {
+    if (!selectedSub || recording) return
+    const content = message.trim()
+    const files = pendingFiles
+    if (!content && !files.length) return
+
+    if (files.length) {
+      enqueueFilesOptimistically(files)
+      setPendingFiles([])
+    }
+    if (content) {
+      const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
+      const replyTo = replyingTo ? {
+        commentId: replyingTo.id,
+        authorId: replyingTo.authorId,
+        content: commentReplySummary(replyingTo),
+      } : undefined
+      enqueueMessageOptimistically(content, validMentions, replyTo)
+    }
+
+    setMessage("")
+    setDraftMentions([])
+    setMentionRange(null)
+    setReplyingTo(null)
+    setComposerError("")
+    window.requestAnimationFrame(() => {
+      resizeComposer()
+      messageRef.current?.focus()
+    })
+  }
+
+  function retryPendingComment(id: string) {
+    const pending = pendingComments.find((item) => item.id === id)
+    if (!pending || pending.status !== "failed") return
+    void deliverPendingComment(pending)
+  }
+
+  function retryPendingUpload(id: string) {
+    const pending = pendingUploads.find((item) => item.id === id)
+    if (!pending || pending.status !== "failed") return
+    void deliverPendingUpload(pending)
   }
 
   async function startRecording() {
-    if (!selectedSub || recording || uploading) return
+    if (!selectedSub || recording) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setComposerError("A gravação de áudio não está disponível neste navegador.")
       return
@@ -1459,7 +1705,7 @@ export function ProjectFollowUp({
         audioChunksRef.current = []
         setRecording(false)
         setRecordingSeconds(durationSeconds)
-        if (!unmountedRef.current) await uploadFiles([file])
+        if (!unmountedRef.current) enqueueFilesOptimistically([file])
       })
 
       recorder.start(250)
@@ -1903,6 +2149,7 @@ export function ProjectFollowUp({
 
                     <div ref={statusMenuRef} className="relative">
                       <Button
+                        ref={statusMenuButtonRef}
                         type="button"
                         variant="ghost"
                         size="icon-sm"
@@ -1911,46 +2158,10 @@ export function ProjectFollowUp({
                         title="Enviar para outra situação"
                         aria-haspopup="menu"
                         aria-expanded={statusMenuOpen}
-                        onClick={() => setStatusMenuOpen((open) => !open)}
+                        onClick={toggleStatusMenu}
                       >
                         {statusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
                       </Button>
-
-                      {statusMenuOpen && (
-                        <div
-                          role="menu"
-                          aria-label="Enviar para situação"
-                          className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-                        >
-                          <div className="px-2 py-1.5 text-[0.62rem] font-medium text-muted-foreground">Enviar para situação</div>
-                          <div className="my-1 h-px bg-border" />
-                          {statusOrder.map((status) => {
-                            const meta = statusMeta[status]
-                            const active = status === selectedSub.status
-                            return (
-                              <button
-                                key={status}
-                                type="button"
-                                role="menuitem"
-                                disabled={active || statusSaving}
-                                onClick={() => {
-                                  setStatusMenuOpen(false)
-                                  requestSelectedStatus(status)
-                                }}
-                                className={cn(
-                                  "flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors",
-                                  active ? "cursor-default opacity-55" : "hover:bg-muted",
-                                  status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
-                                )}
-                              >
-                                <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
-                                <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                                {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -2030,6 +2241,96 @@ export function ProjectFollowUp({
                       {timeline.map((item) => {
                         const isLocalMatch = localSearchMatchSet.has(item.id)
                         const isCurrentLocalMatch = currentLocalMatchId === item.id
+                        if (item.kind === "pending-comment") {
+                          const author = members.find((entry) => entry.id === currentUserId)
+                          const replyAuthor = item.pending.replyTo?.authorId ? members.find((entry) => entry.id === item.pending.replyTo?.authorId) : undefined
+                          return (
+                            <article
+                              id={`followup-timeline-${item.id}`}
+                              key={item.id}
+                              className={cn(
+                                "relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 sm:px-3",
+                                item.pending.status === "sending" && "opacity-80",
+                                item.pending.status === "failed" && "border-destructive/15 bg-destructive/[0.025]",
+                              )}
+                            >
+                              <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <strong className="truncate text-xs"><MemberName member={author} fallback="Você" /></strong>
+                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                </div>
+                                {item.pending.replyTo && (
+                                  <div className="mt-1.5 block max-w-full overflow-hidden rounded-lg border border-border bg-muted/35 px-2.5 py-2 text-left text-[0.68rem]">
+                                    <span className="block truncate font-medium text-foreground/75"><MemberName member={replyAuthor} fallback="Usuário" /> · resposta</span>
+                                    <span className="mt-0.5 block truncate text-muted-foreground">{item.pending.replyTo.content || "Mensagem"}</span>
+                                  </div>
+                                )}
+                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                                  {renderMentionedText(item.pending.content, item.pending.mentions)}
+                                </p>
+                                {item.pending.status === "sending" ? (
+                                  <div className="mt-1 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                    <LoaderCircle className="size-3 animate-spin" />
+                                    <span>Enviando...</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => retryPendingComment(item.pending.id)}
+                                    className="mt-1 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive transition-opacity hover:opacity-75"
+                                    title="Tentar enviar novamente"
+                                  >
+                                    <CircleAlert className="size-3 shrink-0" />
+                                    <span>Falha ao enviar, clique para enviar novamente.</span>
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          )
+                        }
+
+                        if (item.kind === "pending-attachment") {
+                          const author = members.find((entry) => entry.id === currentUserId)
+                          return (
+                            <article
+                              id={`followup-timeline-${item.id}`}
+                              key={item.id}
+                              className={cn(
+                                "relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 sm:px-2",
+                                item.status === "sending" && "opacity-80",
+                                item.status === "failed" && "bg-destructive/[0.025] ring-1 ring-destructive/10",
+                              )}
+                            >
+                              <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-baseline gap-2">
+                                  <strong className="truncate text-xs"><MemberName member={author} fallback="Você" /></strong>
+                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                </div>
+                                <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
+                                <PendingTimelineFile file={item.file} />
+                                {item.status === "sending" ? (
+                                  <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                    <LoaderCircle className="size-3 animate-spin" />
+                                    <span>Enviando...</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => retryPendingUpload(item.batchId)}
+                                    className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive transition-opacity hover:opacity-75"
+                                    title="Tentar enviar novamente"
+                                  >
+                                    <CircleAlert className="size-3 shrink-0" />
+                                    <span>Falha ao enviar, clique para enviar novamente.</span>
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          )
+                        }
+
                         if (item.kind === "session") {
                           const member = members.find((entry) => entry.id === item.authorId)
                           return (
@@ -2224,10 +2525,7 @@ export function ProjectFollowUp({
                     </div>
                   )}
 
-                  <div className={cn(
-                    "flex gap-1.5 rounded-xl border border-border bg-background px-2 py-2 shadow-sm focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10",
-                    composerMultiline ? "items-start" : "items-center",
-                  )}>
+                  <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm transition-colors focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -2235,65 +2533,108 @@ export function ProjectFollowUp({
                       className="hidden"
                       onChange={(event) => queueFilesForPreview(Array.from(event.target.files ?? []))}
                     />
-                    <Button type="button" variant="ghost" size="icon-sm" disabled={uploading || recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
-                      <Paperclip className="size-4" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={beginMention} title="Mencionar usuário" aria-label="Mencionar usuário">
-                      <AtSign className="size-4" />
-                    </Button>
-                    <textarea
-                      ref={messageRef}
-                      value={message}
-                      onChange={(event) => {
-                        const value = event.target.value
-                        setMessage(value)
-                        setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
-                        detectMention(value, event.target.selectionStart)
-                        resizeComposer(event.currentTarget)
-                      }}
-                      onKeyDown={(event) => {
-                        if (mentionRange && mentionCandidates.length > 0) {
-                          if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
-                          if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
-                          if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex]?.id ?? mentionCandidates[0].id); return }
-                          if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
-                        }
-                        if (event.key === "Escape" && replyingTo) { event.preventDefault(); setReplyingTo(null); return }
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault()
-                          void sendMessage()
-                        }
-                      }}
-                      onPaste={(event) => {
-                        const files = Array.from(event.clipboardData.files ?? [])
-                        if (!files.length) return
-                        event.preventDefault()
-                        queueFilesForPreview(files)
-                      }}
-                      rows={1}
-                      placeholder={`Conversar em “${selectedSub.title}” · use @ para mencionar`}
-                      className="min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-1 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70"
-                    />
-                    {recording ? (
-                      <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
-                        <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
-                        {formatHMS(recordingSeconds)}
+
+                    {pendingFiles.length > 0 && (
+                      <div className="border-b border-border bg-muted/10 px-2.5 pb-2 pt-2.5">
+                        <div className="flex min-w-0 items-stretch gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+                          {pendingFiles.map((file, index) => (
+                            <InlineComposerFilePreview
+                              key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                              file={file}
+                              onRemove={() => {
+                                setPendingFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                                setComposerError("")
+                              }}
+                            />
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex h-28 w-20 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted/20 text-[0.58rem] text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary sm:h-32"
+                            title="Adicionar mais arquivos"
+                            aria-label="Adicionar mais arquivos"
+                          >
+                            <span className="flex size-8 items-center justify-center rounded-lg bg-background ring-1 ring-border"><Plus className="size-4" /></span>
+                            <span>Adicionar</span>
+                          </button>
+                        </div>
+                        <div className="mt-1.5 flex items-center justify-between gap-3 px-0.5 text-[0.56rem] text-muted-foreground">
+                          <span>{pendingFiles.length} {pendingFiles.length === 1 ? "arquivo pronto" : "arquivos prontos"} para enviar</span>
+                          <button type="button" onClick={() => setPendingFiles([])} className="font-medium transition-colors hover:text-destructive">Remover todos</button>
+                        </div>
                       </div>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant={recording ? "destructive" : "ghost"}
-                      size="icon-sm"
-                      disabled={uploading}
-                      onClick={recording ? stopRecording : startRecording}
-                      title={recording ? "Parar e enviar áudio" : "Gravar áudio"}
-                      aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
-                    >
-                      {recording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
-                    </Button>
-                    <Button type="button" size="icon-sm" disabled={!message.trim() || sending || uploading || recording} onClick={() => void sendMessage()} title="Enviar mensagem" aria-label="Enviar mensagem">
-                      {sending || uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
-                    </Button>
+                    )}
+
+                    <div className={cn(
+                      "flex gap-1.5 px-2 py-2",
+                      composerMultiline ? "items-start" : "items-center",
+                    )}>
+                      <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
+                        <Paperclip className="size-4" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={beginMention} title="Mencionar usuário" aria-label="Mencionar usuário">
+                        <AtSign className="size-4" />
+                      </Button>
+                      <textarea
+                        ref={messageRef}
+                        value={message}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          setMessage(value)
+                          setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
+                          detectMention(value, event.target.selectionStart)
+                          resizeComposer(event.currentTarget)
+                        }}
+                        onKeyDown={(event) => {
+                          if (mentionRange && mentionCandidates.length > 0) {
+                            if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
+                            if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
+                            if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex]?.id ?? mentionCandidates[0].id); return }
+                            if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
+                          }
+                          if (event.key === "Escape" && replyingTo) { event.preventDefault(); setReplyingTo(null); return }
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault()
+                            sendComposerContent()
+                          }
+                        }}
+                        onPaste={(event) => {
+                          const files = Array.from(event.clipboardData.files ?? [])
+                          if (!files.length) return
+                          event.preventDefault()
+                          queueFilesForPreview(files)
+                        }}
+                        rows={1}
+                        placeholder={`Conversar em “${compactComposerTitle(selectedSub.title)}”`}
+                        className="min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-1 py-1.5 text-sm leading-relaxed outline-none placeholder:text-xs placeholder:text-muted-foreground/70"
+                      />
+                      {recording ? (
+                        <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
+                          <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
+                          {formatHMS(recordingSeconds)}
+                        </div>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant={recording ? "destructive" : "ghost"}
+                        size="icon-sm"
+                        onClick={recording ? stopRecording : startRecording}
+                        title={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+                        aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+                      >
+                        {recording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        disabled={(!message.trim() && pendingFiles.length === 0) || recording}
+                        onClick={sendComposerContent}
+                        title="Enviar"
+                        aria-label="Enviar"
+                      >
+                        <Send className="size-4" />
+                      </Button>
+                    </div>
                   </div>
                   {composerError ? (
                     <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
@@ -2356,6 +2697,47 @@ export function ProjectFollowUp({
         </aside>
       </div>
 
+      {statusMenuOpen && statusMenuPosition && selectedSub && typeof document !== "undefined" && createPortal(
+        <div
+          ref={statusMenuPortalRef}
+          role="menu"
+          aria-label="Enviar para situação"
+          data-followup-status-menu
+          style={{ top: statusMenuPosition.top, left: statusMenuPosition.left }}
+          className="fixed z-[9999] w-52 max-h-[min(360px,calc(100vh-16px))] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl ring-1 ring-black/5 [scrollbar-width:thin]"
+        >
+          <div className="px-2 py-1.5 text-[0.62rem] font-semibold text-muted-foreground">Enviar para situação</div>
+          <div className="my-1 h-px bg-border" />
+          {statusOrder.map((status) => {
+            const meta = statusMeta[status]
+            const active = status === selectedSub.status
+            return (
+              <button
+                key={status}
+                type="button"
+                role="menuitem"
+                disabled={active || statusSaving}
+                onClick={() => {
+                  setStatusMenuOpen(false)
+                  setStatusMenuPosition(null)
+                  requestSelectedStatus(status)
+                }}
+                className={cn(
+                  "flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors",
+                  active ? "cursor-default bg-muted/40 opacity-60" : "hover:bg-muted",
+                  status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
+                )}
+              >
+                <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
+                <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
+
       {selectedSub && pendingStatus && (
         <SubactivityStatusConfirmDialog
           open
@@ -2374,26 +2756,6 @@ export function ProjectFollowUp({
           onConfirm={() => { void confirmSelectedStatus() }}
         />
       )}
-
-      <ChatAttachmentPreviewDialog
-        files={pendingFiles}
-        open={attachmentPreviewOpen}
-        sending={uploading}
-        onOpenChange={(open) => {
-          setAttachmentPreviewOpen(open)
-          if (!open && !uploading) setPendingFiles([])
-        }}
-        onFilesChange={(files) => {
-          const error = validateFiles(files)
-          if (error) {
-            setComposerError(error)
-            return
-          }
-          setComposerError("")
-          setPendingFiles(files)
-        }}
-        onSend={sendPendingFiles}
-      />
 
       <FollowUpSearchDialog
         open={globalSearchOpen}

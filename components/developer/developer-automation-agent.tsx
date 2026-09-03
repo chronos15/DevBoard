@@ -215,6 +215,9 @@ export function DeveloperAutomationAgent() {
       void syncDeveloperAgentSession({
         active: true,
         title: session.sub.title,
+        projectId: session.project.id,
+        activityId: session.activity.id,
+        subactivityId: session.sub.id,
         projectName: session.project.name,
         taskPath: `/projetos/${session.project.id}#sub:${session.sub.id}`,
         timerStartedAt: session.sub.timerStartedAt,

@@ -1,2 +1,2 @@
-export const DEVBOARD_AGENT_VERSION = "0.5.0"
+export const DEVBOARD_AGENT_VERSION = "0.6.0"
 export const DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION = "0.3.0"

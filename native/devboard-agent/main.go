@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	agentVersion = "0.5.0"
+	agentVersion = "0.6.0"
 	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 	hotkeyID     = 0xDB01
 	wmHotkey     = 0x0312
@@ -255,7 +255,9 @@ func runAgent(cfg agentConfig) {
 	defer stopTray()
 
 	cleanupAgentUpdateArtifacts()
+	loadPersistedAgentSessionClaim()
 	startActivityMonitor()
+	startBackgroundIdleAutopause(cfg)
 	go heartbeatLoop(cfg, hotkeyOK)
 	go startLocalAPIServer(cfg)
 	startAutoUpdater(cfg)

@@ -25,6 +25,9 @@ export type DeveloperAgentActivity = {
 export type DeveloperAgentSessionPayload = {
   active: boolean
   title?: string
+  projectId?: string
+  activityId?: string
+  subactivityId?: string
   projectName?: string
   taskPath?: string
   timerStartedAt?: string

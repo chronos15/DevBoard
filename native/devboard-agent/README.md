@@ -98,3 +98,12 @@ O arquivo em `public/downloads/` é um template. A rota `/api/dev-agent/installe
 - detecção de Node/Next.js, Flutter, .NET e Delphi;
 - logs locais de execução e parada da árvore de processos;
 - auto-update adiado enquanto Run/Build/Test estiver em execução.
+
+## Auto-pausa por inatividade em segundo plano (v0.6.0+)
+
+A partir da versão 0.6.0 o Agent supervisiona o cronômetro mesmo com o navegador/PWA fechado.
+Ele consulta a sessão ativa pelo Supabase usando `agent_id` + segredo local, usa `GetLastInputInfo`
+para medir a inatividade do Windows, avisa aos 4 minutos e solicita a pausa aos 5 minutos.
+Atividades/subatividades com tipo `intermittent=true` são ignoradas. A RPC revalida usuário,
+sessão aberta e tipo no banco antes de pausar, portanto a automação não depende do estado local
+do frontend e é segura contra uma sessão antiga/stale do Agent.

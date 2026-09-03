@@ -98,7 +98,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
   }
 
   return (
-    <>
+    <div className={cn("min-w-0", inlineOpen && "pb-2")}>
     <div
       id={`sub-${sub.id}`}
       ref={rowRef}
@@ -258,7 +258,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
         projectId={projectId}
       />
     )}
-    </>
+    </div>
   )
 }
 

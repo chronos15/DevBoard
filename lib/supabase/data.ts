@@ -118,7 +118,7 @@ export async function loadMembers(supabase: SupabaseClient, workspaceId: string)
 export async function loadWorkItemTypes(supabase: SupabaseClient, workspaceId: string): Promise<WorkItemType[]> {
   const { data, error } = await supabase
     .from('work_item_types')
-    .select('id,name,color,active,created_at')
+    .select('id,name,color,active,intermittent,created_at')
     .eq('workspace_id', workspaceId)
     .order('name', { ascending: true })
   assertNoError(error, 'Não foi possível carregar os tipos de atividade')
@@ -128,6 +128,7 @@ export async function loadWorkItemTypes(supabase: SupabaseClient, workspaceId: s
     name: row.name,
     color: row.color || '#64748B',
     active: row.active !== false,
+    intermittent: row.intermittent === true,
     createdAt: row.created_at,
   }))
 }

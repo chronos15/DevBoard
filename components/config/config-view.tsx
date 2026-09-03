@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, Trash2, User, Users } from "lucide-react"
+import { Bell, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -505,6 +505,7 @@ function WorkItemTypesSection() {
   } = useStore()
   const [name, setName] = React.useState("")
   const [color, setColor] = React.useState("#3B82F6")
+  const [intermittent, setIntermittent] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
 
@@ -532,8 +533,11 @@ function WorkItemTypesSection() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      const ok = await createWorkItemType({ name: name.trim(), color })
-      if (ok) setName("")
+      const ok = await createWorkItemType({ name: name.trim(), color, intermittent })
+      if (ok) {
+        setName("")
+        setIntermittent(false)
+      }
     } finally {
       setSaving(false)
     }
@@ -544,6 +548,16 @@ function WorkItemTypesSection() {
     setPendingId(typeId)
     try {
       await updateWorkItemType(typeId, { active })
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  async function toggleIntermittent(typeId: string, nextIntermittent: boolean) {
+    if (pendingId) return
+    setPendingId(typeId)
+    try {
+      await updateWorkItemType(typeId, { intermittent: nextIntermittent })
     } finally {
       setPendingId(null)
     }
@@ -569,7 +583,7 @@ function WorkItemTypesSection() {
         subtitle="Catálogo do workspace usado para classificar atividades e subatividades. Somente administradores alteram este catálogo."
       />
 
-      <form onSubmit={addType} className="mb-5 grid gap-2 rounded-2xl border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_120px_auto] sm:items-end">
+      <form onSubmit={addType} className="mb-5 grid gap-2 rounded-2xl border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_120px_180px_auto] sm:items-end">
         <label className="min-w-0">
           <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Novo tipo</span>
           <input
@@ -592,6 +606,18 @@ function WorkItemTypesSection() {
               className="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Cor do tipo"
             />
+          </span>
+        </label>
+        <label className="flex h-10 cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card px-3">
+          <input
+            type="checkbox"
+            checked={intermittent}
+            onChange={(event) => setIntermittent(event.target.checked)}
+            className="size-4 accent-primary"
+          />
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-semibold"><TimerOff className="size-3.5 text-muted-foreground" />Intermitente</span>
+            <span className="block truncate text-[0.58rem] text-muted-foreground">Não pausa por inatividade</span>
           </span>
         </label>
         <button
@@ -624,11 +650,32 @@ function WorkItemTypesSection() {
                       {!type.active && (
                         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.58rem] font-semibold text-muted-foreground">Inativo</span>
                       )}
+                      {type.intermittent && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary">
+                          <TimerOff className="size-2.5" />Intermitente
+                        </span>
+                      )}
                     </div>
                     <p className="mt-0.5 text-[0.66rem] text-muted-foreground">
                       {usage.activities} atividade{usage.activities === 1 ? "" : "s"} · {usage.subactivities} subatividade{usage.subactivities === 1 ? "" : "s"}
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => void toggleIntermittent(type.id, !type.intermittent)}
+                    className={cn(
+                      "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[0.65rem] font-semibold transition-colors disabled:opacity-50",
+                      type.intermittent
+                        ? "border-primary/25 bg-primary/8 text-primary hover:bg-primary/12"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                    title="Tipos intermitentes não são pausados automaticamente por inatividade"
+                  >
+                    <TimerOff className="size-3.5" />
+                    <span className="hidden md:inline">{type.intermittent ? "Intermitente" : "Auto pausa"}</span>
+                  </button>
 
                   <button
                     type="button"
@@ -663,7 +710,7 @@ function WorkItemTypesSection() {
       </div>
 
       <p className="mt-3 text-[0.68rem] leading-relaxed text-muted-foreground">
-        Desativar um tipo preserva os registros existentes, mas remove a opção das novas atividades e subatividades. Isso evita quebrar o histórico do projeto.
+        Desativar um tipo preserva os registros existentes, mas remove a opção das novas atividades e subatividades. Tipos marcados como intermitentes (por exemplo, reunião) não são pausados automaticamente por inatividade.
       </p>
     </div>
   )

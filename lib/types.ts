@@ -15,6 +15,7 @@ export type WorkItemType = {
   name: string
   color: string
   active: boolean
+  intermittent: boolean
   createdAt: string
 }
 

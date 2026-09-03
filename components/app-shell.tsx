@@ -19,6 +19,7 @@ import { DeveloperAutomationAgent } from "@/components/developer/developer-autom
 import { OPEN_FOLLOW_UP_EVENT, followUpHref, type FollowUpOpenDetail } from "@/lib/follow-up-launcher"
 import { cn } from "@/lib/utils"
 import { PrimaryColorSync } from "@/components/primary-color-sync"
+import { TimerIdleGuard } from "@/components/timer-idle-guard"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -131,6 +132,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         <BackendErrorBanner />
         <BrowserNotifications />
         <FollowUpAppBadge />
+        <TimerIdleGuard />
         <DeveloperShiftNotifier />
         <DeveloperAutomationAgent />
         <IncomingCallCenter />

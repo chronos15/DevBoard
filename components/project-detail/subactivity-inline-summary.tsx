@@ -117,7 +117,7 @@ export function SubactivityInlineSummary({
   const hiddenCount = Math.max(0, timeline.length - visibleTimeline.length)
 
   return (
-    <div className="mx-2 mb-2 overflow-hidden rounded-xl border border-border/75 bg-muted/[0.16] sm:mx-3">
+    <div className="mx-2 mb-0 mt-2 overflow-hidden rounded-xl border border-border/75 bg-muted/[0.16] sm:mx-3">
       <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2.5">
         <div className="min-w-0">
           <p className="text-xs font-semibold">Resumo do acompanhamento</p>

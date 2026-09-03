@@ -33,6 +33,7 @@ import {
   projectIconStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
+import { primeIdleDetectionPermission } from "@/lib/idle-detection"
 import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
@@ -139,8 +140,8 @@ export type StoreContextValue = {
   ) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
-  createWorkItemType: (data: { name: string; color: string }) => Promise<boolean>
-  updateWorkItemType: (typeId: string, data: { name?: string; color?: string; active?: boolean }) => Promise<boolean>
+  createWorkItemType: (data: { name: string; color: string; intermittent?: boolean }) => Promise<boolean>
+  updateWorkItemType: (typeId: string, data: { name?: string; color?: string; active?: boolean; intermittent?: boolean }) => Promise<boolean>
   deleteWorkItemType: (typeId: string) => Promise<boolean>
   setActivityType: (activityId: string, typeId?: string | null) => Promise<boolean>
   setSubactivityType: (subactivityId: string, typeId?: string | null) => Promise<boolean>
@@ -993,6 +994,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [fail, supabase])
 
   const startTimerDirect = React.useCallback(async (subId: string) => {
+    primeIdleDetectionPermission()
     const found = findSubInProjects(projects, subId)
     const target = found?.sub
     if (!target || !found || !canManageSubactivity(target)) return false
@@ -1124,6 +1126,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const result = await callRpc<string>("create_work_item_type", {
       p_name: data.name,
       p_color: data.color,
+      p_intermittent: Boolean(data.intermittent),
     }, "Não foi possível criar o tipo")
     if (!result) return false
     await refreshWorkItemTypes()
@@ -1140,6 +1143,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_name: data.name ?? null,
       p_color: data.color ?? null,
       p_active: data.active ?? null,
+      p_intermittent: data.intermittent ?? null,
     }, "Não foi possível atualizar o tipo")
     if (result === undefined) return false
     await refreshWorkItemTypes()

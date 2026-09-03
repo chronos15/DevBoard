@@ -14,6 +14,7 @@ import {
   loadProjects,
   loadPreferences,
   loadSupportTopics,
+  loadServiceRequests,
   loadWorkSessions,
   loadWorkItemTypes,
 } from "@/lib/supabase/data"
@@ -23,6 +24,7 @@ import {
   CHAT_MEDIA_BUCKET,
   TOPIC_MEDIA_BUCKET,
   PROJECT_ICONS_BUCKET,
+  SERVICE_REQUEST_MEDIA_BUCKET,
   chatAudioStoragePath,
   chatMediaKind,
   chatMediaStoragePath,
@@ -31,6 +33,7 @@ import {
   safeFileName,
   topicMediaStoragePath,
   projectIconStoragePath,
+  serviceRequestMediaStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import { primeIdleDetectionPermission } from "@/lib/idle-detection"
@@ -51,6 +54,9 @@ import type {
   NotificationEntry,
   Project,
   ProjectInput,
+  ServiceRequest,
+  ServiceRequestFileInput,
+  ServiceRequestInput,
   Status,
   SupportTopic,
   SupportTopicInput,
@@ -81,6 +87,7 @@ const MEETING_TABLES = new Set(["meetings", "meeting_members"])
 const AQS_TABLES = new Set(["aqs_reviews"])
 const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 const TYPE_TABLES = new Set(["work_item_types"])
+const REQUEST_TABLES = new Set(["service_requests", "service_request_participants", "service_request_messages", "service_request_events", "service_request_attachments"])
 
 const REALTIME_CONNECTION_ERROR =
   "A conexão em tempo real com o Supabase continua indisponível. O Devboard seguirá tentando reconectar automaticamente."
@@ -103,6 +110,7 @@ export type StoreContextValue = {
   notifications: NotificationEntry[]
   aqsReviews: AqsReview[]
   supportTopics: SupportTopic[]
+  serviceRequests: ServiceRequest[]
   preferences: UserPreferences
   workSessions: WorkSession[]
   workItemTypes: WorkItemType[]
@@ -128,6 +136,19 @@ export type StoreContextValue = {
   startSupportTopicAnalysis: (topicId: string) => Promise<boolean>
   revokeSupportTopic: (topicId: string, reason: string) => Promise<boolean>
   sendSupportTopicToActivity: (topicId: string, projectId: string, developerId?: string) => Promise<string | null>
+  createServiceRequest: (data: ServiceRequestInput) => Promise<string | null>
+  addServiceRequestAttachments: (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => Promise<boolean>
+  addServiceRequestMessage: (requestId: string, content: string, mentions?: ChatMention[], files?: ServiceRequestFileInput[]) => Promise<boolean>
+  startServiceRequestAqs: (requestId: string) => Promise<boolean>
+  requestServiceRequestInfo: (requestId: string, reason: string) => Promise<boolean>
+  rejectServiceRequest: (requestId: string, reason: string) => Promise<boolean>
+  sendServiceRequestToDev: (requestId: string, data: { responsibleDevId: string; projectId?: string; activityId?: string; summary?: string; priorityApproved?: boolean }) => Promise<boolean>
+  assignServiceRequestExecutor: (requestId: string, executorId: string) => Promise<boolean>
+  startServiceRequestDev: (requestId: string) => Promise<boolean>
+  sendServiceRequestToAqs: (requestId: string, summary: string) => Promise<boolean>
+  returnServiceRequestToDev: (requestId: string, reason: string) => Promise<boolean>
+  approveServiceRequestForBuild: (requestId: string, note?: string) => Promise<boolean>
+  completeServiceRequest: (requestId: string, build: string, note?: string) => Promise<boolean>
   updatePreferences: (preferences: UserPreferences) => Promise<boolean>
   canManageSubactivity: (sub: Subactivity) => boolean
   startTimer: (subId: string) => Promise<boolean>
@@ -397,6 +418,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = React.useState<NotificationEntry[]>([])
   const [aqsReviews, setAqsReviews] = React.useState<AqsReview[]>([])
   const [supportTopics, setSupportTopics] = React.useState<SupportTopic[]>([])
+  const [serviceRequests, setServiceRequests] = React.useState<ServiceRequest[]>([])
   const [preferences, setPreferences] = React.useState<UserPreferences>(DEFAULT_PREFERENCES)
   const [workSessions, setWorkSessions] = React.useState<WorkSession[]>([])
   const [workItemTypes, setWorkItemTypes] = React.useState<WorkItemType[]>([])
@@ -526,6 +548,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fail, supabase, workspaceId])
 
+  const refreshServiceRequests = React.useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      setServiceRequests(await loadServiceRequests(supabase, workspaceId))
+    } catch (error) {
+      fail(error, "Não foi possível atualizar as solicitações")
+    }
+  }, [fail, supabase, workspaceId])
+
   const refreshAll = React.useCallback(async () => {
     setRefreshing(true)
     setChatHydrated(false)
@@ -538,7 +569,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Carrega primeiro apenas o que é necessário para Dashboard, Projetos,
       // Horas, Agenda e Configurações. Chat/reuniões não bloqueiam mais a
       // abertura do restante do sistema.
-      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextWorkItemTypes] = await Promise.all([
+      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextServiceRequests, nextWorkItemTypes] = await Promise.all([
         loadMembers(supabase, identity.workspaceId),
         loadProjects(supabase, identity.workspaceId),
         loadNotifications(supabase, identity.user.id),
@@ -546,6 +577,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadWorkSessions(supabase),
         loadAqsReviews(supabase, identity.workspaceId),
         loadSupportTopics(supabase, identity.workspaceId),
+        loadServiceRequests(supabase, identity.workspaceId),
         loadWorkItemTypes(supabase, identity.workspaceId),
       ])
 
@@ -556,6 +588,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setWorkSessions(nextWorkSessions)
       setAqsReviews(nextAqsReviews)
       setSupportTopics(nextSupportTopics)
+      setServiceRequests(nextServiceRequests)
       setWorkItemTypes(nextWorkItemTypes)
       setLastError(null)
       setHydrated(true)
@@ -627,6 +660,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...AQS_TABLES,
       ...TOPIC_TABLES,
       ...TYPE_TABLES,
+      ...REQUEST_TABLES,
       "notifications",
     ]
 
@@ -659,6 +693,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         refreshWorkSessions(),
         refreshAqsReviews(),
         refreshSupportTopics(),
+        refreshServiceRequests(),
         refreshWorkItemTypes(),
       ])
     }
@@ -698,6 +733,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             if (AQS_TABLES.has(table)) schedule("aqs-reviews", refreshAqsReviews)
             if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
             if (TYPE_TABLES.has(table)) schedule("work-item-types", refreshWorkItemTypes)
+            if (REQUEST_TABLES.has(table)) schedule("service-requests", refreshServiceRequests)
           },
         )
       }
@@ -809,7 +845,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       channel = null
       if (current) void supabase.removeChannel(current)
     }
-  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, refreshWorkItemTypes, schedule, supabase, workspaceId])
+  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, refreshServiceRequests, refreshWorkItemTypes, schedule, supabase, workspaceId])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId) {
@@ -2090,6 +2126,156 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return activityId
   }, [callRpc, currentUserId, currentUserRole, fail, refreshNotifications, refreshProjects, refreshSupportTopics, supportTopics])
 
+  const addServiceRequestAttachments = React.useCallback(async (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => {
+    if (!workspaceId || files.length === 0) return true
+    const uploaded: string[] = []
+    const registered = new Set<string>()
+    try {
+      for (const item of files) {
+        const file = item.file
+        if (!file || file.size <= 0 || file.size > 200 * 1024 * 1024) throw new Error(`O arquivo “${file?.name ?? "arquivo"}” excede o limite de 200 MB.`)
+        const path = serviceRequestMediaStoragePath(workspaceId, requestId, currentUserId, file.name)
+        const mimeType = file.type || "application/octet-stream"
+        const { error: uploadError } = await supabase.storage.from(SERVICE_REQUEST_MEDIA_BUCKET).upload(path, file, {
+          contentType: mimeType,
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
+        uploaded.push(path)
+        const id = await callRpc<string>("add_service_request_attachment", {
+          p_request_id: requestId,
+          p_message_id: messageId || null,
+          p_category: item.category,
+          p_name: file.name,
+          p_mime_type: mimeType,
+          p_size_bytes: file.size,
+          p_kind: chatMediaKind(file),
+          p_storage_path: path,
+        }, "Não foi possível registrar o arquivo da solicitação")
+        if (!id) throw new Error(`Não foi possível registrar “${file.name}”.`)
+        registered.add(path)
+      }
+      await refreshServiceRequests()
+      return true
+    } catch (error) {
+      const rollback = uploaded.filter((path) => !registered.has(path))
+      if (rollback.length) await supabase.storage.from(SERVICE_REQUEST_MEDIA_BUCKET).remove(rollback).catch(() => undefined)
+      fail(error, "Não foi possível enviar os arquivos da solicitação")
+      return false
+    }
+  }, [callRpc, currentUserId, fail, refreshServiceRequests, supabase, workspaceId])
+
+  const createServiceRequest = React.useCallback(async (data: ServiceRequestInput) => {
+    const id = await callRpc<string>("create_service_request", {
+      p_order_number: data.orderNumber,
+      p_request_type: data.requestType,
+      p_unit: data.unit,
+      p_module: data.module,
+      p_subject: data.subject,
+      p_title: data.title,
+      p_description: data.description,
+      p_priority_requested: data.priorityRequested,
+      p_priority_reason: data.priorityReason || null,
+    }, "Não foi possível protocolar a solicitação")
+    if (!id) return null
+    if (data.files.length) await addServiceRequestAttachments(id, data.files)
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return id
+  }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests])
+
+  const addServiceRequestMessage = React.useCallback(async (requestId: string, content: string, mentions: ChatMention[] = [], files: ServiceRequestFileInput[] = []) => {
+    if (!content.trim() && files.length === 0) return false
+    const messageId = await callRpc<string>("add_service_request_message", {
+      p_request_id: requestId,
+      p_content: content,
+      p_mentions: mentions,
+    }, "Não foi possível enviar a mensagem")
+    if (!messageId) return false
+    if (files.length) {
+      const ok = await addServiceRequestAttachments(requestId, files, messageId)
+      if (!ok) return false
+    }
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests])
+
+  const startServiceRequestAqs = React.useCallback(async (requestId: string) => {
+    const result = await callRpc<unknown>("start_service_request_aqs", { p_request_id: requestId }, "Não foi possível assumir a análise")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const requestServiceRequestInfo = React.useCallback(async (requestId: string, reason: string) => {
+    const result = await callRpc<unknown>("request_service_request_info", { p_request_id: requestId, p_reason: reason }, "Não foi possível solicitar informações")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const rejectServiceRequest = React.useCallback(async (requestId: string, reason: string) => {
+    const result = await callRpc<unknown>("reject_service_request", { p_request_id: requestId, p_reason: reason }, "Não foi possível recusar a solicitação")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const sendServiceRequestToDev = React.useCallback(async (requestId: string, data: { responsibleDevId: string; projectId?: string; activityId?: string; summary?: string; priorityApproved?: boolean }) => {
+    const result = await callRpc<unknown>("send_service_request_to_dev", {
+      p_request_id: requestId,
+      p_responsible_dev_id: data.responsibleDevId,
+      p_project_id: data.projectId || null,
+      p_activity_id: data.activityId || null,
+      p_aqs_summary: data.summary || null,
+      p_priority_approved: data.priorityApproved === true,
+    }, "Não foi possível encaminhar a solicitação ao DEV")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const assignServiceRequestExecutor = React.useCallback(async (requestId: string, executorId: string) => {
+    const result = await callRpc<unknown>("assign_service_request_executor", { p_request_id: requestId, p_executor_id: executorId }, "Não foi possível designar o executor")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const startServiceRequestDev = React.useCallback(async (requestId: string) => {
+    const result = await callRpc<unknown>("start_service_request_dev", { p_request_id: requestId }, "Não foi possível iniciar a execução DEV")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const sendServiceRequestToAqs = React.useCallback(async (requestId: string, summary: string) => {
+    const result = await callRpc<unknown>("send_service_request_to_aqs", { p_request_id: requestId, p_summary: summary }, "Não foi possível enviar para validação AQS")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const returnServiceRequestToDev = React.useCallback(async (requestId: string, reason: string) => {
+    const result = await callRpc<unknown>("return_service_request_to_dev", { p_request_id: requestId, p_reason: reason }, "Não foi possível devolver para reavaliação")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const approveServiceRequestForBuild = React.useCallback(async (requestId: string, note?: string) => {
+    const result = await callRpc<unknown>("approve_service_request_for_build", { p_request_id: requestId, p_note: note || null }, "Não foi possível aprovar a solicitação")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
+  const completeServiceRequest = React.useCallback(async (requestId: string, build: string, note?: string) => {
+    const result = await callRpc<unknown>("complete_service_request", { p_request_id: requestId, p_build: build, p_note: note || null }, "Não foi possível concluir a solicitação")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    return true
+  }, [callRpc, refreshNotifications, refreshServiceRequests])
+
   const signOut = React.useCallback(async () => {
     await supabase.auth.signOut()
     window.location.assign("/login")
@@ -2105,6 +2291,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     notifications,
     aqsReviews,
     supportTopics,
+    serviceRequests,
     preferences,
     workSessions,
     workItemTypes,
@@ -2130,6 +2317,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     startSupportTopicAnalysis,
     revokeSupportTopic,
     sendSupportTopicToActivity,
+    createServiceRequest,
+    addServiceRequestAttachments,
+    addServiceRequestMessage,
+    startServiceRequestAqs,
+    requestServiceRequestInfo,
+    rejectServiceRequest,
+    sendServiceRequestToDev,
+    assignServiceRequestExecutor,
+    startServiceRequestDev,
+    sendServiceRequestToAqs,
+    returnServiceRequestToDev,
+    approveServiceRequestForBuild,
+    completeServiceRequest,
     updatePreferences,
     canManageSubactivity,
     startTimer,
@@ -2185,8 +2385,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
-    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
+    createServiceRequest, addServiceRequestAttachments, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])
 

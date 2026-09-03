@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   BarChart3,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -14,6 +15,7 @@ import {
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
+  Inbox,
   LifeBuoy,
   LogOut,
   MessageSquareText,
@@ -29,12 +31,25 @@ const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
 
 const nav = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/", label: "Painel", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"] },
   { href: "/dev", label: "Painel Dev", icon: Code2, roles: ["developer"] },
   { href: "/projetos", label: "Projetos", icon: FolderKanban, roles: ["admin","developer"] },
   { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, roles: ["admin","developer","aqs","support","member"] },
-  { href: "/analise", label: "Análise", icon: ClipboardCheck, roles: ["admin","developer","aqs"] },
+  {
+    href: "/solicitacoes",
+    label: "Solicitações",
+    icon: Inbox,
+    roles: ["admin","developer","aqs","support","member"],
+    children: [
+      { href: "/solicitacoes", label: "Caixa de entrada", roles: ["admin","developer","aqs","support","member"] },
+      { href: "/solicitacoes/minhas", label: "Minhas solicitações", roles: ["admin","developer","aqs","support","member"] },
+      { href: "/solicitacoes/aqs", label: "AQS", roles: ["admin","aqs"] },
+      { href: "/solicitacoes/dev", label: "DEV", roles: ["admin","developer"] },
+      { href: "/solicitacoes/concluidas", label: "Concluídas", roles: ["admin","developer","aqs","support","member"] },
+    ],
+  },
   { href: "/topicos", label: "Tópicos", icon: ClipboardList, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/analise", label: "Análise AQS", icon: ClipboardCheck, roles: ["admin","developer","aqs"] },
   { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"] },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"] },
   { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"] },
@@ -56,6 +71,7 @@ export function Sidebar({
   const pathname = usePathname()
   const { signOut, currentUserRole } = useStore()
   const [collapsed, setCollapsed] = React.useState(false)
+  const [requestsOpen, setRequestsOpen] = React.useState(true)
 
   React.useEffect(() => {
     try {
@@ -152,18 +168,70 @@ export function Sidebar({
           </p>
           {nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole)).map((item) => {
             const active = isActive(item.href)
+            const hasChildren = "children" in item && Array.isArray(item.children)
+            if (!hasChildren) {
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className={navLinkClass(active)}
+                  title={collapsed ? item.label : undefined}
+                  aria-label={collapsed ? item.label : undefined}
+                >
+                  <item.icon className="size-[1.15rem] shrink-0" />
+                  <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                </Link>
+              )
+            }
+
+            const visibleChildren = item.children.filter((child) => (child.roles as readonly string[]).includes(currentUserRole))
+            const expanded = requestsOpen || active
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={navLinkClass(active)}
-                title={collapsed ? item.label : undefined}
-                aria-label={collapsed ? item.label : undefined}
-              >
-                <item.icon className="size-[1.15rem] shrink-0" />
-                <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
-              </Link>
+              <div key={item.href} className="min-w-0">
+                <div className="relative">
+                  <Link
+                    href={item.href}
+                    onClick={onClose}
+                    className={cn(navLinkClass(active), !collapsed && "pr-9")}
+                    title={collapsed ? item.label : undefined}
+                    aria-label={collapsed ? item.label : undefined}
+                  >
+                    <item.icon className="size-[1.15rem] shrink-0" />
+                    <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                  </Link>
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      onClick={(event) => { event.preventDefault(); setRequestsOpen((value) => !value) }}
+                      className="absolute right-1.5 top-1/2 hidden size-7 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
+                      aria-label={expanded ? "Recolher Solicitações" : "Expandir Solicitações"}
+                    >
+                      <ChevronDown className={cn("size-3.5 transition-transform", !expanded && "-rotate-90")} />
+                    </button>
+                  )}
+                </div>
+                {!collapsed && expanded && (
+                  <div className="ml-5 mt-1 hidden border-l border-sidebar-border pl-2 lg:block">
+                    {visibleChildren.map((child) => {
+                      const childActive = pathname === child.href
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={cn(
+                            "flex min-h-8 items-center rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
+                            childActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/68 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
 

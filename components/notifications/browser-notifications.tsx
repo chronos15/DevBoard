@@ -71,6 +71,33 @@ export function BrowserNotifications() {
   React.useEffect(() => {
     if (!hydrated || permission !== "granted") return
     const pending = notifications
+      .filter((notification) => notification.recipientId === currentUserId && !notification.readAt && !!notification.requestId && ["request-created","request-assigned","request-status","request-mention"].includes(notification.type))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+    for (const notification of pending) {
+      if (shownRef.current.has(notification.id)) continue
+      shownRef.current.add(notification.id)
+      const options: NotificationOptions = {
+        body: notification.description || "Há uma atualização no protocolo de solicitação.",
+        icon: "/devboard-icon-192.png",
+        badge: "/devboard-icon-64.png",
+        tag: `devboard-request-${notification.id}`,
+        data: { url: `/solicitacoes/${encodeURIComponent(notification.requestId!)}` },
+      }
+      void (async () => {
+        try {
+          const registration = registrationRef.current ?? await navigator.serviceWorker.ready
+          await registration.showNotification(notification.title || "Solicitação atualizada", options)
+        } catch {
+          try { new Notification(notification.title || "Solicitação atualizada", options) } catch {}
+        }
+      })()
+    }
+  }, [currentUserId, hydrated, notifications, permission])
+
+  React.useEffect(() => {
+    if (!hydrated || permission !== "granted") return
+    const pending = notifications
       .filter((notification) => {
         if (notification.recipientId !== currentUserId || notification.readAt || !notification.projectId) return false
         if (notification.type === "followup-mention") return true

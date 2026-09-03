@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FolderKanban,
   ListTodo,
+  Inbox,
   LoaderCircle,
   MessageSquareText,
   PhoneIncoming,
@@ -38,6 +39,10 @@ const iconByType = {
   "followup-mention": AtSign,
   "followup-update": MessageSquareText,
   "followup-subactivity-opened": UserPlus,
+  "request-created": Inbox,
+  "request-assigned": UserPlus,
+  "request-status": ClipboardCheck,
+  "request-mention": AtSign,
 } satisfies Record<NotificationEntry["type"], React.ComponentType<{ className?: string }>>
 
 function formatNotificationDate(value: string) {
@@ -99,6 +104,10 @@ export function NotificationCenter() {
     void markNotificationRead(notification.id)
     if (notification.type === "chat-mention" && notification.conversationId) {
       router.push(`/chat?conversation=${encodeURIComponent(notification.conversationId)}`)
+      return
+    }
+    if (notification.requestId && notification.type.startsWith("request-")) {
+      router.push(`/solicitacoes/${encodeURIComponent(notification.requestId)}`)
       return
     }
     if ((notification.type === "followup-mention" || notification.type === "followup-subactivity-opened") && notification.projectId) {

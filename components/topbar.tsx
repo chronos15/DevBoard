@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  Inbox,
   FolderKanban,
   ListTodo,
   Menu,
@@ -21,7 +22,7 @@ import { NotificationCenter } from "@/components/notifications/notification-cent
 import { ACCESS_ROLE_LABELS, type AqsReviewStatus, type SupportTopicStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "topic" | "analysis"
+type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "topic" | "analysis" | "request"
 
 type GlobalSearchResult = {
   id: string
@@ -41,6 +42,7 @@ const KIND_LABELS: Record<GlobalSearchKind, string> = {
   subactivity: "Subatividade",
   topic: "Tópico",
   analysis: "Análise AQS",
+  request: "Solicitação",
 }
 
 const AQS_STATUS_LABELS: Record<AqsReviewStatus, string> = {
@@ -91,6 +93,7 @@ function ResultIcon({ kind }: { kind: GlobalSearchKind }) {
   if (kind === "activity") return <ListTodo className={className} />
   if (kind === "subactivity") return <CheckCircle2 className={className} />
   if (kind === "topic") return <ClipboardList className={className} />
+  if (kind === "request") return <Inbox className={className} />
   return <ClipboardCheck className={className} />
 }
 
@@ -101,6 +104,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     members,
     projects,
     supportTopics,
+    serviceRequests,
     aqsReviews,
     currentUserId,
     currentUserRole,
@@ -169,6 +173,18 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       }
     }
 
+    for (const request of serviceRequests) {
+      const creator = members.find((member) => member.id === request.createdBy)
+      candidates.push({
+        id: `request:${request.id}`,
+        kind: "request",
+        label: `OS ${request.orderNumber} · ${request.title}`,
+        meta: `${request.module} · ${request.subject}`,
+        href: `/solicitacoes/${request.id}`,
+        keywords: `${request.orderNumber} ${request.title} ${request.description} ${request.unit} ${request.module} ${request.subject} ${creator?.name ?? ""} ${request.status} ${request.requestType}`,
+      })
+    }
+
     for (const topic of supportTopics) {
       const creator = members.find((member) => member.id === topic.createdBy)
       const analyst = members.find((member) => member.id === topic.assignedAnalystId)
@@ -212,7 +228,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         return a.label.localeCompare(b.label, "pt-BR")
       })
       .slice(0, 14)
-  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, projects, query, supportTopics])
+  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, projects, query, serviceRequests, supportTopics])
 
   React.useEffect(() => {
     setActiveIndex(0)

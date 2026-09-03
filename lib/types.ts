@@ -208,6 +208,10 @@ export type NotificationType =
   | "followup-mention"
   | "followup-update"
   | "followup-subactivity-opened"
+  | "request-created"
+  | "request-assigned"
+  | "request-status"
+  | "request-mention"
 
 export type NotificationEntry = {
   id: string
@@ -223,6 +227,7 @@ export type NotificationEntry = {
   subactivityId?: string
   meetingId?: string
   conversationId?: string
+  requestId?: string
 }
 
 export type MeetingMode = "audio" | "video"
@@ -295,6 +300,110 @@ export type ChatConversation = {
   messages: ChatMessage[]
 }
 
+
+
+export type ServiceRequestType = "failure" | "development" | "adjustment" | "improvement" | "structured-triage"
+export type ServiceRequestStatus =
+  | "received"
+  | "aqs-analysis"
+  | "waiting-info"
+  | "waiting-dev"
+  | "waiting-executor"
+  | "in-dev"
+  | "waiting-aqs"
+  | "rework"
+  | "waiting-build"
+  | "completed"
+  | "rejected"
+  | "cancelled"
+
+export type ServiceRequestAttachmentCategory = "order-pdf" | "analysis-video" | "database" | "certificate" | "other"
+
+export type ServiceRequestAttachment = {
+  id: string
+  requestId: string
+  messageId?: string
+  category: ServiceRequestAttachmentCategory
+  name: string
+  mimeType: string
+  size: number
+  kind: AttachmentKind
+  storagePath: string
+  uploadedBy: string
+  createdAt: string
+}
+
+export type ServiceRequestMessage = {
+  id: string
+  requestId: string
+  authorId: string
+  content: string
+  mentions: ChatMention[]
+  createdAt: string
+  attachments: ServiceRequestAttachment[]
+}
+
+export type ServiceRequestEvent = {
+  id: string
+  requestId: string
+  actorId?: string
+  type: string
+  title: string
+  description?: string
+  fromStatus?: ServiceRequestStatus
+  toStatus?: ServiceRequestStatus
+  createdAt: string
+}
+
+export type ServiceRequest = {
+  id: string
+  workspaceId: string
+  orderNumber: string
+  requestType: ServiceRequestType
+  unit: string
+  module: string
+  subject: string
+  title: string
+  description: string
+  status: ServiceRequestStatus
+  priorityRequested: boolean
+  priorityReason?: string
+  priorityApproved: boolean
+  createdBy: string
+  assignedAqsId?: string
+  responsibleDevId?: string
+  executorId?: string
+  projectId?: string
+  activityId?: string
+  aqsSummary?: string
+  devSummary?: string
+  finalBuild?: string
+  createdAt: string
+  updatedAt: string
+  closedAt?: string
+  participantIds: string[]
+  attachments: ServiceRequestAttachment[]
+  messages: ServiceRequestMessage[]
+  events: ServiceRequestEvent[]
+}
+
+export type ServiceRequestFileInput = {
+  file: File
+  category: ServiceRequestAttachmentCategory
+}
+
+export type ServiceRequestInput = {
+  orderNumber: string
+  requestType: ServiceRequestType
+  unit: string
+  module: string
+  subject: string
+  title: string
+  description: string
+  priorityRequested: boolean
+  priorityReason?: string
+  files: ServiceRequestFileInput[]
+}
 
 export type AqsReviewStatus = "awaiting" | "evaluating" | "completed" | "revoked"
 

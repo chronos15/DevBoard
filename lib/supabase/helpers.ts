@@ -5,6 +5,7 @@ export const AVATARS_BUCKET = 'cadence-avatars'
 export const CHAT_MEDIA_BUCKET = 'devboard-chat-media'
 export const TOPIC_MEDIA_BUCKET = 'devboard-topic-media'
 export const PROJECT_ICONS_BUCKET = 'devboard-project-icons'
+export const SERVICE_REQUEST_MEDIA_BUCKET = 'devboard-request-media'
 
 export function colorForUser(id: string) {
   const palette = [
@@ -128,4 +129,17 @@ export function topicMediaStoragePath(
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `${workspaceId}/${topicId}/${uploaderId}/${random}-${safeFileName(fileName)}`
+}
+
+
+export function serviceRequestMediaStoragePath(
+  workspaceId: string,
+  requestId: string,
+  uploaderId: string,
+  fileName: string,
+) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${workspaceId}/${requestId}/${uploaderId}/${random}-${safeFileName(fileName)}`
 }

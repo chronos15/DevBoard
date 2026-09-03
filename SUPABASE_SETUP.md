@@ -620,3 +620,15 @@ Depois execute novamente:
 ```text
 supabase/verify_backend.sql
 ```
+
+## Migration 043 — Solicitações / Protocolo AQS → DEV
+
+Para ativar a nova área **Solicitações**, aplique:
+
+```text
+supabase/migrations/043_devboard_service_requests_protocol.sql
+```
+
+A migration cria uma camada de protocolo independente de Projetos/Atividades/Subatividades: solicitações, participantes, mensagens, eventos, anexos privados e fluxo AQS → DEV → AQS → build. Quando o AQS encaminha ao DEV, a solicitação pode apenas **vincular** um projeto e uma atividade já existentes; nenhuma atividade ou subatividade é criada, excluída ou tem status alterado por esse módulo.
+
+Também é criado o bucket privado `devboard-request-media`, o campo `request_id` nas notificações e as políticas/RPCs necessárias para que solicitante, AQS, DEV e Admin tenham visibilidade compatível com o protocolo.

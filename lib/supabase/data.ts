@@ -8,6 +8,8 @@ import type {
   ChatMessage,
   NotificationEntry,
   Project,
+  ServiceRequest,
+  ServiceRequestStatus,
   Status,
   SupportTopic,
   UserPreferences,
@@ -434,7 +436,7 @@ export async function loadMeetings(supabase: SupabaseClient, workspaceId: string
 export async function loadNotifications(supabase: SupabaseClient, userId: string): Promise<NotificationEntry[]> {
   const { data, error } = await supabase
     .from('notifications')
-    .select('id,recipient_id,actor_id,type,title,description,created_at,read_at,project_id,activity_id,subactivity_id,meeting_id,conversation_id')
+    .select('id,recipient_id,actor_id,type,title,description,created_at,read_at,project_id,activity_id,subactivity_id,meeting_id,conversation_id,request_id')
     .eq('recipient_id', userId)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -454,6 +456,7 @@ export async function loadNotifications(supabase: SupabaseClient, userId: string
     subactivityId: row.subactivity_id ?? undefined,
     meetingId: row.meeting_id ?? undefined,
     conversationId: row.conversation_id ?? undefined,
+    requestId: row.request_id ?? undefined,
   })) as NotificationEntry[]
 }
 
@@ -534,6 +537,90 @@ export async function loadAqsReviews(supabase: SupabaseClient, workspaceId: stri
     revokedAt: row.revoked_at ?? undefined,
     revokedReason: row.revoked_reason ?? undefined,
   })) as AqsReview[]
+}
+
+
+
+export async function loadServiceRequests(supabase: SupabaseClient, workspaceId: string): Promise<ServiceRequest[]> {
+  const { data, error } = await supabase
+    .from('service_requests')
+    .select(`
+      id,workspace_id,order_number,request_type,unit,module,subject,title,description,status,
+      priority_requested,priority_reason,priority_approved,created_by,assigned_aqs_id,responsible_dev_id,executor_id,
+      project_id,activity_id,aqs_summary,dev_summary,final_build,created_at,updated_at,closed_at,
+      service_request_participants(user_id),
+      service_request_messages(id,request_id,author_id,content,mentions,created_at),
+      service_request_events(id,request_id,actor_id,event_type,title,description,from_status,to_status,created_at),
+      service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,uploaded_by,created_at)
+    `)
+    .eq('workspace_id', workspaceId)
+    .order('updated_at', { ascending: false })
+  assertNoError(error, 'Não foi possível carregar as solicitações')
+
+  return (data ?? []).map((row: any) => {
+    const attachments = (row.service_request_attachments ?? []).map((item: any) => ({
+      id: item.id,
+      requestId: item.request_id,
+      messageId: item.message_id ?? undefined,
+      category: item.category,
+      name: item.name,
+      mimeType: item.mime_type || 'application/octet-stream',
+      size: Number(item.size_bytes || 0),
+      kind: isAttachmentKind(item.kind) ? item.kind : 'other',
+      storagePath: item.storage_path,
+      uploadedBy: item.uploaded_by,
+      createdAt: item.created_at,
+    }))
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      orderNumber: row.order_number,
+      requestType: row.request_type,
+      unit: row.unit,
+      module: row.module,
+      subject: row.subject,
+      title: row.title,
+      description: row.description,
+      status: row.status as ServiceRequestStatus,
+      priorityRequested: row.priority_requested === true,
+      priorityReason: row.priority_reason ?? undefined,
+      priorityApproved: row.priority_approved === true,
+      createdBy: row.created_by,
+      assignedAqsId: row.assigned_aqs_id ?? undefined,
+      responsibleDevId: row.responsible_dev_id ?? undefined,
+      executorId: row.executor_id ?? undefined,
+      projectId: row.project_id ?? undefined,
+      activityId: row.activity_id ?? undefined,
+      aqsSummary: row.aqs_summary ?? undefined,
+      devSummary: row.dev_summary ?? undefined,
+      finalBuild: row.final_build ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      closedAt: row.closed_at ?? undefined,
+      participantIds: Array.from(new Set((row.service_request_participants ?? []).map((item: any) => String(item.user_id)))),
+      attachments,
+      messages: (row.service_request_messages ?? []).map((item: any) => ({
+        id: item.id,
+        requestId: item.request_id,
+        authorId: item.author_id,
+        content: item.content || '',
+        mentions: Array.isArray(item.mentions) ? item.mentions : [],
+        createdAt: item.created_at,
+        attachments: attachments.filter((attachment: any) => attachment.messageId === item.id),
+      })).sort((a: any, b: any) => a.createdAt.localeCompare(b.createdAt)),
+      events: (row.service_request_events ?? []).map((item: any) => ({
+        id: item.id,
+        requestId: item.request_id,
+        actorId: item.actor_id ?? undefined,
+        type: item.event_type,
+        title: item.title,
+        description: item.description ?? undefined,
+        fromStatus: item.from_status ?? undefined,
+        toStatus: item.to_status ?? undefined,
+        createdAt: item.created_at,
+      })).sort((a: any, b: any) => a.createdAt.localeCompare(b.createdAt)),
+    } as ServiceRequest
+  })
 }
 
 export async function loadSupportTopics(supabase: SupabaseClient, workspaceId: string): Promise<SupportTopic[]> {

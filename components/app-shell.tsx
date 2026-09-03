@@ -26,6 +26,8 @@ function canAccessPath(role: AccessRole, pathname: string) {
   // O Painel Dev é pessoal e exclusivo da role developer. Nem admin herda acesso.
   if (pathname.startsWith("/dev")) return role === "developer"
   if (role === "admin") return true
+  if (pathname.startsWith("/solicitacoes/aqs")) return role === "aqs"
+  if (pathname.startsWith("/solicitacoes/dev")) return role === "developer"
   if (pathname.startsWith("/analise")) return role === "aqs" || role === "developer"
   if (pathname.startsWith("/projetos") || pathname.startsWith("/horas") || pathname.startsWith("/agenda") || pathname.startsWith("/relatorios")) {
     return role === "developer"

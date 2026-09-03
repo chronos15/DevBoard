@@ -1,5 +1,5 @@
-import { TopicsView } from "@/components/topics/topics-view"
+import { redirect } from "next/navigation"
 
-export default function TopicsPage() {
-  return <TopicsView />
+export default function LegacyTopicsPage() {
+  redirect("/solicitacoes")
 }

@@ -113,11 +113,11 @@ export function RequestsView({ scope }: { scope: ServiceRequestScope }) {
           </label>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             <Select value={status} onValueChange={(value) => value && setStatus(String(value) as ServiceRequestStatus | "all")}>
-              <SelectTrigger className="h-10 w-full min-w-0 rounded-xl bg-background sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full min-w-0 rounded-xl bg-background sm:w-48"><SelectValue>{status === "all" ? "Todos os status" : SERVICE_REQUEST_STATUS_LABELS[status]}</SelectValue></SelectTrigger>
               <SelectContent align="end"><SelectItem value="all">Todos os status</SelectItem>{(Object.entries(SERVICE_REQUEST_STATUS_LABELS) as Array<[ServiceRequestStatus, string]>).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={type} onValueChange={(value) => value && setType(String(value) as ServiceRequestType | "all")}>
-              <SelectTrigger className="h-10 w-full min-w-0 rounded-xl bg-background sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full min-w-0 rounded-xl bg-background sm:w-48"><SelectValue>{type === "all" ? "Todos os tipos" : SERVICE_REQUEST_TYPE_LABELS[type]}</SelectValue></SelectTrigger>
               <SelectContent align="end"><SelectItem value="all">Todos os tipos</SelectItem>{(Object.entries(SERVICE_REQUEST_TYPE_LABELS) as Array<[ServiceRequestType, string]>).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
@@ -147,7 +147,7 @@ export function RequestsView({ scope }: { scope: ServiceRequestScope }) {
                     <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{request.module} · {request.subject} · {request.unit}</p>
                     <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[0.68rem] text-muted-foreground">
                       <span className="inline-flex min-w-0 items-center gap-1.5"><UserRound className="size-3.5 shrink-0" /><MemberName member={creator} className="max-w-44 truncate" fallback="Solicitante" /></span>
-                      <span className="inline-flex items-center gap-1.5"><Paperclip className="size-3.5" />{request.attachments.length} arquivo{request.attachments.length === 1 ? "" : "s"}</span>
+                      <span className="inline-flex items-center gap-1.5"><Paperclip className="size-3.5" />{request.attachments.length} documento{request.attachments.length === 1 ? "" : "s"}</span>
                       <span>Atualizada {formatDate(request.updatedAt)}</span>
                     </div>
                   </div>

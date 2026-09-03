@@ -109,12 +109,14 @@ function FilterSelect({
   onValueChange,
   children,
   ariaLabel,
+  displayValue,
 }: {
   icon: React.ReactNode
   value: string
   onValueChange: (value: string) => void
   children: React.ReactNode
   ariaLabel: string
+  displayValue: string
 }) {
   return (
     <Select value={value} onValueChange={(next) => next && onValueChange(String(next))}>
@@ -123,7 +125,7 @@ function FilterSelect({
         className="h-9 w-full min-w-0 justify-start gap-2 rounded-lg border-border bg-background px-2.5 text-[0.7rem] font-medium text-foreground shadow-none hover:bg-muted/45 dark:bg-background dark:hover:bg-muted/45"
       >
         <span className="shrink-0 text-muted-foreground">{icon}</span>
-        <SelectValue className="min-w-0 flex-1 truncate" />
+        <SelectValue className="min-w-0 flex-1 truncate">{displayValue}</SelectValue>
       </SelectTrigger>
       <SelectContent
         align="start"
@@ -416,12 +418,12 @@ export function FollowUpSearchDialog({
 
           {filtersOpen && (
             <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <FilterSelect icon={<FolderKanban className="size-3.5" />} value={projectId} onValueChange={setProjectId} ariaLabel="Filtrar por projeto">
+              <FilterSelect icon={<FolderKanban className="size-3.5" />} value={projectId} onValueChange={setProjectId} ariaLabel="Filtrar por projeto" displayValue={projectId === "all" ? "Todos os projetos" : projects.find((project) => project.id === projectId)?.name ?? "Todos os projetos"}>
                 <SelectItem value="all" className="text-[0.7rem]">Todos os projetos</SelectItem>
                 {projects.map((project) => <SelectItem key={project.id} value={project.id} className="text-[0.7rem]">{project.name}</SelectItem>)}
               </FilterSelect>
 
-              <FilterSelect icon={<FileText className="size-3.5" />} value={kind} onValueChange={(value) => setKind(value as SearchKind)} ariaLabel="Filtrar por tipo">
+              <FilterSelect icon={<FileText className="size-3.5" />} value={kind} onValueChange={(value) => setKind(value as SearchKind)} ariaLabel="Filtrar por tipo" displayValue={({ all: "Todos os tipos", projects: "Projetos", messages: "Mensagens", attachments: "Arquivos", activities: "Atividades", subactivities: "Subatividades", logs: "Logs" } as Record<SearchKind,string>)[kind]}>
                 <SelectItem value="all" className="text-[0.7rem]">Todos os tipos</SelectItem>
                 <SelectItem value="projects" className="text-[0.7rem]">Projetos</SelectItem>
                 <SelectItem value="messages" className="text-[0.7rem]">Mensagens</SelectItem>
@@ -431,17 +433,17 @@ export function FollowUpSearchDialog({
                 <SelectItem value="logs" className="text-[0.7rem]">Logs</SelectItem>
               </FilterSelect>
 
-              <FilterSelect icon={<UserRound className="size-3.5" />} value={authorId} onValueChange={setAuthorId} ariaLabel="Filtrar por autor">
+              <FilterSelect icon={<UserRound className="size-3.5" />} value={authorId} onValueChange={setAuthorId} ariaLabel="Filtrar por autor" displayValue={authorId === "all" ? "Qualquer autor" : members.find((member) => member.id === authorId)?.name ?? "Qualquer autor"}>
                 <SelectItem value="all" className="text-[0.7rem]">Qualquer autor</SelectItem>
                 {members.map((member) => <SelectItem key={member.id} value={member.id} className="text-[0.7rem]">{member.name}</SelectItem>)}
               </FilterSelect>
 
-              <FilterSelect icon={<AtSign className="size-3.5" />} value={mentionUserId} onValueChange={setMentionUserId} ariaLabel="Filtrar por menção">
+              <FilterSelect icon={<AtSign className="size-3.5" />} value={mentionUserId} onValueChange={setMentionUserId} ariaLabel="Filtrar por menção" displayValue={mentionUserId === "all" ? "Qualquer menção" : `Menciona ${members.find((member) => member.id === mentionUserId)?.name ?? "usuário"}`}>
                 <SelectItem value="all" className="text-[0.7rem]">Qualquer menção</SelectItem>
                 {members.map((member) => <SelectItem key={member.id} value={member.id} className="text-[0.7rem]">Menciona {member.name}</SelectItem>)}
               </FilterSelect>
 
-              <FilterSelect icon={<CalendarDays className="size-3.5" />} value={period} onValueChange={(value) => setPeriod(value as SearchPeriod)} ariaLabel="Filtrar por período">
+              <FilterSelect icon={<CalendarDays className="size-3.5" />} value={period} onValueChange={(value) => setPeriod(value as SearchPeriod)} ariaLabel="Filtrar por período" displayValue={({ all: "Qualquer período", today: "Hoje", "7d": "Últimos 7 dias", "30d": "Últimos 30 dias" } as Record<SearchPeriod,string>)[period]}>
                 <SelectItem value="all" className="text-[0.7rem]">Qualquer período</SelectItem>
                 <SelectItem value="today" className="text-[0.7rem]">Hoje</SelectItem>
                 <SelectItem value="7d" className="text-[0.7rem]">Últimos 7 dias</SelectItem>

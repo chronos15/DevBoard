@@ -10,6 +10,7 @@ import type {
   Project,
   ServiceRequest,
   ServiceRequestStatus,
+  ServiceRequestUnit,
   Status,
   SupportTopic,
   UserPreferences,
@@ -541,17 +542,36 @@ export async function loadAqsReviews(supabase: SupabaseClient, workspaceId: stri
 
 
 
+export async function loadServiceRequestUnits(supabase: SupabaseClient, workspaceId: string): Promise<ServiceRequestUnit[]> {
+  const { data, error } = await supabase
+    .from('service_request_units')
+    .select('id,workspace_id,name,active,created_at,updated_at')
+    .eq('workspace_id', workspaceId)
+    .order('active', { ascending: false })
+    .order('name', { ascending: true })
+  assertNoError(error, 'Não foi possível carregar as unidades de solicitação')
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    name: row.name,
+    active: row.active !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }))
+}
+
 export async function loadServiceRequests(supabase: SupabaseClient, workspaceId: string): Promise<ServiceRequest[]> {
   const { data, error } = await supabase
     .from('service_requests')
     .select(`
-      id,workspace_id,order_number,request_type,unit,module,subject,title,description,status,
+      id,workspace_id,order_number,request_type,unit,unit_id,module,subject,title,description,status,
       priority_requested,priority_reason,priority_approved,created_by,assigned_aqs_id,responsible_dev_id,executor_id,
       project_id,activity_id,aqs_summary,dev_summary,final_build,created_at,updated_at,closed_at,
       service_request_participants(user_id),
       service_request_messages(id,request_id,author_id,content,mentions,created_at),
       service_request_events(id,request_id,actor_id,event_type,title,description,from_status,to_status,created_at),
-      service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,uploaded_by,created_at)
+      service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,source_type,external_url,uploaded_by,created_at)
     `)
     .eq('workspace_id', workspaceId)
     .order('updated_at', { ascending: false })
@@ -567,7 +587,9 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
       mimeType: item.mime_type || 'application/octet-stream',
       size: Number(item.size_bytes || 0),
       kind: isAttachmentKind(item.kind) ? item.kind : 'other',
-      storagePath: item.storage_path,
+      storagePath: item.storage_path ?? undefined,
+      sourceType: item.source_type === 'external-url' ? 'external-url' : 'upload',
+      externalUrl: item.external_url ?? undefined,
       uploadedBy: item.uploaded_by,
       createdAt: item.created_at,
     }))
@@ -577,6 +599,7 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
       orderNumber: row.order_number,
       requestType: row.request_type,
       unit: row.unit,
+      unitId: row.unit_id ?? undefined,
       module: row.module,
       subject: row.subject,
       title: row.title,
@@ -657,7 +680,7 @@ export async function loadSupportTopics(supabase: SupabaseClient, workspaceId: s
       mimeType: item.mime_type || 'application/octet-stream',
       size: Number(item.size_bytes || 0),
       kind: isAttachmentKind(item.kind) ? item.kind : 'other',
-      storagePath: item.storage_path,
+      storagePath: item.storage_path || undefined,
       uploadedBy: item.uploaded_by,
       createdAt: item.created_at,
     })),

@@ -414,9 +414,8 @@ export function ActivityItem({
         {open && (
           <div className="border-t border-border px-2 pb-2">
             {sourceTopic && (
-              <Link
-                href={`/topicos?topic=${sourceTopic.id}`}
-                className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-primary/[0.07]"
+              <div
+                className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5 text-left"
               >
                 <ClipboardList className="size-4 shrink-0 text-primary" />
                 <span className="min-w-0 flex-1">
@@ -424,7 +423,7 @@ export function ActivityItem({
                   <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{sourceTopic.title}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1 text-[0.65rem] text-muted-foreground"><Paperclip className="size-3" />{sourceTopic.attachments.length}</span>
-              </Link>
+              </div>
             )}
             <div className="flex flex-col divide-y divide-border/60">
               {visibleSubs.map((sub) => (

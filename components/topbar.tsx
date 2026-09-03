@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   CheckCircle2,
   ClipboardCheck,
-  ClipboardList,
   Inbox,
   FolderKanban,
   ListTodo,
@@ -19,10 +18,10 @@ import { RunningTimerChip } from "@/components/running-timer-chip"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { RecentSubactivities } from "@/components/recent-subactivities"
 import { NotificationCenter } from "@/components/notifications/notification-center"
-import { ACCESS_ROLE_LABELS, type AqsReviewStatus, type SupportTopicStatus } from "@/lib/types"
+import { ACCESS_ROLE_LABELS, type AqsReviewStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "topic" | "analysis" | "request"
+type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "analysis" | "request"
 
 type GlobalSearchResult = {
   id: string
@@ -40,7 +39,6 @@ const KIND_LABELS: Record<GlobalSearchKind, string> = {
   project: "Projeto",
   activity: "Atividade",
   subactivity: "Subatividade",
-  topic: "Tópico",
   analysis: "Análise AQS",
   request: "Solicitação",
 }
@@ -50,13 +48,6 @@ const AQS_STATUS_LABELS: Record<AqsReviewStatus, string> = {
   evaluating: "Avaliando",
   completed: "Concluída",
   revoked: "Revogada",
-}
-
-const TOPIC_STATUS_LABELS: Record<SupportTopicStatus, string> = {
-  open: "Aberto",
-  analyzing: "Em análise",
-  "sent-to-dev": "Enviado ao DEV",
-  revoked: "Revogado",
 }
 
 function normalizeSearch(value: string) {
@@ -92,7 +83,6 @@ function ResultIcon({ kind }: { kind: GlobalSearchKind }) {
   if (kind === "project") return <FolderKanban className={className} />
   if (kind === "activity") return <ListTodo className={className} />
   if (kind === "subactivity") return <CheckCircle2 className={className} />
-  if (kind === "topic") return <ClipboardList className={className} />
   if (kind === "request") return <Inbox className={className} />
   return <ClipboardCheck className={className} />
 }
@@ -103,7 +93,6 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const {
     members,
     projects,
-    supportTopics,
     serviceRequests,
     aqsReviews,
     currentUserId,
@@ -185,19 +174,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       })
     }
 
-    for (const topic of supportTopics) {
-      const creator = members.find((member) => member.id === topic.createdBy)
-      const analyst = members.find((member) => member.id === topic.assignedAnalystId)
-      const project = projects.find((item) => item.id === topic.projectId)
-      candidates.push({
-        id: `topic:${topic.id}`,
-        kind: "topic",
-        label: topic.title,
-        meta: `Ordem ${topic.orderNumber} · ${TOPIC_STATUS_LABELS[topic.status]}`,
-        href: `/topicos?topic=${encodeURIComponent(topic.id)}`,
-        keywords: `${topic.title} ${topic.orderNumber} ${topic.description} ${TOPIC_STATUS_LABELS[topic.status]} ${creator?.name ?? ""} ${analyst?.name ?? ""} ${project?.name ?? ""}`,
-      })
-    }
+
 
     if (canBrowseAnalysis) {
       for (const review of aqsReviews) {
@@ -228,7 +205,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         return a.label.localeCompare(b.label, "pt-BR")
       })
       .slice(0, 14)
-  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, projects, query, serviceRequests, supportTopics])
+  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, projects, query, serviceRequests])
 
   React.useEffect(() => {
     setActiveIndex(0)
@@ -268,10 +245,6 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     // Next mantém o mesmo Client Component montado quando apenas a query muda.
     // Os eventos abaixo garantem que a navegação global também funcione quando
     // a busca é usada já dentro da própria tela de destino.
-    if (typeof window !== "undefined" && result.kind === "topic" && window.location.pathname.startsWith("/topicos")) {
-      const topicId = result.id.replace(/^topic:/, "")
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent("devboard:open-topic", { detail: { topicId } })), 0)
-    }
     if (typeof window !== "undefined" && result.kind === "analysis" && window.location.pathname.startsWith("/analise")) {
       const subactivityId = new URL(result.href, window.location.origin).searchParams.get("sub")
       if (subactivityId) {

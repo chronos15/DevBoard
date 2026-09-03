@@ -4,8 +4,8 @@ import Link from "next/link"
 import {
   ArrowRight,
   CheckCircle2,
+  Inbox,
   ClipboardCheck,
-  ClipboardList,
   Clock3,
   Plus,
   MessageSquareText,
@@ -21,8 +21,8 @@ import { FocusPanel } from "@/components/dashboard/focus-panel"
 import { HoursByProject } from "@/components/dashboard/hours-by-project"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import { supportTopicDisplayStatus } from "@/lib/project-utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
+import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestStatusTone } from "@/lib/service-requests"
 
 
 function FollowUpQuickButton() {
@@ -104,60 +104,42 @@ function AqsDashboard({ firstName }: { firstName: string }) {
   )
 }
 
-const topicLabels = {
-  open: "Aberto",
-  analyzing: "Em análise",
-  "sent-to-dev": "Enviado ao DEV",
-  "completed-dev": "Concluído Dev.",
-  revoked: "Revogado",
-} as const
-
-function TopicsDashboard({ firstName }: { firstName: string }) {
-  const { supportTopics, currentUserId, currentUserRole, projects } = useStore()
-  const visibleTopics = supportTopics.filter((topic) =>
-    topic.createdBy === currentUserId ||
-    topic.assignedAnalystId === currentUserId ||
-    topic.developerId === currentUserId
-  )
-  const topicStatuses = visibleTopics.map((item) => supportTopicDisplayStatus(item, projects))
-  const open = topicStatuses.filter((status) => status === "open").length
-  const analyzing = topicStatuses.filter((status) => status === "analyzing").length
-  const sent = topicStatuses.filter((status) => status === "sent-to-dev").length
-  const completedDev = topicStatuses.filter((status) => status === "completed-dev").length
-  const revoked = topicStatuses.filter((status) => status === "revoked").length
+function RequestsDashboard({ firstName }: { firstName: string }) {
+  const { serviceRequests, currentUserId, currentUserRole } = useStore()
+  const visibleRequests = serviceRequests.filter((request) => request.createdBy === currentUserId || request.participantIds.includes(currentUserId))
+  const open = visibleRequests.filter((request) => !["completed", "rejected", "cancelled"].includes(request.status)).length
+  const aqs = visibleRequests.filter((request) => ["received", "aqs-analysis", "waiting-info", "waiting-aqs"].includes(request.status)).length
+  const dev = visibleRequests.filter((request) => ["waiting-dev", "waiting-executor", "in-dev", "rework"].includes(request.status)).length
+  const completed = visibleRequests.filter((request) => request.status === "completed").length
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeading
         eyebrow={currentUserRole === "support" ? "Suporte" : "Workspace"}
         title={firstName ? `Olá, ${firstName}` : "Painel"}
-        subtitle="Abra e acompanhe solicitações com ordem, contexto e evidências em um único fluxo."
+        subtitle="Abra e acompanhe solicitações com protocolo, evidências e histórico AQS → DEV em um único fluxo."
         action={
-          <Link href="/topicos" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            <ClipboardList className="size-4" /> Abrir Tópicos
+          <Link href="/solicitacoes" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            <Inbox className="size-4" /> Abrir Solicitações
           </Link>
         }
       />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard label="Abertos" value={open} Icon={ClipboardList} />
-        <StatCard label="Em análise" value={analyzing} Icon={SearchCheck} />
-        <StatCard label="Enviados ao DEV" value={sent} Icon={ArrowRight} />
-        <StatCard label="Concluídos Dev." value={completedDev} Icon={CheckCircle2} />
-        <StatCard label="Revogados" value={revoked} Icon={RotateCcw} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Em andamento" value={open} Icon={Clock3} />
+        <StatCard label="Na fila AQS" value={aqs} Icon={SearchCheck} />
+        <StatCard label="No DEV" value={dev} Icon={ArrowRight} />
+        <StatCard label="Concluídas" value={completed} Icon={CheckCircle2} />
       </div>
       <section className="rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Tópicos recentes</h2><p className="mt-0.5 text-xs text-muted-foreground">Últimas solicitações relacionadas ao seu usuário.</p></div><Link href="/topicos" className="flex items-center gap-1 text-xs font-medium text-primary">Abrir fila <ArrowRight className="size-3.5" /></Link></div>
+        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Solicitações recentes</h2><p className="mt-0.5 text-xs text-muted-foreground">Últimos protocolos relacionados ao seu usuário.</p></div><Link href="/solicitacoes/minhas" className="flex items-center gap-1 text-xs font-medium text-primary">Abrir fila <ArrowRight className="size-3.5" /></Link></div>
         <div className="mt-4 space-y-2">
-          {visibleTopics.slice(0, 6).map((topic) => {
-            const displayStatus = supportTopicDisplayStatus(topic, projects)
-            return (
-              <Link key={topic.id} href="/topicos" className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{topic.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">ORDEM {topic.orderNumber}</p></div>
-                <span className={cn("shrink-0 rounded-full bg-muted px-2 py-1 text-[0.65rem] font-medium text-muted-foreground", displayStatus === "completed-dev" && "bg-success/15 text-success", displayStatus === "revoked" && "bg-destructive/10 text-destructive")}>{topicLabels[displayStatus]}</span>
-              </Link>
-            )
-          })}
-          {visibleTopics.length === 0 && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nenhum tópico relacionado a você no momento.</div>}
+          {visibleRequests.slice(0, 6).map((request) => (
+            <Link key={request.id} href={`/solicitacoes/${request.id}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
+              <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{request.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">OS {request.orderNumber} · {request.unit}</p></div>
+              <span className={cn("shrink-0 rounded-full border px-2 py-1 text-[0.65rem] font-medium", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>
+            </Link>
+          ))}
+          {visibleRequests.length === 0 && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nenhuma solicitação relacionada a você no momento.</div>}
         </div>
       </section>
     </div>
@@ -170,7 +152,7 @@ export default function DashboardPage() {
   const firstName = currentUser?.name?.trim().split(/\s+/)[0] || ""
 
   if (currentUserRole === "aqs") return <AqsDashboard firstName={firstName} />
-  if (currentUserRole === "support" || currentUserRole === "member") return <TopicsDashboard firstName={firstName} />
+  if (currentUserRole === "support" || currentUserRole === "member") return <RequestsDashboard firstName={firstName} />
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">

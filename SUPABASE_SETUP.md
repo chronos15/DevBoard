@@ -632,3 +632,21 @@ supabase/migrations/043_devboard_service_requests_protocol.sql
 A migration cria uma camada de protocolo independente de Projetos/Atividades/Subatividades: solicitações, participantes, mensagens, eventos, anexos privados e fluxo AQS → DEV → AQS → build. Quando o AQS encaminha ao DEV, a solicitação pode apenas **vincular** um projeto e uma atividade já existentes; nenhuma atividade ou subatividade é criada, excluída ou tem status alterado por esse módulo.
 
 Também é criado o bucket privado `devboard-request-media`, o campo `request_id` nas notificações e as políticas/RPCs necessárias para que solicitante, AQS, DEV e Admin tenham visibilidade compatível com o protocolo.
+
+## Migration 044 — Unidades e recursos externos das Solicitações
+
+Para a evolução do módulo **Solicitações**, aplique também:
+
+```text
+supabase/migrations/044_devboard_request_units_external_resources.sql
+```
+
+Ela adiciona:
+
+- cadastro de **Unidades** administrado apenas por usuários `admin`;
+- vínculo estruturado da Solicitação com a unidade escolhida, preservando o nome histórico;
+- suporte a **URL FTP/FTPS/HTTP/HTTPS** para vídeo/evidência, banco de dados e certificado digital, evitando upload de arquivos grandes;
+- validações de tamanho dos campos da Solicitação também no banco;
+- políticas/RPCs necessários para criar, ativar, desativar e excluir unidades sem alterar solicitações antigas.
+
+A Ordem de Serviço em PDF continua sendo anexada ao protocolo. Vídeo/evidência, banco e certificado podem ser arquivo ou referência externa conforme a necessidade.

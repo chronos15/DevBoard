@@ -15,6 +15,7 @@ import {
   loadPreferences,
   loadSupportTopics,
   loadServiceRequests,
+  loadServiceRequestUnits,
   loadWorkSessions,
   loadWorkItemTypes,
 } from "@/lib/supabase/data"
@@ -55,8 +56,10 @@ import type {
   Project,
   ProjectInput,
   ServiceRequest,
+  ServiceRequestExternalResourceInput,
   ServiceRequestFileInput,
   ServiceRequestInput,
+  ServiceRequestUnit,
   Status,
   SupportTopic,
   SupportTopicInput,
@@ -88,6 +91,7 @@ const AQS_TABLES = new Set(["aqs_reviews"])
 const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 const TYPE_TABLES = new Set(["work_item_types"])
 const REQUEST_TABLES = new Set(["service_requests", "service_request_participants", "service_request_messages", "service_request_events", "service_request_attachments"])
+const REQUEST_UNIT_TABLES = new Set(["service_request_units"])
 
 const REALTIME_CONNECTION_ERROR =
   "A conexão em tempo real com o Supabase continua indisponível. O Devboard seguirá tentando reconectar automaticamente."
@@ -111,6 +115,7 @@ export type StoreContextValue = {
   aqsReviews: AqsReview[]
   supportTopics: SupportTopic[]
   serviceRequests: ServiceRequest[]
+  serviceRequestUnits: ServiceRequestUnit[]
   preferences: UserPreferences
   workSessions: WorkSession[]
   workItemTypes: WorkItemType[]
@@ -137,7 +142,11 @@ export type StoreContextValue = {
   revokeSupportTopic: (topicId: string, reason: string) => Promise<boolean>
   sendSupportTopicToActivity: (topicId: string, projectId: string, developerId?: string) => Promise<string | null>
   createServiceRequest: (data: ServiceRequestInput) => Promise<string | null>
+  createServiceRequestUnit: (name: string) => Promise<boolean>
+  updateServiceRequestUnit: (unitId: string, data: { name?: string; active?: boolean }) => Promise<boolean>
+  deleteServiceRequestUnit: (unitId: string) => Promise<boolean>
   addServiceRequestAttachments: (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => Promise<boolean>
+  addServiceRequestExternalResources: (requestId: string, resources: ServiceRequestExternalResourceInput[], messageId?: string) => Promise<boolean>
   addServiceRequestMessage: (requestId: string, content: string, mentions?: ChatMention[], files?: ServiceRequestFileInput[]) => Promise<boolean>
   startServiceRequestAqs: (requestId: string) => Promise<boolean>
   requestServiceRequestInfo: (requestId: string, reason: string) => Promise<boolean>
@@ -419,6 +428,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [aqsReviews, setAqsReviews] = React.useState<AqsReview[]>([])
   const [supportTopics, setSupportTopics] = React.useState<SupportTopic[]>([])
   const [serviceRequests, setServiceRequests] = React.useState<ServiceRequest[]>([])
+  const [serviceRequestUnits, setServiceRequestUnits] = React.useState<ServiceRequestUnit[]>([])
   const [preferences, setPreferences] = React.useState<UserPreferences>(DEFAULT_PREFERENCES)
   const [workSessions, setWorkSessions] = React.useState<WorkSession[]>([])
   const [workItemTypes, setWorkItemTypes] = React.useState<WorkItemType[]>([])
@@ -557,6 +567,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fail, supabase, workspaceId])
 
+  const refreshServiceRequestUnits = React.useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      setServiceRequestUnits(await loadServiceRequestUnits(supabase, workspaceId))
+    } catch (error) {
+      fail(error, "Não foi possível atualizar as unidades de solicitação")
+    }
+  }, [fail, supabase, workspaceId])
+
   const refreshAll = React.useCallback(async () => {
     setRefreshing(true)
     setChatHydrated(false)
@@ -569,7 +588,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Carrega primeiro apenas o que é necessário para Dashboard, Projetos,
       // Horas, Agenda e Configurações. Chat/reuniões não bloqueiam mais a
       // abertura do restante do sistema.
-      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextServiceRequests, nextWorkItemTypes] = await Promise.all([
+      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextServiceRequests, nextServiceRequestUnits, nextWorkItemTypes] = await Promise.all([
         loadMembers(supabase, identity.workspaceId),
         loadProjects(supabase, identity.workspaceId),
         loadNotifications(supabase, identity.user.id),
@@ -578,6 +597,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadAqsReviews(supabase, identity.workspaceId),
         loadSupportTopics(supabase, identity.workspaceId),
         loadServiceRequests(supabase, identity.workspaceId),
+        loadServiceRequestUnits(supabase, identity.workspaceId),
         loadWorkItemTypes(supabase, identity.workspaceId),
       ])
 
@@ -589,6 +609,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setAqsReviews(nextAqsReviews)
       setSupportTopics(nextSupportTopics)
       setServiceRequests(nextServiceRequests)
+      setServiceRequestUnits(nextServiceRequestUnits)
       setWorkItemTypes(nextWorkItemTypes)
       setLastError(null)
       setHydrated(true)
@@ -661,6 +682,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...TOPIC_TABLES,
       ...TYPE_TABLES,
       ...REQUEST_TABLES,
+      ...REQUEST_UNIT_TABLES,
       "notifications",
     ]
 
@@ -694,6 +716,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         refreshAqsReviews(),
         refreshSupportTopics(),
         refreshServiceRequests(),
+        refreshServiceRequestUnits(),
         refreshWorkItemTypes(),
       ])
     }
@@ -734,6 +757,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
             if (TYPE_TABLES.has(table)) schedule("work-item-types", refreshWorkItemTypes)
             if (REQUEST_TABLES.has(table)) schedule("service-requests", refreshServiceRequests)
+            if (REQUEST_UNIT_TABLES.has(table)) schedule("service-request-units", refreshServiceRequestUnits)
           },
         )
       }
@@ -845,7 +869,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       channel = null
       if (current) void supabase.removeChannel(current)
     }
-  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, refreshServiceRequests, refreshWorkItemTypes, schedule, supabase, workspaceId])
+  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, refreshServiceRequests, refreshServiceRequestUnits, refreshWorkItemTypes, schedule, supabase, workspaceId])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId) {
@@ -2165,11 +2189,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [callRpc, currentUserId, fail, refreshServiceRequests, supabase, workspaceId])
 
+  const addServiceRequestExternalResources = React.useCallback(async (requestId: string, resources: ServiceRequestExternalResourceInput[], messageId?: string) => {
+    if (resources.length === 0) return true
+    for (const item of resources) {
+      const id = await callRpc<string>("add_service_request_external_resource", {
+        p_request_id: requestId,
+        p_message_id: messageId || null,
+        p_category: item.category,
+        p_url: item.url,
+        p_name: item.name,
+      }, "Não foi possível registrar o link externo da solicitação")
+      if (!id) return false
+    }
+    await refreshServiceRequests()
+    return true
+  }, [callRpc, refreshServiceRequests])
+
   const createServiceRequest = React.useCallback(async (data: ServiceRequestInput) => {
-    const id = await callRpc<string>("create_service_request", {
+    const id = await callRpc<string>("create_service_request_v2", {
       p_order_number: data.orderNumber,
       p_request_type: data.requestType,
-      p_unit: data.unit,
+      p_unit_id: data.unitId,
       p_module: data.module,
       p_subject: data.subject,
       p_title: data.title,
@@ -2179,9 +2219,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }, "Não foi possível protocolar a solicitação")
     if (!id) return null
     if (data.files.length) await addServiceRequestAttachments(id, data.files)
+    if (data.externalResources.length) await addServiceRequestExternalResources(id, data.externalResources)
     await Promise.all([refreshServiceRequests(), refreshNotifications()])
     return id
-  }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests])
+  }, [addServiceRequestAttachments, addServiceRequestExternalResources, callRpc, refreshNotifications, refreshServiceRequests])
+
+  const createServiceRequestUnit = React.useCallback<StoreContextValue["createServiceRequestUnit"]>(async (name) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem criar unidades."), "Sem permissão para criar unidades")
+      return false
+    }
+    const id = await callRpc<string>("create_service_request_unit", { p_name: name }, "Não foi possível criar a unidade")
+    if (!id) return false
+    await refreshServiceRequestUnits()
+    return true
+  }, [callRpc, currentUserRole, fail, refreshServiceRequestUnits])
+
+  const updateServiceRequestUnit = React.useCallback<StoreContextValue["updateServiceRequestUnit"]>(async (unitId, data) => {
+    if (currentUserRole !== "admin") return false
+    const result = await callRpc<unknown>("update_service_request_unit", {
+      p_unit_id: unitId,
+      p_name: data.name ?? null,
+      p_active: data.active ?? null,
+    }, "Não foi possível atualizar a unidade")
+    if (result === undefined) return false
+    await refreshServiceRequestUnits()
+    return true
+  }, [callRpc, currentUserRole, refreshServiceRequestUnits])
+
+  const deleteServiceRequestUnit = React.useCallback<StoreContextValue["deleteServiceRequestUnit"]>(async (unitId) => {
+    if (currentUserRole !== "admin") return false
+    const result = await callRpc<unknown>("delete_service_request_unit", { p_unit_id: unitId }, "Não foi possível excluir a unidade")
+    if (result === undefined) return false
+    await Promise.all([refreshServiceRequestUnits(), refreshServiceRequests()])
+    return true
+  }, [callRpc, currentUserRole, refreshServiceRequestUnits, refreshServiceRequests])
+
 
   const addServiceRequestMessage = React.useCallback(async (requestId: string, content: string, mentions: ChatMention[] = [], files: ServiceRequestFileInput[] = []) => {
     if (!content.trim() && files.length === 0) return false
@@ -2292,6 +2365,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     aqsReviews,
     supportTopics,
     serviceRequests,
+    serviceRequestUnits,
     preferences,
     workSessions,
     workItemTypes,
@@ -2385,9 +2459,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
-    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
-    createServiceRequest, addServiceRequestAttachments, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
+    createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])
 

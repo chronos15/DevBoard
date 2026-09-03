@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, User, Users } from "lucide-react"
+import { Bell, Building2, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -14,6 +14,7 @@ const sections = [
   { id: "notificacoes", label: "Notificações", icon: Bell, adminOnly: false },
   { id: "aparencia", label: "Aparência", icon: Palette, adminOnly: false },
   { id: "tipos", label: "Tipos", icon: Tags, adminOnly: true },
+  { id: "unidades", label: "Unidades", icon: Building2, adminOnly: true },
   { id: "seguranca", label: "Segurança", icon: ShieldCheck, adminOnly: true },
 ] as const
 
@@ -111,6 +112,7 @@ export function ConfigView() {
         {active === "notificacoes" && <NotificationsSection />}
         {active === "aparencia" && <AppearanceSection />}
         {active === "tipos" && currentUserRole === "admin" && <WorkItemTypesSection />}
+        {active === "unidades" && currentUserRole === "admin" && <ServiceRequestUnitsSection />}
         {active === "seguranca" && currentUserRole === "admin" && <SecurityHealthSection />}
       </div>
     </div>
@@ -491,6 +493,99 @@ function NotificationsSection() {
       <PreferenceToggle label="Comentários" description="Avisar quando outra pessoa comentar em uma subatividade sua." checked={draft.notifyComments} disabled={saving} onChange={(value) => void patch({ notifyComments: value })} />
       <PreferenceToggle label="Atividade da equipe" description="Reserva a preferência para eventos gerais de conclusão da equipe." checked={draft.notifyTeamActivity} disabled={saving} onChange={(value) => void patch({ notifyTeamActivity: value })} />
       <PreferenceToggle label="Prazos" description="Reserva a preferência para alertas automáticos de vencimento." checked={draft.notifyDeadlines} disabled={saving} onChange={(value) => void patch({ notifyDeadlines: value })} />
+    </div>
+  )
+}
+
+function ServiceRequestUnitsSection() {
+  const {
+    serviceRequestUnits,
+    serviceRequests,
+    createServiceRequestUnit,
+    updateServiceRequestUnit,
+    deleteServiceRequestUnit,
+  } = useStore()
+  const [name, setName] = React.useState("")
+  const [saving, setSaving] = React.useState(false)
+  const [pendingId, setPendingId] = React.useState<string | null>(null)
+
+  const usage = React.useMemo(() => {
+    const map = new Map<string, number>()
+    for (const request of serviceRequests) {
+      if (!request.unitId) continue
+      map.set(request.unitId, (map.get(request.unitId) ?? 0) + 1)
+    }
+    return map
+  }, [serviceRequests])
+
+  async function addUnit(event: React.FormEvent) {
+    event.preventDefault()
+    const value = name.trim()
+    if (value.length < 2 || value.length > 80 || saving) return
+    setSaving(true)
+    try {
+      if (await createServiceRequestUnit(value)) setName("")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleUnit(unitId: string, active: boolean) {
+    if (pendingId) return
+    setPendingId(unitId)
+    try {
+      await updateServiceRequestUnit(unitId, { active })
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  async function removeUnit(unitId: string, label: string) {
+    if (pendingId || !window.confirm(`Excluir a unidade “${label}”? As solicitações antigas manterão o nome registrado.`)) return
+    setPendingId(unitId)
+    try {
+      await deleteServiceRequestUnit(unitId)
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  return (
+    <div>
+      <SectionTitle title="Unidades" subtitle="Catálogo usado no protocolo de Solicitações. Somente administradores cadastram e mantêm as unidades disponíveis." />
+
+      <form onSubmit={addUnit} className="mb-5 flex flex-col gap-2 rounded-2xl border border-border bg-muted/20 p-3 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1">
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Nova unidade</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={80} placeholder="Ex.: Goiânia / Unidade 01" className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring" />
+          <span className="mt-1 block text-[0.62rem] text-muted-foreground">{name.length}/80 caracteres</span>
+        </label>
+        <button type="submit" disabled={name.trim().length < 2 || saving} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50">
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Adicionar
+        </button>
+      </form>
+
+      <div className="overflow-hidden rounded-2xl border border-border">
+        {serviceRequestUnits.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhuma unidade cadastrada.</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {serviceRequestUnits.map((unit) => {
+              const pending = pendingId === unit.id
+              const count = usage.get(unit.id) ?? 0
+              return (
+                <div key={unit.id} className="flex min-w-0 items-center gap-3 px-3 py-3 sm:px-4">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Building2 className="size-4" /></span>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{unit.name}</p><p className="mt-0.5 text-[0.66rem] text-muted-foreground">{count} solicitação{count === 1 ? "" : "ões"} vinculada{count === 1 ? "" : "s"}{!unit.active ? " · inativa" : ""}</p></div>
+                  <button type="button" disabled={pending} onClick={() => void toggleUnit(unit.id, !unit.active)} className={cn("inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", unit.active ? "border-success/25 bg-success/8 text-success hover:bg-success/12" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground")}>{pending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}{unit.active ? "Ativa" : "Ativar"}</button>
+                  <button type="button" disabled={pending} onClick={() => void removeUnit(unit.id, unit.name)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40" aria-label={`Excluir unidade ${unit.name}`}><Trash2 className="size-4" /></button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <p className="mt-3 text-[0.68rem] leading-relaxed text-muted-foreground">Desativar uma unidade remove a opção das novas solicitações sem afetar o histórico. Excluir também preserva o nome já gravado nas solicitações antigas.</p>
     </div>
   )
 }

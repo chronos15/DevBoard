@@ -318,6 +318,16 @@ export type ServiceRequestStatus =
   | "cancelled"
 
 export type ServiceRequestAttachmentCategory = "order-pdf" | "analysis-video" | "database" | "certificate" | "other"
+export type ServiceRequestAttachmentSource = "upload" | "external-url"
+
+export type ServiceRequestUnit = {
+  id: string
+  workspaceId: string
+  name: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
 
 export type ServiceRequestAttachment = {
   id: string
@@ -328,7 +338,9 @@ export type ServiceRequestAttachment = {
   mimeType: string
   size: number
   kind: AttachmentKind
-  storagePath: string
+  storagePath?: string
+  sourceType: ServiceRequestAttachmentSource
+  externalUrl?: string
   uploadedBy: string
   createdAt: string
 }
@@ -361,6 +373,7 @@ export type ServiceRequest = {
   orderNumber: string
   requestType: ServiceRequestType
   unit: string
+  unitId?: string
   module: string
   subject: string
   title: string
@@ -392,10 +405,16 @@ export type ServiceRequestFileInput = {
   category: ServiceRequestAttachmentCategory
 }
 
+export type ServiceRequestExternalResourceInput = {
+  url: string
+  category: ServiceRequestAttachmentCategory
+  name: string
+}
+
 export type ServiceRequestInput = {
   orderNumber: string
   requestType: ServiceRequestType
-  unit: string
+  unitId: string
   module: string
   subject: string
   title: string
@@ -403,6 +422,7 @@ export type ServiceRequestInput = {
   priorityRequested: boolean
   priorityReason?: string
   files: ServiceRequestFileInput[]
+  externalResources: ServiceRequestExternalResourceInput[]
 }
 
 export type AqsReviewStatus = "awaiting" | "evaluating" | "completed" | "revoked"

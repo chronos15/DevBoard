@@ -14,6 +14,7 @@ import {
   Database,
   FileText,
   FolderKanban,
+  Link2,
   LoaderCircle,
   MessageSquareText,
   Paperclip,
@@ -66,6 +67,11 @@ function RequestAttachmentLink({ attachment, compact = false }: { attachment: Se
 
   async function open() {
     if (opening) return
+    if (attachment.sourceType === "external-url" && attachment.externalUrl) {
+      window.open(attachment.externalUrl, "_blank", "noopener,noreferrer")
+      return
+    }
+    if (!attachment.storagePath) return
     setOpening(true)
     try {
       const { data, error } = await supabase.storage.from(SERVICE_REQUEST_MEDIA_BUCKET).createSignedUrl(attachment.storagePath, 60 * 20)
@@ -76,15 +82,18 @@ function RequestAttachmentLink({ attachment, compact = false }: { attachment: Se
     }
   }
 
-  const Icon = attachmentIcon(attachment.category)
+  const Icon = attachment.sourceType === "external-url" ? Link2 : attachmentIcon(attachment.category)
+  const metadata = attachment.sourceType === "external-url"
+    ? `${SERVICE_REQUEST_ATTACHMENT_LABELS[attachment.category]} · ${attachment.externalUrl ?? "Link FTP/externo"}`
+    : `${SERVICE_REQUEST_ATTACHMENT_LABELS[attachment.category]} · ${formatBytes(attachment.size)}`
   return (
-    <button type="button" onClick={() => void open()} className={cn("group flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}>
+    <button type="button" onClick={() => void open()} className={cn("group flex w-full max-w-full min-w-0 overflow-hidden items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}>
       <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-primary", compact ? "size-8" : "size-9")}>
         {opening ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-semibold">{attachment.name}</span>
-        <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{SERVICE_REQUEST_ATTACHMENT_LABELS[attachment.category]} · {formatBytes(attachment.size)}</span>
+      <span className="min-w-0 flex-1 overflow-hidden">
+        <span className="line-clamp-2 break-words text-xs font-semibold leading-snug">{attachment.name}</span>
+        <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{metadata}</span>
       </span>
       <ArrowRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
     </button>
@@ -187,9 +196,9 @@ function SendToDevDialog({ open, onOpenChange, request }: { open: boolean; onOpe
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader><DialogTitle>Encaminhar solicitação ao DEV</DialogTitle><DialogDescription>Defina o responsável do departamento e, opcionalmente, vincule o protocolo a um projeto/atividade já existente. Nenhuma atividade ou subatividade será criada ou alterada por esta ação.</DialogDescription></DialogHeader>
         <form id="send-request-dev" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Responsável DEV *</span><Select value={responsibleDevId} onValueChange={(value) => value && setResponsibleDevId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o responsável" /></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></label>
-          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Projeto relacionado</span><Select value={projectId} onValueChange={(value) => { const next = String(value); setProjectId(next); setActivityId("none") }}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem vínculo técnico ainda</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></label>
-          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Atividade existente</span><Select value={activityId} disabled={!project} onValueChange={(value) => value && setActivityId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Somente projeto</SelectItem>{project?.activities.map((activity) => <SelectItem key={activity.id} value={activity.id}>{activity.title}</SelectItem>)}</SelectContent></Select></label>
+          <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Responsável DEV *</span><Select value={responsibleDevId} onValueChange={(value) => value && setResponsibleDevId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o responsável">{developers.find((member) => member.id === responsibleDevId)?.name ?? "Selecione o responsável"}</SelectValue></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></label>
+          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Projeto relacionado</span><Select value={projectId} onValueChange={(value) => { const next = String(value); setProjectId(next); setActivityId("none") }}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue>{project?.name ?? "Sem vínculo técnico ainda"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="none">Sem vínculo técnico ainda</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></label>
+          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Atividade existente</span><Select value={activityId} disabled={!project} onValueChange={(value) => value && setActivityId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue>{activityId === "none" ? "Somente projeto" : project?.activities.find((activity) => activity.id === activityId)?.title ?? "Somente projeto"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="none">Somente projeto</SelectItem>{project?.activities.map((activity) => <SelectItem key={activity.id} value={activity.id}>{activity.title}</SelectItem>)}</SelectContent></Select></label>
           <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Resumo consolidado da análise AQS</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={5} placeholder="Problema identificado, comportamento esperado, como reproduzir e informações relevantes para o DEV..." className="w-full resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /></label>
           <button type="button" onClick={() => setPriorityApproved((value) => !value)} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 p-3 text-left sm:col-span-2">
             <span><span className="block text-xs font-semibold">Prioridade aprovada pelo AQS</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">A solicitação original apenas pede prioridade; a aprovação fica registrada aqui.</span></span>
@@ -214,7 +223,7 @@ function AssignExecutorDialog({ open, onOpenChange, request }: { open: boolean; 
     setSaving(true)
     try { if (await assignServiceRequestExecutor(request.id, executorId)) onOpenChange(false) } finally { setSaving(false) }
   }
-  return <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Designar executor</DialogTitle><DialogDescription>O executor receberá a solicitação e poderá iniciar o atendimento. Isso não altera responsáveis de atividades/subatividades existentes.</DialogDescription></DialogHeader><form id="assign-request-executor" onSubmit={submit}><Select value={executorId} onValueChange={(value) => value && setExecutorId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o executor" /></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="assign-request-executor" disabled={!executorId || saving} loading={saving} loadingText="Designando...">Designar</Button></DialogFooter></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Designar executor</DialogTitle><DialogDescription>O executor receberá a solicitação e poderá iniciar o atendimento. Isso não altera responsáveis de atividades/subatividades existentes.</DialogDescription></DialogHeader><form id="assign-request-executor" onSubmit={submit}><Select value={executorId} onValueChange={(value) => value && setExecutorId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o executor">{developers.find((member) => member.id === executorId)?.name ?? "Selecione o executor"}</SelectValue></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="assign-request-executor" disabled={!executorId || saving} loading={saving} loadingText="Designando...">Designar</Button></DialogFooter></DialogContent></Dialog>
 }
 
 function CompleteRequestDialog({ open, onOpenChange, requestId }: { open: boolean; onOpenChange: (open: boolean) => void; requestId: string }) {

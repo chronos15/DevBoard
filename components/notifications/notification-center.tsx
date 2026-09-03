@@ -120,7 +120,7 @@ export function NotificationCenter() {
       return
     }
     if (notification.type === "topic-created" || notification.type === "topic-status") {
-      router.push("/topicos")
+      router.push("/solicitacoes")
       return
     }
     if (!notification.projectId) return

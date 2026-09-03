@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, Check, ChevronDown, ClipboardList, LoaderCircle, LockKeyhole, Paperclip, Trash2, X } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
 import type { Activity, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -20,6 +20,9 @@ import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
+import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
+import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
+import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import {
   Dialog,
   DialogContent,
@@ -46,6 +49,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
   const [pendingStatus, setPendingStatus] = React.useState<Subactivity["status"] | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Subactivity["status"] | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
+  const [inlineOpen, setInlineOpen] = React.useState(false)
 
   React.useEffect(() => {
     if (!focused) return
@@ -132,14 +136,22 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
       </button>
 
       <div className="min-w-0 flex-1">
-        <p
-          className={cn(
-            "truncate text-sm font-medium",
-            terminal && "text-muted-foreground line-through",
-          )}
-        >
-          {sub.title}
-        </p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setInlineOpen((current) => !current)}
+            className={cn(
+              "min-w-0 truncate text-left text-sm font-medium transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary",
+              terminal && "text-muted-foreground line-through",
+            )}
+            title={`${sub.title} · ${inlineOpen ? "recolher resumo" : "expandir resumo"}`}
+            aria-expanded={inlineOpen}
+          >
+            {sub.title}
+          </button>
+          <WorkItemTypeBadge typeId={sub.typeId} compact />
+          <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
+        </div>
         {sub.needsAttention && (
           <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.68rem] font-medium text-chart-4">
             <AlertTriangle className="size-3.5 shrink-0" />
@@ -225,6 +237,8 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
         {!terminal && sub.status !== "waiting-aqs" && <TimerButton subId={sub.id} size="sm" />}
       </div>
     </div>
+
+    {inlineOpen && <SubactivityInlineSummary projectId={projectId} sub={sub} />}
 
     {pendingStatus && (
       <SubactivityStatusConfirmDialog
@@ -344,6 +358,7 @@ export function ActivityItem({
                   {activityNumber}-
                 </span>
                 <h3 className="min-w-0 truncate font-semibold" title={activity.title}>{activity.title}</h3>
+                <WorkItemTypeBadge typeId={activity.typeId} compact />
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
                   <MemberStack ids={activity.assigneeIds ?? []} max={2} />
                 )}
@@ -423,11 +438,18 @@ export function ActivityItem({
                 </p>
               )}
             </div>
-            {canManageStructure && (
-              <div className="px-1 pt-1">
-                <AddSubactivityDialog projectId={projectId} activityId={activity.id} />
-              </div>
-            )}
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 px-1 pt-1">
+              {canManageStructure && <AddSubactivityDialog projectId={projectId} activityId={activity.id} />}
+              <button
+                type="button"
+                onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title={`Abrir acompanhamento de ${activity.title}`}
+              >
+                <MessageSquareText className="size-3.5" />
+                Acompanhamento
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -15,6 +15,7 @@ import {
   loadPreferences,
   loadSupportTopics,
   loadWorkSessions,
+  loadWorkItemTypes,
 } from "@/lib/supabase/data"
 import {
   ATTACHMENTS_BUCKET,
@@ -55,6 +56,7 @@ import type {
   Subactivity,
   UserPreferences,
   WorkSession,
+  WorkItemType,
 } from "@/lib/types"
 
 const PROJECT_TABLES = new Set([
@@ -77,6 +79,7 @@ const CHAT_TABLES = new Set(["chat_conversations", "chat_members", "chat_message
 const MEETING_TABLES = new Set(["meetings", "meeting_members"])
 const AQS_TABLES = new Set(["aqs_reviews"])
 const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
+const TYPE_TABLES = new Set(["work_item_types"])
 
 const REALTIME_CONNECTION_ERROR =
   "A conexão em tempo real com o Supabase continua indisponível. O Devboard seguirá tentando reconectar automaticamente."
@@ -101,6 +104,7 @@ export type StoreContextValue = {
   supportTopics: SupportTopic[]
   preferences: UserPreferences
   workSessions: WorkSession[]
+  workItemTypes: WorkItemType[]
   workspaceId: string | null
   currentUserId: string
   currentUserRole: AccessRole
@@ -131,10 +135,15 @@ export type StoreContextValue = {
   addSubactivity: (
     projectId: string,
     activityId: string,
-    data: { title: string; estimatedHours: number; assigneeId: string; status?: Status },
+    data: { title: string; estimatedHours: number; assigneeId: string; status?: Status; typeId?: string | null },
   ) => Promise<boolean>
-  addActivity: (projectId: string, title: string, assigneeIds?: string[]) => Promise<boolean>
+  addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
+  createWorkItemType: (data: { name: string; color: string }) => Promise<boolean>
+  updateWorkItemType: (typeId: string, data: { name?: string; color?: string; active?: boolean }) => Promise<boolean>
+  deleteWorkItemType: (typeId: string) => Promise<boolean>
+  setActivityType: (activityId: string, typeId?: string | null) => Promise<boolean>
+  setSubactivityType: (subactivityId: string, typeId?: string | null) => Promise<boolean>
   addProject: (data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<string | null>
   updateProject: (projectId: string, data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<boolean>
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
@@ -286,6 +295,7 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         trackedSeconds: live,
         timerStartedAt: row.timer_started_at ?? undefined,
         assigneeId: row.assignee_id ?? sub.assigneeId,
+        typeId: row.type_id !== undefined ? (row.type_id ?? undefined) : sub.typeId,
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,
       } : sub),
@@ -388,6 +398,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [supportTopics, setSupportTopics] = React.useState<SupportTopic[]>([])
   const [preferences, setPreferences] = React.useState<UserPreferences>(DEFAULT_PREFERENCES)
   const [workSessions, setWorkSessions] = React.useState<WorkSession[]>([])
+  const [workItemTypes, setWorkItemTypes] = React.useState<WorkItemType[]>([])
   const [hydrated, setHydrated] = React.useState(false)
   const [chatHydrated, setChatHydrated] = React.useState(false)
   const [refreshing, setRefreshing] = React.useState(false)
@@ -412,6 +423,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setProjects(await loadProjects(supabase, workspaceId))
     } catch (error) {
       fail(error, "Não foi possível atualizar os projetos")
+    }
+  }, [fail, supabase, workspaceId])
+
+  const refreshWorkItemTypes = React.useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      setWorkItemTypes(await loadWorkItemTypes(supabase, workspaceId))
+    } catch (error) {
+      fail(error, "Não foi possível atualizar os tipos de atividade")
     }
   }, [fail, supabase, workspaceId])
 
@@ -517,7 +537,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Carrega primeiro apenas o que é necessário para Dashboard, Projetos,
       // Horas, Agenda e Configurações. Chat/reuniões não bloqueiam mais a
       // abertura do restante do sistema.
-      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics] = await Promise.all([
+      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextWorkItemTypes] = await Promise.all([
         loadMembers(supabase, identity.workspaceId),
         loadProjects(supabase, identity.workspaceId),
         loadNotifications(supabase, identity.user.id),
@@ -525,6 +545,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadWorkSessions(supabase),
         loadAqsReviews(supabase, identity.workspaceId),
         loadSupportTopics(supabase, identity.workspaceId),
+        loadWorkItemTypes(supabase, identity.workspaceId),
       ])
 
       setMembers(nextMembers)
@@ -534,6 +555,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setWorkSessions(nextWorkSessions)
       setAqsReviews(nextAqsReviews)
       setSupportTopics(nextSupportTopics)
+      setWorkItemTypes(nextWorkItemTypes)
       setLastError(null)
       setHydrated(true)
       setRefreshing(false)
@@ -603,6 +625,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...TIME_TABLES,
       ...AQS_TABLES,
       ...TOPIC_TABLES,
+      ...TYPE_TABLES,
       "notifications",
     ]
 
@@ -635,6 +658,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         refreshWorkSessions(),
         refreshAqsReviews(),
         refreshSupportTopics(),
+        refreshWorkItemTypes(),
       ])
     }
 
@@ -672,6 +696,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             if (TIME_TABLES.has(table)) schedule("work-sessions", refreshWorkSessions)
             if (AQS_TABLES.has(table)) schedule("aqs-reviews", refreshAqsReviews)
             if (TOPIC_TABLES.has(table)) schedule("support-topics", refreshSupportTopics)
+            if (TYPE_TABLES.has(table)) schedule("work-item-types", refreshWorkItemTypes)
           },
         )
       }
@@ -783,7 +808,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       channel = null
       if (current) void supabase.removeChannel(current)
     }
-  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, schedule, supabase, workspaceId])
+  }, [currentUserId, refreshChat, refreshMeetings, refreshMembers, refreshNotifications, refreshPreferences, refreshProjects, refreshWorkSessions, refreshAqsReviews, refreshSupportTopics, refreshWorkItemTypes, schedule, supabase, workspaceId])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId) {
@@ -1071,6 +1096,69 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [startTimerDirect, stopTimer, timerConflict, timerConflictLoading])
 
+  const setActivityType = React.useCallback<StoreContextValue["setActivityType"]>(async (activityId, typeId) => {
+    const result = await callRpc<unknown>("set_activity_type", {
+      p_activity_id: activityId,
+      p_type_id: typeId || null,
+    }, "Não foi possível alterar o tipo da atividade")
+    if (result === undefined) return false
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects])
+
+  const setSubactivityType = React.useCallback<StoreContextValue["setSubactivityType"]>(async (subactivityId, typeId) => {
+    const result = await callRpc<unknown>("set_subactivity_type", {
+      p_subactivity_id: subactivityId,
+      p_type_id: typeId || null,
+    }, "Não foi possível alterar o tipo da subatividade")
+    if (result === undefined) return false
+    await refreshProjects()
+    return true
+  }, [callRpc, refreshProjects])
+
+  const createWorkItemType = React.useCallback<StoreContextValue["createWorkItemType"]>(async (data) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem criar tipos."), "Sem permissão para criar tipos")
+      return false
+    }
+    const result = await callRpc<string>("create_work_item_type", {
+      p_name: data.name,
+      p_color: data.color,
+    }, "Não foi possível criar o tipo")
+    if (!result) return false
+    await refreshWorkItemTypes()
+    return true
+  }, [callRpc, currentUserRole, fail, refreshWorkItemTypes])
+
+  const updateWorkItemType = React.useCallback<StoreContextValue["updateWorkItemType"]>(async (typeId, data) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem alterar tipos."), "Sem permissão para alterar tipos")
+      return false
+    }
+    const result = await callRpc<unknown>("update_work_item_type", {
+      p_type_id: typeId,
+      p_name: data.name ?? null,
+      p_color: data.color ?? null,
+      p_active: data.active ?? null,
+    }, "Não foi possível atualizar o tipo")
+    if (result === undefined) return false
+    await refreshWorkItemTypes()
+    return true
+  }, [callRpc, currentUserRole, fail, refreshWorkItemTypes])
+
+  const deleteWorkItemType = React.useCallback<StoreContextValue["deleteWorkItemType"]>(async (typeId) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem excluir tipos."), "Sem permissão para excluir tipos")
+      return false
+    }
+    const result = await callRpc<unknown>("delete_work_item_type", {
+      p_type_id: typeId,
+    }, "Não foi possível excluir o tipo")
+    if (result === undefined) return false
+    await refreshWorkItemTypes()
+    return true
+  }, [callRpc, currentUserRole, fail, refreshWorkItemTypes])
+
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
@@ -1087,11 +1175,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_status: data.status ?? "backlog",
     }, "Não foi possível adicionar a subatividade")
     if (!result) return false
+    if (data.typeId) {
+      const typeResult = await callRpc<unknown>("set_subactivity_type", {
+        p_subactivity_id: result,
+        p_type_id: data.typeId,
+      }, "Subatividade criada, mas não foi possível salvar o tipo")
+      if (typeResult === undefined) {
+        await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
+        return true
+      }
+    }
     await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
     return true
   }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshWorkSessions])
 
-  const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = []) => {
+  const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null) => {
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
     if (!canManageStructure) {
@@ -1100,6 +1198,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await callRpc<string>("add_activity", { p_project_id: projectId, p_title: title, p_assignee_ids: assigneeIds }, "Não foi possível adicionar a atividade")
     if (!result) return false
+    if (typeId) {
+      const typeResult = await callRpc<unknown>("set_activity_type", {
+        p_activity_id: result,
+        p_type_id: typeId,
+      }, "Atividade criada, mas não foi possível salvar o tipo")
+      if (typeResult === undefined) {
+        await refreshProjects()
+        return true
+      }
+    }
     await refreshProjects()
     return true
   }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
@@ -1995,6 +2103,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     supportTopics,
     preferences,
     workSessions,
+    workItemTypes,
     workspaceId,
     currentUserId,
     currentUserRole,
@@ -2025,6 +2134,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addSubactivity,
     addActivity,
     deleteActivity,
+    createWorkItemType,
+    updateWorkItemType,
+    deleteWorkItemType,
+    setActivityType,
+    setSubactivityType,
     addProject,
     updateProject,
     versionProject,
@@ -2062,13 +2176,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
+    createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
     setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
-    updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workspaceId,
+    updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])
 
   return (

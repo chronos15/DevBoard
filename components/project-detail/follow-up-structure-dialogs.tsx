@@ -21,7 +21,7 @@ function executionMembersOnly<T extends { role?: string }>(members: T[]) {
 }
 
 export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) {
-  const { members, projects, currentUserId, currentUserRole, addActivity } = useStore()
+  const { members, projects, currentUserId, currentUserRole, addActivity, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
@@ -30,6 +30,7 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
   const [assigneeId, setAssigneeId] = React.useState(
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
+  const [typeId, setTypeId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
@@ -45,9 +46,10 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
     if (!title.trim() || saving) return
     setSaving(true)
     try {
-      const ok = await addActivity(projectId, title.trim(), assigneeId ? [assigneeId] : [])
+      const ok = await addActivity(projectId, title.trim(), assigneeId ? [assigneeId] : [], typeId || null)
       if (!ok) return
       setTitle("")
+      setTypeId("")
       setOpen(false)
     } finally {
       setSaving(false)
@@ -94,8 +96,22 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Responsável</label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+              <select
+                value={typeId}
+                onChange={(event) => setTypeId(event.target.value)}
+                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+              >
+                <option value="">Sem tipo</option>
+                {workItemTypes.filter((item) => item.active).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Responsável</label>
             <select
               value={assigneeId}
               onChange={(event) => setAssigneeId(event.target.value)}
@@ -105,6 +121,7 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
                 <option key={member.id} value={member.id}>{member.name}</option>
               ))}
             </select>
+            </div>
           </div>
         </form>
 
@@ -126,7 +143,7 @@ export function FollowUpAddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, projects, addSubactivity, currentUserId, currentUserRole } = useStore()
+  const { members, projects, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
@@ -137,6 +154,7 @@ export function FollowUpAddSubactivityDialog({
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
   const [status, setStatus] = React.useState<Status>("backlog")
+  const [typeId, setTypeId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
   const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
 
@@ -162,11 +180,13 @@ export function FollowUpAddSubactivityDialog({
         estimatedHours: Math.max(0, Number(hours) || 0),
         assigneeId,
         status,
+        typeId: typeId || null,
       })
       if (!ok) return
       setTitle("")
       setHours("4")
       setStatus("backlog")
+      setTypeId("")
       setOpen(false)
     } finally {
       setSaving(false)
@@ -214,7 +234,7 @@ export function FollowUpAddSubactivityDialog({
             />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
               <input
@@ -244,6 +264,19 @@ export function FollowUpAddSubactivityDialog({
                   Para outro responsável, a nova subatividade começa no Backlog.
                 </p>
               )}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+              <select
+                value={typeId}
+                onChange={(event) => setTypeId(event.target.value)}
+                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+              >
+                <option value="">Sem tipo</option>
+                {workItemTypes.filter((item) => item.active).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 

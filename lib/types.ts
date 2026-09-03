@@ -10,6 +10,14 @@ export type Status =
 export type Priority = "low" | "medium" | "high"
 export type AccessRole = "admin" | "developer" | "aqs" | "support" | "member"
 
+export type WorkItemType = {
+  id: string
+  name: string
+  color: string
+  active: boolean
+  createdAt: string
+}
+
 export type UserPreferences = {
   notifyAssignments: boolean
   notifyComments: boolean
@@ -105,6 +113,7 @@ export type Subactivity = {
   timerStartedAt?: string
   createdAt?: string
   assigneeId: string
+  typeId?: string
   memberIds?: string[]
   needsAttention?: boolean
   attentionMessage?: string
@@ -115,6 +124,7 @@ export type Subactivity = {
 export type Activity = {
   id: string
   title: string
+  typeId?: string
   assigneeIds?: string[]
   subactivities: Subactivity[]
 }

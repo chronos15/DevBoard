@@ -1,6 +1,8 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { CalendarDays, Clock3, ListTree, Pencil } from "lucide-react"
 import type { Project } from "@/lib/types"
 import {
@@ -18,6 +20,7 @@ import { cn } from "@/lib/utils"
 import { ProjectIcon } from "@/components/projects/project-icon"
 
 export function ProjectCard({ project }: { project: Project }) {
+  const router = useRouter()
   const { currentUserId, currentUserRole } = useStore()
   const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   const progress = projectProgress(project)
@@ -27,8 +30,29 @@ export function ProjectCard({ project }: { project: Project }) {
   const tracked = projectTracked(project)
   const estimated = projectEstimated(project)
 
+  function openProject(event: React.MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement | null
+    if (target?.closest("a,button,input,select,textarea,[role='button']")) return
+    router.push(`/projetos/${project.id}`)
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return
+    const target = event.target as HTMLElement | null
+    if (target?.closest("a,button,input,select,textarea,[role='button']")) return
+    event.preventDefault()
+    router.push(`/projetos/${project.id}`)
+  }
+
   return (
-    <article className="group flex flex-col gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5 hover:ring-foreground/15">
+    <article
+      role="link"
+      tabIndex={0}
+      aria-label={`Abrir projeto ${project.name}`}
+      onClick={openProject}
+      onKeyDown={handleKeyDown}
+      className="group flex cursor-pointer flex-col gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+    >
       <div className="flex items-start justify-between gap-3">
         <Link href={`/projetos/${project.id}`} className="flex min-w-0 items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary">

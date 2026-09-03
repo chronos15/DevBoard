@@ -15,6 +15,7 @@ import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
+import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { cn } from "@/lib/utils"
 
 type KanbanItem = {
@@ -382,9 +383,12 @@ export function SubactivityKanban({
                             >
                               {item.sub.title}
                             </p>
-                            <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">
-                              {item.activityTitle}
-                            </p>
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                              <WorkItemTypeBadge typeId={item.sub.typeId} compact />
+                              <p className="min-w-0 truncate text-[0.68rem] text-muted-foreground">
+                                {item.activityTitle}
+                              </p>
+                            </div>
                             {item.sub.needsAttention && (
                               <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.65rem] font-medium text-chart-4">
                                 <AlertTriangle className="size-3.5 shrink-0" />

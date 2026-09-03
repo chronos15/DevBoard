@@ -23,7 +23,7 @@ export function AddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, addSubactivity, currentUserId, currentUserRole } = useStore()
+  const { members, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
@@ -32,6 +32,7 @@ export function AddSubactivityDialog({
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
   const [status, setStatus] = React.useState<Status>("backlog")
+  const [typeId, setTypeId] = React.useState("")
   const [terminalConfirmOpen, setTerminalConfirmOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assignee === currentUserId)
@@ -51,11 +52,13 @@ export function AddSubactivityDialog({
         estimatedHours: Math.max(0, Number(hours) || 0),
         assigneeId: assignee,
         status,
+        typeId: typeId || null,
       })
       if (!ok) return
       setTitle("")
       setHours("4")
       setStatus("backlog")
+      setTypeId("")
       setTerminalConfirmOpen(false)
       setOpen(false)
     } finally {
@@ -111,7 +114,7 @@ export function AddSubactivityDialog({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
               <input
@@ -149,6 +152,19 @@ export function AddSubactivityDialog({
                   O cronômetro inicia automaticamente. Se este responsável já estiver executando outra subatividade, ela será pausada.
                 </span>
               ) : null}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+              <select
+                value={typeId}
+                onChange={(e) => setTypeId(e.target.value)}
+                className="h-10 rounded-xl border border-border bg-card px-2 text-sm outline-none focus:border-ring"
+              >
+                <option value="">Sem tipo</option>
+                {workItemTypes.filter((item) => item.active).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 

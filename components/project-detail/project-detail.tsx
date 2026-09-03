@@ -14,6 +14,7 @@ import {
   PanelRightOpen,
   Pencil,
   Plus,
+  Tag,
   UserRound,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -58,10 +59,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     currentUserId,
     currentUserRole,
     hydrated,
+    workItemTypes,
   } = useStore()
   const project = projects.find((p) => p.id === projectId)
   const [newActivity, setNewActivity] = React.useState("")
   const [newActivityAssignee, setNewActivityAssignee] = React.useState(currentUserId)
+  const [newActivityTypeId, setNewActivityTypeId] = React.useState("")
   const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
   const [assigneeFilter, setAssigneeFilter] = React.useState("all")
@@ -135,6 +138,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const canCreateWorkStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
   const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
+  const activeWorkItemTypes = workItemTypes.filter((item) => item.active)
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
   const personalDone = personalSubs.filter((sub) => sub.status === "done").length
   const personalCancelled = personalSubs.filter((sub) => sub.status === "cancelled").length
@@ -192,8 +196,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     if (!title || addingActivity) return
     setAddingActivity(true)
     try {
-      const ok = await addActivity(project.id, title, newActivityAssignee ? [newActivityAssignee] : [])
-      if (ok) setNewActivity("")
+      const ok = await addActivity(project.id, title, newActivityAssignee ? [newActivityAssignee] : [], newActivityTypeId || null)
+      if (ok) {
+        setNewActivity("")
+        setNewActivityTypeId("")
+      }
     } finally {
       setAddingActivity(false)
     }
@@ -495,8 +502,21 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
 
               {canCreateWorkStructure && (
-                <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
+                <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_160px_190px_auto] sm:items-center">
                   <Input value={newActivity} onChange={(e) => setNewActivity(e.target.value)} placeholder="Nova atividade..." className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                  <label className="relative min-w-0">
+                    <span className="sr-only">Tipo da atividade</span>
+                    <Tag className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <select
+                      value={newActivityTypeId}
+                      onChange={(event) => setNewActivityTypeId(event.target.value)}
+                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
+                      aria-label="Tipo da nova atividade"
+                    >
+                      <option value="">Sem tipo</option>
+                      {activeWorkItemTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
                   <label className="relative min-w-0">
                     <span className="sr-only">Responsável pela atividade</span>
                     <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -521,13 +541,26 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           ) : (
             <>
               {canCreateWorkStructure && (
-                <div className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 lg:grid-cols-[minmax(0,1fr)_190px_auto_minmax(220px,280px)_auto] lg:items-center">
+                <div className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 lg:grid-cols-[minmax(0,1fr)_160px_190px_auto_minmax(220px,280px)_auto] lg:items-center">
                   <Input
                     value={newActivity}
                     onChange={(e) => setNewActivity(e.target.value)}
                     placeholder="Nova atividade..."
                     className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0"
                   />
+                  <label className="relative min-w-0">
+                    <span className="sr-only">Tipo da atividade</span>
+                    <Tag className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <select
+                      value={newActivityTypeId}
+                      onChange={(event) => setNewActivityTypeId(event.target.value)}
+                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
+                      aria-label="Tipo da nova atividade"
+                    >
+                      <option value="">Sem tipo</option>
+                      {activeWorkItemTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
                   <label className="relative min-w-0">
                     <span className="sr-only">Responsável pela atividade</span>
                     <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

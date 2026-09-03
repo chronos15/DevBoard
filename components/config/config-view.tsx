@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Camera, Check, Loader2, Palette, Pipette, RotateCcw, ShieldCheck, Trash2, User, Users } from "lucide-react"
+import { Bell, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, Trash2, User, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -13,6 +13,7 @@ const sections = [
   { id: "equipe", label: "Equipe", icon: Users, adminOnly: false },
   { id: "notificacoes", label: "Notificações", icon: Bell, adminOnly: false },
   { id: "aparencia", label: "Aparência", icon: Palette, adminOnly: false },
+  { id: "tipos", label: "Tipos", icon: Tags, adminOnly: true },
   { id: "seguranca", label: "Segurança", icon: ShieldCheck, adminOnly: true },
 ] as const
 
@@ -79,7 +80,8 @@ export function ConfigView() {
   const visibleSections = React.useMemo(() => sections.filter((section) => !section.adminOnly || currentUserRole === "admin"), [currentUserRole])
 
   React.useEffect(() => {
-    if (active === "seguranca" && currentUserRole !== "admin") setActive("perfil")
+    const section = sections.find((item) => item.id === active)
+    if (section?.adminOnly && currentUserRole !== "admin") setActive("perfil")
   }, [active, currentUserRole])
 
   return (
@@ -108,6 +110,7 @@ export function ConfigView() {
         {active === "equipe" && <TeamSection />}
         {active === "notificacoes" && <NotificationsSection />}
         {active === "aparencia" && <AppearanceSection />}
+        {active === "tipos" && currentUserRole === "admin" && <WorkItemTypesSection />}
         {active === "seguranca" && currentUserRole === "admin" && <SecurityHealthSection />}
       </div>
     </div>
@@ -488,6 +491,180 @@ function NotificationsSection() {
       <PreferenceToggle label="Comentários" description="Avisar quando outra pessoa comentar em uma subatividade sua." checked={draft.notifyComments} disabled={saving} onChange={(value) => void patch({ notifyComments: value })} />
       <PreferenceToggle label="Atividade da equipe" description="Reserva a preferência para eventos gerais de conclusão da equipe." checked={draft.notifyTeamActivity} disabled={saving} onChange={(value) => void patch({ notifyTeamActivity: value })} />
       <PreferenceToggle label="Prazos" description="Reserva a preferência para alertas automáticos de vencimento." checked={draft.notifyDeadlines} disabled={saving} onChange={(value) => void patch({ notifyDeadlines: value })} />
+    </div>
+  )
+}
+
+function WorkItemTypesSection() {
+  const {
+    workItemTypes,
+    projects,
+    createWorkItemType,
+    updateWorkItemType,
+    deleteWorkItemType,
+  } = useStore()
+  const [name, setName] = React.useState("")
+  const [color, setColor] = React.useState("#3B82F6")
+  const [saving, setSaving] = React.useState(false)
+  const [pendingId, setPendingId] = React.useState<string | null>(null)
+
+  const usageByType = React.useMemo(() => {
+    const counts = new Map<string, { activities: number; subactivities: number }>()
+    for (const type of workItemTypes) counts.set(type.id, { activities: 0, subactivities: 0 })
+    for (const project of projects) {
+      for (const activity of project.activities) {
+        if (activity.typeId) {
+          const current = counts.get(activity.typeId) ?? { activities: 0, subactivities: 0 }
+          counts.set(activity.typeId, { ...current, activities: current.activities + 1 })
+        }
+        for (const sub of activity.subactivities) {
+          if (!sub.typeId) continue
+          const current = counts.get(sub.typeId) ?? { activities: 0, subactivities: 0 }
+          counts.set(sub.typeId, { ...current, subactivities: current.subactivities + 1 })
+        }
+      }
+    }
+    return counts
+  }, [projects, workItemTypes])
+
+  async function addType(event: React.FormEvent) {
+    event.preventDefault()
+    if (!name.trim() || saving) return
+    setSaving(true)
+    try {
+      const ok = await createWorkItemType({ name: name.trim(), color })
+      if (ok) setName("")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleType(typeId: string, active: boolean) {
+    if (pendingId) return
+    setPendingId(typeId)
+    try {
+      await updateWorkItemType(typeId, { active })
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  async function removeType(typeId: string, label: string) {
+    if (pendingId) return
+    const usage = usageByType.get(typeId)
+    if ((usage?.activities ?? 0) + (usage?.subactivities ?? 0) > 0) return
+    if (!window.confirm(`Excluir o tipo “${label}”?`)) return
+    setPendingId(typeId)
+    try {
+      await deleteWorkItemType(typeId)
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  return (
+    <div>
+      <SectionTitle
+        title="Tipos de atividade"
+        subtitle="Catálogo do workspace usado para classificar atividades e subatividades. Somente administradores alteram este catálogo."
+      />
+
+      <form onSubmit={addType} className="mb-5 grid gap-2 rounded-2xl border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_120px_auto] sm:items-end">
+        <label className="min-w-0">
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Novo tipo</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={48}
+            placeholder="Ex.: Integração"
+            className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring"
+          />
+        </label>
+        <label>
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cor</span>
+          <span className="relative flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-2.5">
+            <span className="size-5 rounded-full border border-foreground/10" style={{ backgroundColor: color }} />
+            <span className="font-mono text-[0.65rem] text-muted-foreground">{color}</span>
+            <input
+              type="color"
+              value={color}
+              onChange={(event) => setColor(event.target.value.toUpperCase())}
+              className="absolute inset-0 cursor-pointer opacity-0"
+              aria-label="Cor do tipo"
+            />
+          </span>
+        </label>
+        <button
+          type="submit"
+          disabled={!name.trim() || saving}
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          Adicionar
+        </button>
+      </form>
+
+      <div className="overflow-hidden rounded-2xl border border-border">
+        {workItemTypes.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Nenhum tipo cadastrado. Crie o primeiro tipo acima.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {workItemTypes.map((type) => {
+              const usage = usageByType.get(type.id) ?? { activities: 0, subactivities: 0 }
+              const totalUsage = usage.activities + usage.subactivities
+              const pending = pendingId === type.id
+              return (
+                <div key={type.id} className="flex min-w-0 items-center gap-3 px-3 py-3 sm:px-4">
+                  <span className="size-3 shrink-0 rounded-full ring-2 ring-background" style={{ backgroundColor: type.color }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold">{type.name}</p>
+                      {!type.active && (
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.58rem] font-semibold text-muted-foreground">Inativo</span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[0.66rem] text-muted-foreground">
+                      {usage.activities} atividade{usage.activities === 1 ? "" : "s"} · {usage.subactivities} subatividade{usage.subactivities === 1 ? "" : "s"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => void toggleType(type.id, !type.active)}
+                    className={cn(
+                      "inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[0.65rem] font-semibold transition-colors disabled:opacity-50",
+                      type.active
+                        ? "border-success/25 bg-success/8 text-success hover:bg-success/12"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {pending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
+                    {type.active ? "Ativo" : "Ativar"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={pending || totalUsage > 0}
+                    onClick={() => void removeType(type.id, type.name)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-30"
+                    title={totalUsage > 0 ? "Tipos em uso não podem ser excluídos. Desative-o para impedir novos usos." : "Excluir tipo"}
+                    aria-label={`Excluir tipo ${type.name}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <p className="mt-3 text-[0.68rem] leading-relaxed text-muted-foreground">
+        Desativar um tipo preserva os registros existentes, mas remove a opção das novas atividades e subatividades. Isso evita quebrar o histórico do projeto.
+      </p>
     </div>
   )
 }

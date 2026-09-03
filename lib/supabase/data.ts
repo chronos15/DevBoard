@@ -17,7 +17,7 @@ import type {
   WorkSession,
   WorkItemType,
 } from '@/lib/types'
-import { AVATARS_BUCKET, PROJECT_ICONS_BUCKET, isAttachmentKind, mapMember } from './helpers'
+import { AVATARS_BUCKET, PROJECT_ICONS_BUCKET, SERVICE_REQUEST_UNIT_ICONS_BUCKET, isAttachmentKind, mapMember } from './helpers'
 
 export type BackendSnapshot = {
   user: User
@@ -545,20 +545,29 @@ export async function loadAqsReviews(supabase: SupabaseClient, workspaceId: stri
 export async function loadServiceRequestUnits(supabase: SupabaseClient, workspaceId: string): Promise<ServiceRequestUnit[]> {
   const { data, error } = await supabase
     .from('service_request_units')
-    .select('id,workspace_id,name,active,created_at,updated_at')
+    .select('id,workspace_id,name,active,icon,icon_image_path,created_at,updated_at')
     .eq('workspace_id', workspaceId)
     .order('active', { ascending: false })
     .order('name', { ascending: true })
   assertNoError(error, 'Não foi possível carregar as unidades de solicitação')
 
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    workspaceId: row.workspace_id,
-    name: row.name,
-    active: row.active !== false,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }))
+  return (data ?? []).map((row: any) => {
+    const iconImagePath = row.icon_image_path ?? undefined
+    const iconImageUrl = iconImagePath
+      ? supabase.storage.from(SERVICE_REQUEST_UNIT_ICONS_BUCKET).getPublicUrl(iconImagePath).data.publicUrl
+      : undefined
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      name: row.name,
+      active: row.active !== false,
+      icon: row.icon || 'building',
+      iconImagePath,
+      iconImageUrl,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }
+  })
 }
 
 export async function loadServiceRequests(supabase: SupabaseClient, workspaceId: string): Promise<ServiceRequest[]> {

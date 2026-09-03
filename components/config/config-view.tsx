@@ -1,12 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Building2, Camera, Check, Loader2, Palette, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, User, Users } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { Bell, Building2, Camera, Check, ImageIcon, Loader2, Palette, Pencil, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, Upload, User, Users, X } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
+import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
 
 const sections = [
   { id: "perfil", label: "Perfil", icon: User, adminOnly: false },
@@ -76,6 +78,7 @@ function avatarColorForeground(value: string) {
 
 export function ConfigView() {
   const { members, currentUserId, currentUserRole } = useStore()
+  const searchParams = useSearchParams()
   const me = members.find((member) => member.id === currentUserId)
   const [active, setActive] = React.useState<SectionId>("perfil")
   const visibleSections = React.useMemo(() => sections.filter((section) => !section.adminOnly || currentUserRole === "admin"), [currentUserRole])
@@ -84,6 +87,14 @@ export function ConfigView() {
     const section = sections.find((item) => item.id === active)
     if (section?.adminOnly && currentUserRole !== "admin") setActive("perfil")
   }, [active, currentUserRole])
+
+  React.useEffect(() => {
+    const requested = searchParams.get("section") as SectionId | null
+    if (!requested) return
+    const section = sections.find((item) => item.id === requested)
+    if (!section || (section.adminOnly && currentUserRole !== "admin")) return
+    setActive(requested)
+  }, [currentUserRole, searchParams])
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
@@ -506,8 +517,16 @@ function ServiceRequestUnitsSection() {
     deleteServiceRequestUnit,
   } = useStore()
   const [name, setName] = React.useState("")
+  const [icon, setIcon] = React.useState("building")
+  const [useCustomImage, setUseCustomImage] = React.useState(false)
+  const [imageFile, setImageFile] = React.useState<File | null>(null)
+  const [imagePreview, setImagePreview] = React.useState<string | null>(null)
+  const [imageError, setImageError] = React.useState("")
+  const [editingUnitId, setEditingUnitId] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
+  const imageInputRef = React.useRef<HTMLInputElement>(null)
+  const objectUrlRef = React.useRef<string | null>(null)
 
   const usage = React.useMemo(() => {
     const map = new Map<string, number>()
@@ -518,13 +537,74 @@ function ServiceRequestUnitsSection() {
     return map
   }, [serviceRequests])
 
-  async function addUnit(event: React.FormEvent) {
+  React.useEffect(() => () => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+  }, [])
+
+  function clearDraft() {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    objectUrlRef.current = null
+    setName("")
+    setIcon("building")
+    setUseCustomImage(false)
+    setImageFile(null)
+    setImagePreview(null)
+    setImageError("")
+    setEditingUnitId(null)
+    if (imageInputRef.current) imageInputRef.current.value = ""
+  }
+
+  function chooseImage(file?: File | null) {
+    if (!file) return
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+    if (!allowedTypes.has(file.type)) {
+      setImageError("Use uma imagem JPG, PNG, WEBP ou GIF.")
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setImageError("A imagem deve ter no máximo 3 MB.")
+      return
+    }
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    const preview = URL.createObjectURL(file)
+    objectUrlRef.current = preview
+    setImageFile(file)
+    setImagePreview(preview)
+    setUseCustomImage(true)
+    setImageError("")
+  }
+
+  function editUnit(unitId: string) {
+    const unit = serviceRequestUnits.find((item) => item.id === unitId)
+    if (!unit) return
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    objectUrlRef.current = null
+    setEditingUnitId(unit.id)
+    setName(unit.name)
+    setIcon(normalizeRequestUnitIcon(unit.icon))
+    setUseCustomImage(Boolean(unit.iconImagePath))
+    setImagePreview(unit.iconImageUrl ?? null)
+    setImageFile(null)
+    setImageError("")
+    if (imageInputRef.current) imageInputRef.current.value = ""
+  }
+
+  async function saveUnit(event: React.FormEvent) {
     event.preventDefault()
     const value = name.trim()
     if (value.length < 2 || value.length > 80 || saving) return
+    const currentImagePath = editingUnitId ? serviceRequestUnits.find((item) => item.id === editingUnitId)?.iconImagePath : undefined
+    if (useCustomImage && !imageFile && !currentImagePath) {
+      setImageError("Selecione uma imagem para a unidade.")
+      return
+    }
     setSaving(true)
     try {
-      if (await createServiceRequestUnit(value)) setName("")
+      const visual = { icon, useCustomImage, imageFile }
+      const ok = editingUnitId
+        ? await updateServiceRequestUnit(editingUnitId, { name: value }, visual)
+        : await createServiceRequestUnit(value, visual)
+      if (ok) clearDraft()
     } finally {
       setSaving(false)
     }
@@ -545,24 +625,61 @@ function ServiceRequestUnitsSection() {
     setPendingId(unitId)
     try {
       await deleteServiceRequestUnit(unitId)
+      if (editingUnitId === unitId) clearDraft()
     } finally {
       setPendingId(null)
     }
   }
 
+  const editingUnit = editingUnitId ? serviceRequestUnits.find((item) => item.id === editingUnitId) : null
+  const previewUrl = useCustomImage ? (imagePreview ?? editingUnit?.iconImageUrl ?? null) : null
+
   return (
     <div>
-      <SectionTitle title="Unidades" subtitle="Catálogo usado no protocolo de Solicitações. Somente administradores cadastram e mantêm as unidades disponíveis." />
+      <SectionTitle title="Unidades" subtitle="Cadastre as unidades que organizam a navegação das Solicitações. Cada unidade pode usar um ícone do Devboard ou uma imagem própria." />
 
-      <form onSubmit={addUnit} className="mb-5 flex flex-col gap-2 rounded-2xl border border-border bg-muted/20 p-3 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1">
-          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Nova unidade</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={80} placeholder="Ex.: Goiânia / Unidade 01" className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring" />
-          <span className="mt-1 block text-[0.62rem] text-muted-foreground">{name.length}/80 caracteres</span>
-        </label>
-        <button type="submit" disabled={name.trim().length < 2 || saving} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50">
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Adicionar
-        </button>
+      <form onSubmit={saveUnit} className="mb-5 rounded-2xl border border-border bg-muted/20 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className="group relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
+            aria-label="Selecionar imagem personalizada da unidade"
+          >
+            {previewUrl ? <img src={previewUrl} alt="" className="size-full object-cover" /> : <RequestUnitIcon icon={icon} className="size-6" />}
+            <span className="absolute inset-x-0 bottom-0 flex h-5 items-center justify-center bg-background/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"><Upload className="size-3" /></span>
+          </button>
+
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <label className="min-w-0">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">{editingUnitId ? "Nome da unidade" : "Nova unidade"}</span>
+                <input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={80} placeholder="Ex.: Goiânia / Unidade 01" className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-ring" />
+              </label>
+              <div className="flex items-center gap-2">
+                {editingUnitId && <button type="button" onClick={clearDraft} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><X className="size-4" /> Cancelar</button>}
+                <button type="submit" disabled={name.trim().length < 2 || saving} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50">
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : editingUnitId ? <Check className="size-4" /> : <Plus className="size-4" />}
+                  {editingUnitId ? "Salvar unidade" : "Adicionar unidade"}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><p className="text-xs font-semibold">Identidade visual</p><p className="mt-0.5 text-[0.64rem] text-muted-foreground">Escolha um ícone ou use uma foto personalizada.</p></div>
+                <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+                  <button type="button" onClick={() => { setUseCustomImage(false); setImageError("") }} className={cn("rounded-md px-2.5 py-1.5 text-[0.64rem] font-semibold transition-colors", !useCustomImage ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Ícone</button>
+                  <button type="button" onClick={() => imageInputRef.current?.click()} className={cn("rounded-md px-2.5 py-1.5 text-[0.64rem] font-semibold transition-colors", useCustomImage ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><ImageIcon className="mr-1 inline size-3" /> Foto</button>
+                </div>
+              </div>
+              {!useCustomImage ? <RequestUnitIconPicker value={icon} onChange={setIcon} /> : <div className="flex items-center gap-2 text-xs text-muted-foreground"><Upload className="size-3.5" /><span>{imageFile?.name ?? (editingUnit?.iconImagePath ? "Imagem atual da unidade" : "Selecione JPG, PNG, WEBP ou GIF · máx. 3 MB")}</span></div>}
+              {imageError && <p className="text-[0.66rem] font-medium text-destructive">{imageError}</p>}
+              <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(event) => chooseImage(event.target.files?.[0])} />
+            </div>
+            <p className="text-right text-[0.62rem] text-muted-foreground">{name.length}/80 caracteres</p>
+          </div>
+        </div>
       </form>
 
       <div className="overflow-hidden rounded-2xl border border-border">
@@ -575,8 +692,9 @@ function ServiceRequestUnitsSection() {
               const count = usage.get(unit.id) ?? 0
               return (
                 <div key={unit.id} className="flex min-w-0 items-center gap-3 px-3 py-3 sm:px-4">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Building2 className="size-4" /></span>
+                  <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted text-muted-foreground"><RequestUnitIcon icon={unit.icon} imageUrl={unit.iconImageUrl} className="size-4" /></span>
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{unit.name}</p><p className="mt-0.5 text-[0.66rem] text-muted-foreground">{count} solicitação{count === 1 ? "" : "ões"} vinculada{count === 1 ? "" : "s"}{!unit.active ? " · inativa" : ""}</p></div>
+                  <button type="button" disabled={pending} onClick={() => editUnit(unit.id)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40" aria-label={`Editar unidade ${unit.name}`}><Pencil className="size-4" /></button>
                   <button type="button" disabled={pending} onClick={() => void toggleUnit(unit.id, !unit.active)} className={cn("inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", unit.active ? "border-success/25 bg-success/8 text-success hover:bg-success/12" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground")}>{pending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}{unit.active ? "Ativa" : "Ativar"}</button>
                   <button type="button" disabled={pending} onClick={() => void removeUnit(unit.id, unit.name)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40" aria-label={`Excluir unidade ${unit.name}`}><Trash2 className="size-4" /></button>
                 </div>

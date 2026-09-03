@@ -325,6 +325,9 @@ export type ServiceRequestUnit = {
   workspaceId: string
   name: string
   active: boolean
+  icon?: string
+  iconImagePath?: string
+  iconImageUrl?: string
   createdAt: string
   updatedAt: string
 }

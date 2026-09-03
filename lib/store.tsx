@@ -26,6 +26,7 @@ import {
   TOPIC_MEDIA_BUCKET,
   PROJECT_ICONS_BUCKET,
   SERVICE_REQUEST_MEDIA_BUCKET,
+  SERVICE_REQUEST_UNIT_ICONS_BUCKET,
   chatAudioStoragePath,
   chatMediaKind,
   chatMediaStoragePath,
@@ -35,6 +36,7 @@ import {
   topicMediaStoragePath,
   projectIconStoragePath,
   serviceRequestMediaStoragePath,
+  serviceRequestUnitIconStoragePath,
 } from "@/lib/supabase/helpers"
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import { primeIdleDetectionPermission } from "@/lib/idle-detection"
@@ -142,8 +144,8 @@ export type StoreContextValue = {
   revokeSupportTopic: (topicId: string, reason: string) => Promise<boolean>
   sendSupportTopicToActivity: (topicId: string, projectId: string, developerId?: string) => Promise<string | null>
   createServiceRequest: (data: ServiceRequestInput) => Promise<string | null>
-  createServiceRequestUnit: (name: string) => Promise<boolean>
-  updateServiceRequestUnit: (unitId: string, data: { name?: string; active?: boolean }) => Promise<boolean>
+  createServiceRequestUnit: (name: string, visual?: { icon?: string; imageFile?: File | null; useCustomImage?: boolean }) => Promise<boolean>
+  updateServiceRequestUnit: (unitId: string, data: { name?: string; active?: boolean }, visual?: { icon?: string; imageFile?: File | null; useCustomImage?: boolean }) => Promise<boolean>
   deleteServiceRequestUnit: (unitId: string) => Promise<boolean>
   addServiceRequestAttachments: (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => Promise<boolean>
   addServiceRequestExternalResources: (requestId: string, resources: ServiceRequestExternalResourceInput[], messageId?: string) => Promise<boolean>
@@ -2224,28 +2226,89 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [addServiceRequestAttachments, addServiceRequestExternalResources, callRpc, refreshNotifications, refreshServiceRequests])
 
-  const createServiceRequestUnit = React.useCallback<StoreContextValue["createServiceRequestUnit"]>(async (name) => {
+  const uploadServiceRequestUnitImage = React.useCallback(async (unitId: string, file: File) => {
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+    if (!allowedTypes.has(file.type)) throw new Error("Use uma imagem JPG, PNG, WEBP ou GIF.")
+    if (file.size > 3 * 1024 * 1024) throw new Error("A imagem da unidade deve ter no máximo 3 MB.")
+    const path = serviceRequestUnitIconStoragePath(currentUserId, unitId, file.name)
+    const { error } = await supabase.storage.from(SERVICE_REQUEST_UNIT_ICONS_BUCKET).upload(path, file, {
+      contentType: file.type || "image/jpeg",
+      cacheControl: "3600",
+      upsert: false,
+    })
+    if (error) throw error
+    return path
+  }, [currentUserId, supabase])
+
+  const removeServiceRequestUnitImage = React.useCallback(async (path?: string | null) => {
+    if (!path) return
+    const { error } = await supabase.storage.from(SERVICE_REQUEST_UNIT_ICONS_BUCKET).remove([path])
+    if (error) console.warn("[Devboard/RequestUnit] Não foi possível remover a imagem anterior da unidade.", error)
+  }, [supabase])
+
+  const createServiceRequestUnit = React.useCallback<StoreContextValue["createServiceRequestUnit"]>(async (name, visual) => {
     if (currentUserRole !== "admin") {
       fail(new Error("Apenas administradores podem criar unidades."), "Sem permissão para criar unidades")
       return false
     }
     const id = await callRpc<string>("create_service_request_unit", { p_name: name }, "Não foi possível criar a unidade")
     if (!id) return false
-    await refreshServiceRequestUnits()
-    return true
-  }, [callRpc, currentUserRole, fail, refreshServiceRequestUnits])
 
-  const updateServiceRequestUnit = React.useCallback<StoreContextValue["updateServiceRequestUnit"]>(async (unitId, data) => {
+    let uploadedPath: string | null = null
+    try {
+      if (visual?.useCustomImage && visual.imageFile) uploadedPath = await uploadServiceRequestUnitImage(id, visual.imageFile)
+      const visualResult = await callRpc<unknown>("set_service_request_unit_visual", {
+        p_unit_id: id,
+        p_icon: visual?.icon ?? "building",
+        p_icon_image_path: visual?.useCustomImage ? uploadedPath : null,
+      }, "Unidade criada, mas não foi possível salvar a identidade visual")
+      if (visualResult === undefined && uploadedPath) await removeServiceRequestUnitImage(uploadedPath)
+      await refreshServiceRequestUnits()
+      return true
+    } catch (error) {
+      if (uploadedPath) await removeServiceRequestUnitImage(uploadedPath)
+      fail(error, "Unidade criada, mas não foi possível salvar a imagem personalizada")
+      await refreshServiceRequestUnits()
+      return true
+    }
+  }, [callRpc, currentUserRole, fail, refreshServiceRequestUnits, removeServiceRequestUnitImage, uploadServiceRequestUnitImage])
+
+  const updateServiceRequestUnit = React.useCallback<StoreContextValue["updateServiceRequestUnit"]>(async (unitId, data, visual) => {
     if (currentUserRole !== "admin") return false
+    const unit = serviceRequestUnits.find((item) => item.id === unitId)
     const result = await callRpc<unknown>("update_service_request_unit", {
       p_unit_id: unitId,
       p_name: data.name ?? null,
       p_active: data.active ?? null,
     }, "Não foi possível atualizar a unidade")
     if (result === undefined) return false
+
+    if (visual) {
+      let uploadedPath: string | null = null
+      try {
+        if (visual.useCustomImage && visual.imageFile) uploadedPath = await uploadServiceRequestUnitImage(unitId, visual.imageFile)
+        const nextImagePath = visual.useCustomImage ? (uploadedPath ?? unit?.iconImagePath ?? null) : null
+        const visualResult = await callRpc<unknown>("set_service_request_unit_visual", {
+          p_unit_id: unitId,
+          p_icon: visual.icon ?? unit?.icon ?? "building",
+          p_icon_image_path: nextImagePath,
+        }, "Não foi possível atualizar a identidade visual da unidade")
+        if (visualResult === undefined) {
+          if (uploadedPath) await removeServiceRequestUnitImage(uploadedPath)
+          return false
+        }
+        if (uploadedPath && unit?.iconImagePath && unit.iconImagePath !== uploadedPath) await removeServiceRequestUnitImage(unit.iconImagePath)
+        if (!visual.useCustomImage && unit?.iconImagePath) await removeServiceRequestUnitImage(unit.iconImagePath)
+      } catch (error) {
+        if (uploadedPath) await removeServiceRequestUnitImage(uploadedPath)
+        fail(error, "Não foi possível atualizar a imagem da unidade")
+        return false
+      }
+    }
+
     await refreshServiceRequestUnits()
     return true
-  }, [callRpc, currentUserRole, refreshServiceRequestUnits])
+  }, [callRpc, currentUserRole, fail, refreshServiceRequestUnits, removeServiceRequestUnitImage, serviceRequestUnits, uploadServiceRequestUnitImage])
 
   const deleteServiceRequestUnit = React.useCallback<StoreContextValue["deleteServiceRequestUnit"]>(async (unitId) => {
     if (currentUserRole !== "admin") return false

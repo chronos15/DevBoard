@@ -650,3 +650,15 @@ Ela adiciona:
 - políticas/RPCs necessários para criar, ativar, desativar e excluir unidades sem alterar solicitações antigas.
 
 A Ordem de Serviço em PDF continua sendo anexada ao protocolo. Vídeo/evidência, banco e certificado podem ser arquivo ou referência externa conforme a necessidade.
+
+## Migration 045 — Identidade visual das Unidades de Solicitações
+
+Depois da 044, aplique:
+
+```text
+supabase/migrations/045_devboard_request_unit_visuals.sql
+```
+
+A 045 adiciona ícone e imagem personalizada opcional às Unidades usadas pela central de Solicitações. Também cria o bucket público `devboard-request-unit-icons` (máx. 3 MB; JPG, PNG, WEBP ou GIF) e restringe criação/alteração da identidade visual a administradores do workspace.
+
+A mudança é apenas de identidade/navegação visual da central de Solicitações e não altera Projetos, Atividades ou Subatividades.

@@ -26,6 +26,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { RequestUnitIcon } from "@/components/requests/request-unit-icon"
 import { cn } from "@/lib/utils"
 
 const REQUIRED_CATEGORIES: ServiceRequestAttachmentCategory[] = ["order-pdf", "analysis-video", "database"]
@@ -371,9 +372,9 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                       <span className="text-xs font-medium text-muted-foreground">Unidade *</span>
                       <Select value={unitId} onValueChange={(value) => value && setUnitId(String(value))}>
                         <SelectTrigger className={cn("h-9 w-full rounded-xl bg-card", showValidation && !selectedUnit && "border-destructive")}>
-                          <SelectValue placeholder="Selecione a unidade">{selectedUnit?.name ?? "Selecione a unidade"}</SelectValue>
+                          <SelectValue placeholder="Selecione a unidade">{selectedUnit ? <span className="flex min-w-0 items-center gap-2"><span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted"><RequestUnitIcon icon={selectedUnit.icon} imageUrl={selectedUnit.iconImageUrl} className="size-3" /></span><span className="truncate">{selectedUnit.name}</span></span> : "Selecione a unidade"}</SelectValue>
                         </SelectTrigger>
-                        <SelectContent align="start">{activeUnits.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.name}</SelectItem>)}</SelectContent>
+                        <SelectContent align="start">{activeUnits.map((unit) => <SelectItem key={unit.id} value={unit.id}><span className="flex min-w-0 items-center gap-2"><span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted"><RequestUnitIcon icon={unit.icon} imageUrl={unit.iconImageUrl} className="size-3" /></span><span className="truncate">{unit.name}</span></span></SelectItem>)}</SelectContent>
                       </Select>
                       {activeUnits.length === 0 ? <p className="text-[0.62rem] font-medium text-warning">Nenhuma unidade ativa. Cadastre em Configurações → Unidades.</p> : showValidation && !selectedUnit ? <p className="text-[0.62rem] font-medium text-destructive">Selecione uma unidade ativa.</p> : null}
                     </label>

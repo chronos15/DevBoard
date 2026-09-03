@@ -114,18 +114,20 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
   }, [currentUserRole, hydrated, router])
 
   const followUpPage = pathname.startsWith("/acompanhamento")
+  const requestsPage = pathname.startsWith("/solicitacoes")
+  const fullHeightWorkspace = followUpPage || requestsPage
 
   return (
     <div className={cn(
       "flex max-w-full overflow-x-clip",
-      followUpPage ? "h-dvh overflow-hidden" : "min-h-screen",
+      fullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen",
     )}>
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col">
         <Topbar onMenu={() => setMenuOpen(true)} />
         <main className={cn(
           "min-w-0 max-w-full flex-1",
-          followUpPage
+          fullHeightWorkspace
             ? "min-h-0 overflow-hidden p-0"
             : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
         )}>

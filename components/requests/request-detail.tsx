@@ -291,7 +291,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   )
 }
 
-export function RequestDetail({ requestId }: { requestId: string }) {
+export function RequestDetail({ requestId, embedded = false, backHref = "/solicitacoes" }: { requestId: string; embedded?: boolean; backHref?: string }) {
   const router = useRouter()
   const {
     hydrated,
@@ -319,8 +319,8 @@ export function RequestDetail({ requestId }: { requestId: string }) {
   const [completeOpen, setCompleteOpen] = React.useState(false)
   const [quickLoading, setQuickLoading] = React.useState<string | null>(null)
 
-  if (!hydrated) return <div className="mx-auto max-w-7xl animate-pulse space-y-4"><div className="h-12 rounded-2xl bg-muted" /><div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"><div className="h-[560px] rounded-2xl bg-muted" /><div className="h-[420px] rounded-2xl bg-muted" /></div></div>
-  if (!request) return <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-8 text-center"><ClipboardCheck className="mx-auto size-8 text-muted-foreground" /><h1 className="mt-4 text-lg font-semibold">Solicitação não encontrada</h1><p className="mt-2 text-sm text-muted-foreground">Ela pode não existir ou seu usuário não possui acesso a este protocolo.</p><Button type="button" variant="outline" className="mt-5" onClick={() => router.push("/solicitacoes")}><ArrowLeft className="size-4" /> Voltar</Button></div>
+  if (!hydrated) return <div className={cn("animate-pulse", embedded ? "flex h-full w-full min-h-0 flex-col" : "mx-auto max-w-7xl space-y-4")}><div className={cn("bg-muted", embedded ? "h-28 border-b border-border" : "h-12 rounded-2xl")} /><div className={cn("flex-1 bg-muted/60", !embedded && "mt-4 h-[560px] rounded-2xl")} /></div>
+  if (!request) return <div className={cn("flex items-center justify-center text-center", embedded ? "h-full w-full p-8" : "mx-auto max-w-xl rounded-2xl border border-border bg-card p-8")}><div><ClipboardCheck className="mx-auto size-8 text-muted-foreground" /><h1 className="mt-4 text-lg font-semibold">Solicitação não encontrada</h1><p className="mt-2 text-sm text-muted-foreground">Ela pode não existir ou seu usuário não possui acesso a este protocolo.</p><Button type="button" variant="outline" className="mt-5" onClick={() => router.push(backHref)}><ArrowLeft className="size-4" /> Voltar</Button></div></div>
 
   const creator = members.find((member) => member.id === request.createdBy)
   const aqs = members.find((member) => member.id === request.assignedAqsId)
@@ -345,11 +345,11 @@ export function RequestDetail({ requestId }: { requestId: string }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
+    <div className={cn("flex min-w-0 flex-col", embedded ? "h-full w-full min-h-0 overflow-hidden bg-background" : "mx-auto max-w-[1500px] gap-4")}>
+      <div className={cn("flex min-w-0 shrink-0 flex-col gap-3 bg-card", embedded ? "border-b border-border px-4 py-3" : "rounded-2xl border border-border p-4 sm:p-5")}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <button type="button" onClick={() => router.push("/solicitacoes")} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" /> Solicitações</button>
+            <button type="button" onClick={() => router.push(backHref)} className={cn("inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground", embedded && "md:hidden")}><ArrowLeft className="size-3.5" /> Solicitações</button>
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-xs font-semibold text-primary">OS {request.orderNumber}</span><span className={cn("rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className="rounded-full border border-warning/25 bg-warning/10 px-2.5 py-1 text-[0.65rem] font-semibold text-warning">{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
             <h1 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">{request.title}</h1>
             <p className="mt-2 max-w-4xl text-sm leading-relaxed text-muted-foreground">{request.description}</p>
@@ -374,8 +374,8 @@ export function RequestDetail({ requestId }: { requestId: string }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <section className="flex min-h-[620px] min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+      <div className={cn("grid min-h-0", embedded ? "flex-1 gap-0 overflow-hidden xl:grid-cols-[minmax(0,1fr)_300px]" : "gap-4 xl:grid-cols-[minmax(0,1fr)_340px]")}>
+        <section className={cn("flex min-w-0 flex-col overflow-hidden bg-card", embedded ? "min-h-0" : "min-h-[620px] rounded-2xl border border-border")}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><div><h2 className="text-sm font-semibold">Histórico do protocolo</h2><p className="mt-0.5 text-[0.68rem] text-muted-foreground">Comunicação e mudanças de estado entre solicitante, AQS e DEV.</p></div><MessageSquareText className="size-4 text-muted-foreground" /></div>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3 sm:p-4">
             {timeline.length === 0 ? <div className="py-16 text-center text-sm text-muted-foreground">Nenhum registro ainda.</div> : timeline.map((item) => item.kind === "event" ? (
@@ -393,7 +393,7 @@ export function RequestDetail({ requestId }: { requestId: string }) {
           <RequestComposer request={request} />
         </section>
 
-        <aside className="space-y-4">
+        <aside className={cn("space-y-4", embedded && "hidden min-h-0 overflow-y-auto border-l border-border bg-card p-3 [scrollbar-width:thin] xl:block")}>
           <section className="rounded-2xl border border-border bg-card p-4"><h2 className="text-sm font-semibold">Responsáveis</h2><div className="mt-3 space-y-3">{[
             { label: "Solicitante", member: creator },
             { label: "AQS", member: aqs },

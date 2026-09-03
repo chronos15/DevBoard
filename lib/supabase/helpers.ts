@@ -6,6 +6,7 @@ export const CHAT_MEDIA_BUCKET = 'devboard-chat-media'
 export const TOPIC_MEDIA_BUCKET = 'devboard-topic-media'
 export const PROJECT_ICONS_BUCKET = 'devboard-project-icons'
 export const SERVICE_REQUEST_MEDIA_BUCKET = 'devboard-request-media'
+export const SERVICE_REQUEST_UNIT_ICONS_BUCKET = 'devboard-request-unit-icons'
 
 export function colorForUser(id: string) {
   const palette = [
@@ -66,6 +67,14 @@ export function attachmentStoragePath(
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `${workspaceId}/${projectId}/${uploaderId}/${random}-${safeFileName(input.name)}`
+}
+
+
+export function serviceRequestUnitIconStoragePath(uploaderId: string, unitId: string, fileName: string) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${uploaderId}/${unitId}/${random}-${safeFileName(fileName)}`
 }
 
 export function isAttachmentKind(value: unknown): value is AttachmentKind {

@@ -221,6 +221,39 @@ function WorkflowKanbanSkeleton({ label = "Carregando fluxo" }: { label?: string
   )
 }
 
+
+function AqsWorkspaceSkeleton() {
+  return (
+    <div className="flex h-full min-h-0 w-full animate-pulse flex-col overflow-hidden bg-background" aria-label="Carregando análise AQS">
+      <div className="flex min-h-[58px] shrink-0 items-center gap-3 border-b border-border bg-card px-4">
+        <Skeleton className="size-9 rounded-xl" />
+        <div className="hidden space-y-1.5 md:block"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-2.5 w-64" /></div>
+        <div className="flex-1" />
+        <Skeleton className="h-7 w-20 rounded-lg" /><Skeleton className="h-7 w-20 rounded-lg" />
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[64px_300px_minmax(0,1fr)_260px]">
+        <div className="hidden border-r border-border bg-muted/30 px-2 py-3 xl:block">
+          <div className="space-y-2">{Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="mx-auto size-10 rounded-xl" />)}</div>
+        </div>
+        <div className="hidden min-h-0 border-r border-border bg-muted/20 p-3 md:block">
+          <Skeleton className="h-9 w-full rounded-lg" /><Skeleton className="mt-2 h-9 w-full rounded-lg" />
+          <div className="mt-4 space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}</div>
+        </div>
+        <div className="min-h-0 min-w-0 bg-background/55">
+          <div className="flex h-12 items-center gap-2 border-b border-border bg-card px-3"><Skeleton className="h-4 w-56" /><div className="flex-1" /><Skeleton className="h-7 w-20 rounded-lg" /></div>
+          <div className="p-5">
+            <Skeleton className="h-5 w-64" /><Skeleton className="mt-2 h-3 w-96 max-w-full" />
+            <div className="mt-8 space-y-5">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="flex gap-3"><Skeleton className="size-9 shrink-0 rounded-full" /><div className="flex-1 space-y-2"><Skeleton className="h-3 w-40" /><Skeleton className="h-4 w-3/4" /></div></div>)}</div>
+          </div>
+        </div>
+        <div className="hidden border-l border-border bg-muted/15 p-3 xl:block">
+          <Skeleton className="h-4 w-24" /><div className="mt-4 space-y-3">{Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-9 w-full rounded-lg" />)}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ChatSkeleton() {
   return (
     <div className="mx-auto max-w-7xl space-y-4" aria-label="Carregando chat">
@@ -249,7 +282,7 @@ export function AppLoadingSkeleton() {
   if (pathname === "/projetos/novo" || /\/projetos\/[^/]+\/editar$/.test(pathname)) return <FormSkeleton />
   if (/^\/projetos\/[^/]+$/.test(pathname)) return <ProjectDetailSkeleton />
   if (pathname.startsWith("/chat")) return <ChatSkeleton />
-  if (pathname.startsWith("/analise")) return <WorkflowKanbanSkeleton label="Carregando análise AQS" />
+  if (pathname.startsWith("/analise")) return <AqsWorkspaceSkeleton />
   if (pathname.startsWith("/topicos")) return <WorkflowKanbanSkeleton label="Carregando tópicos" />
   return <GenericSkeleton />
 }

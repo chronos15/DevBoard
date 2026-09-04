@@ -115,7 +115,8 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
 
   const followUpPage = pathname.startsWith("/acompanhamento")
   const requestsPage = pathname.startsWith("/solicitacoes")
-  const fullHeightWorkspace = followUpPage || requestsPage
+  const analysisPage = pathname.startsWith("/analise")
+  const fullHeightWorkspace = followUpPage || requestsPage || analysisPage
 
   return (
     <div className={cn(

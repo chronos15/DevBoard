@@ -1,5 +1,7 @@
 "use client"
 
+import Link from "next/link"
+import { ArrowUpRight } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -38,51 +40,72 @@ export function HoursByProject() {
   const { projects } = useAnalyticsScope()
 
   const data = projects.map((p, i) => ({
-    name: p.name.length > 12 ? p.name.slice(0, 11) + "…" : p.name,
+    name: p.name.length > 14 ? p.name.slice(0, 13) + "…" : p.name,
     fullName: p.name,
     horas: Number((projectTracked(p) / 3600).toFixed(1)),
     color: palette[i % palette.length],
   }))
 
-  return (
-    <div className="flex flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
-      <h2 className="text-base font-semibold">Horas por projeto</h2>
-      <p className="mt-0.5 text-sm text-muted-foreground">
-        Esforço distribuído entre projetos
-      </p>
+  const chartWidth = Math.max(520, data.length * 86)
 
-      <div className="mt-4 h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-            <CartesianGrid
-              vertical={false}
-              stroke="var(--border)"
-              strokeDasharray="4 4"
-            />
-            <XAxis
-              dataKey="name"
-              tickLine={false}
-              axisLine={false}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-              dy={8}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-              width={40}
-            />
-            <Tooltip
-              content={<TooltipContent />}
-              cursor={{ fill: "var(--muted)", opacity: 0.5 }}
-            />
-            <Bar dataKey="horas" radius={[6, 6, 0, 0]} maxBarSize={44}>
-              {data.map((d) => (
-                <Cell key={d.fullName} fill={d.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+  return (
+    <div className="flex h-[390px] min-h-0 flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
+      <div className="flex shrink-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">Horas por projeto</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Esforço distribuído entre projetos
+          </p>
+        </div>
+        <Link
+          href="/horas"
+          className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+        >
+          Ver horas <ArrowUpRight className="size-3.5" />
+        </Link>
+      </div>
+
+      <div className="mt-3 min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-1 [scrollbar-width:thin]">
+        {data.length > 0 ? (
+          <div className="h-full" style={{ width: chartWidth, minWidth: "100%" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 12, right: 12, left: -18, bottom: 8 }}>
+                <CartesianGrid
+                  vertical={false}
+                  stroke="var(--border)"
+                  strokeDasharray="4 4"
+                />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                  dy={8}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                  width={40}
+                />
+                <Tooltip
+                  content={<TooltipContent />}
+                  cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                />
+                <Bar dataKey="horas" radius={[6, 6, 2, 2]} maxBarSize={42}>
+                  {data.map((d) => (
+                    <Cell key={d.fullName} fill={d.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-48 items-center justify-center text-sm text-muted-foreground">
+            Nenhuma hora registrada por projeto.
+          </div>
+        )}
       </div>
     </div>
   )

@@ -699,3 +699,18 @@ A 048 conecta o modo de reunião do Chat ao **Acompanhamento**, **Solicitações
 Ao iniciar uma chamada pelo contexto da atividade, o Devboard abre o Chat já na sala de vídeo e registra no histórico técnico **Ligação de reunião iniciada**. Quando a sala termina, o banco registra automaticamente a duração e os usuários que efetivamente participaram. Se a atividade estiver vinculada a uma Solicitação, os mesmos eventos também entram no histórico do protocolo.
 
 Reuniões iniciadas depois diretamente pelo mesmo grupo do Chat continuam vinculadas à atividade e usam os participantes atuais do trabalho, sem criar um novo grupo para o mesmo tópico.
+
+## Migration 049 — Somente usuários com e-mail confirmado
+
+Depois da 048, aplique:
+
+```text
+supabase/migrations/049_devboard_confirmed_members_only.sql
+```
+
+A 049 corrige o ciclo de cadastro do Supabase Auth para que uma conta **não apareça na equipe, nos seletores de Projeto ou nas demais regras do workspace antes de confirmar o e-mail**. Novos cadastros continuam recebendo o registro de perfil, porém `workspace_members.active` nasce como `false` enquanto `email_confirmed_at` estiver vazio.
+
+Quando o usuário confirma o link enviado pelo Supabase, o trigger ativa automaticamente a associação ao workspace. Cadastros antigos ainda não confirmados também são desativados durante a migration. Como os helpers `current_workspace_id`, `is_workspace_member` e `is_workspace_admin` já exigem `workspace_members.active = true`, a mesma regra passa a proteger o backend inteiro sem duplicar permissões.
+
+Uma conta que for desativada manualmente depois de já estar confirmada **não é reativada** por simples alterações de nome/e-mail no Auth.
+

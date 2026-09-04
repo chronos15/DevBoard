@@ -57,6 +57,15 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     initializedNewMembers.current = true
   }, [currentUserId, editing, hydrated, members])
 
+  // `members` contém somente contas ativas do workspace. Desde a migration 049,
+  // contas ainda sem confirmação de e-mail permanecem inativas e não podem
+  // continuar selecionadas silenciosamente ao editar um projeto antigo.
+  React.useEffect(() => {
+    if (!hydrated) return
+    const availableMemberIds = new Set(members.map((member) => member.id))
+    setMemberIds((current) => current.filter((id) => availableMemberIds.has(id)))
+  }, [hydrated, members])
+
   React.useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
   }, [])
@@ -139,6 +148,9 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     }
     setSaving(true)
 
+    const availableMemberIds = new Set(members.map((member) => member.id))
+    const confirmedMemberIds = memberIds.filter((id) => availableMemberIds.has(id))
+
     const data = {
       name: name.trim(),
       icon,
@@ -147,7 +159,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
       tag: tag.trim() || "Desenvolvimento",
       priority,
       dueDate,
-      memberIds,
+      memberIds: confirmedMemberIds,
       version: project?.version,
       build: project?.build,
       repository: repository.trim(),

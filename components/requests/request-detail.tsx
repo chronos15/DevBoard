@@ -371,8 +371,14 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
   const executor = members.find((member) => member.id === request.executorId)
   const project = projects.find((item) => item.id === request.projectId)
   const activity = project?.activities.find((item) => item.id === request.activityId)
-  const linkedTechnicalWork = Boolean(project && activity)
-  const activityHref = project && activity ? `/projetos/${project.id}#activity-${activity.id}` : null
+  // O vínculo técnico pertence à solicitação. Não dependa da coleção `projects`
+  // estar carregada/visível para habilitar ações contextuais como reunião.
+  // Solicitante/AQS pode participar do protocolo sem necessariamente enxergar
+  // o projeto na listagem geral, enquanto a RPC valida o vínculo pelo activity_id.
+  const linkedTechnicalWork = Boolean(request.projectId && request.activityId)
+  const activityHref = request.projectId && request.activityId
+    ? `/projetos/${request.projectId}#activity-${request.activityId}`
+    : null
   const technicalSubs = activity?.subactivities ?? []
   const technicalDone = technicalSubs.filter((sub) => sub.status === "done").length
   const technicalWaitingAqs = technicalSubs.filter((sub) => sub.status === "waiting-aqs").length
@@ -411,7 +417,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           </div>
 
           <div className={cn("flex flex-wrap items-center justify-end gap-2", embedded && "shrink-0")}>
-            <ActivityMeetingButton activityId={activity?.id} />
+            <ActivityMeetingButton activityId={request.activityId} />
             {canAqs && ["received", "waiting-info"].includes(request.status) && <Button type="button" onClick={() => void quick("aqs", () => startServiceRequestAqs(request.id))} disabled={!!quickLoading} loading={quickLoading === "aqs"} loadingText="Assumindo..."><ClipboardCheck className="size-4" /> {request.status === "waiting-info" ? "Retomar análise" : "Assumir análise"}</Button>}
             {canAqs && request.status === "aqs-analysis" && <><Button type="button" variant="outline" onClick={() => setInfoOpen(true)}>Solicitar informações</Button><Button type="button" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRejectOpen(true)}>Recusar</Button><Button type="button" onClick={() => setSendDevOpen(true)}><Code2 className="size-4" /> Enviar ao DEV</Button></>}
             {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <>{linkedTechnicalWork && activityHref && <Button type="button" onClick={() => router.push(activityHref)}><FolderKanban className="size-4" /> Abrir atividade</Button>}<Button type="button" variant={linkedTechnicalWork ? "outline" : "default"} onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button></>}
@@ -478,7 +484,11 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.64rem] text-muted-foreground"><span>{technicalDone}/{technicalSubs.length} aprovadas</span><span>{technicalWaitingAqs} aguardando AQS</span><span className="font-mono">{formatHMS(technicalTrackedSeconds)}</span></div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${technicalProgress}%` }} /></div>
               <div className="mt-3 rounded-lg border border-chart-3/15 bg-chart-3/[0.05] px-2.5 py-2 text-[0.64rem] leading-relaxed text-muted-foreground"><strong className="font-semibold text-foreground">Fluxo protegido:</strong> execução, pausas, comentários, evidências e decisões AQS desta atividade são registradas nesta solicitação. Subatividades só concluem após aprovação na Análise AQS.</div>
-              <Link href={`/projetos/${project.id}#activity-${activity.id}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir atividade vinculada <ArrowRight className="size-3.5" /></Link>
+              <Link href={activityHref!} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir atividade vinculada <ArrowRight className="size-3.5" /></Link>
+            </div> : linkedTechnicalWork && activityHref ? <div className="mt-3 rounded-xl border border-primary/15 bg-primary/[0.025] p-3">
+              <div className="flex items-center gap-2"><FolderKanban className="size-4 shrink-0 text-primary" /><p className="min-w-0 flex-1 truncate text-xs font-semibold">{project?.name ?? "Atividade vinculada ao protocolo"}</p><span className="rounded-full bg-success/10 px-2 py-0.5 text-[0.6rem] font-semibold text-success">Vinculada</span></div>
+              <p className="mt-2 text-[0.68rem] leading-relaxed text-muted-foreground">O vínculo técnico está ativo. A reunião pode ser iniciada diretamente por esta solicitação mesmo quando o projeto não faz parte da listagem carregada para este usuário.</p>
+              <Link href={activityHref} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir atividade vinculada <ArrowRight className="size-3.5" /></Link>
             </div> : project ? <div className="mt-3 rounded-xl border border-warning/20 bg-warning/[0.04] p-3"><div className="flex items-center gap-2"><AlertTriangle className="size-4 text-warning" /><p className="text-xs font-semibold">Projeto sem atividade vinculada</p></div><p className="mt-1.5 text-[0.68rem] leading-relaxed text-muted-foreground">Este é um protocolo antigo. Novos encaminhamentos ao DEV criam e vinculam a atividade automaticamente.</p><Link href={`/projetos/${project.id}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir projeto <ArrowRight className="size-3.5" /></Link></div> : <p className="mt-3 rounded-xl border border-dashed border-border p-4 text-center text-xs leading-relaxed text-muted-foreground">Ao enviar ao DEV, selecione um projeto. O Devboard criará a atividade <strong className="font-medium text-foreground">[OS] descrição</strong> e fará o vínculo automaticamente.</p>}
           </section>
 

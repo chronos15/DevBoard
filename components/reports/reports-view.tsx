@@ -38,6 +38,13 @@ import { cn } from "@/lib/utils"
 import { MemberAvatar } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type PeriodPreset =
   | "today"
@@ -234,11 +241,49 @@ function rankingWidth(seconds: number, maxSeconds: number) {
   return Math.max(4, Math.min(100, (seconds / maxSeconds) * 100))
 }
 
+function dayKey(date: Date) {
+  return dateInputValue(date)
+}
+
+function splitSessionAcrossDays(
+  session: HoursReportSession,
+  start: Date,
+  endExclusive: Date,
+  now: number,
+) {
+  const result = new Map<string, number>()
+  const sessionStart = new Date(session.startedAt).getTime()
+  const sessionEnd = session.endedAt ? new Date(session.endedAt).getTime() : now
+  const clippedStart = Math.max(sessionStart, start.getTime())
+  const clippedEnd = Math.min(sessionEnd, endExclusive.getTime(), now)
+  if (!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) || clippedEnd <= clippedStart) return result
+
+  const effectiveSeconds = sessionSeconds(session, start, endExclusive, now)
+  const wallSeconds = Math.max(1, (clippedEnd - clippedStart) / 1000)
+  const scale = effectiveSeconds / wallSeconds
+  let cursor = clippedStart
+
+  while (cursor < clippedEnd) {
+    const current = new Date(cursor)
+    const nextDay = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1).getTime()
+    const segmentEnd = Math.min(clippedEnd, nextDay)
+    const seconds = Math.max(0, ((segmentEnd - cursor) / 1000) * scale)
+    const key = dayKey(current)
+    result.set(key, (result.get(key) ?? 0) + seconds)
+    cursor = segmentEnd
+  }
+
+  return result
+}
+
 function ReportChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
+  const title = payload?.[0]?.payload?.name ?? label
+  const client = payload?.[0]?.payload?.client
   return (
     <div className="rounded-xl border border-border bg-card px-3 py-2 text-xs shadow-lg">
-      <p className="mb-1.5 max-w-56 truncate font-semibold">{label}</p>
+      <p className="max-w-56 truncate font-semibold">{title}</p>
+      {client ? <p className="mb-1.5 mt-0.5 max-w-56 truncate text-[0.65rem] text-muted-foreground">{client}</p> : <div className="mb-1" />}
       {payload.map((entry: any) => (
         <div key={entry.dataKey} className="flex items-center justify-between gap-5 py-0.5 text-muted-foreground">
           <span>{entry.name}</span>
@@ -252,7 +297,7 @@ function ReportChartTooltip({ active, payload, label }: any) {
 }
 
 export function ReportsView() {
-  const { currentUserId, currentUserRole, isAdmin, projects, members } = useAnalyticsScope()
+  const { currentUserId, isAdmin, projects, members } = useAnalyticsScope()
   const { workItemTypes } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
   const initial = React.useMemo(() => rangeForPreset("month"), [])
@@ -279,6 +324,7 @@ export function ReportsView() {
   const [sortBy, setSortBy] = React.useState<SortKey>("period")
   const [pageSize, setPageSize] = React.useState<PageSize>("50")
   const [page, setPage] = React.useState(1)
+  const [filtersOpen, setFiltersOpen] = React.useState(false)
   const requestRef = React.useRef(0)
 
   const rangeValid = Boolean(
@@ -518,11 +564,47 @@ export function ReportsView() {
     return [...grouped.values()].sort((a, b) => b.seconds - a.seconds)
   }, [endExclusive, filteredSessions, memberMap, now, start])
 
-  const chartData = projectRanking.slice(0, 10).map((row) => ({
+  const chartData = projectRanking.slice(0, 8).map((row) => ({
     name: row.label,
+    client: row.secondary ?? "",
     registrado: Number(decimalHours(row.seconds).toFixed(2)),
     estimado: Number(decimalHours(row.estimatedSeconds ?? 0).toFixed(2)),
+    consumo: percentage(row.seconds, row.estimatedSeconds ?? 0),
   }))
+
+  const ganttDays = React.useMemo(() => {
+    const result: Date[] = []
+    const cursor = new Date(start)
+    while (cursor < endExclusive && result.length <= 366) {
+      result.push(new Date(cursor))
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return result
+  }, [endExclusive, start])
+
+  const ganttTooWide = ganttDays.length > 366
+  const visibleGanttDays = ganttTooWide ? ganttDays.slice(0, 366) : ganttDays
+
+  const ganttRows = React.useMemo(() => {
+    if (ganttTooWide) return []
+    return items.map((item) => {
+      const daily = new Map<string, number>()
+      for (const session of sessionBySub.get(item.subactivityId) ?? []) {
+        for (const [key, seconds] of splitSessionAcrossDays(session, start, endExclusive, now)) {
+          daily.set(key, (daily.get(key) ?? 0) + seconds)
+        }
+      }
+      const activeIndexes = visibleGanttDays
+        .map((date, index) => daily.get(dayKey(date)) ? index : -1)
+        .filter((index) => index >= 0)
+      return {
+        item,
+        daily,
+        firstIndex: activeIndexes.length ? activeIndexes[0] : -1,
+        lastIndex: activeIndexes.length ? activeIndexes[activeIndexes.length - 1] : -1,
+      }
+    }).filter((row) => applied.includeWithoutHours || row.firstIndex >= 0)
+  }, [applied.includeWithoutHours, endExclusive, ganttTooWide, items, now, sessionBySub, start, visibleGanttDays])
 
   const summaryCards = [
     {
@@ -588,6 +670,19 @@ export function ReportsView() {
     [workItemTypes],
   )
 
+  const activeFilterCount = React.useMemo(() => {
+    let count = 0
+    if (applied.startDate !== initialFilters.startDate || applied.endDate !== initialFilters.endDate) count += 1
+    if (applied.projectId !== "all") count += 1
+    if (isAdmin && applied.memberId !== "all") count += 1
+    if (applied.typeId !== "all") count += 1
+    if (applied.status !== "all") count += 1
+    if (applied.priority !== "all") count += 1
+    if (applied.search) count += 1
+    if (applied.includeWithoutHours) count += 1
+    return count
+  }, [applied, initialFilters.endDate, initialFilters.startDate, isAdmin])
+
   const applyPreset = (next: PeriodPreset) => {
     setPreset(next)
     if (next === "custom") return
@@ -602,13 +697,17 @@ export function ReportsView() {
       memberId: isAdmin ? draft.memberId : "all",
       search: draft.search.trim(),
     })
+    setFiltersOpen(false)
   }
 
-  const resetFilters = () => {
+  const resetDraftFilters = () => {
     setPreset("month")
     setDraft(initialFilters)
-    setApplied(initialFilters)
-    setSortBy("period")
+  }
+
+  const openFilters = () => {
+    setDraft(applied)
+    setFiltersOpen(true)
   }
 
   const filterSummary = React.useMemo(() => {
@@ -694,6 +793,42 @@ export function ReportsView() {
       ])),
     ]
 
+    const ganttExcelSheets = (() => {
+      if (ganttTooWide) {
+        return `<Worksheet ss:Name="Gantt diário"><Table>${excelRow([excelCell("Gantt diário indisponível para períodos acima de 366 dias.")])}</Table></Worksheet>`
+      }
+
+      const groups = new Map<string, Date[]>()
+      for (const date of visibleGanttDays) {
+        const key = `${String(date.getMonth() + 1).padStart(2, "0")}-${date.getFullYear()}`
+        const bucket = groups.get(key) ?? []
+        bucket.push(date)
+        groups.set(key, bucket)
+      }
+
+      if (!groups.size) {
+        return `<Worksheet ss:Name="Gantt diário"><Table>${excelRow([excelCell("Sem dados para o período selecionado.")])}</Table></Worksheet>`
+      }
+
+      return [...groups.entries()].map(([key, dates]) => {
+        const rows = [
+          excelRow([
+            "Projeto", "Atividade", "Subatividade", "Responsável", "Status",
+            ...dates.map((date) => date.toLocaleDateString("pt-BR")),
+          ].map((value) => excelCell(value, "String", "Header"))),
+          ...ganttRows.map(({ item, daily }) => excelRow([
+            excelCell(item.projectName),
+            excelCell(item.activityTitle),
+            excelCell(item.subactivityTitle),
+            excelCell(item.assigneeName),
+            excelCell(statusMeta[item.status].label),
+            ...dates.map((date) => excelCell(decimalHours(daily.get(dayKey(date)) ?? 0), "Number", "Decimal")),
+          ])),
+        ]
+        return `<Worksheet ss:Name="Gantt ${xmlEscape(key)}"><Table>${rows.join("")}</Table></Worksheet>`
+      }).join("")
+    })()
+
     const workbook = `<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n` +
       `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">` +
       `<Styles>` +
@@ -707,6 +842,7 @@ export function ReportsView() {
       `<Worksheet ss:Name="Por projeto"><Table>${projectRows.join("")}</Table></Worksheet>` +
       `<Worksheet ss:Name="Por usuário"><Table>${userRows.join("")}</Table></Worksheet>` +
       `<Worksheet ss:Name="Por status"><Table>${statusRows.join("")}</Table></Worksheet>` +
+      ganttExcelSheets +
       `</Workbook>`
 
     downloadBlob(
@@ -773,6 +909,51 @@ export function ReportsView() {
       </tr>
     `).join("")
 
+    const ganttPrintHtml = (() => {
+      if (ganttTooWide) {
+        return '<div class="section panel"><h2 class="section-title">Gantt diário</h2><span class="muted">Não incluído porque o período selecionado ultrapassa 366 dias.</span></div>'
+      }
+      if (!ganttRows.length) return ""
+
+      const groups = new Map<string, Date[]>()
+      for (const date of visibleGanttDays) {
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+        const bucket = groups.get(key) ?? []
+        bucket.push(date)
+        groups.set(key, bucket)
+      }
+
+      return [...groups.entries()].map(([key, dates], groupIndex) => {
+        const label = dates[0]?.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) ?? key
+        const rows = ganttRows.filter(({ daily }) => dates.some((date) => (daily.get(dayKey(date)) ?? 0) > 0))
+        if (!rows.length) return ""
+        return `
+          <div class="gantt-page ${groupIndex > 0 ? "page-break" : ""}">
+            <h2 class="section-title">Gantt diário · ${htmlEscape(label)}</h2>
+            <table class="gantt-table">
+              <thead>
+                <tr>
+                  <th class="gantt-label">Projeto / atividade / subatividade</th>
+                  ${dates.map((date) => `<th class="gantt-day">${String(date.getDate()).padStart(2, "0")}<small>${htmlEscape(date.toLocaleDateString("pt-BR", { weekday: "short" }).slice(0, 3))}</small></th>`).join("")}
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(({ item, daily }) => `
+                  <tr>
+                    <td class="gantt-label"><strong>${htmlEscape(item.projectName)}</strong><small>${htmlEscape(item.activityTitle)} › ${htmlEscape(item.subactivityTitle)}</small></td>
+                    ${dates.map((date) => {
+                      const seconds = daily.get(dayKey(date)) ?? 0
+                      return `<td class="gantt-cell ${seconds > 0 ? "active" : ""}">${seconds > 0 ? htmlEscape(decimalHours(seconds).toLocaleString("pt-BR", { maximumFractionDigits: 1 })) : ""}</td>`
+                    }).join("")}
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+      }).join("")
+    })()
+
     const printHtml = `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -820,6 +1001,16 @@ export function ReportsView() {
   .detail-table th:nth-child(4) { width: 11%; }
   .detail-table th:nth-child(5) { width: 9%; }
   .detail-table th:nth-child(6), .detail-table th:nth-child(7), .detail-table th:nth-child(8), .detail-table th:nth-child(9) { width: 9.75%; }
+  .gantt-page { margin-top: 10px; break-before: page; page-break-before: always; }
+  .gantt-page:first-of-type { break-before: auto; }
+  .page-break { break-before: page; }
+  .gantt-table { table-layout: fixed; font-size: 6px; }
+  .gantt-table th, .gantt-table td { padding: 2px 1px; text-align: center; }
+  .gantt-table .gantt-label { width: 28%; text-align: left; padding-left: 4px; }
+  .gantt-table .gantt-label strong, .gantt-table .gantt-label small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gantt-table .gantt-day { font-size: 6px; }
+  .gantt-table .gantt-day small { display: block; margin-top: 1px; color: #777; font-size: 5px; }
+  .gantt-cell.active { background: #222; color: #fff; font-weight: 700; }
   footer { margin-top: 8px; padding-top: 5px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; color: #777; font-size: 7px; }
 </style>
 </head>
@@ -857,6 +1048,7 @@ export function ReportsView() {
     <tbody>${projectsHtml || '<tr><td colspan="4">Sem dados no período.</td></tr>'}</tbody>
   </table>
 </div>
+${ganttPrintHtml}
 <div class="section">
   <h2 class="section-title">Detalhamento do escopo filtrado (${items.length} itens)</h2>
   <table class="detail-table">
@@ -891,27 +1083,34 @@ export function ReportsView() {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/8">
-        <div className="flex flex-col gap-3 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                <Filter className="size-4" />
-              </span>
-              <div>
+        <div className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-center lg:justify-between lg:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+              <Filter className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-semibold">Central de relatórios</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {isAdmin
-                    ? "Combine filtros, audite a operação e gere documentos executivos com o mesmo recorte de dados."
-                    : "Consulte e exporte somente os dados pertencentes ao seu escopo."}
-                </p>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[0.6rem] font-semibold text-muted-foreground">
+                  ADMIN · CONTROLE TOTAL
+                </span>
               </div>
-              <span className="rounded-full bg-muted px-2.5 py-1 text-[0.65rem] font-semibold text-muted-foreground">
-                {isAdmin ? "ADMIN · CONTROLE TOTAL" : currentUserRole.toLocaleUpperCase("pt-BR")}
-              </span>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                Visão gerencial de projetos, equipe, produtividade, estimativas e execução.
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={openFilters}>
+              <SlidersHorizontal className="size-4" />
+              Filtros
+              {activeFilterCount > 0 ? (
+                <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[0.6rem] font-bold leading-none text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              ) : null}
+            </Button>
             <Button variant="outline" onClick={exportExcel} disabled={loading || items.length === 0}>
               <FileSpreadsheet className="size-4" />
               Excel
@@ -923,173 +1122,227 @@ export function ReportsView() {
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 lg:p-5">
-          <FilterField label="Período rápido">
-            <select
-              value={preset}
-              onChange={(event) => applyPreset(event.target.value as PeriodPreset)}
-              className={selectClassName}
-            >
-              <option value="today">Hoje</option>
-              <option value="last7">Últimos 7 dias</option>
-              <option value="last30">Últimos 30 dias</option>
-              <option value="month">Este mês</option>
-              <option value="previousMonth">Mês anterior</option>
-              <option value="quarter">Este trimestre</option>
-              <option value="year">Este ano</option>
-              <option value="custom">Personalizado</option>
-            </select>
-          </FilterField>
-
-          <FilterField label="De">
-            <Input
-              type="date"
-              value={draft.startDate}
-              onChange={(event) => {
-                setPreset("custom")
-                setDraft((current) => ({ ...current, startDate: event.target.value }))
-              }}
-            />
-          </FilterField>
-
-          <FilterField label="Até">
-            <Input
-              type="date"
-              value={draft.endDate}
-              onChange={(event) => {
-                setPreset("custom")
-                setDraft((current) => ({ ...current, endDate: event.target.value }))
-              }}
-            />
-          </FilterField>
-
-          <FilterField label="Projeto">
-            <select
-              value={draft.projectId}
-              onChange={(event) => setDraft((current) => ({ ...current, projectId: event.target.value }))}
-              className={selectClassName}
-            >
-              <option value="all">Todos os projetos</option>
-              {selectableProjects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
-          </FilterField>
-
-          {isAdmin ? (
-            <FilterField label="Usuário">
-              <select
-                value={draft.memberId}
-                onChange={(event) => setDraft((current) => ({ ...current, memberId: event.target.value }))}
-                className={selectClassName}
+        <div className="flex min-w-0 items-center gap-2 border-t border-border bg-muted/10 px-4 py-2 lg:px-5">
+          <span className="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">Recorte</span>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {filterSummary.map((label, index) => (
+              <span
+                key={label}
+                className={cn(
+                  "shrink-0 rounded-full px-2.5 py-1 text-[0.64rem] font-medium ring-1 ring-foreground/8",
+                  index === 0 ? "bg-primary/10 text-primary" : "bg-background text-muted-foreground",
+                )}
               >
-                <option value="all">Todos os usuários</option>
-                {selectableMembers.map((member) => (
-                  <option key={member.id} value={member.id}>{member.name}</option>
-                ))}
-              </select>
-            </FilterField>
-          ) : null}
-
-          <FilterField label="Tipo de atividade">
-            <select
-              value={draft.typeId}
-              onChange={(event) => setDraft((current) => ({ ...current, typeId: event.target.value }))}
-              className={selectClassName}
-            >
-              <option value="all">Todos os tipos</option>
-              {selectableTypes.map((type) => (
-                <option key={type.id} value={type.id}>{type.name}{type.active ? "" : " (inativo)"}</option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Status">
-            <select
-              value={draft.status}
-              onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
-              className={selectClassName}
-            >
-              <option value="all">Todos os status</option>
-              {allStatuses.map((status) => (
-                <option key={status} value={status}>{statusMeta[status].label}</option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Prioridade do projeto">
-            <select
-              value={draft.priority}
-              onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value }))}
-              className={selectClassName}
-            >
-              <option value="all">Todas as prioridades</option>
-              <option value="high">Alta</option>
-              <option value="medium">Média</option>
-              <option value="low">Baixa</option>
-            </select>
-          </FilterField>
-
-          <FilterField label="Buscar no relatório" className="lg:col-span-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={draft.search}
-                onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && rangeValid) applyFilters()
-                }}
-                placeholder="Projeto, atividade, responsável..."
-                className="pl-8"
-              />
-            </div>
-          </FilterField>
-
-          <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 lg:self-end">
-            <input
-              type="checkbox"
-              checked={draft.includeWithoutHours}
-              onChange={(event) => setDraft((current) => ({ ...current, includeWithoutHours: event.target.checked }))}
-              className="size-3.5 accent-[var(--primary)]"
-            />
-            Incluir sem horas
-          </label>
-
-          <div className="flex gap-2 lg:self-end xl:col-span-2 xl:justify-end">
-            <Button
-              onClick={applyFilters}
-              disabled={!rangeValid || !hasPendingFilters}
-              className="min-w-32 flex-1 xl:flex-none"
-            >
-              Aplicar filtros
-            </Button>
-            <Button
-              variant="outline"
-              onClick={resetFilters}
-              className="shrink-0 px-3"
-              title="Limpar todos os filtros"
-              aria-label="Limpar todos os filtros"
-            >
-              <RotateCcw className="size-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        {!rangeValid ? (
-          <div className="border-t border-border px-4 py-3 text-xs font-medium text-destructive lg:px-5">
-            A data inicial precisa ser anterior ou igual à data final.
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/15 px-4 py-2.5 lg:px-5">
-            <span className="mr-1 text-[0.68rem] font-semibold text-muted-foreground">Recorte ativo:</span>
-            {filterSummary.map((label) => (
-              <span key={label} className="rounded-full bg-background px-2.5 py-1 text-[0.65rem] font-medium text-muted-foreground ring-1 ring-foreground/8">
                 {label}
               </span>
             ))}
           </div>
-        )}
+          {loading ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> : null}
+        </div>
       </section>
+
+      <Dialog
+        open={filtersOpen}
+        onOpenChange={(open) => {
+          if (!open) setDraft(applied)
+          setFiltersOpen(open)
+        }}
+      >
+        <DialogContent className="max-h-[min(92vh,780px)] max-w-[calc(100%-1.5rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+                <SlidersHorizontal className="size-4" />
+              </span>
+              <div>
+                <DialogTitle>Filtros do relatório</DialogTitle>
+                <DialogDescription className="mt-1 text-xs">
+                  Monte o recorte administrativo sem ocupar espaço na tela principal.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="min-h-0 overflow-y-auto px-5 py-4">
+            <div className="grid gap-4">
+              <section className="rounded-xl border border-border bg-muted/10 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-semibold">Período</h3>
+                    <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Defina o intervalo usado em todos os indicadores e exportações.</p>
+                  </div>
+                  <CalendarRange className="size-4 text-muted-foreground" />
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <FilterField label="Período rápido">
+                    <select
+                      value={preset}
+                      onChange={(event) => applyPreset(event.target.value as PeriodPreset)}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="today">Hoje</option>
+                      <option value="last7">Últimos 7 dias</option>
+                      <option value="last30">Últimos 30 dias</option>
+                      <option value="month">Este mês</option>
+                      <option value="previousMonth">Mês anterior</option>
+                      <option value="quarter">Este trimestre</option>
+                      <option value="year">Este ano</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                  </FilterField>
+                  <FilterField label="Data inicial">
+                    <Input
+                      type="date"
+                      value={draft.startDate}
+                      onChange={(event) => {
+                        setPreset("custom")
+                        setDraft((current) => ({ ...current, startDate: event.target.value }))
+                      }}
+                      className="h-10"
+                    />
+                  </FilterField>
+                  <FilterField label="Data final">
+                    <Input
+                      type="date"
+                      value={draft.endDate}
+                      onChange={(event) => {
+                        setPreset("custom")
+                        setDraft((current) => ({ ...current, endDate: event.target.value }))
+                      }}
+                      className="h-10"
+                    />
+                  </FilterField>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border bg-muted/10 p-4">
+                <div className="mb-3">
+                  <h3 className="text-xs font-semibold">Escopo operacional</h3>
+                  <p className="mt-0.5 text-[0.68rem] text-muted-foreground">Cruze projeto, responsável, tipo, situação e prioridade.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <FilterField label="Projeto">
+                    <select
+                      value={draft.projectId}
+                      onChange={(event) => setDraft((current) => ({ ...current, projectId: event.target.value }))}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="all">Todos os projetos</option>
+                      {selectableProjects.map((project) => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Usuário">
+                    <select
+                      value={draft.memberId}
+                      onChange={(event) => setDraft((current) => ({ ...current, memberId: event.target.value }))}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="all">Todos os usuários</option>
+                      {selectableMembers.map((member) => (
+                        <option key={member.id} value={member.id}>{member.name}</option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Tipo de atividade">
+                    <select
+                      value={draft.typeId}
+                      onChange={(event) => setDraft((current) => ({ ...current, typeId: event.target.value }))}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="all">Todos os tipos</option>
+                      {selectableTypes.map((type) => (
+                        <option key={type.id} value={type.id}>{type.name}{type.active ? "" : " (inativo)"}</option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Status">
+                    <select
+                      value={draft.status}
+                      onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="all">Todos os status</option>
+                      {allStatuses.map((status) => (
+                        <option key={status} value={status}>{statusMeta[status].label}</option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Prioridade do projeto">
+                    <select
+                      value={draft.priority}
+                      onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value }))}
+                      className={cn(selectClassName, "h-10")}
+                    >
+                      <option value="all">Todas as prioridades</option>
+                      <option value="high">Alta</option>
+                      <option value="medium">Média</option>
+                      <option value="low">Baixa</option>
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Buscar">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={draft.search}
+                        onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && rangeValid) applyFilters()
+                        }}
+                        placeholder="Projeto, atividade, responsável..."
+                        className="h-10 pl-8"
+                      />
+                    </div>
+                  </FilterField>
+                </div>
+
+                <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background px-3.5 py-3 transition-colors hover:bg-muted/30">
+                  <input
+                    type="checkbox"
+                    checked={draft.includeWithoutHours}
+                    onChange={(event) => setDraft((current) => ({ ...current, includeWithoutHours: event.target.checked }))}
+                    className="mt-0.5 size-4 accent-[var(--primary)]"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold">Incluir itens sem horas registradas</span>
+                    <span className="mt-0.5 block text-[0.68rem] text-muted-foreground">Útil para auditoria de escopo, pendências e atividades ainda sem apontamento.</span>
+                  </span>
+                </label>
+              </section>
+
+              {!rangeValid ? (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3.5 py-3 text-xs font-medium text-destructive">
+                  A data inicial precisa ser anterior ou igual à data final.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={resetDraftFilters}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <RotateCcw className="size-3.5" />
+              Restaurar padrão
+            </button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setFiltersOpen(false)}>Cancelar</Button>
+              <Button onClick={applyFilters} disabled={!rangeValid || !hasPendingFilters}>
+                <Filter className="size-4" />
+                Aplicar filtros
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {error ? (
         <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-4 text-sm text-destructive">
@@ -1114,38 +1367,58 @@ export function ReportsView() {
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,.85fr)]">
         <section className="min-w-0 rounded-2xl bg-card ring-1 ring-foreground/8">
-          <div className="flex items-start justify-between gap-3 border-b border-border p-4 lg:p-5">
+          <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-start sm:justify-between lg:p-5">
             <div>
               <h2 className="text-sm font-semibold">Horas por projeto</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Top 10 do recorte atual · realizado no período x estimativa do escopo.</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Comparação clara entre horas registradas no período e estimativa do escopo.</p>
             </div>
-            {loading ? <LoaderCircle className="size-4 animate-spin text-muted-foreground" /> : null}
+            <div className="flex shrink-0 items-center gap-3 text-[0.65rem] text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary" />No período</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-muted-foreground/30" />Estimado</span>
+              {loading ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+            </div>
           </div>
-          <div className="h-80 p-3 lg:p-4">
+          <div className="p-3 lg:p-4" style={{ height: chartData.length ? Math.max(300, chartData.length * 46 + 42) : 320 }}>
             {chartData.length === 0 ? (
               <EmptyReportState />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 6, right: 8, left: -18, bottom: 8 }} barGap={4}>
-                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
+                <BarChart
+                  data={chartData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 20, left: 4, bottom: 8 }}
+                  barGap={3}
+                >
+                  <CartesianGrid horizontal={false} stroke="var(--border)" strokeDasharray="4 4" />
                   <XAxis
-                    dataKey="name"
+                    type="number"
                     tickLine={false}
                     axisLine={false}
                     tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
-                    interval={0}
-                    angle={-12}
-                    textAnchor="end"
-                    height={54}
+                    tickFormatter={(value) => `${value}h`}
                   />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} width={40} />
-                  <Tooltip content={<ReportChartTooltip />} cursor={{ fill: "var(--muted)" }} />
-                  <Bar dataKey="estimado" name="Estimado" fill="var(--muted-foreground)" fillOpacity={0.25} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="registrado" name="No período" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    width={138}
+                    tick={{ fill: "var(--foreground)", fontSize: 10, fontWeight: 600 }}
+                    tickFormatter={(value) => String(value).length > 20 ? `${String(value).slice(0, 19)}…` : String(value)}
+                  />
+                  <Tooltip content={<ReportChartTooltip />} cursor={{ fill: "var(--muted)", opacity: 0.45 }} />
+                  <Bar dataKey="estimado" name="Estimado" fill="var(--muted-foreground)" fillOpacity={0.2} radius={[0, 6, 6, 0]} barSize={8} />
+                  <Bar dataKey="registrado" name="No período" fill="var(--primary)" radius={[0, 6, 6, 0]} barSize={8} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
+          {chartData.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/10 px-4 py-2.5 text-[0.65rem] text-muted-foreground lg:px-5">
+              <span>Exibindo os {chartData.length} projetos com maior carga no período.</span>
+              <strong className="font-mono font-medium tabular-nums text-foreground">{formatServiceHours(totalPeriodSeconds)} registradas</strong>
+            </div>
+          ) : null}
         </section>
 
         <section className="min-w-0 rounded-2xl bg-card ring-1 ring-foreground/8">
@@ -1180,6 +1453,133 @@ export function ReportsView() {
           </div>
         </section>
       </div>
+
+      <section className="min-w-0 overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/8">
+        <div className="flex flex-col gap-3 border-b border-border p-4 md:flex-row md:items-start md:justify-between lg:p-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <CalendarRange className="size-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">Gantt diário de execução</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Projeto → atividade → subatividade por dia, usando os apontamentos reais do período.</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3 text-[0.65rem] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-6 rounded-full bg-primary/15" />Janela de execução</span>
+            <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded bg-primary/80" />Dia com horas</span>
+          </div>
+        </div>
+
+        {ganttTooWide ? (
+          <div className="flex min-h-40 flex-col items-center justify-center px-5 py-10 text-center">
+            <CalendarRange className="size-5 text-muted-foreground/50" />
+            <p className="mt-2 text-xs font-semibold">Período muito amplo para o Gantt diário</p>
+            <p className="mt-1 max-w-md text-[0.68rem] text-muted-foreground">Use um recorte de até 366 dias. Os demais indicadores e exportações continuam funcionando normalmente.</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={openFilters}>Ajustar período</Button>
+          </div>
+        ) : ganttRows.length === 0 ? (
+          <div className="py-8"><EmptyReportState /></div>
+        ) : (
+          <div className="max-h-[36rem] overflow-auto">
+            <div style={{ minWidth: `${320 + visibleGanttDays.length * 30}px` }}>
+              <div className="sticky top-0 z-30 flex border-b border-border bg-card shadow-[0_1px_0_var(--border)]">
+                <div className="sticky left-0 z-40 flex w-80 shrink-0 items-center border-r border-border bg-card px-4 py-2.5 lg:px-5">
+                  <span className="font-mono text-[0.58rem] font-semibold tracking-widest text-muted-foreground uppercase">Escopo</span>
+                </div>
+                <div className="flex">
+                  {visibleGanttDays.map((date) => {
+                    const weekend = date.getDay() === 0 || date.getDay() === 6
+                    const today = dayKey(date) === dayKey(new Date())
+                    return (
+                      <div
+                        key={dayKey(date)}
+                        className={cn(
+                          "flex w-[30px] shrink-0 flex-col items-center justify-center border-r border-border py-1.5 text-center",
+                          weekend && "bg-muted/25",
+                          today && "bg-primary/10",
+                        )}
+                        title={date.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+                      >
+                        <span className={cn("text-[0.58rem] font-semibold tabular-nums", today ? "text-primary" : "text-foreground")}>{String(date.getDate()).padStart(2, "0")}</span>
+                        <span className="text-[0.5rem] uppercase text-muted-foreground">{date.toLocaleDateString("pt-BR", { weekday: "short" }).slice(0, 3)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {ganttRows.map(({ item, daily, firstIndex, lastIndex }) => {
+                const member = memberMap.get(item.assigneeId)
+                const maxDaySeconds = Math.max(1, ...daily.values())
+                return (
+                  <div key={item.subactivityId} className="flex min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/10">
+                    <div className="sticky left-0 z-20 flex w-80 shrink-0 items-center gap-2.5 border-r border-border bg-card px-4 py-2 lg:px-5">
+                      <MemberAvatar member={member} className="size-7 shrink-0 rounded-lg text-[0.58rem] ring-0" />
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.62rem] font-medium text-muted-foreground" title={item.projectName}>{item.projectName}</p>
+                        <Link
+                          href={`/projetos/${item.projectId}#activity-${item.activityId}`}
+                          className="block truncate text-[0.68rem] font-semibold text-foreground hover:text-primary hover:underline"
+                          title={`Abrir ${item.activityTitle}`}
+                        >
+                          {item.activityTitle}
+                        </Link>
+                        <p className="truncate text-[0.62rem] text-muted-foreground" title={item.subactivityTitle}>{item.subactivityTitle}</p>
+                      </div>
+                    </div>
+
+                    <div
+                      className="relative h-[58px] shrink-0"
+                      style={{
+                        width: `${visibleGanttDays.length * 30}px`,
+                        backgroundImage: "repeating-linear-gradient(to right, transparent 0, transparent 29px, var(--border) 29px, var(--border) 30px)",
+                      }}
+                    >
+                      {visibleGanttDays.map((date, index) => (date.getDay() === 0 || date.getDay() === 6) ? (
+                        <span
+                          key={`weekend-${dayKey(date)}`}
+                          className="pointer-events-none absolute inset-y-0 bg-muted/15"
+                          style={{ left: `${index * 30}px`, width: "30px" }}
+                        />
+                      ) : null)}
+
+                      {firstIndex >= 0 ? (
+                        <span
+                          className="pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-primary/12"
+                          style={{
+                            left: `${firstIndex * 30 + 4}px`,
+                            width: `${Math.max(22, (lastIndex - firstIndex + 1) * 30 - 8)}px`,
+                          }}
+                        />
+                      ) : null}
+
+                      {visibleGanttDays.map((date, index) => {
+                        const seconds = daily.get(dayKey(date)) ?? 0
+                        if (seconds <= 0) return null
+                        const strength = Math.max(0.45, Math.min(1, seconds / maxDaySeconds))
+                        return (
+                          <span
+                            key={`work-${dayKey(date)}`}
+                            className="absolute top-1/2 h-5 -translate-y-1/2 rounded-md bg-primary shadow-sm ring-1 ring-primary/20"
+                            style={{ left: `${index * 30 + 4}px`, width: "22px", opacity: strength }}
+                            title={`${date.toLocaleDateString("pt-BR")} · ${formatServiceHours(seconds)}`}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/10 px-4 py-2.5 text-[0.65rem] text-muted-foreground lg:px-5">
+          <span>{ganttTooWide ? "Gantt diário limitado a recortes de até 366 dias." : `${ganttRows.length} ${ganttRows.length === 1 ? "subatividade" : "subatividades"} no recorte diário`}</span>
+          <span>{ganttTooWide ? "Os demais dados não foram limitados." : "Quanto mais sólido o bloco, maior a carga daquele dia."}</span>
+        </div>
+      </section>
 
       <section className="rounded-2xl bg-card ring-1 ring-foreground/8">
         <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between lg:p-5">

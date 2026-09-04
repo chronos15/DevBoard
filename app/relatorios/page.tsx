@@ -1,15 +1,13 @@
 import { PageHeading } from "@/components/page-heading"
 import { ReportsView } from "@/components/reports/reports-view"
-import { ExportReportsButton } from "@/components/reports/export-reports-button"
 
 export default function RelatoriosPage() {
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
       <PageHeading
         eyebrow="Análises"
-        title="Relatórios"
-        subtitle="Horas, carga e desempenho dos projetos respeitando o seu nível de acesso."
-        action={<ExportReportsButton />}
+        title="Relatórios gerenciais"
+        subtitle="Auditoria de horas, produtividade e andamento com filtros administrativos e exportação profissional."
       />
       <ReportsView />
     </div>

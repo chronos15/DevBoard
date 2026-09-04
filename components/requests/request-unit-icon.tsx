@@ -56,7 +56,13 @@ export function RequestUnitIcon({
   imageClassName?: string
 }) {
   if (imageUrl) {
-    return <img src={imageUrl} alt="" className={cn("size-full object-cover", imageClassName)} />
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        className={cn("size-full object-contain p-1", imageClassName)}
+      />
+    )
   }
   const Icon = icons[normalizeRequestUnitIcon(icon)]
   return <Icon className={cn("size-4", className)} />

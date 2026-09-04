@@ -646,7 +646,7 @@ function ServiceRequestUnitsSection() {
             className="group relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
             aria-label="Selecionar imagem personalizada da unidade"
           >
-            {previewUrl ? <img src={previewUrl} alt="" className="size-full object-cover" /> : <RequestUnitIcon icon={icon} className="size-6" />}
+            {previewUrl ? <img src={previewUrl} alt="" className="size-full object-contain p-1.5" /> : <RequestUnitIcon icon={icon} className="size-6" />}
             <span className="absolute inset-x-0 bottom-0 flex h-5 items-center justify-center bg-background/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"><Upload className="size-3" /></span>
           </button>
 

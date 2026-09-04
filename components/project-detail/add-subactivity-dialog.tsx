@@ -19,9 +19,11 @@ import type { Status } from "@/lib/types"
 export function AddSubactivityDialog({
   projectId,
   activityId,
+  aqsRequired = false,
 }: {
   projectId: string
   activityId: string
+  aqsRequired?: boolean
 }) {
   const { members, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
@@ -41,7 +43,8 @@ export function AddSubactivityDialog({
     if (!assignee) setAssignee(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
     const canChooseStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assignee === currentUserId)
     if (!canChooseStatus && status !== "backlog") setStatus("backlog")
-  }, [assignee, currentUserId, currentUserRole, executionMembers, status])
+    if (aqsRequired && (status === "done" || status === "cancelled")) setStatus("backlog")
+  }, [aqsRequired, assignee, currentUserId, currentUserRole, executionMembers, status])
 
   async function saveSubactivity() {
     if (!title.trim() || !assignee || saving) return
@@ -69,7 +72,7 @@ export function AddSubactivityDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || !assignee) return
-    if (status === "done" || status === "cancelled") {
+    if (!aqsRequired && (status === "done" || status === "cancelled")) {
       setTerminalConfirmOpen(true)
       return
     }
@@ -97,7 +100,7 @@ export function AddSubactivityDialog({
         <DialogHeader>
           <DialogTitle>Nova subatividade</DialogTitle>
           <DialogDescription>
-            Descreva a subatividade, defina a situação, a estimativa e o responsável.
+            {aqsRequired ? "Esta atividade pertence a uma solicitação. Crie a etapa técnica normalmente; a conclusão será feita somente após envio e aprovação AQS." : "Descreva a subatividade, defina a situação, a estimativa e o responsável."}
           </DialogDescription>
         </DialogHeader>
 
@@ -137,13 +140,17 @@ export function AddSubactivityDialog({
                   <option
                     key={item}
                     value={item}
-                    disabled={!canSetInitialStatus && item !== "backlog"}
+                    disabled={(!canSetInitialStatus && item !== "backlog") || (aqsRequired && (item === "done" || item === "cancelled"))}
                   >
                     {statusMeta[item].label}
                   </option>
                 ))}
               </select>
-              {!canSetInitialStatus ? (
+              {aqsRequired ? (
+                <span className="text-[0.68rem] leading-snug text-primary">
+                  OS vinculada: Concluída/Cancelada não podem ser escolhidas diretamente. Ao terminar, envie para Aguardando AQS.
+                </span>
+              ) : !canSetInitialStatus ? (
                 <span className="text-[0.68rem] leading-snug text-muted-foreground">
                   Como você está criando para outro responsável, a subatividade começa no Backlog. O responsável poderá iniciar o fluxo normalmente.
                 </span>

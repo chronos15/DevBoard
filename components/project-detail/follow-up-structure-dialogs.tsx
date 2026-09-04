@@ -143,10 +143,11 @@ export function FollowUpAddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, projects, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
+  const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+  const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("4")
@@ -164,14 +165,15 @@ export function FollowUpAddSubactivityDialog({
     }
     const canChooseStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
     if (!canChooseStatus && status !== "backlog") setStatus("backlog")
-  }, [assigneeId, currentUserId, currentUserRole, executionMembers, status])
+    if (aqsRequired && (status === "done" || status === "cancelled")) setStatus("backlog")
+  }, [aqsRequired, assigneeId, currentUserId, currentUserRole, executionMembers, status])
 
   if (!canManageStructure) return null
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (!title.trim() || !assigneeId || saving) return
-    if ((status === "done" || status === "cancelled") && !window.confirm(`Criar esta subatividade já como “${statusMeta[status].label}”?`)) return
+    if (!aqsRequired && (status === "done" || status === "cancelled") && !window.confirm(`Criar esta subatividade já como “${statusMeta[status].label}”?`)) return
 
     setSaving(true)
     try {
@@ -217,7 +219,7 @@ export function FollowUpAddSubactivityDialog({
         <DialogHeader>
           <DialogTitle>Nova subatividade</DialogTitle>
           <DialogDescription>
-            Mesmas regras de criação, responsável, situação e estimativa usadas em Lista/Kanban.
+            {aqsRequired ? "Esta atividade pertence a uma solicitação. A conclusão é obrigatoriamente feita pela Análise AQS." : "Mesmas regras de criação, responsável, situação e estimativa usadas em Lista/Kanban."}
           </DialogDescription>
         </DialogHeader>
 
@@ -254,16 +256,18 @@ export function FollowUpAddSubactivityDialog({
                 className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
               >
                 {statusOrder.map((item) => (
-                  <option key={item} value={item} disabled={!canSetInitialStatus && item !== "backlog"}>
+                  <option key={item} value={item} disabled={(!canSetInitialStatus && item !== "backlog") || (aqsRequired && (item === "done" || item === "cancelled"))}>
                     {statusMeta[item].label}
                   </option>
                 ))}
               </select>
-              {!canSetInitialStatus && (
+              {aqsRequired ? (
+                <p className="text-[0.68rem] leading-snug text-primary">OS vinculada: finalize enviando para Aguardando AQS.</p>
+              ) : !canSetInitialStatus ? (
                 <p className="text-[0.68rem] leading-snug text-muted-foreground">
                   Para outro responsável, a nova subatividade começa no Backlog.
                 </p>
-              )}
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Tipo</label>

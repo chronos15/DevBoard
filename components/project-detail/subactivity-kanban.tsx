@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { AlertTriangle, Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square } from "lucide-react"
-import type { ActivityFilter, Project, Status, Subactivity } from "@/lib/types"
+import type { ActivityFilter, Project, ServiceRequest, Status, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
   formatHMS,
@@ -22,6 +22,7 @@ type KanbanItem = {
   activityId: string
   activityTitle: string
   sub: Subactivity
+  linkedRequest?: ServiceRequest
 }
 
 type PendingTransition = {
@@ -199,6 +200,7 @@ export function SubactivityKanban({
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
     currentUserRole,
+    serviceRequests,
   } = useStore()
   const [draggingId, setDraggingId] = React.useState<string | null>(null)
   const [overStatus, setOverStatus] = React.useState<Status | null>(null)
@@ -216,6 +218,7 @@ export function SubactivityKanban({
         activityId: activity.id,
         activityTitle: activity.title,
         sub,
+        linkedRequest: serviceRequests.find((request) => request.activityId === activity.id),
       })),
   )
 
@@ -247,8 +250,9 @@ export function SubactivityKanban({
 
   function requestStatus(item: KanbanItem, nextStatus: Status) {
     if (item.sub.status === nextStatus) return
-    const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = item.sub.status === "done" || item.sub.status === "cancelled"
+    if (item.linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
+    const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
 
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
       setPendingTransition({
@@ -388,6 +392,7 @@ export function SubactivityKanban({
                               <p className="min-w-0 truncate text-[0.68rem] text-muted-foreground">
                                 {item.activityTitle}
                               </p>
+                              {item.linkedRequest && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.56rem] font-semibold text-primary">OS {item.linkedRequest.orderNumber}</span>}
                             </div>
                             {item.sub.needsAttention && (
                               <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.65rem] font-medium text-chart-4">

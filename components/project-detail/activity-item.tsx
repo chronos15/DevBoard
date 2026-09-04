@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, Check, ChevronDown, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
-import type { Activity, Subactivity } from "@/lib/types"
+import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
+import type { Activity, ServiceRequest, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
   activityTracked,
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
-function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity; projectId: string; focused?: boolean }) {
+function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { sub: Subactivity; projectId: string; linkedRequest?: ServiceRequest; focused?: boolean }) {
   const {
     members,
     setSubStatus,
@@ -69,9 +69,13 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
     ? Math.min(100, (sub.trackedSeconds / estimateSeconds) * 100)
     : 0
   const over = sub.trackedSeconds > estimateSeconds && estimateSeconds > 0
+  const availableStatuses = statusOrder.filter((status) =>
+    !linkedRequest || status === sub.status || (status !== "done" && status !== "cancelled"),
+  )
 
   function requestStatus(nextStatus: Subactivity["status"]) {
     if (nextStatus === sub.status || statusSaving) return
+    if (linkedRequest && !terminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = sub.status === "done" || sub.status === "cancelled"
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
@@ -112,15 +116,17 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
       <button
         type="button"
         disabled={!canManage}
-        onClick={() => requestStatus(terminal ? "backlog" : "done")}
+        onClick={() => requestStatus(terminal ? "backlog" : linkedRequest ? "waiting-aqs" : "done")}
         aria-label={
           done
             ? "Reabrir subatividade"
             : cancelled
               ? "Reabrir subatividade cancelada"
-              : "Concluir subatividade"
+              : linkedRequest
+                ? `Enviar para AQS · OS ${linkedRequest.orderNumber}`
+                : "Concluir subatividade"
         }
-        title={canManage ? undefined : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"}
+        title={canManage ? (linkedRequest && !terminal ? `OS ${linkedRequest.orderNumber} · conclusão obrigatoriamente via AQS` : undefined) : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"}
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
           !canManage && "cursor-not-allowed opacity-45",
@@ -128,11 +134,14 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
             ? "border-success bg-success text-success-foreground"
             : cancelled
               ? "border-destructive bg-destructive/10 text-destructive"
-              : "border-border hover:border-success",
+              : linkedRequest
+                ? "border-primary/35 text-primary hover:border-primary hover:bg-primary/10"
+                : "border-border hover:border-success",
         )}
       >
         {done && <Check className="size-3" strokeWidth={3} />}
         {cancelled && <X className="size-3" strokeWidth={3} />}
+        {linkedRequest && !terminal && <ClipboardCheck className="size-2.5" strokeWidth={2.4} />}
       </button>
 
       <div className="min-w-0 flex-1">
@@ -215,7 +224,7 @@ function SubactivityRow({ sub, projectId, focused = false }: { sub: Subactivity;
               meta.className,
             )}
           >
-            {statusOrder.map((status) => (
+            {availableStatuses.map((status) => (
               <option key={status} value={status} className="bg-background text-foreground">
                 {statusMeta[status].label}
               </option>
@@ -277,7 +286,7 @@ export function ActivityItem({
   focusActivityId?: string | null
   focusSubactivityId?: string | null
 }) {
-  const { deleteActivity, supportTopics, currentUserId, currentUserRole, projects } = useStore()
+  const { deleteActivity, supportTopics, serviceRequests, currentUserId, currentUserRole, projects } = useStore()
   const currentProject = projects.find((project) => project.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(currentProject?.memberIds.includes(currentUserId))
   const activityRef = React.useRef<HTMLDivElement>(null)
@@ -306,7 +315,8 @@ export function ActivityItem({
   const done = allSubs.filter((s) => s.status === "done").length
   const progress = allSubs.length ? Math.round((done / allSubs.length) * 100) : 0
   const tracked = activityTracked(activity)
-  const canDelete = allSubs.length === 0
+  const linkedRequest = serviceRequests.find((request) => request.activityId === activity.id)
+  const canDelete = allSubs.length === 0 && !linkedRequest
   const hasRunningSubactivity = allSubs.some((sub) => sub.status === "in-progress")
   const filtering = visibleSubactivities !== undefined
   const sourceTopic = supportTopics.find((topic) => topic.activityId === activity.id)
@@ -359,6 +369,7 @@ export function ActivityItem({
                 </span>
                 <h3 className="min-w-0 truncate font-semibold" title={activity.title}>{activity.title}</h3>
                 <WorkItemTypeBadge typeId={activity.typeId} compact />
+                {linkedRequest && <span className="rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary">OS {linkedRequest.orderNumber}</span>}
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
                   <MemberStack ids={activity.assigneeIds ?? []} max={2} />
                 )}
@@ -413,6 +424,16 @@ export function ActivityItem({
 
         {open && (
           <div className="border-t border-border px-2 pb-2">
+            {linkedRequest && (
+              <Link href={`/solicitacoes/${linkedRequest.id}`} className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.045] px-3 py-2.5 text-left transition-colors hover:bg-primary/[0.07]">
+                <ClipboardCheck className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">Vinculada à OS {linkedRequest.orderNumber} · conclusão protegida</span>
+                  <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">Subatividades devem ser enviadas para AQS; somente a aprovação AQS marca como concluída.</span>
+                </span>
+                <span className="shrink-0 text-[0.62rem] font-semibold text-primary">Abrir OS</span>
+              </Link>
+            )}
             {sourceTopic && (
               <div
                 className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5 text-left"
@@ -427,7 +448,7 @@ export function ActivityItem({
             )}
             <div className="flex flex-col divide-y divide-border/60">
               {visibleSubs.map((sub) => (
-                <SubactivityRow key={sub.id} sub={sub} projectId={projectId} focused={focusSubactivityId === sub.id} />
+                <SubactivityRow key={sub.id} sub={sub} projectId={projectId} linkedRequest={linkedRequest} focused={focusSubactivityId === sub.id} />
               ))}
               {visibleSubs.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">
@@ -438,7 +459,7 @@ export function ActivityItem({
               )}
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 px-1 pt-1">
-              {canManageStructure && <AddSubactivityDialog projectId={projectId} activityId={activity.id} />}
+              {canManageStructure && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
               <button
                 type="button"
                 onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}

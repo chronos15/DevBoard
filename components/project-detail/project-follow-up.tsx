@@ -534,6 +534,7 @@ export function ProjectFollowUp({
     runningSubIds,
     currentUserId,
     currentUserRole,
+    serviceRequests,
     canManageSubactivity,
     addFollowUpComment,
     addFollowUpAttachments,
@@ -712,6 +713,7 @@ export function ProjectFollowUp({
 
   const selectedSub = selectedContext?.sub
   const selectedActivity = selectedContext?.activity
+  const linkedRequest = selectedActivity ? serviceRequests.find((request) => request.activityId === selectedActivity.id) : undefined
 
   const unreadFollowUpNotifications = React.useMemo(
     () => notifications.filter((notification) => isFollowUpUnreadNotification(notification, currentUserId)),
@@ -1793,8 +1795,9 @@ export function ProjectFollowUp({
 
   function requestSelectedStatus(nextStatus: Status) {
     if (!selectedSub || !selectedCanManage || statusSaving || nextStatus === selectedSub.status) return
-    const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = selectedSub.status === "done" || selectedSub.status === "cancelled"
+    if (linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
+    const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
 
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
       setPendingFromStatus(selectedSub.status)
@@ -2832,8 +2835,9 @@ export function ProjectFollowUp({
           className="fixed z-[9999] w-52 max-h-[min(360px,calc(100vh-16px))] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl ring-1 ring-black/5 [scrollbar-width:thin]"
         >
           <div className="px-2 py-1.5 text-[0.62rem] font-semibold text-muted-foreground">Enviar para situação</div>
+          {linkedRequest && <div className="mx-1 mb-1 rounded-lg bg-primary/[0.07] px-2 py-1.5 text-[0.58rem] leading-snug text-primary">OS {linkedRequest.orderNumber} · conclusão somente via AQS</div>}
           <div className="my-1 h-px bg-border" />
-          {statusOrder.map((status) => {
+          {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
             const meta = statusMeta[status]
             const active = status === selectedSub.status
             return (

@@ -18,6 +18,7 @@ import {
   LoaderCircle,
   MessageSquareText,
   Paperclip,
+  Pause,
   Play,
   RefreshCcw,
   Send,
@@ -42,11 +43,23 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { formatHMS } from "@/lib/project-utils"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "—"
   return date.toLocaleString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+}
+
+
+function RequestEventIcon({ type }: { type: string }) {
+  if (type === "technical-activity-created" || type === "technical-activity-renamed") return <FolderKanban className="size-3.5" />
+  if (type === "technical-subactivity-started" || type === "technical-dev-started") return <Play className="size-3.5" />
+  if (type === "technical-subactivity-paused") return <Pause className="size-3.5" />
+  if (type.includes("aqs") || type.includes("approved") || type.includes("revoked")) return <ClipboardCheck className="size-3.5" />
+  if (type.includes("comment")) return <MessageSquareText className="size-3.5" />
+  if (type.includes("attachment")) return <Paperclip className="size-3.5" />
+  return <RefreshCcw className="size-3.5" />
 }
 
 function formatBytes(value: number) {
@@ -158,30 +171,31 @@ function SendToDevDialog({ open, onOpenChange, request }: { open: boolean; onOpe
   const developers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const [responsibleDevId, setResponsibleDevId] = React.useState(request.responsibleDevId ?? "")
   const [projectId, setProjectId] = React.useState(request.projectId ?? "none")
-  const [activityId, setActivityId] = React.useState(request.activityId ?? "none")
   const [summary, setSummary] = React.useState(request.aqsSummary ?? "")
   const [priorityApproved, setPriorityApproved] = React.useState(request.priorityApproved)
   const [saving, setSaving] = React.useState(false)
   const project = projects.find((item) => item.id === projectId)
+  const orderLabel = request.orderNumber.trim().toLocaleUpperCase("pt-BR").startsWith("OS ")
+    ? request.orderNumber.trim()
+    : `OS ${request.orderNumber.trim()}`
+  const activityTitle = `[${orderLabel}] ${request.title.trim()}`
 
   React.useEffect(() => {
     if (!open) return
     setResponsibleDevId(request.responsibleDevId ?? "")
     setProjectId(request.projectId ?? "none")
-    setActivityId(request.activityId ?? "none")
     setSummary(request.aqsSummary ?? "")
     setPriorityApproved(request.priorityApproved)
   }, [open, request])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (!responsibleDevId || saving) return
+    if (!responsibleDevId || projectId === "none" || saving) return
     setSaving(true)
     try {
       const ok = await sendServiceRequestToDev(request.id, {
         responsibleDevId,
-        projectId: projectId === "none" ? undefined : projectId,
-        activityId: activityId === "none" ? undefined : activityId,
+        projectId,
         summary: summary.trim() || undefined,
         priorityApproved,
       })
@@ -194,18 +208,46 @@ function SendToDevDialog({ open, onOpenChange, request }: { open: boolean; onOpe
   return (
     <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader><DialogTitle>Encaminhar solicitação ao DEV</DialogTitle><DialogDescription>Defina o responsável do departamento e, opcionalmente, vincule o protocolo a um projeto/atividade já existente. Nenhuma atividade ou subatividade será criada ou alterada por esta ação.</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Encaminhar solicitação ao DEV</DialogTitle>
+          <DialogDescription>
+            Selecione o projeto e o responsável. O Devboard criará a atividade automaticamente, vinculará a OS e passará a registrar execução, pausas, comentários, evidências e validações AQS no histórico do protocolo.
+          </DialogDescription>
+        </DialogHeader>
         <form id="send-request-dev" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Responsável DEV *</span><Select value={responsibleDevId} onValueChange={(value) => value && setResponsibleDevId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o responsável">{developers.find((member) => member.id === responsibleDevId)?.name ?? "Selecione o responsável"}</SelectValue></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></label>
-          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Projeto relacionado</span><Select value={projectId} onValueChange={(value) => { const next = String(value); setProjectId(next); setActivityId("none") }}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue>{project?.name ?? "Sem vínculo técnico ainda"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="none">Sem vínculo técnico ainda</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></label>
-          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Atividade existente</span><Select value={activityId} disabled={!project} onValueChange={(value) => value && setActivityId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue>{activityId === "none" ? "Somente projeto" : project?.activities.find((activity) => activity.id === activityId)?.title ?? "Somente projeto"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="none">Somente projeto</SelectItem>{project?.activities.map((activity) => <SelectItem key={activity.id} value={activity.id}>{activity.title}</SelectItem>)}</SelectContent></Select></label>
-          <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Resumo consolidado da análise AQS</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={5} placeholder="Problema identificado, comportamento esperado, como reproduzir e informações relevantes para o DEV..." className="w-full resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /></label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Projeto *</span>
+            <Select value={projectId} onValueChange={(value) => value && setProjectId(String(value))}>
+              <SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue>{project?.name ?? "Selecione o projeto"}</SelectValue></SelectTrigger>
+              <SelectContent><SelectItem value="none">Selecione o projeto</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Responsável DEV *</span>
+            <Select value={responsibleDevId} onValueChange={(value) => value && setResponsibleDevId(String(value))}>
+              <SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o responsável">{developers.find((member) => member.id === responsibleDevId)?.name ?? "Selecione o responsável"}</SelectValue></SelectTrigger>
+              <SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </label>
+
+          <div className="sm:col-span-2 rounded-2xl border border-primary/20 bg-primary/[0.04] p-3.5">
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><FolderKanban className="size-4" /></span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2"><p className="text-xs font-semibold">Atividade criada automaticamente</p><span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.6rem] font-semibold text-primary">Fluxo protegido por AQS</span></div>
+                <p className="mt-1 break-words text-sm font-semibold">{activityTitle}</p>
+                <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">O responsável será incluído no projeto. As subatividades desta atividade não poderão ser concluídas diretamente: a etapa final será obrigatoriamente <strong className="font-medium text-foreground">Aguardando AQS</strong>.</p>
+              </div>
+            </div>
+          </div>
+
+          <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-medium text-muted-foreground">Resumo consolidado da análise AQS</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={4} placeholder="Problema identificado, comportamento esperado, como reproduzir e informações relevantes para o DEV..." className="w-full resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /></label>
           <button type="button" onClick={() => setPriorityApproved((value) => !value)} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 p-3 text-left sm:col-span-2">
             <span><span className="block text-xs font-semibold">Prioridade aprovada pelo AQS</span><span className="mt-0.5 block text-[0.68rem] text-muted-foreground">A solicitação original apenas pede prioridade; a aprovação fica registrada aqui.</span></span>
             <span className={cn("flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors", priorityApproved ? "bg-primary" : "bg-muted-foreground/25")}><span className={cn("size-5 rounded-full bg-white shadow transition-transform", priorityApproved && "translate-x-5")} /></span>
           </button>
         </form>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="send-request-dev" disabled={!responsibleDevId || saving} loading={saving} loadingText="Encaminhando..."><Code2 className="size-4" /> Enviar ao DEV</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="send-request-dev" disabled={!responsibleDevId || projectId === "none" || saving} loading={saving} loadingText="Criando atividade..."><Code2 className="size-4" /> Criar atividade e enviar</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -223,7 +265,7 @@ function AssignExecutorDialog({ open, onOpenChange, request }: { open: boolean; 
     setSaving(true)
     try { if (await assignServiceRequestExecutor(request.id, executorId)) onOpenChange(false) } finally { setSaving(false) }
   }
-  return <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Designar executor</DialogTitle><DialogDescription>O executor receberá a solicitação e poderá iniciar o atendimento. Isso não altera responsáveis de atividades/subatividades existentes.</DialogDescription></DialogHeader><form id="assign-request-executor" onSubmit={submit}><Select value={executorId} onValueChange={(value) => value && setExecutorId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o executor">{developers.find((member) => member.id === executorId)?.name ?? "Selecione o executor"}</SelectValue></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="assign-request-executor" disabled={!executorId || saving} loading={saving} loadingText="Designando...">Designar</Button></DialogFooter></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Designar executor</DialogTitle><DialogDescription>O executor receberá a solicitação e será incluído na atividade vinculada. A distribuição das subatividades continua independente, para você definir quem executa cada etapa.</DialogDescription></DialogHeader><form id="assign-request-executor" onSubmit={submit}><Select value={executorId} onValueChange={(value) => value && setExecutorId(String(value))}><SelectTrigger className="h-10 w-full rounded-xl bg-card"><SelectValue placeholder="Selecione o executor">{developers.find((member) => member.id === executorId)?.name ?? "Selecione o executor"}</SelectValue></SelectTrigger><SelectContent>{developers.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="assign-request-executor" disabled={!executorId || saving} loading={saving} loadingText="Designando...">Designar</Button></DialogFooter></DialogContent></Dialog>
 }
 
 function CompleteRequestDialog({ open, onOpenChange, requestId }: { open: boolean; onOpenChange: (open: boolean) => void; requestId: string }) {
@@ -328,6 +370,15 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
   const executor = members.find((member) => member.id === request.executorId)
   const project = projects.find((item) => item.id === request.projectId)
   const activity = project?.activities.find((item) => item.id === request.activityId)
+  const linkedTechnicalWork = Boolean(project && activity)
+  const activityHref = project && activity ? `/projetos/${project.id}#activity-${activity.id}` : null
+  const technicalSubs = activity?.subactivities ?? []
+  const technicalDone = technicalSubs.filter((sub) => sub.status === "done").length
+  const technicalWaitingAqs = technicalSubs.filter((sub) => sub.status === "waiting-aqs").length
+  const firstTechnicalWaitingAqs = technicalSubs.find((sub) => sub.status === "waiting-aqs")
+  const analysisHref = firstTechnicalWaitingAqs ? `/analise?sub=${encodeURIComponent(firstTechnicalWaitingAqs.id)}` : "/analise"
+  const technicalTrackedSeconds = technicalSubs.reduce((total, sub) => total + sub.trackedSeconds, 0)
+  const technicalProgress = technicalSubs.length ? Math.round((technicalDone / technicalSubs.length) * 100) : 0
   const canAqs = currentUserRole === "admin" || currentUserRole === "aqs"
   const canDev = currentUserRole === "admin" || currentUserRole === "developer"
   const canOperateDev = currentUserRole === "admin" || (currentUserRole === "developer" && [request.responsibleDevId, request.executorId].includes(currentUserId))
@@ -360,10 +411,12 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           <div className={cn("flex flex-wrap items-center justify-end gap-2", embedded && "shrink-0")}>
             {canAqs && ["received", "waiting-info"].includes(request.status) && <Button type="button" onClick={() => void quick("aqs", () => startServiceRequestAqs(request.id))} disabled={!!quickLoading} loading={quickLoading === "aqs"} loadingText="Assumindo..."><ClipboardCheck className="size-4" /> {request.status === "waiting-info" ? "Retomar análise" : "Assumir análise"}</Button>}
             {canAqs && request.status === "aqs-analysis" && <><Button type="button" variant="outline" onClick={() => setInfoOpen(true)}>Solicitar informações</Button><Button type="button" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRejectOpen(true)}>Recusar</Button><Button type="button" onClick={() => setSendDevOpen(true)}><Code2 className="size-4" /> Enviar ao DEV</Button></>}
-            {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <Button type="button" onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button>}
-            {canOperateDev && ["waiting-executor", "rework"].includes(request.status) && <Button type="button" onClick={() => void quick("dev-start", () => startServiceRequestDev(request.id))} disabled={!!quickLoading} loading={quickLoading === "dev-start"} loadingText="Iniciando..."><Play className="size-4" /> Iniciar execução</Button>}
-            {canOperateDev && ["in-dev", "rework"].includes(request.status) && <Button type="button" onClick={() => setSendAqsOpen(true)}><Send className="size-4" /> Enviar para AQS</Button>}
-            {canAqs && request.status === "waiting-aqs" && <><Button type="button" variant="outline" onClick={() => setReworkOpen(true)}><RefreshCcw className="size-4" /> Reavaliar DEV</Button><Button type="button" onClick={() => setApproveOpen(true)}><CheckCircle2 className="size-4" /> Aprovar execução</Button></>}
+            {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <>{linkedTechnicalWork && activityHref && <Button type="button" onClick={() => router.push(activityHref)}><FolderKanban className="size-4" /> Abrir atividade</Button>}<Button type="button" variant={linkedTechnicalWork ? "outline" : "default"} onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button></>}
+            {canOperateDev && ["waiting-executor", "rework", "in-dev"].includes(request.status) && linkedTechnicalWork && activityHref && <Button type="button" onClick={() => router.push(activityHref)}><FolderKanban className="size-4" /> Abrir atividade</Button>}
+            {canOperateDev && ["waiting-executor", "rework"].includes(request.status) && !linkedTechnicalWork && <Button type="button" onClick={() => void quick("dev-start", () => startServiceRequestDev(request.id))} disabled={!!quickLoading} loading={quickLoading === "dev-start"} loadingText="Iniciando..."><Play className="size-4" /> Iniciar execução</Button>}
+            {canOperateDev && ["in-dev", "rework"].includes(request.status) && !linkedTechnicalWork && <Button type="button" onClick={() => setSendAqsOpen(true)}><Send className="size-4" /> Enviar para AQS</Button>}
+            {canAqs && request.status === "waiting-aqs" && linkedTechnicalWork && <><Button type="button" variant="outline" onClick={() => activityHref && router.push(activityHref)}><FolderKanban className="size-4" /> Ver atividade</Button><Button type="button" onClick={() => router.push(analysisHref)}><ClipboardCheck className="size-4" /> Abrir Análise AQS</Button></>}
+            {canAqs && request.status === "waiting-aqs" && !linkedTechnicalWork && <><Button type="button" variant="outline" onClick={() => setReworkOpen(true)}><RefreshCcw className="size-4" /> Reavaliar DEV</Button><Button type="button" onClick={() => setApproveOpen(true)}><CheckCircle2 className="size-4" /> Aprovar execução</Button></>}
             {canAqs && request.status === "waiting-build" && <Button type="button" onClick={() => setCompleteOpen(true)}><CheckCircle2 className="size-4" /> Concluir / informar build</Button>}
           </div>
         </div>
@@ -382,7 +435,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3 sm:p-4">
             {timeline.length === 0 ? <div className="py-16 text-center text-sm text-muted-foreground">Nenhum registro ainda.</div> : timeline.map((item) => item.kind === "event" ? (
               <div key={`event-${item.event.id}`} className="flex gap-3 rounded-xl px-2 py-3 hover:bg-muted/25">
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><RefreshCcw className="size-3.5" /></span>
+                <span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full", item.event.type.startsWith("technical-") ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}><RequestEventIcon type={item.event.type} /></span>
                 <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold">{item.event.title}</p><span className="font-mono text-[0.6rem] text-muted-foreground">{formatDateTime(item.event.createdAt)}</span></div>{item.event.description && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{item.event.description}</p>}{item.event.actorId && <p className="mt-1.5 text-[0.62rem] text-muted-foreground"><MemberName member={members.find((member) => member.id === item.event.actorId)} fallback="Sistema" /></p>}</div>
               </div>
             ) : (
@@ -407,7 +460,17 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
 
           <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
 
-          <section className="rounded-2xl border border-border bg-card p-4"><h2 className="text-sm font-semibold">Trabalho técnico relacionado</h2>{project ? <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3"><div className="flex items-center gap-2"><FolderKanban className="size-4 text-primary" /><p className="truncate text-xs font-semibold">{project.name}</p></div><p className="mt-2 text-[0.68rem] text-muted-foreground">{activity ? activity.title : "Solicitação vinculada somente ao projeto."}</p><Link href={`/projetos/${project.id}${activity ? `#activity-${activity.id}` : ""}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir no projeto <ArrowRight className="size-3.5" /></Link></div> : <p className="mt-3 rounded-xl border border-dashed border-border p-4 text-center text-xs leading-relaxed text-muted-foreground">Ainda sem vínculo técnico. O AQS pode selecionar um projeto/atividade existente ao enviar para o DEV.</p>}</section>
+          <section className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Trabalho técnico relacionado</h2>{linkedTechnicalWork && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.6rem] font-semibold text-primary">Sincronização automática</span>}</div>
+            {project && activity ? <div className="mt-3 rounded-xl border border-primary/15 bg-primary/[0.025] p-3">
+              <div className="flex items-center gap-2"><FolderKanban className="size-4 shrink-0 text-primary" /><p className="min-w-0 flex-1 truncate text-xs font-semibold">{project.name}</p></div>
+              <p className="mt-2 line-clamp-2 text-xs font-semibold leading-snug">{activity.title}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.64rem] text-muted-foreground"><span>{technicalDone}/{technicalSubs.length} aprovadas</span><span>{technicalWaitingAqs} aguardando AQS</span><span className="font-mono">{formatHMS(technicalTrackedSeconds)}</span></div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${technicalProgress}%` }} /></div>
+              <div className="mt-3 rounded-lg border border-chart-3/15 bg-chart-3/[0.05] px-2.5 py-2 text-[0.64rem] leading-relaxed text-muted-foreground"><strong className="font-semibold text-foreground">Fluxo protegido:</strong> execução, pausas, comentários, evidências e decisões AQS desta atividade são registradas nesta solicitação. Subatividades só concluem após aprovação na Análise AQS.</div>
+              <Link href={`/projetos/${project.id}#activity-${activity.id}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir atividade vinculada <ArrowRight className="size-3.5" /></Link>
+            </div> : project ? <div className="mt-3 rounded-xl border border-warning/20 bg-warning/[0.04] p-3"><div className="flex items-center gap-2"><AlertTriangle className="size-4 text-warning" /><p className="text-xs font-semibold">Projeto sem atividade vinculada</p></div><p className="mt-1.5 text-[0.68rem] leading-relaxed text-muted-foreground">Este é um protocolo antigo. Novos encaminhamentos ao DEV criam e vinculam a atividade automaticamente.</p><Link href={`/projetos/${project.id}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">Abrir projeto <ArrowRight className="size-3.5" /></Link></div> : <p className="mt-3 rounded-xl border border-dashed border-border p-4 text-center text-xs leading-relaxed text-muted-foreground">Ao enviar ao DEV, selecione um projeto. O Devboard criará a atividade <strong className="font-medium text-foreground">[OS] descrição</strong> e fará o vínculo automaticamente.</p>}
+          </section>
 
           {request.finalBuild && <section className="rounded-2xl border border-success/25 bg-success/[0.05] p-4"><p className="text-[0.65rem] font-semibold uppercase tracking-wide text-success">Disponível a partir da build</p><p className="mt-2 font-mono text-sm font-semibold">{request.finalBuild}</p></section>}
         </aside>

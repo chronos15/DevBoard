@@ -1078,8 +1078,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
 
     schedule("sessions-after-start", refreshWorkSessions)
+    schedule("requests-after-start", refreshServiceRequests)
     return true
-  }, [callRpc, canManageSubactivity, currentUserRole, projects, refreshWorkSessions, schedule])
+  }, [callRpc, canManageSubactivity, currentUserRole, projects, refreshServiceRequests, refreshWorkSessions, schedule])
 
   const startTimer = React.useCallback(async (subId: string) => {
     const found = findSubInProjects(projects, subId)
@@ -1119,8 +1120,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
 
     schedule("sessions-after-pause", refreshWorkSessions)
+    schedule("requests-after-pause", refreshServiceRequests)
     return true
-  }, [activeSubId, callRpc, projects, refreshWorkSessions, schedule])
+  }, [activeSubId, callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule])
 
   const setSubStatus = React.useCallback(async (subId: string, status: Status) => {
     if (status === "in-progress") return startTimer(subId)
@@ -1135,8 +1137,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
 
     schedule("sessions-after-status", refreshWorkSessions)
+    schedule("requests-after-status", refreshServiceRequests)
     return true
-  }, [callRpc, projects, refreshWorkSessions, schedule, startTimer])
+  }, [callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule, startTimer])
 
   const cancelTimerConflict = React.useCallback(() => {
     if (timerConflictLoading) return
@@ -1247,13 +1250,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         p_type_id: data.typeId,
       }, "Subatividade criada, mas não foi possível salvar o tipo")
       if (typeResult === undefined) {
-        await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
+        await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
         return true
       }
     }
-    await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions()])
+    await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
     return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshWorkSessions])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
 
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null) => {
     const project = projects.find((item) => item.id === projectId)
@@ -1436,9 +1439,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const addSubactivityComment = React.useCallback(async (subId: string, content: string) => {
     const result = await callRpc<string>("add_subactivity_comment", { p_subactivity_id: subId, p_content: content }, "Não foi possível salvar o comentário")
     if (!result) return false
-    await refreshProjects()
+    await Promise.all([refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, refreshServiceRequests])
 
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyToCommentId?: string) => {
     try {
@@ -1450,7 +1453,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       })
       if (error) throw error
       if (!data) throw new Error("O servidor não confirmou o envio da mensagem.")
-      await refreshProjects()
+      await Promise.all([refreshProjects(), refreshServiceRequests()])
       return true
     } catch (error) {
       // O acompanhamento usa entrega otimista. Falhas aparecem no próprio item
@@ -1458,14 +1461,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       console.error("[Devboard/Acompanhamento] Falha ao entregar mensagem", error)
       return false
     }
-  }, [refreshProjects, supabase])
+  }, [refreshProjects, refreshServiceRequests, supabase])
 
   const deleteFollowUpComment = React.useCallback(async (commentId: string) => {
     const result = await callRpc<boolean>("delete_followup_comment", { p_comment_id: commentId }, "Não foi possível excluir a mensagem")
     if (result === undefined) return false
-    await refreshProjects()
+    await Promise.all([refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, refreshServiceRequests])
 
   const deleteFollowUpAttachment = React.useCallback(async (attachmentId: string, storagePath?: string) => {
     const result = await callRpc<boolean>("delete_followup_attachment", { p_attachment_id: attachmentId }, "Não foi possível excluir o anexo")
@@ -1474,9 +1477,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
       if (error) console.warn("Não foi possível remover o objeto do Storage após excluir o anexo:", error.message)
     }
-    await refreshProjects()
+    await Promise.all([refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshProjects, supabase])
+  }, [callRpc, refreshProjects, refreshServiceRequests, supabase])
 
   const removeFollowUpMember = React.useCallback(async (subId: string, userId: string) => {
     const result = await callRpc<boolean>("remove_followup_subactivity_member", {
@@ -1524,7 +1527,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           throw metadataError
         }
       }
-      await refreshProjects()
+      await Promise.all([refreshProjects(), refreshServiceRequests()])
       return true
     } catch (error) {
       if (options?.silent) {
@@ -1534,7 +1537,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       return false
     }
-  }, [currentUserId, fail, refreshProjects, supabase, workspaceId])
+  }, [currentUserId, fail, refreshProjects, refreshServiceRequests, supabase, workspaceId])
 
   const addProjectAttachments = React.useCallback((projectId: string, files: AttachmentUploadInput[]) => uploadAttachments({ projectId }, files), [uploadAttachments])
 
@@ -1553,9 +1556,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const setAttachmentActive = React.useCallback(async (attachmentId: string, active: boolean) => {
     const result = await callRpc<unknown>("set_attachment_active", { p_attachment_id: attachmentId, p_active: active }, "Não foi possível alterar o anexo")
     if (result === undefined) return false
-    await refreshProjects()
+    await Promise.all([refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, refreshServiceRequests])
 
   const setProjectAttachmentActive = React.useCallback(async (_projectId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
   const setSubactivityAttachmentActive = React.useCallback(async (_subId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
@@ -2055,23 +2058,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const startAqsReview = React.useCallback(async (reviewId: string) => {
     const result = await callRpc<unknown>("start_aqs_review", { p_review_id: reviewId }, "Não foi possível iniciar a análise AQS")
     if (result === undefined) return false
-    await Promise.all([refreshAqsReviews(), refreshProjects()])
+    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshAqsReviews, refreshProjects])
+  }, [callRpc, refreshAqsReviews, refreshProjects, refreshServiceRequests])
 
   const completeAqsReview = React.useCallback(async (reviewId: string) => {
     const result = await callRpc<unknown>("complete_aqs_review", { p_review_id: reviewId }, "Não foi possível concluir a análise AQS")
     if (result === undefined) return false
-    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications()])
+    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects])
+  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const revokeAqsReview = React.useCallback(async (reviewId: string, reason: string) => {
     const result = await callRpc<unknown>("revoke_aqs_review", { p_review_id: reviewId, p_reason: reason }, "Não foi possível revogar a análise AQS")
     if (result === undefined) return false
-    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications()])
+    await Promise.all([refreshAqsReviews(), refreshProjects(), refreshNotifications(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects])
+  }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const addSupportTopicAttachments = React.useCallback(async (topicId: string, files: File[]) => {
     if (!workspaceId || files.length === 0) return false
@@ -2366,16 +2369,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_priority_approved: data.priorityApproved === true,
     }, "Não foi possível encaminhar a solicitação ao DEV")
     if (result === undefined) return false
-    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    await Promise.all([refreshServiceRequests(), refreshNotifications(), refreshProjects()])
     return true
-  }, [callRpc, refreshNotifications, refreshServiceRequests])
+  }, [callRpc, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const assignServiceRequestExecutor = React.useCallback(async (requestId: string, executorId: string) => {
     const result = await callRpc<unknown>("assign_service_request_executor", { p_request_id: requestId, p_executor_id: executorId }, "Não foi possível designar o executor")
     if (result === undefined) return false
-    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    await Promise.all([refreshServiceRequests(), refreshNotifications(), refreshProjects()])
     return true
-  }, [callRpc, refreshNotifications, refreshServiceRequests])
+  }, [callRpc, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const startServiceRequestDev = React.useCallback(async (requestId: string) => {
     const result = await callRpc<unknown>("start_service_request_dev", { p_request_id: requestId }, "Não foi possível iniciar a execução DEV")

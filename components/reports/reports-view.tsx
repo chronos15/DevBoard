@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   Bar,
   BarChart,
@@ -1277,7 +1278,13 @@ export function ReportsView() {
                           <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{item.client} · {priorityLabel(item.priority)}</p>
                         </td>
                         <td className="max-w-80 px-4 py-3.5">
-                          <p className="truncate text-[0.68rem] text-muted-foreground" title={item.activityTitle}>{item.activityTitle}</p>
+                          <Link
+                            href={`/projetos/${item.projectId}#activity-${item.activityId}`}
+                            className="block truncate rounded-sm text-[0.68rem] font-medium text-primary/85 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            title={`Abrir detalhes da atividade: ${item.activityTitle}`}
+                          >
+                            {item.activityTitle}
+                          </Link>
                           <p className="mt-0.5 truncate text-xs font-medium" title={item.subactivityTitle}>{item.subactivityTitle}</p>
                         </td>
                         <td className="px-4 py-3.5">

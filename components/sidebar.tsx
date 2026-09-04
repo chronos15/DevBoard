@@ -51,7 +51,7 @@ const nav = [
   { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"] },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"] },
   { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"] },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin","developer"] },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin"] },
 ] as const
 
 const secondary = [

@@ -25,11 +25,14 @@ import { TimerIdleGuard } from "@/components/timer-idle-guard"
 function canAccessPath(role: AccessRole, pathname: string) {
   // O Painel Dev é pessoal e exclusivo da role developer. Nem admin herda acesso.
   if (pathname.startsWith("/dev")) return role === "developer"
+  // Relatórios gerenciais são uma área administrativa: não basta esconder o item do menu.
+  // A rota também precisa ser bloqueada para acesso direto por URL.
+  if (pathname.startsWith("/relatorios")) return role === "admin"
   if (role === "admin") return true
   if (pathname.startsWith("/solicitacoes/aqs")) return role === "aqs"
   if (pathname.startsWith("/solicitacoes/dev")) return role === "developer"
   if (pathname.startsWith("/analise")) return role === "aqs" || role === "developer"
-  if (pathname.startsWith("/projetos") || pathname.startsWith("/horas") || pathname.startsWith("/agenda") || pathname.startsWith("/relatorios")) {
+  if (pathname.startsWith("/projetos") || pathname.startsWith("/horas") || pathname.startsWith("/agenda")) {
     return role === "developer"
   }
   return true

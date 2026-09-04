@@ -129,21 +129,24 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
     return categories
   }, [files, resourceUrls])
 
-  const protocolReady = REQUIRED_CATEGORIES.every((category) => categoriesPresent.has(category))
+  const isInternal = requestType === "internal"
+  const requiredCategories = React.useMemo(() => isInternal ? [] : REQUIRED_CATEGORIES, [isInternal])
+  const protocolReady = requiredCategories.every((category) => categoriesPresent.has(category))
   const selectedUnit = activeUnits.find((item) => item.id === unitId)
+  const orderNumberValidation = isInternal && !orderNumber.trim() ? null : lengthIssue(orderNumber, LIMITS.orderNumber)
 
   const identificationIssues = React.useMemo(() => [
-    lengthIssue(orderNumber, LIMITS.orderNumber),
+    orderNumberValidation,
     !selectedUnit ? "Selecione uma unidade ativa." : null,
     lengthIssue(module, LIMITS.module),
     lengthIssue(subject, LIMITS.subject),
     lengthIssue(title, LIMITS.title),
     lengthIssue(description, LIMITS.description),
     priorityRequested ? lengthIssue(priorityReason, LIMITS.priorityReason) : null,
-  ].filter(Boolean) as string[], [description, module, orderNumber, priorityReason, priorityRequested, selectedUnit, subject, title])
+  ].filter(Boolean) as string[], [description, module, orderNumberValidation, priorityReason, priorityRequested, selectedUnit, subject, title])
 
   const attachmentIssues = React.useMemo(() => {
-    const next = [
+    const next = isInternal ? [] : [
       !categoriesPresent.has("order-pdf") ? "Anexe a Ordem de Serviço em PDF." : null,
       !categoriesPresent.has("analysis-video") ? "Informe o vídeo/evidência por arquivo ou URL." : null,
       !categoriesPresent.has("database") ? "Informe o banco atualizado por arquivo ou URL FTP." : null,
@@ -156,7 +159,7 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
       }
     }
     return next
-  }, [categoriesPresent, resourceUrls, sourceModes])
+  }, [categoriesPresent, isInternal, resourceUrls, sourceModes])
 
   const issues = React.useMemo(() => [...identificationIssues, ...attachmentIssues], [attachmentIssues, identificationIssues])
   const identificationReady = identificationIssues.length === 0
@@ -281,7 +284,7 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
           <DialogHeader className="gap-1.5 border-b border-border px-5 pb-4 pt-5 pr-12">
             <DialogTitle className="text-lg">Nova solicitação</DialogTitle>
             <DialogDescription className="max-w-3xl text-xs leading-relaxed">
-              Protocole a OS para o fluxo AQS → DEV. Arquivos grandes podem permanecer no FTP e ser referenciados por URL.
+              Protocole solicitações internas ou OS para o fluxo AQS → DEV. Em solicitações internas, OS e anexos são opcionais.
             </DialogDescription>
           </DialogHeader>
 
@@ -309,7 +312,7 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-semibold">Identificação</span>
-                  <span className="block truncate text-[0.62rem] text-muted-foreground">Dados da OS e prioridade</span>
+                  <span className="block truncate text-[0.62rem] text-muted-foreground">Tipo, identificação e prioridade</span>
                 </span>
                 {identificationReady && <Check className="size-3.5 shrink-0 text-success" />}
               </button>
@@ -331,10 +334,10 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-semibold">Anexos</span>
-                  <span className="block truncate text-[0.62rem] text-muted-foreground">Arquivos e URLs do protocolo</span>
+                  <span className="block truncate text-[0.62rem] text-muted-foreground">{isInternal ? "Opcional para solicitações internas" : "Arquivos e URLs do protocolo"}</span>
                 </span>
-                <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[0.58rem]", protocolReady ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>
-                  {REQUIRED_CATEGORIES.filter((category) => categoriesPresent.has(category)).length}/{REQUIRED_CATEGORIES.length}
+                <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[0.58rem] font-semibold", protocolReady ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>
+                  {isInternal ? "Opcional" : `${requiredCategories.filter((category) => categoriesPresent.has(category)).length}/${requiredCategories.length}`}
                 </span>
               </button>
             </div>
@@ -348,24 +351,26 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                 <div className={cn("grid gap-3", showValidation && currentIssues.length ? "mt-3" : "")}> 
                   <section className="grid gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
                     <label className="space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Número da OS *</span>
-                      <input
-                        autoFocus
-                        maxLength={LIMITS.orderNumber.max}
-                        value={orderNumber}
-                        onChange={(event) => setOrderNumber(event.target.value)}
-                        placeholder="Ex: 198855"
-                        className={cn("h-9 w-full rounded-xl border bg-card px-3 text-sm outline-none transition-colors focus:border-ring", fieldIssue(orderNumber, LIMITS.orderNumber) ? "border-destructive" : "border-border")}
-                      />
-                      <FieldHint value={orderNumber} min={LIMITS.orderNumber.min} max={LIMITS.orderNumber.max} issue={fieldIssue(orderNumber, LIMITS.orderNumber)} />
-                    </label>
-
-                    <label className="space-y-1.5">
                       <span className="text-xs font-medium text-muted-foreground">Tipo da solicitação *</span>
                       <Select value={requestType} onValueChange={(value) => value && setRequestType(String(value) as ServiceRequestType)}>
                         <SelectTrigger className="h-9 w-full rounded-xl bg-card"><SelectValue>{SERVICE_REQUEST_TYPE_LABELS[requestType]}</SelectValue></SelectTrigger>
                         <SelectContent align="start">{(Object.entries(SERVICE_REQUEST_TYPE_LABELS) as Array<[ServiceRequestType, string]>).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                       </Select>
+                      {isInternal && <p className="text-[0.62rem] font-medium text-chart-2">Fluxo interno: OS e anexos não são obrigatórios.</p>}
+                    </label>
+
+                    <label className="space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Número da OS {isInternal ? <span className="font-normal">(opcional)</span> : "*"}</span>
+                      <input
+                        maxLength={LIMITS.orderNumber.max}
+                        value={orderNumber}
+                        onChange={(event) => setOrderNumber(event.target.value)}
+                        placeholder={isInternal ? "Opcional" : "Ex: 198855"}
+                        className={cn("h-9 w-full rounded-xl border bg-card px-3 text-sm outline-none transition-colors focus:border-ring", showValidation && orderNumberValidation ? "border-destructive" : "border-border")}
+                      />
+                      {isInternal && !orderNumber.trim()
+                        ? <div className="mt-1 flex justify-end text-[0.62rem] leading-none text-muted-foreground"><span className="font-mono">0/{LIMITS.orderNumber.max}</span></div>
+                        : <FieldHint value={orderNumber} min={LIMITS.orderNumber.min} max={LIMITS.orderNumber.max} issue={showValidation ? orderNumberValidation : null} />}
                     </label>
 
                     <label className="space-y-1.5">
@@ -435,11 +440,11 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                 <div className={cn(showValidation && currentIssues.length ? "mt-3" : "")}>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-xs font-semibold">Checklist do protocolo</p>
-                      <p className="mt-0.5 text-[0.68rem] text-muted-foreground">OS em PDF; vídeo e banco por arquivo ou URL. Certificado é opcional.</p>
+                      <p className="text-xs font-semibold">{isInternal ? "Anexos opcionais" : "Checklist do protocolo"}</p>
+                      <p className="mt-0.5 text-[0.68rem] text-muted-foreground">{isInternal ? "Anexe somente se houver material útil para análise. Nenhum arquivo é obrigatório." : "OS em PDF; vídeo e banco por arquivo ou URL. Certificado é opcional."}</p>
                     </div>
                     <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.68rem] font-medium", protocolReady ? "border-success/25 bg-success/10 text-success" : "border-border bg-muted text-muted-foreground")}>
-                      <Check className="size-3.5" /> {REQUIRED_CATEGORIES.filter((category) => categoriesPresent.has(category)).length}/{REQUIRED_CATEGORIES.length} obrigatórios
+                      <Check className="size-3.5" /> {isInternal ? "Nenhum obrigatório" : `${requiredCategories.filter((category) => categoriesPresent.has(category)).length}/${requiredCategories.length} obrigatórios`}
                     </span>
                   </div>
 
@@ -460,7 +465,8 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">
                                 <p className="min-w-0 flex-1 truncate text-xs font-semibold">{SERVICE_REQUEST_ATTACHMENT_LABELS[item.category]}</p>
-                                {item.required && <span className="shrink-0 text-[0.56rem] font-semibold uppercase tracking-wide text-primary">Obrigatório</span>}
+                                {item.required && !isInternal && <span className="shrink-0 text-[0.56rem] font-semibold uppercase tracking-wide text-primary">Obrigatório</span>}
+                                {isInternal && <span className="shrink-0 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Opcional</span>}
                               </div>
                               <p className="mt-0.5 line-clamp-2 text-[0.66rem] leading-relaxed text-muted-foreground">{item.helper}</p>
 
@@ -531,9 +537,18 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
             <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
               {step === "identification" ? (
-                <Button type="button" onClick={moveToAttachments} disabled={activeUnits.length === 0}>
-                  Continuar para anexos <ChevronRight className="size-4" />
-                </Button>
+                isInternal ? (
+                  <>
+                    <Button type="button" variant="outline" onClick={moveToAttachments} disabled={activeUnits.length === 0}>
+                      Anexos opcionais <Paperclip className="size-4" />
+                    </Button>
+                    <Button type="submit" disabled={saving || activeUnits.length === 0} loading={saving} loadingText="Protocolando...">Protocolar solicitação</Button>
+                  </>
+                ) : (
+                  <Button type="button" onClick={moveToAttachments} disabled={activeUnits.length === 0}>
+                    Continuar para anexos <ChevronRight className="size-4" />
+                  </Button>
+                )
               ) : (
                 <>
                   <Button type="button" variant="ghost" onClick={() => setStep("identification")} disabled={saving}>Voltar</Button>

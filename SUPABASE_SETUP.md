@@ -662,3 +662,25 @@ supabase/migrations/045_devboard_request_unit_visuals.sql
 A 045 adiciona ícone e imagem personalizada opcional às Unidades usadas pela central de Solicitações. Também cria o bucket público `devboard-request-unit-icons` (máx. 3 MB; JPG, PNG, WEBP ou GIF) e restringe criação/alteração da identidade visual a administradores do workspace.
 
 A mudança é apenas de identidade/navegação visual da central de Solicitações e não altera Projetos, Atividades ou Subatividades.
+
+## Migration 046 — Solicitações vinculadas ao trabalho técnico
+
+Depois da 045, aplique:
+
+```text
+supabase/migrations/046_devboard_service_request_activity_sync.sql
+```
+
+A 046 integra o protocolo de Solicitações ao fluxo real de Projetos/Atividades/Subatividades. Ao encaminhar uma solicitação ao DEV, o Devboard cria ou vincula a atividade técnica, registra execução/pausas/comentários/evidências no histórico da solicitação e protege a conclusão das subatividades vinculadas: elas precisam obrigatoriamente passar pela **Análise AQS** antes de serem concluídas.
+
+## Migration 047 — Solicitações internas sem OS/anexos obrigatórios
+
+Depois da 046, aplique:
+
+```text
+supabase/migrations/047_devboard_internal_service_requests.sql
+```
+
+A 047 adiciona o tipo **Interno**. Para esse tipo, o usuário não precisa informar número de OS nem anexar OS em PDF, vídeo/evidência ou banco. Quando nenhuma OS é informada, o banco gera apenas uma referência interna única (`INT-...`) para preservar busca, notificações, vínculos e histórico sem fingir que existe uma OS externa.
+
+Anexos continuam disponíveis de forma opcional. Se a solicitação interna for encaminhada ao DEV, a atividade técnica usa a referência interna no título e mantém o mesmo fluxo obrigatório de validação AQS da migration 046.

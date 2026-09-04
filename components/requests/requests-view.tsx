@@ -18,6 +18,7 @@ import {
   SERVICE_REQUEST_STATUS_LABELS,
   SERVICE_REQUEST_TYPE_LABELS,
   serviceRequestMatchesScope,
+  serviceRequestReference,
   serviceRequestScopeTitle,
   serviceRequestStatusTone,
   type ServiceRequestScope,
@@ -64,7 +65,7 @@ function formatCompactDate(value: string) {
 }
 
 function requestLabel(request: ServiceRequest) {
-  return `${request.orderNumber} · ${request.title}`
+  return `${serviceRequestReference(request)} · ${request.title}`
 }
 
 export function RequestsWorkspace({ scope, requestId }: { scope: ServiceRequestScope; requestId?: string }) {
@@ -256,7 +257,7 @@ export function RequestsWorkspace({ scope, requestId }: { scope: ServiceRequestS
                       >
                         <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", request.priorityRequested ? "bg-warning" : SERVICE_REQUEST_FINAL_STATUSES.has(request.status) ? "bg-success" : "bg-muted-foreground/45")} />
                         <span className="min-w-0 flex-1">
-                          <span className={cn("block truncate text-xs", active ? "font-semibold" : "font-medium")}>OS {requestLabel(request)}</span>
+                          <span className={cn("block truncate text-xs", active ? "font-semibold" : "font-medium")}>{requestLabel(request)}</span>
                           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.6rem]">
                             <span className="truncate">{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span>
                             <span>·</span>

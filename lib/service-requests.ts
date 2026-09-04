@@ -1,6 +1,7 @@
 import type { AccessRole, ServiceRequest, ServiceRequestAttachmentCategory, ServiceRequestStatus, ServiceRequestType } from "@/lib/types"
 
 export const SERVICE_REQUEST_TYPE_LABELS: Record<ServiceRequestType, string> = {
+  internal: "Interno",
   failure: "Falha",
   development: "Desenvolvimento",
   adjustment: "Ajuste",
@@ -37,6 +38,17 @@ export const SERVICE_REQUEST_DEV_STATUSES = new Set<ServiceRequestStatus>(["wait
 
 export type ServiceRequestScope = "inbox" | "mine" | "aqs" | "dev" | "completed"
 
+export function serviceRequestReference(request: Pick<ServiceRequest, "requestType" | "orderNumber">) {
+  const raw = request.orderNumber.trim()
+  if (request.requestType === "internal") {
+    if (!raw) return "Interno"
+    if (/^INT-/i.test(raw)) return raw
+    return /^OS\s+/i.test(raw) ? raw : `OS ${raw}`
+  }
+  if (!raw) return "OS"
+  return /^OS\s+/i.test(raw) ? raw : `OS ${raw}`
+}
+
 export function serviceRequestStatusTone(status: ServiceRequestStatus) {
   if (status === "completed") return "border-success/25 bg-success/10 text-success"
   if (status === "rejected" || status === "cancelled") return "border-destructive/25 bg-destructive/10 text-destructive"
@@ -47,6 +59,7 @@ export function serviceRequestStatusTone(status: ServiceRequestStatus) {
 }
 
 export function serviceRequestTypeTone(type: ServiceRequestType) {
+  if (type === "internal") return "border-chart-2/20 bg-chart-2/10 text-chart-2"
   if (type === "failure") return "border-destructive/20 bg-destructive/8 text-destructive"
   if (type === "development") return "border-primary/20 bg-primary/8 text-primary"
   if (type === "structured-triage") return "border-chart-4/20 bg-chart-4/10 text-chart-4"

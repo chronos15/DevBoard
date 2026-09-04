@@ -302,7 +302,7 @@ export type ChatConversation = {
 
 
 
-export type ServiceRequestType = "failure" | "development" | "adjustment" | "improvement" | "structured-triage"
+export type ServiceRequestType = "internal" | "failure" | "development" | "adjustment" | "improvement" | "structured-triage"
 export type ServiceRequestStatus =
   | "received"
   | "aqs-analysis"

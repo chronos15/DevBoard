@@ -22,7 +22,7 @@ import { HoursByProject } from "@/components/dashboard/hours-by-project"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
-import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestStatusTone } from "@/lib/service-requests"
+import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference, serviceRequestStatusTone } from "@/lib/service-requests"
 
 
 function FollowUpQuickButton() {
@@ -135,7 +135,7 @@ function RequestsDashboard({ firstName }: { firstName: string }) {
         <div className="mt-4 space-y-2">
           {visibleRequests.slice(0, 6).map((request) => (
             <Link key={request.id} href={`/solicitacoes/${request.id}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-muted/45">
-              <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{request.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">OS {request.orderNumber} · {request.unit}</p></div>
+              <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{request.title}</p><p className="mt-0.5 truncate font-mono text-[0.66rem] text-muted-foreground">{serviceRequestReference(request)} · {request.unit}</p></div>
               <span className={cn("shrink-0 rounded-full border px-2 py-1 text-[0.65rem] font-medium", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>
             </Link>
           ))}

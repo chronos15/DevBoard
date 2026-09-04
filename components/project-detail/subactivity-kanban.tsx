@@ -17,6 +17,7 @@ import { SubactivityStatusConfirmDialog } from "@/components/project-detail/suba
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { cn } from "@/lib/utils"
+import { serviceRequestReference } from "@/lib/service-requests"
 
 type KanbanItem = {
   activityId: string
@@ -392,7 +393,7 @@ export function SubactivityKanban({
                               <p className="min-w-0 truncate text-[0.68rem] text-muted-foreground">
                                 {item.activityTitle}
                               </p>
-                              {item.linkedRequest && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.56rem] font-semibold text-primary">OS {item.linkedRequest.orderNumber}</span>}
+                              {item.linkedRequest && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.56rem] font-semibold text-primary">{serviceRequestReference(item.linkedRequest)}</span>}
                             </div>
                             {item.sub.needsAttention && (
                               <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.65rem] font-medium text-chart-4">

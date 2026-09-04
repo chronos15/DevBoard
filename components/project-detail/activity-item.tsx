@@ -23,6 +23,7 @@ import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
+import { serviceRequestReference } from "@/lib/service-requests"
 import {
   Dialog,
   DialogContent,
@@ -123,10 +124,10 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
             : cancelled
               ? "Reabrir subatividade cancelada"
               : linkedRequest
-                ? `Enviar para AQS · OS ${linkedRequest.orderNumber}`
+                ? `Enviar para AQS · ${serviceRequestReference(linkedRequest)}`
                 : "Concluir subatividade"
         }
-        title={canManage ? (linkedRequest && !terminal ? `OS ${linkedRequest.orderNumber} · conclusão obrigatoriamente via AQS` : undefined) : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"}
+        title={canManage ? (linkedRequest && !terminal ? `${serviceRequestReference(linkedRequest)} · conclusão obrigatoriamente via AQS` : undefined) : "Somente o Desenvolvedor responsável ou um Administrador pode alterar esta subatividade"}
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
           !canManage && "cursor-not-allowed opacity-45",
@@ -369,7 +370,7 @@ export function ActivityItem({
                 </span>
                 <h3 className="min-w-0 truncate font-semibold" title={activity.title}>{activity.title}</h3>
                 <WorkItemTypeBadge typeId={activity.typeId} compact />
-                {linkedRequest && <span className="rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary">OS {linkedRequest.orderNumber}</span>}
+                {linkedRequest && <span className="rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary">{serviceRequestReference(linkedRequest)}</span>}
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
                   <MemberStack ids={activity.assigneeIds ?? []} max={2} />
                 )}
@@ -428,7 +429,7 @@ export function ActivityItem({
               <Link href={`/solicitacoes/${linkedRequest.id}`} className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.045] px-3 py-2.5 text-left transition-colors hover:bg-primary/[0.07]">
                 <ClipboardCheck className="size-4 shrink-0 text-primary" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold">Vinculada à OS {linkedRequest.orderNumber} · conclusão protegida</span>
+                  <span className="block truncate text-xs font-semibold">Vinculada à {serviceRequestReference(linkedRequest)} · conclusão protegida</span>
                   <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">Subatividades devem ser enviadas para AQS; somente a aprovação AQS marca como concluída.</span>
                 </span>
                 <span className="shrink-0 text-[0.62rem] font-semibold text-primary">Abrir OS</span>

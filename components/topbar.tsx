@@ -19,6 +19,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { RecentSubactivities } from "@/components/recent-subactivities"
 import { NotificationCenter } from "@/components/notifications/notification-center"
 import { ACCESS_ROLE_LABELS, type AqsReviewStatus } from "@/lib/types"
+import { serviceRequestReference } from "@/lib/service-requests"
 import { cn } from "@/lib/utils"
 
 type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "analysis" | "request"
@@ -167,7 +168,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       candidates.push({
         id: `request:${request.id}`,
         kind: "request",
-        label: `OS ${request.orderNumber} · ${request.title}`,
+        label: `${serviceRequestReference(request)} · ${request.title}`,
         meta: `${request.module} · ${request.subject}`,
         href: `/solicitacoes/${request.id}`,
         keywords: `${request.orderNumber} ${request.title} ${request.description} ${request.unit} ${request.module} ${request.subject} ${creator?.name ?? ""} ${request.status} ${request.requestType}`,

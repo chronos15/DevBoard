@@ -34,6 +34,7 @@ import {
   SERVICE_REQUEST_ATTACHMENT_LABELS,
   SERVICE_REQUEST_STATUS_LABELS,
   SERVICE_REQUEST_TYPE_LABELS,
+  serviceRequestReference,
   serviceRequestStatusTone,
   serviceRequestTypeTone,
 } from "@/lib/service-requests"
@@ -175,9 +176,7 @@ function SendToDevDialog({ open, onOpenChange, request }: { open: boolean; onOpe
   const [priorityApproved, setPriorityApproved] = React.useState(request.priorityApproved)
   const [saving, setSaving] = React.useState(false)
   const project = projects.find((item) => item.id === projectId)
-  const orderLabel = request.orderNumber.trim().toLocaleUpperCase("pt-BR").startsWith("OS ")
-    ? request.orderNumber.trim()
-    : `OS ${request.orderNumber.trim()}`
+  const orderLabel = serviceRequestReference(request)
   const activityTitle = `[${orderLabel}] ${request.title.trim()}`
 
   React.useEffect(() => {
@@ -323,7 +322,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       <div className="relative flex min-w-0 items-end gap-2 rounded-2xl border border-border bg-background p-2 focus-within:border-ring">
         <button type="button" onClick={() => inputRef.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Adicionar arquivo"><Paperclip className="size-4" /></button>
         <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar usuário"><AtSign className="size-4" /></button>
-        <textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length === 0) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “OS ${request.orderNumber}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+        <textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length === 0) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
         <Button type="button" size="icon" className="size-9 shrink-0 rounded-xl" disabled={(!draft.trim() && files.length === 0) || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 200 * 1024 * 1024).map((file) => ({ file, category: "other" as const })); setFiles((current) => [...current, ...picked]); event.currentTarget.value = "" }} />
       </div>
@@ -383,7 +382,8 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
   const canDev = currentUserRole === "admin" || currentUserRole === "developer"
   const canOperateDev = currentUserRole === "admin" || (currentUserRole === "developer" && [request.responsibleDevId, request.executorId].includes(currentUserId))
   const initialAttachments = request.attachments.filter((attachment) => !attachment.messageId)
-  const checklist = ["order-pdf", "analysis-video", "database"].map((category) => ({ category, ok: initialAttachments.some((attachment) => attachment.category === category) }))
+  const isInternalRequest = request.requestType === "internal"
+  const checklist = (isInternalRequest ? [] : ["order-pdf", "analysis-video", "database"]).map((category) => ({ category, ok: initialAttachments.some((attachment) => attachment.category === category) }))
   const timeline = [
     ...request.events.map((event) => ({ kind: "event" as const, createdAt: event.createdAt, event })),
     ...request.messages.map((message) => ({ kind: "message" as const, createdAt: message.createdAt, message })),
@@ -401,7 +401,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
         <div className={cn("flex flex-wrap justify-between", embedded ? "items-start gap-x-3 gap-y-2" : "items-start gap-4")}>
           <div className="min-w-0 flex-1">
             <button type="button" onClick={() => router.push(backHref)} className={cn("inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground", embedded && "md:hidden")}><ArrowLeft className="size-3.5" /> Solicitações</button>
-            <div className={cn("flex min-w-0 flex-wrap items-center", embedded ? "gap-1.5" : "mt-3 gap-2")}><span className={cn("font-mono font-semibold text-primary", embedded ? "text-[0.68rem]" : "text-xs")}>OS {request.orderNumber}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className={cn("rounded-full border border-warning/25 bg-warning/10 font-semibold text-warning", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]")}>{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
+            <div className={cn("flex min-w-0 flex-wrap items-center", embedded ? "gap-1.5" : "mt-3 gap-2")}><span className={cn("font-mono font-semibold text-primary", embedded ? "text-[0.68rem]" : "text-xs")}>{serviceRequestReference(request)}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className={cn("rounded-full border border-warning/25 bg-warning/10 font-semibold text-warning", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]")}>{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
             <div className={cn(embedded ? "mt-1.5 flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-3" : "")}>
               <h1 className={cn("font-semibold tracking-tight", embedded ? "line-clamp-1 text-lg lg:max-w-[48%] lg:shrink-0" : "mt-3 text-xl sm:text-2xl")}>{request.title}</h1>
               <p className={cn("text-muted-foreground", embedded ? "line-clamp-1 min-w-0 text-xs leading-5 lg:flex-1" : "mt-2 max-w-4xl text-sm leading-relaxed")}>{request.description}</p>
@@ -456,7 +456,14 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
             { label: "Executor", member: executor },
           ].map((item) => <div key={item.label} className="flex items-center gap-3"><MemberAvatar member={item.member} className="size-8 text-[0.65rem]" /><div className="min-w-0"><p className="text-[0.62rem] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p><MemberName member={item.member} className="mt-0.5 block truncate text-xs font-semibold" fallback="Não definido" /></div></div>)}</div></section>
 
-          <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Checklist do protocolo</h2><span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", checklist.every((item) => item.ok) ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{checklist.filter((item) => item.ok).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((item) => <div key={item.category} className="flex items-center gap-2 text-xs"><span className={cn("flex size-5 items-center justify-center rounded-full", item.ok ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.ok ? <CheckCircle2 className="size-3" /> : <AlertTriangle className="size-3" />}</span><span>{SERVICE_REQUEST_ATTACHMENT_LABELS[item.category as keyof typeof SERVICE_REQUEST_ATTACHMENT_LABELS]}</span></div>)}</div></section>
+          {isInternalRequest ? (
+            <section className="rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Anexos do protocolo</h2><span className="rounded-full bg-chart-2/10 px-2 py-0.5 text-[0.62rem] font-semibold text-chart-2">Opcionais</span></div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Solicitação interna: número de OS e anexos não são exigidos para seguir o fluxo AQS → DEV.</p>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Checklist do protocolo</h2><span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", checklist.every((item) => item.ok) ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{checklist.filter((item) => item.ok).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((item) => <div key={item.category} className="flex items-center gap-2 text-xs"><span className={cn("flex size-5 items-center justify-center rounded-full", item.ok ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.ok ? <CheckCircle2 className="size-3" /> : <AlertTriangle className="size-3" />}</span><span>{SERVICE_REQUEST_ATTACHMENT_LABELS[item.category as keyof typeof SERVICE_REQUEST_ATTACHMENT_LABELS]}</span></div>)}</div></section>
+          )}
 
           <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
 

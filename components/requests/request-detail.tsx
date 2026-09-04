@@ -346,16 +346,18 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
 
   return (
     <div className={cn("flex min-w-0 flex-col", embedded ? "h-full w-full min-h-0 overflow-hidden bg-background" : "mx-auto max-w-[1500px] gap-4")}>
-      <div className={cn("flex min-w-0 shrink-0 flex-col gap-3 bg-card", embedded ? "border-b border-border px-4 py-3" : "rounded-2xl border border-border p-4 sm:p-5")}>
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className={cn("flex min-w-0 shrink-0 flex-col bg-card", embedded ? "gap-2 border-b border-border px-4 py-2.5" : "gap-3 rounded-2xl border border-border p-4 sm:p-5")}>
+        <div className={cn("flex flex-wrap justify-between", embedded ? "items-start gap-x-3 gap-y-2" : "items-start gap-4")}>
           <div className="min-w-0 flex-1">
             <button type="button" onClick={() => router.push(backHref)} className={cn("inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground", embedded && "md:hidden")}><ArrowLeft className="size-3.5" /> Solicitações</button>
-            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-xs font-semibold text-primary">OS {request.orderNumber}</span><span className={cn("rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className="rounded-full border border-warning/25 bg-warning/10 px-2.5 py-1 text-[0.65rem] font-semibold text-warning">{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
-            <h1 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">{request.title}</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-relaxed text-muted-foreground">{request.description}</p>
+            <div className={cn("flex min-w-0 flex-wrap items-center", embedded ? "gap-1.5" : "mt-3 gap-2")}><span className={cn("font-mono font-semibold text-primary", embedded ? "text-[0.68rem]" : "text-xs")}>OS {request.orderNumber}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className={cn("rounded-full border border-warning/25 bg-warning/10 font-semibold text-warning", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]")}>{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
+            <div className={cn(embedded ? "mt-1.5 flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-3" : "")}>
+              <h1 className={cn("font-semibold tracking-tight", embedded ? "line-clamp-1 text-lg lg:max-w-[48%] lg:shrink-0" : "mt-3 text-xl sm:text-2xl")}>{request.title}</h1>
+              <p className={cn("text-muted-foreground", embedded ? "line-clamp-1 min-w-0 text-xs leading-5 lg:flex-1" : "mt-2 max-w-4xl text-sm leading-relaxed")}>{request.description}</p>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className={cn("flex flex-wrap items-center justify-end gap-2", embedded && "shrink-0")}>
             {canAqs && ["received", "waiting-info"].includes(request.status) && <Button type="button" onClick={() => void quick("aqs", () => startServiceRequestAqs(request.id))} disabled={!!quickLoading} loading={quickLoading === "aqs"} loadingText="Assumindo..."><ClipboardCheck className="size-4" /> {request.status === "waiting-info" ? "Retomar análise" : "Assumir análise"}</Button>}
             {canAqs && request.status === "aqs-analysis" && <><Button type="button" variant="outline" onClick={() => setInfoOpen(true)}>Solicitar informações</Button><Button type="button" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRejectOpen(true)}>Recusar</Button><Button type="button" onClick={() => setSendDevOpen(true)}><Code2 className="size-4" /> Enviar ao DEV</Button></>}
             {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <Button type="button" onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button>}
@@ -366,11 +368,11 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-border pt-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
-          <div><p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Unidade</p><p className="mt-1 font-semibold">{request.unit}</p></div>
-          <div><p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Módulo</p><p className="mt-1 font-semibold">{request.module}</p></div>
-          <div><p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Assunto</p><p className="mt-1 font-semibold">{request.subject}</p></div>
-          <div><p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Protocolada</p><p className="mt-1 font-semibold">{formatDateTime(request.createdAt)}</p></div>
+        <div className={cn("grid border-t border-border text-xs sm:grid-cols-2 lg:grid-cols-4", embedded ? "gap-x-4 gap-y-1 pt-2" : "gap-3 pt-4")}>
+          <div className={cn(embedded && "flex min-w-0 items-baseline gap-1.5")}><p className={cn("font-medium uppercase tracking-wide text-muted-foreground", embedded ? "shrink-0 text-[0.56rem]" : "text-[0.65rem]")}>Unidade</p><p className={cn("min-w-0 font-semibold", embedded ? "truncate text-[0.68rem]" : "mt-1")}>{request.unit}</p></div>
+          <div className={cn(embedded && "flex min-w-0 items-baseline gap-1.5")}><p className={cn("font-medium uppercase tracking-wide text-muted-foreground", embedded ? "shrink-0 text-[0.56rem]" : "text-[0.65rem]")}>Módulo</p><p className={cn("min-w-0 font-semibold", embedded ? "truncate text-[0.68rem]" : "mt-1")}>{request.module}</p></div>
+          <div className={cn(embedded && "flex min-w-0 items-baseline gap-1.5")}><p className={cn("font-medium uppercase tracking-wide text-muted-foreground", embedded ? "shrink-0 text-[0.56rem]" : "text-[0.65rem]")}>Assunto</p><p className={cn("min-w-0 font-semibold", embedded ? "truncate text-[0.68rem]" : "mt-1")}>{request.subject}</p></div>
+          <div className={cn(embedded && "flex min-w-0 items-baseline gap-1.5")}><p className={cn("font-medium uppercase tracking-wide text-muted-foreground", embedded ? "shrink-0 text-[0.56rem]" : "text-[0.65rem]")}>Protocolada</p><p className={cn("min-w-0 font-semibold", embedded ? "truncate text-[0.68rem]" : "mt-1")}>{formatDateTime(request.createdAt)}</p></div>
         </div>
       </div>
 

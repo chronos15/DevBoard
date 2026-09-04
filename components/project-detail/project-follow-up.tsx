@@ -70,6 +70,8 @@ import { SubactivityStatusConfirmDialog } from "@/components/project-detail/suba
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
+import { ActivityMeetingButton } from "@/components/activity-meeting-button"
+import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -904,17 +906,30 @@ export function ProjectFollowUp({
     }
 
     const needle = selectedSub.title.trim().toLocaleLowerCase("pt-BR")
-    if (needle) {
-      for (const log of project.logs ?? []) {
-        if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
-        const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
-        if (!haystack.includes(needle)) continue
-        items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
+    for (const log of project.logs ?? []) {
+      if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
+
+      if (selectedActivity && isActivityMeetingLog(log, selectedActivity.id)) {
+        items.push({
+          kind: "log",
+          id: `log-${log.id}`,
+          targetId: log.id,
+          createdAt: log.createdAt,
+          authorId: log.actorId,
+          title: log.title,
+          description: visibleMeetingLogDescription(log.description),
+        })
+        continue
       }
+
+      if (!needle) continue
+      const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
+      if (!haystack.includes(needle)) continue
+      items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  }, [currentUserId, pendingComments, pendingUploads, project.logs, selectedSub, workSessions])
+  }, [currentUserId, pendingComments, pendingUploads, project.logs, selectedActivity, selectedSub, workSessions])
 
   const reactionsByTimelineItem = React.useMemo(() => {
     const map = new Map<string, FollowUpReaction[]>()
@@ -2184,6 +2199,7 @@ export function ProjectFollowUp({
                   </span>
                   <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground tabular-nums">{formatHMS(selectedSub.trackedSeconds)}</span>
                 </div>
+                <ActivityMeetingButton activityId={selectedActivity.id} />
                 <Button
                   type="button"
                   variant={localSearchOpen ? "secondary" : "ghost"}

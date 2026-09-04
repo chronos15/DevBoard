@@ -10,7 +10,7 @@ declare
     'workspaces','profiles','workspace_members','user_preferences','projects','project_members',
     'activities','activity_assignees','subactivities','work_sessions','project_comments','subactivity_comments',
     'attachments','project_logs','project_versions','notifications','chat_conversations','chat_members',
-    'chat_messages','meetings','meeting_members','aqs_reviews','support_topics','topic_attachments',
+    'chat_messages','meetings','meeting_members','activity_meeting_groups','activity_meeting_runs','aqs_reviews','support_topics','topic_attachments',
     'developer_settings','developer_notes','developer_water_logs','developer_ides','developer_local_projects'
   ];
   v_functions text[] := array[
@@ -39,6 +39,7 @@ declare
     'public.delete_direct_conversation(uuid)',
     'public.leave_chat_group(uuid)',
     'public.create_meeting(text,uuid[],text,uuid)',
+    'public.start_activity_meeting(uuid,text)',
     'public.answer_meeting_invite(uuid,boolean)',
     'public.join_meeting(uuid)',
     'public.heartbeat_meeting(uuid)',

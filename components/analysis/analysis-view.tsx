@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   UserRound,
   UsersRound,
+  Video,
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -47,6 +48,8 @@ import { createClient } from "@/lib/supabase/client"
 import { DeveloperVcsTaskChanges, type DeveloperTaskVcsChange } from "@/components/developer/developer-vcs-task-changes"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { formatHMS } from "@/lib/project-utils"
+import { ActivityMeetingButton } from "@/components/activity-meeting-button"
+import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
   awaiting: {
@@ -85,7 +88,7 @@ type LocatedReview = {
 }
 
 type TimelineItem =
-  | { id: string; kind: "system"; createdAt: string; title: string; description?: string; tone?: "success" | "danger" | "primary" }
+  | { id: string; kind: "system"; createdAt: string; title: string; description?: string; tone?: "success" | "danger" | "primary" | "meeting" }
   | { id: string; kind: "comment"; createdAt: string; comment: CommentEntry }
   | { id: string; kind: "attachment"; createdAt: string; attachment: AttachmentEntry }
 
@@ -394,6 +397,17 @@ export function AnalysisView() {
     }
     for (const entry of (sub.attachments ?? []).filter((attachment) => attachment.active)) {
       items.push({ id: `attachment-${entry.id}`, kind: "attachment", createdAt: entry.createdAt, attachment: entry })
+    }
+    for (const log of selected.project.logs ?? []) {
+      if (!isActivityMeetingLog(log, selected.activity.id)) continue
+      items.push({
+        id: `meeting-${log.id}`,
+        kind: "system",
+        createdAt: log.createdAt,
+        title: log.title,
+        description: visibleMeetingLogDescription(log.description),
+        tone: "meeting",
+      })
     }
     return items.sort((a, b) => safeTime(a.createdAt) - safeTime(b.createdAt))
   }, [selected])
@@ -783,6 +797,8 @@ export function AnalysisView() {
 
                 <span className={cn("hidden shrink-0 rounded-full px-2 py-1 text-[0.6rem] font-medium sm:inline-flex", reviewMeta[selected.review.status].badge)}>{reviewMeta[selected.review.status].shortLabel}</span>
 
+                <ActivityMeetingButton activityId={selected.activity.id} />
+
                 {canReview && selected.review.status === "awaiting" && (
                   <Button type="button" size="sm" onClick={() => void startReview(selected.review)} loading={busy.has(selected.review.id)}>
                     <ShieldCheck className="size-3.5" /> Avaliar
@@ -827,11 +843,11 @@ export function AnalysisView() {
                   <div className="space-y-0.5">
                     {timeline.map((item) => {
                       if (item.kind === "system") {
-                        const toneClass = item.tone === "success" ? "bg-success/10 text-success" : item.tone === "danger" ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"
+                        const toneClass = item.tone === "success" ? "bg-success/10 text-success" : item.tone === "danger" ? "bg-destructive/10 text-destructive" : item.tone === "meeting" ? "bg-chart-2/10 text-chart-2" : "bg-primary/10 text-primary"
                         return (
                           <article key={item.id} className="flex min-w-0 gap-3 rounded-xl px-2 py-2.5 sm:px-3">
                             <span className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full", toneClass)}>
-                              {item.tone === "success" ? <CheckCircle2 className="size-4" /> : item.tone === "danger" ? <RotateCcw className="size-4" /> : <ShieldCheck className="size-4" />}
+                              {item.tone === "success" ? <CheckCircle2 className="size-4" /> : item.tone === "danger" ? <RotateCcw className="size-4" /> : item.tone === "meeting" ? <Video className="size-4" /> : <ShieldCheck className="size-4" />}
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">

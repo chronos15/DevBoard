@@ -684,3 +684,18 @@ supabase/migrations/047_devboard_internal_service_requests.sql
 A 047 adiciona o tipo **Interno**. Para esse tipo, o usuário não precisa informar número de OS nem anexar OS em PDF, vídeo/evidência ou banco. Quando nenhuma OS é informada, o banco gera apenas uma referência interna única (`INT-...`) para preservar busca, notificações, vínculos e histórico sem fingir que existe uma OS externa.
 
 Anexos continuam disponíveis de forma opcional. Se a solicitação interna for encaminhada ao DEV, a atividade técnica usa a referência interna no título e mantém o mesmo fluxo obrigatório de validação AQS da migration 046.
+
+
+## Migration 048 — Reuniões contextuais por atividade
+
+Depois da 047, aplique:
+
+```text
+supabase/migrations/048_devboard_context_meetings.sql
+```
+
+A 048 conecta o modo de reunião do Chat ao **Acompanhamento**, **Solicitações** e **Análise AQS**. Cada atividade passa a ter um único grupo persistente de reunião, reutilizado nas chamadas futuras. O grupo usa o nome atual da atividade e inclui os responsáveis/participantes envolvidos no trabalho, no protocolo e na validação AQS.
+
+Ao iniciar uma chamada pelo contexto da atividade, o Devboard abre o Chat já na sala de vídeo e registra no histórico técnico **Ligação de reunião iniciada**. Quando a sala termina, o banco registra automaticamente a duração e os usuários que efetivamente participaram. Se a atividade estiver vinculada a uma Solicitação, os mesmos eventos também entram no histórico do protocolo.
+
+Reuniões iniciadas depois diretamente pelo mesmo grupo do Chat continuam vinculadas à atividade e usam os participantes atuais do trabalho, sem criar um novo grupo para o mesmo tópico.

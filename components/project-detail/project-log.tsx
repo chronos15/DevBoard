@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   CalendarDays,
+  ClipboardCheck,
   Clock3,
   FileDown,
   GitCommitHorizontal,
@@ -15,11 +16,13 @@ import {
   RotateCcw,
   Trash2,
   UserRound,
+  Video,
 } from "lucide-react"
 import type { Project, ProjectLogEntry, ProjectLogType } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
+import { visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -40,6 +43,13 @@ const iconByType: Record<ProjectLogType, typeof History> = {
   "comment-added": MessageSquare,
   "attachment-added": Paperclip,
   "attachment-status": Paperclip,
+  "aqs-submitted": ClipboardCheck,
+  "aqs-started": ClipboardCheck,
+  "aqs-completed": ClipboardCheck,
+  "aqs-revoked": RotateCcw,
+  "topic-to-activity": GitCommitHorizontal,
+  "meeting-started": Video,
+  "meeting-ended": Video,
 }
 
 function escapeHtml(value: string) {
@@ -112,11 +122,12 @@ export function ProjectLogDialog({ project }: { project: Project }) {
       .map((log) => {
         const actor = members.find((member) => member.id === log.actorId)
         const formatted = formatLogDate(log.createdAt)
+        const description = visibleMeetingLogDescription(log.description)
         return `
           <tr>
             <td>${escapeHtml(formatted.date)}<br><span>${escapeHtml(formatted.time)}</span></td>
             <td>${escapeHtml(actor?.name ?? "Usuário não identificado")}</td>
-            <td><strong>${escapeHtml(log.title)}</strong>${log.description ? `<br><span>${escapeHtml(log.description)}</span>` : ""}</td>
+            <td><strong>${escapeHtml(log.title)}</strong>${description ? `<br><span>${escapeHtml(description)}</span>` : ""}</td>
           </tr>
         `
       })
@@ -265,8 +276,8 @@ export function ProjectLogDialog({ project }: { project: Project }) {
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4">
                           <div className="min-w-0">
                             <p className="text-sm font-medium">{log.title}</p>
-                            {log.description && (
-                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{log.description}</p>
+                            {visibleMeetingLogDescription(log.description) && (
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{visibleMeetingLogDescription(log.description)}</p>
                             )}
                           </div>
 

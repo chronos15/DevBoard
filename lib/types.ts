@@ -146,6 +146,8 @@ export type ProjectLogType =
   | "aqs-completed"
   | "aqs-revoked"
   | "topic-to-activity"
+  | "meeting-started"
+  | "meeting-ended"
 
 export type ProjectLogEntry = {
   id: string
@@ -231,6 +233,12 @@ export type NotificationEntry = {
 }
 
 export type MeetingMode = "audio" | "video"
+
+export type ActivityMeetingLaunch = {
+  meetingId: string
+  conversationId: string
+  participantCount: number
+}
 export type MeetingMemberStatus = "pending" | "joined" | "declined" | "left"
 
 export type MeetingMemberState = {

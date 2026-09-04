@@ -44,6 +44,7 @@ import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
+  ActivityMeetingLaunch,
   AqsReview,
   AttachmentUploadInput,
   ChatConversation,
@@ -203,6 +204,7 @@ export type StoreContextValue = {
   updateChatGroup: (conversationId: string, data: { name: string; memberIds: string[] }) => Promise<boolean>
   deleteChatGroup: (conversationId: string) => Promise<boolean>
   createMeeting: (data: { title: string; memberIds: string[]; mode: MeetingMode; conversationId?: string }) => Promise<string | null>
+  startActivityMeeting: (activityId: string, mode?: MeetingMode) => Promise<ActivityMeetingLaunch | null>
   endMeeting: (meetingId: string) => Promise<boolean>
   answerMeetingInvite: (meetingId: string, accept: boolean) => Promise<boolean>
   joinMeeting: (meetingId: string) => Promise<boolean>
@@ -1878,12 +1880,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [callRpc, refreshMeetings])
 
+  const startActivityMeeting = React.useCallback(async (activityId: string, mode: MeetingMode = "video") => {
+    const result = await callRpc<ActivityMeetingLaunch>("start_activity_meeting", {
+      p_activity_id: activityId,
+      p_mode: mode,
+    }, "Não foi possível iniciar a reunião desta atividade")
+    if (!result?.meetingId || !result?.conversationId) return null
+    await Promise.all([refreshChat(), refreshMeetings(), refreshNotifications(), refreshProjects(), refreshServiceRequests()])
+    return result
+  }, [callRpc, refreshChat, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
+
   const endMeeting = React.useCallback(async (meetingId: string) => {
     const result = await callRpc<unknown>("end_meeting", { p_meeting_id: meetingId }, "Não foi possível encerrar a reunião")
     if (result === undefined) return false
-    await refreshMeetings()
+    await Promise.all([refreshMeetings(), refreshProjects(), refreshServiceRequests()])
     return true
-  }, [callRpc, refreshMeetings])
+  }, [callRpc, refreshMeetings, refreshProjects, refreshServiceRequests])
 
   const answerMeetingInvite = React.useCallback(async (meetingId: string, accept: boolean) => {
     const result = await callRpc<string>("answer_meeting_invite", {
@@ -1891,9 +1903,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_accept: accept,
     }, accept ? "Não foi possível atender a chamada" : "Não foi possível recusar a chamada")
     if (!result) return false
-    await Promise.all([refreshMeetings(), refreshNotifications()])
+    await Promise.all([refreshMeetings(), refreshNotifications(), ...(!accept ? [refreshProjects(), refreshServiceRequests()] : [])])
     return true
-  }, [callRpc, refreshMeetings, refreshNotifications])
+  }, [callRpc, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const joinMeeting = React.useCallback(async (meetingId: string) => {
     const result = await callRpc<unknown>("join_meeting", { p_meeting_id: meetingId }, "Não foi possível entrar na reunião")
@@ -1905,9 +1917,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const leaveMeeting = React.useCallback(async (meetingId: string) => {
     const result = await callRpc<boolean>("leave_meeting", { p_meeting_id: meetingId }, "Não foi possível sair da reunião")
     if (result === undefined) return false
-    await refreshMeetings()
+    await Promise.all([refreshMeetings(), ...(result ? [refreshProjects(), refreshServiceRequests()] : [])])
     return true
-  }, [callRpc, refreshMeetings])
+  }, [callRpc, refreshMeetings, refreshProjects, refreshServiceRequests])
 
   const heartbeatMeeting = React.useCallback(async (meetingId: string) => {
     const { error } = await supabase.rpc("heartbeat_meeting", { p_meeting_id: meetingId })
@@ -2513,6 +2525,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateChatGroup,
     deleteChatGroup,
     createMeeting,
+    startActivityMeeting,
     endMeeting,
     answerMeetingInvite,
     joinMeeting,
@@ -2526,7 +2539,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
-    answerMeetingInvite, createChatGroup, createMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
+    answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,

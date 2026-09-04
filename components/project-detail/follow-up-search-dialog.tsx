@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import type { Member, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { meetingLogActivityId, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ProjectIcon } from "@/components/projects/project-icon"
@@ -278,15 +279,20 @@ export function FollowUpSearchDialog({
       for (const log of project.logs ?? []) {
         if (log.type === "attachment-added" || log.type === "attachment-status" || log.title === "Mensagem adicionada no acompanhamento") continue
         const author = members.find((member) => member.id === log.actorId)
+        const logDescription = visibleMeetingLogDescription(log.description)
+        const meetingActivityId = meetingLogActivityId(log)
+        const meetingActivity = meetingActivityId ? project.activities.find((activity) => activity.id === meetingActivityId) : undefined
+        const targetSub = meetingActivity?.subactivities[0] ?? firstProjectSub
         results.push({
           id: `log:${project.id}:${log.id}`,
           kind: "logs",
           projectId: project.id,
-          subactivityId: firstProjectSub?.id,
+          activityId: meetingActivity?.id,
+          subactivityId: targetSub?.id,
           timelineId: `log-${log.id}`,
           title: log.title,
-          description: shortText(`${log.description ?? ""}${author ? ` · ${author.name}` : ""}`),
-          searchable: `${log.title} ${log.description ?? ""} ${author?.name ?? ""} ${project.name}`,
+          description: shortText(`${logDescription ?? ""}${author ? ` · ${author.name}` : ""}`),
+          searchable: `${log.title} ${logDescription ?? ""} ${author?.name ?? ""} ${project.name}`,
           projectName: project.name,
           authorId: log.actorId,
           createdAt: log.createdAt,

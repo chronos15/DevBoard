@@ -6,6 +6,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
+  ClipboardList,
   File as FileIcon,
   FileAudio,
   FileCode2,
@@ -24,10 +26,11 @@ import {
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
-import type { AttachmentKind, AttachmentUploadInput, Project } from "@/lib/types"
+import type { AttachmentKind, AttachmentUploadInput, Project, ServiceRequestAttachmentCategory } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { cn } from "@/lib/utils"
+import { SERVICE_REQUEST_FINAL_STATUSES, SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -46,6 +49,7 @@ const textExtensions = new Set([
 ])
 const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf"])
 
+type DestinationGroup = "work" | "request" | "aqs"
 type DestinationKind = "project" | "activity" | "subactivity"
 
 type SharedFileMetadata = {
@@ -193,13 +197,20 @@ function SharedFilePreview({ file }: { file: File }) {
   )
 }
 
+function subactivityIsAvailable(sub: Project["activities"][number]["subactivities"][number], currentUserId: string, isAdmin: boolean) {
+  if (isAdmin) return true
+  return sub.assigneeId === currentUserId || Boolean(sub.memberIds?.includes(currentUserId))
+}
+
+function activityIsAvailable(activity: Project["activities"][number], currentUserId: string, isAdmin: boolean) {
+  if (isAdmin) return true
+  return Boolean(activity.assigneeIds?.includes(currentUserId))
+    || activity.subactivities.some((sub) => subactivityIsAvailable(sub, currentUserId, false))
+}
+
 function projectIsAvailable(project: Project, currentUserId: string, isAdmin: boolean) {
   if (isAdmin) return true
-  if (project.memberIds.includes(currentUserId)) return true
-  return project.activities.some((activity) =>
-    activity.assigneeIds?.includes(currentUserId)
-    || activity.subactivities.some((sub) => sub.assigneeId === currentUserId || sub.memberIds?.includes(currentUserId)),
-  )
+  return project.activities.some((activity) => activityIsAvailable(activity, currentUserId, false))
 }
 
 function NativeSelect({
@@ -241,11 +252,15 @@ export default function ShareToDevboardPage() {
   const {
     hydrated,
     projects,
+    serviceRequests,
+    aqsReviews,
     currentUserId,
     currentUserRole,
     addProjectAttachments,
     addActivityAttachments,
     addSubactivityAttachments,
+    addAqsReviewAttachments,
+    addServiceRequestAttachments,
   } = useStore()
 
   const [loadingShare, setLoadingShare] = React.useState(true)
@@ -253,10 +268,13 @@ export default function ShareToDevboardPage() {
   const [payload, setPayload] = React.useState<SharedPayload | null>(null)
   const [files, setFiles] = React.useState<File[]>([])
   const [includeText, setIncludeText] = React.useState(true)
+  const [destinationGroup, setDestinationGroup] = React.useState<DestinationGroup>("work")
   const [destination, setDestination] = React.useState<DestinationKind>("subactivity")
   const [projectId, setProjectId] = React.useState("")
   const [activityId, setActivityId] = React.useState("")
   const [subactivityId, setSubactivityId] = React.useState("")
+  const [requestId, setRequestId] = React.useState("")
+  const [aqsReviewId, setAqsReviewId] = React.useState("")
   const [error, setError] = React.useState("")
   const [warning, setWarning] = React.useState("")
   const [sending, setSending] = React.useState(false)
@@ -313,31 +331,84 @@ export default function ShareToDevboardPage() {
     setLoadingShare(false)
   }, [])
 
+  const isAdmin = currentUserRole === "admin"
   const availableProjects = React.useMemo(() => projects.filter((project) =>
-    projectIsAvailable(project, currentUserId, currentUserRole === "admin"),
-  ), [currentUserId, currentUserRole, projects])
+    projectIsAvailable(project, currentUserId, isAdmin),
+  ), [currentUserId, isAdmin, projects])
 
   const selectedProject = availableProjects.find((project) => project.id === projectId)
-  const activities = selectedProject?.activities ?? []
+  const activities = React.useMemo(() => (selectedProject?.activities ?? []).filter((activity) =>
+    activityIsAvailable(activity, currentUserId, isAdmin),
+  ), [currentUserId, isAdmin, selectedProject])
   const selectedActivity = activities.find((activity) => activity.id === activityId)
-  const subactivities = selectedActivity?.subactivities ?? []
+  const subactivities = React.useMemo(() => (selectedActivity?.subactivities ?? []).filter((sub) =>
+    subactivityIsAvailable(sub, currentUserId, isAdmin),
+  ), [currentUserId, isAdmin, selectedActivity])
+
+  const availableRequests = React.useMemo(() => serviceRequests
+    .filter((request) => !SERVICE_REQUEST_FINAL_STATUSES.has(request.status))
+    .filter((request) => isAdmin
+      || request.participantIds.includes(currentUserId)
+      || request.createdBy === currentUserId
+      || request.assignedAqsId === currentUserId
+      || request.responsibleDevId === currentUserId
+      || request.executorId === currentUserId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [currentUserId, isAdmin, serviceRequests])
+  const selectedRequest = availableRequests.find((request) => request.id === requestId)
+
+  const availableAqsReviews = React.useMemo(() => aqsReviews.flatMap((review) => {
+    if (review.status !== "awaiting" && review.status !== "evaluating") return []
+    const project = projects.find((item) => item.id === review.projectId)
+    const activity = project?.activities.find((item) => item.id === review.activityId)
+    const sub = activity?.subactivities.find((item) => item.id === review.subactivityId)
+    if (!project || !activity || !sub) return []
+    const follows = review.assignedAqsId === currentUserId
+      || review.createdBy === currentUserId
+      || subactivityIsAvailable(sub, currentUserId, false)
+    if (!isAdmin && !follows) return []
+    return [{ review, project, activity, sub }]
+  }).sort((a, b) => b.review.createdAt.localeCompare(a.review.createdAt)), [aqsReviews, currentUserId, isAdmin, projects])
+  const selectedAqsReview = availableAqsReviews.find((item) => item.review.id === aqsReviewId)
+
   const sharedText = payload ? textEvidence(payload) : null
   const hasContent = files.length > 0 || Boolean(includeText && sharedText)
 
   React.useEffect(() => {
-    if (projectId || availableProjects.length !== 1) return
+    if (destinationGroup !== "work" || projectId || availableProjects.length !== 1) return
     setProjectId(availableProjects[0].id)
-  }, [availableProjects, projectId])
+  }, [availableProjects, destinationGroup, projectId])
 
   React.useEffect(() => {
-    if (destination === "project" || activityId || activities.length !== 1) return
+    if (destinationGroup !== "work" || destination === "project" || activityId || activities.length !== 1) return
     setActivityId(activities[0].id)
-  }, [activities, activityId, destination])
+  }, [activities, activityId, destination, destinationGroup])
 
   React.useEffect(() => {
-    if (destination !== "subactivity" || subactivityId || subactivities.length !== 1) return
+    if (destinationGroup !== "work" || destination !== "subactivity" || subactivityId || subactivities.length !== 1) return
     setSubactivityId(subactivities[0].id)
-  }, [destination, subactivities, subactivityId])
+  }, [destination, destinationGroup, subactivities, subactivityId])
+
+  React.useEffect(() => {
+    if (destinationGroup !== "request" || requestId || availableRequests.length !== 1) return
+    setRequestId(availableRequests[0].id)
+  }, [availableRequests, destinationGroup, requestId])
+
+  React.useEffect(() => {
+    if (destinationGroup !== "aqs" || aqsReviewId || availableAqsReviews.length !== 1) return
+    setAqsReviewId(availableAqsReviews[0].review.id)
+  }, [aqsReviewId, availableAqsReviews, destinationGroup])
+
+  function changeDestinationGroup(next: DestinationGroup) {
+    setDestinationGroup(next)
+    setError("")
+    if (next !== "work") {
+      setProjectId("")
+      setActivityId("")
+      setSubactivityId("")
+    }
+    if (next !== "request") setRequestId("")
+    if (next !== "aqs") setAqsReviewId("")
+  }
 
   function selectProject(next: string) {
     setProjectId(next)
@@ -371,16 +442,26 @@ export default function ShareToDevboardPage() {
 
   async function sendEvidence() {
     if (sending || !hasContent) return
-    if (!projectId) {
-      setError("Selecione o projeto de destino.")
-      return
-    }
-    if ((destination === "activity" || destination === "subactivity") && !activityId) {
-      setError("Selecione a atividade de destino.")
-      return
-    }
-    if (destination === "subactivity" && !subactivityId) {
-      setError("Selecione a subatividade de destino.")
+    if (destinationGroup === "work") {
+      if (!projectId) {
+        setError("Selecione o projeto de destino.")
+        return
+      }
+      if ((destination === "activity" || destination === "subactivity") && !activityId) {
+        setError("Selecione a atividade de destino.")
+        return
+      }
+      if (destination === "subactivity" && !subactivityId) {
+        setError("Selecione a subatividade de destino.")
+        return
+      }
+    } else if (destinationGroup === "request") {
+      if (!requestId || !selectedRequest) {
+        setError("Selecione uma solicitação em aberto.")
+        return
+      }
+    } else if (!aqsReviewId || !selectedAqsReview) {
+      setError("Selecione uma análise AQS em aberto.")
       return
     }
 
@@ -412,14 +493,29 @@ export default function ShareToDevboardPage() {
         return
       }
 
-      const uploads = await Promise.all(preparedFiles.map(fileToUpload))
-      if (includeText && sharedText) uploads.push(sharedText)
-
-      const ok = destination === "project"
-        ? await addProjectAttachments(projectId, uploads)
-        : destination === "activity"
-          ? await addActivityAttachments(activityId, uploads)
-          : await addSubactivityAttachments(subactivityId, uploads)
+      let ok = false
+      if (destinationGroup === "request") {
+        const requestFiles = [...preparedFiles]
+        if (includeText && sharedText?.textContent) {
+          requestFiles.push(new File([sharedText.textContent], sharedText.name, { type: sharedText.mimeType }))
+        }
+        ok = await addServiceRequestAttachments(requestId, requestFiles.map((file) => ({
+          file,
+          category: (detectKind(file) === "video" ? "analysis-video" : "other") as ServiceRequestAttachmentCategory,
+        })))
+      } else {
+        const uploads = await Promise.all(preparedFiles.map(fileToUpload))
+        if (includeText && sharedText) uploads.push(sharedText)
+        if (destinationGroup === "aqs") {
+          ok = await addAqsReviewAttachments(aqsReviewId, uploads)
+        } else {
+          ok = destination === "project"
+            ? await addProjectAttachments(projectId, uploads)
+            : destination === "activity"
+              ? await addActivityAttachments(activityId, uploads)
+              : await addSubactivityAttachments(subactivityId, uploads)
+        }
+      }
 
       if (!ok) {
         setError("Não foi possível anexar a evidência agora. Sua seleção foi mantida para tentar novamente.")
@@ -439,6 +535,15 @@ export default function ShareToDevboardPage() {
   }
 
   function openDestination() {
+    if (destinationGroup === "request") {
+      router.replace(`/solicitacoes/${requestId}`)
+      return
+    }
+    if (destinationGroup === "aqs") {
+      const subId = selectedAqsReview?.sub.id ?? ""
+      router.replace(subId ? `/analise?sub=${encodeURIComponent(subId)}` : "/analise")
+      return
+    }
     if (destination === "subactivity") {
       const params = new URLSearchParams({ project: projectId, activity: activityId, sub: subactivityId })
       router.replace(`/acompanhamento?${params.toString()}`)
@@ -590,27 +695,29 @@ export default function ShareToDevboardPage() {
         <section className="mt-3 rounded-2xl bg-card p-4 ring-1 ring-foreground/10 sm:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
-              <FolderKanban className="size-4" />
+              <Share2 className="size-4" />
             </span>
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold">Onde anexar?</h2>
-              <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">Escolha se a evidência pertence ao projeto inteiro, a uma atividade ou diretamente a uma subatividade.</p>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold">Onde enviar?</h2>
+              <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
+                Primeiro escolha o contexto. Depois o Devboard mostra somente os destinos disponíveis para você.
+              </p>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
             {([
-              ["project", "Projeto", FolderKanban],
-              ["activity", "Atividade", Layers3],
-              ["subactivity", "Subatividade", Paperclip],
+              ["work", "Projeto", FolderKanban],
+              ["request", "Solicitação", ClipboardList],
+              ["aqs", "Análise AQS", ClipboardCheck],
             ] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => changeDestination(key)}
+                onClick={() => changeDestinationGroup(key)}
                 className={cn(
-                  "flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.7rem] font-semibold transition-all sm:text-xs",
-                  destination === key ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
+                  "flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.68rem] font-semibold transition-all sm:text-xs",
+                  destinationGroup === key ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Icon className="size-3.5 shrink-0" />
@@ -619,28 +726,113 @@ export default function ShareToDevboardPage() {
             ))}
           </div>
 
-          <div className="mt-4 grid gap-3">
-            <NativeSelect value={projectId} onChange={selectProject} label="Projeto" placeholder="Selecione o projeto">
-              {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </NativeSelect>
+          {!isAdmin && (
+            <div className="mt-3 rounded-xl border border-primary/10 bg-primary/[0.035] px-3 py-2 text-[0.66rem] leading-relaxed text-muted-foreground">
+              Para manter o envio seguro, você vê apenas itens em aberto dos quais já participa ou acompanha.
+            </div>
+          )}
 
-            {destination !== "project" && (
-              <NativeSelect value={activityId} onChange={selectActivity} disabled={!projectId} label="Atividade" placeholder={projectId ? "Selecione a atividade" : "Selecione o projeto primeiro"}>
-                {activities.map((activity) => <option key={activity.id} value={activity.id}>{activity.title}</option>)}
+          {destinationGroup === "work" && (
+            <div className="mt-4">
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-border/70 bg-background/60 p-1">
+                {([
+                  ["project", "Projeto", FolderKanban],
+                  ["activity", "Atividade", Layers3],
+                  ["subactivity", "Subatividade", Paperclip],
+                ] as const).map(([key, label, Icon]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => changeDestination(key)}
+                    className={cn(
+                      "flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.68rem] font-semibold transition-all sm:text-xs",
+                      destination === key ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 grid gap-3">
+                <NativeSelect value={projectId} onChange={selectProject} label="Projeto" placeholder="Selecione o projeto">
+                  {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </NativeSelect>
+
+                {destination !== "project" && (
+                  <NativeSelect value={activityId} onChange={selectActivity} disabled={!projectId} label="Atividade" placeholder={projectId ? "Selecione a atividade" : "Selecione o projeto primeiro"}>
+                    {activities.map((activity) => <option key={activity.id} value={activity.id}>{activity.title}</option>)}
+                  </NativeSelect>
+                )}
+
+                {destination === "subactivity" && (
+                  <NativeSelect value={subactivityId} onChange={(value) => { setSubactivityId(value); setError("") }} disabled={!activityId} label="Subatividade" placeholder={activityId ? "Selecione a subatividade" : "Selecione a atividade primeiro"}>
+                    {subactivities.map((sub) => <option key={sub.id} value={sub.id}>{sub.title}</option>)}
+                  </NativeSelect>
+                )}
+              </div>
+
+              {availableProjects.length === 0 && (
+                <p className="mt-3 rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
+                  Nenhum projeto acompanhado está disponível para receber esta evidência.
+                </p>
+              )}
+            </div>
+          )}
+
+          {destinationGroup === "request" && (
+            <div className="mt-4 grid gap-3">
+              <NativeSelect value={requestId} onChange={(value) => { setRequestId(value); setError("") }} label="Solicitação em aberto" placeholder="Selecione a solicitação">
+                {availableRequests.map((request) => (
+                  <option key={request.id} value={request.id}>{serviceRequestReference(request)} · {request.title}</option>
+                ))}
               </NativeSelect>
-            )}
 
-            {destination === "subactivity" && (
-              <NativeSelect value={subactivityId} onChange={(value) => { setSubactivityId(value); setError("") }} disabled={!activityId} label="Subatividade" placeholder={activityId ? "Selecione a subatividade" : "Selecione a atividade primeiro"}>
-                {subactivities.map((sub) => <option key={sub.id} value={sub.id}>{sub.title}</option>)}
+              {selectedRequest && (
+                <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <p className="truncate text-xs font-semibold">{selectedRequest.title}</p>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.6rem] font-medium text-muted-foreground">{SERVICE_REQUEST_STATUS_LABELS[selectedRequest.status]}</span>
+                  </div>
+                  <p className="mt-1 truncate text-[0.65rem] text-muted-foreground">{serviceRequestReference(selectedRequest)} · {selectedRequest.unit} · {selectedRequest.module}</p>
+                </div>
+              )}
+
+              {availableRequests.length === 0 && (
+                <p className="rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
+                  Nenhuma solicitação em aberto que você acompanha está disponível.
+                </p>
+              )}
+            </div>
+          )}
+
+          {destinationGroup === "aqs" && (
+            <div className="mt-4 grid gap-3">
+              <NativeSelect value={aqsReviewId} onChange={(value) => { setAqsReviewId(value); setError("") }} label="Análise AQS em aberto" placeholder="Selecione a análise">
+                {availableAqsReviews.map(({ review, project, sub }) => (
+                  <option key={review.id} value={review.id}>{project.name} · {sub.title}</option>
+                ))}
               </NativeSelect>
-            )}
-          </div>
 
-          {availableProjects.length === 0 && (
-            <p className="mt-3 rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
-              Nenhum projeto disponível para o seu usuário. Verifique se você participa do projeto ou da atividade que deve receber a evidência.
-            </p>
+              {selectedAqsReview && (
+                <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <p className="truncate text-xs font-semibold">{selectedAqsReview.sub.title}</p>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.6rem] font-medium text-muted-foreground">
+                      {selectedAqsReview.review.status === "evaluating" ? "Em análise" : "Aguardando AQS"}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-[0.65rem] text-muted-foreground">{selectedAqsReview.project.name} · {selectedAqsReview.activity.title}</p>
+                </div>
+              )}
+
+              {availableAqsReviews.length === 0 && (
+                <p className="rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
+                  Nenhuma análise AQS em aberto que você acompanha está disponível.
+                </p>
+              )}
+            </div>
           )}
         </section>
 

@@ -194,6 +194,7 @@ export type StoreContextValue = {
   addActivityAttachments: (activityId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setActivityAttachmentActive: (activityId: string, attachmentId: string, active: boolean) => Promise<boolean>
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
+  addAqsReviewAttachments: (reviewId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
   sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[], replyTo?: ChatReplyReference) => Promise<boolean>
@@ -1491,7 +1492,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshProjects])
 
   const uploadAttachments = React.useCallback(async (
-    target: { projectId: string; activityId?: string; subactivityId?: string },
+    target: { projectId: string; activityId?: string; subactivityId?: string; aqsReviewId?: string },
     files: AttachmentUploadInput[],
     options?: { silent?: boolean },
   ) => {
@@ -1511,9 +1512,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           if (uploadError) throw uploadError
         }
 
-        const metadataCall = target.activityId
-          ? supabase.rpc("add_activity_attachment", {
-              p_activity_id: target.activityId,
+        const metadataCall = target.aqsReviewId
+          ? supabase.rpc("add_aqs_review_attachment", {
+              p_review_id: target.aqsReviewId,
               p_name: file.name,
               p_mime_type: file.mimeType,
               p_size_bytes: file.size,
@@ -1521,16 +1522,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               p_storage_path: storagePath,
               p_text_content: file.textContent ?? null,
             })
-          : supabase.rpc("add_attachment", {
-              p_project_id: target.subactivityId ? null : target.projectId,
-              p_subactivity_id: target.subactivityId ?? null,
-              p_name: file.name,
-              p_mime_type: file.mimeType,
-              p_size_bytes: file.size,
-              p_kind: file.kind,
-              p_storage_path: storagePath,
-              p_text_content: file.textContent ?? null,
-            })
+          : target.activityId
+            ? supabase.rpc("add_activity_attachment", {
+                p_activity_id: target.activityId,
+                p_name: file.name,
+                p_mime_type: file.mimeType,
+                p_size_bytes: file.size,
+                p_kind: file.kind,
+                p_storage_path: storagePath,
+                p_text_content: file.textContent ?? null,
+              })
+            : supabase.rpc("add_attachment", {
+                p_project_id: target.subactivityId ? null : target.projectId,
+                p_subactivity_id: target.subactivityId ?? null,
+                p_name: file.name,
+                p_mime_type: file.mimeType,
+                p_size_bytes: file.size,
+                p_kind: file.kind,
+                p_storage_path: storagePath,
+                p_text_content: file.textContent ?? null,
+              })
         const { error: metadataError } = await metadataCall
         if (metadataError) {
           if (storagePath) await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
@@ -1562,6 +1573,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!found) return false
     return uploadAttachments({ projectId: found.project.id, subactivityId: subId }, files)
   }, [projects, uploadAttachments])
+
+  const addAqsReviewAttachments = React.useCallback(async (reviewId: string, files: AttachmentUploadInput[]) => {
+    const review = aqsReviews.find((item) => item.id === reviewId)
+    if (!review) return false
+    const found = findSubInProjects(projects, review.subactivityId)
+    if (!found || found.project.id !== review.projectId) return false
+    return uploadAttachments({
+      projectId: review.projectId,
+      subactivityId: review.subactivityId,
+      aqsReviewId: review.id,
+    }, files)
+  }, [aqsReviews, projects, uploadAttachments])
 
   const addFollowUpAttachments = React.useCallback(async (subId: string, files: AttachmentUploadInput[]) => {
     const found = findSubInProjects(projects, subId)
@@ -2529,6 +2552,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addActivityAttachments,
     setActivityAttachmentActive,
     addSubactivityAttachments,
+    addAqsReviewAttachments,
     setSubactivityAttachmentActive,
     ensureDirectConversation,
     sendChatMessage,
@@ -2555,7 +2579,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
-    addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,

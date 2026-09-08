@@ -100,35 +100,58 @@ export function BrowserNotifications() {
     const pending = notifications
       .filter((notification) => {
         if (notification.recipientId !== currentUserId || notification.readAt || !notification.projectId) return false
-        if (notification.type === "followup-mention") return true
+        if (notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "subactivity-comment") return true
         if (notification.type !== "followup-subactivity-opened") return false
         return Date.now() - new Date(notification.createdAt).getTime() <= 10 * 60 * 1000
       })
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
     for (const notification of pending) {
-      if (shownRef.current.has(notification.id)) continue
-      shownRef.current.add(notification.id)
+      // followup-update é consolidado por contexto no banco. O createdAt muda a
+      // cada nova mensagem/anexo/status, então ele faz parte da chave exibida
+      // para que cada atualização real gere um novo aviso do Android.
+      const shownKey = notification.type === "followup-update"
+        ? `${notification.id}:${notification.createdAt}`
+        : notification.id
+      if (shownRef.current.has(shownKey)) continue
+      shownRef.current.add(shownKey)
       const actor = members.find((member) => member.id === notification.actorId)
       const params = new URLSearchParams({ project: notification.projectId! })
+      if (notification.activityId) params.set("activity", notification.activityId)
       if (notification.subactivityId) params.set("sub", notification.subactivityId)
       const target = `/acompanhamento?${params.toString()}`
       const isMention = notification.type === "followup-mention"
+      const isUpdate = notification.type === "followup-update"
+      const isComment = notification.type === "subactivity-comment"
+      const defaultTitle = isMention
+        ? "Menção no acompanhamento"
+        : isUpdate
+          ? "Atualização no acompanhamento"
+          : isComment
+            ? "Nova mensagem no acompanhamento"
+            : "Nova subatividade"
       const options: NotificationOptions = {
         body: notification.description || (isMention
           ? `${actor?.name ?? "Um usuário"} mencionou você no acompanhamento.`
-          : `${actor?.name ?? "Um usuário"} abriu uma nova subatividade.`),
+          : isUpdate
+            ? `${actor?.name ?? "Um usuário"} atualizou um item que você acompanha.`
+            : isComment
+              ? `${actor?.name ?? "Um usuário"} enviou uma nova mensagem.`
+              : `${actor?.name ?? "Um usuário"} abriu uma nova subatividade.`),
         icon: "/devboard-icon-192.png",
         badge: "/devboard-icon-64.png",
+        // O update consolidado mantém um único cartão visível por contexto.
+        // Cada alteração ainda dispara showNotification, mas rajadas (ex.: vídeo
+        // dividido em partes) atualizam o mesmo aviso em vez de empilhar cartões.
         tag: `devboard-followup-${notification.id}`,
         data: { url: target },
       }
       void (async () => {
         try {
           const registration = registrationRef.current ?? await navigator.serviceWorker.ready
-          await registration.showNotification(notification.title || (isMention ? "Menção no acompanhamento" : "Nova subatividade"), options)
+          await registration.showNotification(notification.title || defaultTitle, options)
         } catch {
-          try { new Notification(notification.title || (isMention ? "Menção no acompanhamento" : "Nova subatividade"), options) } catch {}
+          try { new Notification(notification.title || defaultTitle, options) } catch {}
         }
       })()
     }
@@ -152,7 +175,7 @@ export function BrowserNotifications() {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold">Ativar notificações do navegador</p>
           <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">
-            Permita notificações para receber chamadas, menções e alertas importantes do acompanhamento mesmo quando o Devboard estiver em segundo plano.
+            Permita notificações para receber chamadas, mensagens, anexos, mudanças de status e menções dos itens que você acompanha, mesmo com o Devboard em segundo plano.
           </p>
           <Button type="button" size="sm" className="mt-2 h-8" onClick={() => void enable()}>
             Ativar notificações

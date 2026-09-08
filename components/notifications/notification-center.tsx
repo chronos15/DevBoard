@@ -72,7 +72,7 @@ export function NotificationCenter() {
   const myNotifications = React.useMemo(
     () =>
       notifications
-        .filter((notification) => notification.recipientId === currentUserId && notification.type !== "followup-update")
+        .filter((notification) => notification.recipientId === currentUserId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, currentUserId],
   )
@@ -110,8 +110,12 @@ export function NotificationCenter() {
       router.push(`/solicitacoes/${encodeURIComponent(notification.requestId)}`)
       return
     }
-    if ((notification.type === "followup-mention" || notification.type === "followup-subactivity-opened") && notification.projectId) {
-      openProjectFollowUp({ projectId: notification.projectId, subactivityId: notification.subactivityId })
+    if ((notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "followup-subactivity-opened" || notification.type === "subactivity-comment") && notification.projectId) {
+      openProjectFollowUp({
+        projectId: notification.projectId,
+        activityId: notification.activityId,
+        subactivityId: notification.subactivityId,
+      })
       return
     }
     if (notification.type === "aqs-awaiting") {
@@ -183,7 +187,7 @@ export function NotificationCenter() {
                 <Bell className="mx-auto size-5 text-muted-foreground/60" />
                 <p className="mt-2 text-sm font-medium">Nenhuma notificação</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Marcações, comentários e chamadas recebidas aparecerão aqui.
+                  Mensagens, anexos, mudanças de status, marcações e chamadas aparecerão aqui.
                 </p>
               </div>
             ) : (

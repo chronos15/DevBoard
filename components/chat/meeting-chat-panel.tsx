@@ -351,7 +351,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-card">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[0.68rem] font-semibold"><MessageSquareText className="size-3.5 text-primary" /> Chat da reunião</p>
@@ -365,7 +365,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           const el = event.currentTarget
           stickBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
       >
         {historyHasMore && (
           <div className="mb-2 text-center">
@@ -384,7 +384,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
             <p className="mt-2 text-[0.65rem]">Nenhuma mensagem ainda.</p>
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="min-w-0 space-y-2.5">
             {conversation.messages.map((item) => {
               const own = item.senderId === currentUserId
               const sender = members.find((member) => member.id === item.senderId)
@@ -397,12 +397,12 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                 : members.find((member) => member.id === item.replyTo?.senderId)?.name ?? "Usuário"
 
               return (
-                <div key={item.id} id={`meeting-chat-message-${item.id}`} className={cn("group flex items-end gap-1.5", own ? "justify-end" : "justify-start")}>
+                <div key={item.id} id={`meeting-chat-message-${item.id}`} className={cn("group flex min-w-0 items-end gap-1.5", own ? "justify-end" : "justify-start")}>
                   {!own && <MemberAvatar member={sender} className="mb-1 size-6 shrink-0 ring-0" />}
-                  <div className={cn("relative max-w-[88%]", own && "items-end")}>
+                  <div className={cn("relative min-w-0 max-w-[88%]", own && "items-end")}>
                     {!own && <p className="mb-0.5 px-1 text-[0.55rem] font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>}
                     <div className={cn(
-                      "relative rounded-2xl px-2.5 py-2 text-[0.72rem] leading-relaxed shadow-sm",
+                      "relative min-w-0 max-w-full overflow-hidden rounded-2xl px-2.5 py-2 text-[0.72rem] leading-relaxed shadow-sm",
                       own ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground",
                       item.deliveryStatus === "failed" && "ring-1 ring-destructive/40",
                     )}>
@@ -464,7 +464,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                         </button>
 
                         {pickerMessageId === item.id && (
-                          <div className="absolute z-20 mt-8 flex items-center gap-0.5 rounded-xl border border-border bg-popover p-1 shadow-xl">
+                          <div className={cn("absolute z-20 mt-8 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 rounded-xl border border-border bg-popover p-1 shadow-xl", own ? "right-0" : "left-0")}>
                             {REACTION_EMOJIS.map((emoji) => (
                               <button
                                 key={emoji}
@@ -492,7 +492,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
         )}
       </div>
 
-      <div className="relative shrink-0 border-t border-border bg-card p-2.5">
+      <div className="relative min-w-0 shrink-0 border-t border-border bg-card p-2.5">
         {localError && (
           <div className="mb-2 flex items-start gap-2 rounded-lg bg-destructive/8 px-2.5 py-2 text-[0.6rem] text-destructive">
             <span className="min-w-0 flex-1">{localError}</span>
@@ -535,7 +535,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           </div>
         )}
 
-        <div className="flex items-end gap-1.5">
+        <div className="flex min-w-0 items-end gap-1.5">
           <textarea
             ref={inputRef}
             value={message}
@@ -567,7 +567,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
             rows={1}
             maxLength={2500}
             placeholder="Mensagem… use @ para chamar alguém"
-            className="max-h-28 min-h-10 flex-1 resize-none rounded-xl border border-border bg-background px-2.5 py-2 text-[0.7rem] leading-5 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+            className="max-h-28 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-2.5 py-2 text-[0.7rem] leading-5 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
           />
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(event.target.files); event.currentTarget.value = "" }} />
           <Button type="button" size="icon" variant="ghost" className="size-9 shrink-0" onClick={() => fileInputRef.current?.click()} disabled={sendingMedia} title="Anexar arquivo">

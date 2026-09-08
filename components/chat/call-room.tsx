@@ -4,7 +4,9 @@ import * as React from "react"
 import {
   Camera,
   CameraOff,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Headphones,
   Mic,
   MicOff,
@@ -21,6 +23,7 @@ import {
   Users,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 import type { ChatMeeting, Member } from "@/lib/types"
@@ -516,6 +519,7 @@ export function CallRoom({
   const [nativeScreenSharing, setNativeScreenSharing] = React.useState(false)
   const [deafened, setDeafened] = React.useState(false)
   const [panel, setPanel] = React.useState<PanelMode>(null)
+  const [participantsExpanded, setParticipantsExpanded] = React.useState(true)
   const [memberPickerOpen, setMemberPickerOpen] = React.useState(false)
   const [memberQuery, setMemberQuery] = React.useState("")
   const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null)
@@ -587,7 +591,7 @@ export function CallRoom({
       const bInMeeting = meeting?.memberIds.includes(b.id) ? 1 : 0
       return aInMeeting - bInMeeting || a.name.localeCompare(b.name, "pt-BR")
     })
-    .slice(0, 8)
+    .slice(0, 40)
 
   const microphoneDevices = devices.filter((device) => device.kind === "audioinput")
   const cameraDevices = devices.filter((device) => device.kind === "videoinput")
@@ -1988,6 +1992,24 @@ export function CallRoom({
     syncRemoteReceiverTracks,
   ])
 
+  React.useEffect(() => {
+    if (!memberPickerOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      // O modal de participantes deve fechar antes que o Escape chegue ao host
+      // global da reunião e minimize a chamada.
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      setMemberPickerOpen(false)
+      setMemberQuery("")
+    }
+
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [memberPickerOpen])
+
   async function callUser(userId: string) {
     if (!meeting || invitingUserId) return
     setInvitingUserId(userId)
@@ -2038,74 +2060,37 @@ export function CallRoom({
     : meetingMembers
 
   const participantsPanel = (
-    <div className="flex min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-3">
-        <div>
-          <p className="text-xs font-semibold">Participantes</p>
-          <p className="mt-0.5 text-[0.62rem] text-muted-foreground">{connectedCount} conectado{connectedCount === 1 ? "" : "s"} · {meetingMembers.length} convidado{meetingMembers.length === 1 ? "" : "s"}</p>
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-[58px] shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+        <button
+          type="button"
+          className="min-w-0 flex-1 rounded-lg text-left outline-none transition-colors lg:hover:bg-muted/35 lg:focus-visible:ring-2 lg:focus-visible:ring-primary/30"
+          onClick={() => setParticipantsExpanded((current) => !current)}
+          title={participantsExpanded ? "Recolher participantes" : "Expandir participantes"}
+        >
+          <span className="flex items-center gap-2">
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-semibold">Participantes</span>
+              <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{connectedCount} conectado{connectedCount === 1 ? "" : "s"} · {meetingMembers.length} convidado{meetingMembers.length === 1 ? "" : "s"}</span>
+            </span>
+            <span className="hidden size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground lg:flex">
+              {participantsExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            </span>
+          </span>
+        </button>
         <Button
           type="button"
           size="icon-sm"
-          variant={memberPickerOpen ? "secondary" : "ghost"}
-          onClick={() => setMemberPickerOpen((current) => !current)}
-          title="Chamar usuário"
-          aria-label="Chamar usuário"
+          variant="ghost"
+          onClick={() => { setMemberQuery(""); setMemberPickerOpen(true) }}
+          title="Adicionar ou chamar participante"
+          aria-label="Adicionar ou chamar participante"
         >
           <UserPlus className="size-3.5" />
         </Button>
       </div>
 
-      {memberPickerOpen && (
-        <div className="mx-3 mb-2 rounded-xl border border-border bg-background p-2 shadow-sm">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={memberQuery}
-              onChange={(event) => setMemberQuery(event.target.value)}
-              placeholder="Buscar usuário para chamar…"
-              className="h-8 w-full rounded-lg border border-border bg-card pl-7 pr-2 text-[0.65rem] outline-none focus:border-primary/40"
-              autoFocus
-            />
-          </label>
-          <div className="mt-1.5 max-h-44 overflow-y-auto [scrollbar-width:thin]">
-            {inviteCandidates.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[0.6rem] text-muted-foreground">Nenhum usuário encontrado.</p>
-            ) : inviteCandidates.map((member) => {
-              const state = meeting.memberStates.find((row) => row.userId === member.id)?.status
-              const connected = state === "joined" && Boolean(presenceByUser.get(member.id))
-              return (
-                <div key={member.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-muted/50">
-                  <MemberAvatar member={member} className="size-7 ring-0" />
-                  <span className="min-w-0 flex-1">
-                    <MemberName member={member} className="block truncate text-[0.65rem] font-medium" />
-                    <span className="block truncate text-[0.54rem] text-muted-foreground">
-                      {connected ? "Já está na sala" : state === "pending" ? "Convite pendente" : meeting.memberIds.includes(member.id) ? "Pode ser chamado novamente" : "Será adicionado ao contexto"}
-                    </span>
-                  </span>
-                  {!connected && (
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      className="size-7 shrink-0 text-primary"
-                      loading={invitingUserId === member.id}
-                      disabled={Boolean(invitingUserId)}
-                      onClick={() => void callUser(member.id)}
-                      title="Chamar para a reunião"
-                    >
-                      <PhoneCall className="size-3.5" />
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          <p className="mt-1.5 px-1 text-[0.52rem] leading-relaxed text-muted-foreground">Ao chamar, o usuário também passa a acompanhar a subatividade, solicitação ou análise AQS vinculada à reunião.</p>
-        </div>
-      )}
-
-      <div className="min-h-0 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
+      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
         {meetingMembers.map((member) => {
           const own = member.id === currentUserId
           const presence = presenceByUser.get(member.id)
@@ -2159,7 +2144,7 @@ export function CallRoom({
       </div>
 
       {canEndMeeting && (
-        <div className="border-t border-border p-2.5">
+        <div className="shrink-0 border-t border-border p-2.5">
           <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando…">
             <PhoneOff className="size-3.5" />
             Encerrar reunião para todos
@@ -2239,7 +2224,7 @@ export function CallRoom({
       role="dialog"
       aria-label={`Reunião ${meeting.title}`}
       className={cn(
-        "fixed z-40 transition-[inset,width,height,background-color,padding] duration-200",
+        "fixed z-[80] transition-[inset,width,height,background-color,padding] duration-200",
         minimized
           ? "bottom-3 right-3 h-[220px] w-[min(370px,calc(100vw-1rem))]"
           : "inset-0 flex items-center justify-center bg-black/35 p-2 sm:p-4",
@@ -2371,7 +2356,14 @@ export function CallRoom({
             <aside className="hidden w-[360px] shrink-0 min-h-0 flex-col border-l border-border bg-card lg:flex">
               {panel === "settings" ? settingsPanel : (
                 <>
-                  <div className="max-h-[40%] min-h-[190px] shrink-0 overflow-hidden border-b border-border">{participantsPanel}</div>
+                  <div
+                    className={cn(
+                      "shrink-0 overflow-hidden border-b border-border transition-[height] duration-200 ease-out",
+                      participantsExpanded ? "h-[min(40%,360px)] min-h-[190px]" : "h-[58px]",
+                    )}
+                  >
+                    {participantsPanel}
+                  </div>
                   <MeetingChatPanel meeting={meeting} />
                 </>
               )}
@@ -2442,6 +2434,96 @@ export function CallRoom({
           {!minimized && <p className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">{deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; somente “Sair” encerra sua participação</p>}
         </footer>
       </section>
+
+      {memberPickerOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-3 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="meeting-participant-picker-title"
+          onMouseDown={(event) => {
+            if (event.target !== event.currentTarget) return
+            setMemberPickerOpen(false)
+            setMemberQuery("")
+          }}
+        >
+          <div className="flex max-h-[min(78dvh,620px)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl ring-1 ring-foreground/10">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3.5">
+              <div className="min-w-0">
+                <h3 id="meeting-participant-picker-title" className="text-sm font-semibold">Adicionar participante</h3>
+                <p className="mt-1 text-[0.65rem] leading-relaxed text-muted-foreground">Busque um usuário do workspace para adicionar ao contexto e chamar para esta reunião.</p>
+              </div>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => { setMemberPickerOpen(false); setMemberQuery("") }}
+                aria-label="Fechar"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+
+            <div className="shrink-0 px-4 pb-2 pt-3">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={memberQuery}
+                  onChange={(event) => setMemberQuery(event.target.value)}
+                  placeholder="Buscar por nome…"
+                  className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-xs outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  autoFocus
+                />
+              </label>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 [scrollbar-width:thin]">
+              {inviteCandidates.length === 0 ? (
+                <div className="flex min-h-32 flex-col items-center justify-center px-4 text-center">
+                  <Users className="size-5 text-muted-foreground" />
+                  <p className="mt-2 text-xs font-medium">Nenhum usuário encontrado</p>
+                  <p className="mt-1 text-[0.62rem] text-muted-foreground">Tente outro nome.</p>
+                </div>
+              ) : inviteCandidates.map((member) => {
+                const state = meeting.memberStates.find((row) => row.userId === member.id)?.status
+                const connected = state === "joined" && Boolean(presenceByUser.get(member.id))
+                return (
+                  <div key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2.5 transition-colors hover:bg-muted/55">
+                    <MemberAvatar member={member} className="size-9 ring-0" />
+                    <span className="min-w-0 flex-1">
+                      <MemberName member={member} className="block truncate text-xs font-medium" />
+                      <span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">
+                        {connected ? "Já está na sala" : state === "pending" ? "Convite pendente" : meeting.memberIds.includes(member.id) ? "Pode ser chamado novamente" : "Será adicionado ao contexto"}
+                      </span>
+                    </span>
+                    {connected ? (
+                      <span className="shrink-0 rounded-lg bg-success/10 px-2 py-1 text-[0.56rem] font-medium text-success">Na sala</span>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 shrink-0 gap-1.5 px-2.5 text-[0.62rem]"
+                        loading={invitingUserId === member.id}
+                        disabled={Boolean(invitingUserId)}
+                        onClick={() => void callUser(member.id)}
+                      >
+                        <PhoneCall className="size-3.5" />
+                        {state === "pending" ? "Chamar novamente" : "Chamar"}
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="shrink-0 border-t border-border bg-muted/20 px-4 py-2.5">
+              <p className="text-[0.58rem] leading-relaxed text-muted-foreground">Ao chamar, o usuário passa a acompanhar a subatividade, solicitação ou análise AQS vinculada à reunião.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

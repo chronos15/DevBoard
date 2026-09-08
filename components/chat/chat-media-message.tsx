@@ -134,7 +134,7 @@ export function ChatMediaMessage({
   if (kind === "image") {
     return (
       <>
-        <div ref={targetRef} className="w-[clamp(11rem,58vw,18rem)] max-w-full">
+        <div ref={targetRef} className="min-w-0 w-[clamp(11rem,58vw,18rem)] max-w-full">
           <button type="button" className="block w-full text-left" onClick={() => void openPreview()}>
             <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
               {url && (
@@ -178,7 +178,7 @@ export function ChatMediaMessage({
 
   if (kind === "video") {
     return (
-      <div ref={targetRef} className="w-[clamp(13rem,62vw,22rem)] max-w-full">
+      <div ref={targetRef} className="min-w-0 w-[clamp(13rem,62vw,22rem)] max-w-full">
         <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
           {url && (
             <video
@@ -211,12 +211,12 @@ export function ChatMediaMessage({
   }
 
   if (failed) {
-    return <div className="flex min-w-48 items-center gap-2 py-1 text-xs opacity-80"><KindIcon kind={kind} /><span>Arquivo indisponível</span></div>
+    return <div className="flex min-w-0 max-w-full items-center gap-2 py-1 text-xs opacity-80"><KindIcon kind={kind} /><span>Arquivo indisponível</span></div>
   }
 
   return (
     <>
-      <button type="button" onClick={() => void openPreview()} className="flex min-w-56 max-w-sm items-center gap-3 rounded-xl bg-background/15 p-2.5 text-left ring-1 ring-current/10">
+      <button type="button" onClick={() => void openPreview()} className="flex w-72 min-w-0 max-w-full items-center gap-3 rounded-xl bg-background/15 p-2.5 text-left ring-1 ring-current/10">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/20"><KindIcon kind={kind} /></span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium">{fileName}</span>

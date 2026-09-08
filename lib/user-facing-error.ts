@@ -47,9 +47,13 @@ export function toUserFacingError(error: unknown, fallback = "Não foi possível
   const name = errorName(error)
   const full = `${code} ${name} ${message}`.trim()
 
-  // Solicitações: constraint única de OS por workspace.
+  // Solicitações: a numeração da OS é independente por unidade.
+  if (/service_requests_workspace_unit_order_uidx/i.test(full)) {
+    return "Já existe uma solicitação com esse número de OS na unidade selecionada. Abra o protocolo existente ou informe outro número."
+  }
+  // Ambiente ainda sem a migration que migra a unicidade global para por unidade.
   if (/service_requests_workspace_order_uidx/i.test(full)) {
-    return "Já existe uma solicitação com esse número de OS. Abra o protocolo existente ou informe outro número."
+    return "A numeração independente por unidade ainda não está ativa neste ambiente. Atualize o sistema e tente novamente."
   }
 
   // Autenticação / e-mail.

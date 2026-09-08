@@ -723,6 +723,18 @@ Depois da 049, aplique:
 supabase/migrations/050_devboard_friendly_service_request_duplicates.sql
 ```
 
-A 050 mantém a regra de **uma solicitação por número de OS em cada workspace**, mas trata a concorrência diretamente no banco para que uma tentativa duplicada nunca exponha a mensagem técnica da constraint. O usuário recebe uma orientação simples para abrir o protocolo existente ou informar outra OS.
+A 050 introduziu o tratamento amigável de duplicidade de OS e protegeu a concorrência no banco. **A regra de unicidade desta etapa é substituída pela migration 051**, que passa a considerar a Unidade selecionada.
 
 A aplicação também passou a converter falhas de autenticação, permissão, rede, armazenamento e inconsistências do banco em mensagens adequadas para a interface. Os detalhes técnicos continuam sendo registrados no console para diagnóstico, mas não devem ser exibidos ao usuário final.
+
+## Migration 051 — Numeração de OS independente por Unidade
+
+Depois da 050, aplique:
+
+```text
+supabase/migrations/051_devboard_service_request_order_per_unit.sql
+```
+
+A 051 corrige a regra de unicidade das Solicitações: o número da OS passa a ser único **dentro de cada Unidade**, e não no workspace inteiro. Assim, por exemplo, a OS `123` pode existir em `Multsoft.com` e também em outra Unidade, mas não pode ser cadastrada duas vezes na mesma Unidade.
+
+A criação grava `unit_id` junto com a Solicitação antes de validar a duplicidade, mantendo a proteção também quando duas pessoas tentam protocolar a mesma OS ao mesmo tempo. A interface usa a mesma regra ao avisar sobre uma OS já cadastrada e oferece acesso ao protocolo existente somente quando a duplicidade pertence à Unidade selecionada.

@@ -134,12 +134,20 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
   const protocolReady = requiredCategories.every((category) => categoriesPresent.has(category))
   const selectedUnit = activeUnits.find((item) => item.id === unitId)
   const duplicateRequest = React.useMemo(() => {
-    const normalized = orderNumber.trim().toLocaleLowerCase("pt-BR")
-    if (!normalized) return null
-    return serviceRequests.find((item) => item.orderNumber.trim().toLocaleLowerCase("pt-BR") === normalized) ?? null
-  }, [orderNumber, serviceRequests])
+    const normalizedOrder = orderNumber.trim().toLocaleLowerCase("pt-BR")
+    if (!normalizedOrder || !selectedUnit) return null
+
+    const normalizedUnitName = selectedUnit.name.trim().toLocaleLowerCase("pt-BR")
+    return serviceRequests.find((item) => {
+      if (item.orderNumber.trim().toLocaleLowerCase("pt-BR") !== normalizedOrder) return false
+      // A numeração de OS pertence à unidade. Para registros legados sem unitId,
+      // usa o nome histórico da unidade apenas como fallback de compatibilidade.
+      if (item.unitId) return item.unitId === selectedUnit.id
+      return item.unit.trim().toLocaleLowerCase("pt-BR") === normalizedUnitName
+    }) ?? null
+  }, [orderNumber, selectedUnit, serviceRequests])
   const duplicateOrderIssue = duplicateRequest
-    ? `Já existe uma solicitação com esta OS (${duplicateRequest.orderNumber}). Abra o protocolo existente ou informe outro número.`
+    ? `A OS ${duplicateRequest.orderNumber} já está cadastrada nesta unidade. Abra o protocolo existente ou informe outro número.`
     : null
   const orderNumberValidation = (isInternal && !orderNumber.trim() ? null : lengthIssue(orderNumber, LIMITS.orderNumber)) ?? duplicateOrderIssue
 
@@ -503,12 +511,17 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                               </div>
                               <p className="mt-0.5 line-clamp-2 text-[0.66rem] leading-relaxed text-muted-foreground">{item.helper}</p>
 
-                              {canUseUrl && (
-                                <div className="mt-2 inline-flex rounded-lg border border-border bg-background p-0.5">
-                                  <button type="button" onClick={() => chooseMode(item.category, "upload")} className={cn("h-7 rounded-md px-2.5 text-[0.62rem] font-semibold", mode === "upload" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>Arquivo</button>
-                                  <button type="button" onClick={() => chooseMode(item.category, "url")} className={cn("h-7 rounded-md px-2.5 text-[0.62rem] font-semibold", mode === "url" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>URL FTP</button>
-                                </div>
-                              )}
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                {canUseUrl && (
+                                  <div className="inline-flex shrink-0 rounded-lg border border-border bg-background p-0.5">
+                                    <button type="button" onClick={() => chooseMode(item.category, "upload")} className={cn("h-7 rounded-md px-2.5 text-[0.62rem] font-semibold", mode === "upload" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>Arquivo</button>
+                                    <button type="button" onClick={() => chooseMode(item.category, "url")} className={cn("h-7 rounded-md px-2.5 text-[0.62rem] font-semibold", mode === "url" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>URL FTP</button>
+                                  </div>
+                                )}
+                                {mode === "upload" && !selected && (
+                                  <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 px-3" onClick={() => inputRefs.current[item.category]?.click()}><Upload className="size-3.5" /> Selecionar arquivo</Button>
+                                )}
+                              </div>
 
                               {mode === "url" && canUseUrl ? (
                                 <div className="mt-2">
@@ -525,9 +538,7 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                                   <span className="shrink-0 text-[0.62rem] text-muted-foreground">{formatBytes(selected.file.size)}</span>
                                   <button type="button" aria-label="Remover arquivo" onClick={() => setFiles((current) => current.filter((file) => file !== selected))} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"><X className="size-3.5" /></button>
                                 </div>
-                              ) : (
-                                <Button type="button" variant="outline" size="sm" className="mt-2 h-8" onClick={() => inputRefs.current[item.category]?.click()}><Upload className="size-3.5" /> Selecionar arquivo</Button>
-                              )}
+                              ) : null}
                               <input ref={(node) => { inputRefs.current[item.category] = node }} type="file" accept={item.accept} className="hidden" onChange={(event) => { addFiles(item.category, Array.from(event.target.files ?? [])); event.currentTarget.value = "" }} />
                             </div>
                           </div>

@@ -36,6 +36,9 @@ import { createClient } from "@/lib/supabase/client"
 import { loadWebRtcIceConfig } from "@/lib/webrtc/ice-servers"
 import { getCallAudioContext, primeCallAudio, resumeCallAudio } from "@/lib/webrtc/audio-playback"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { BrowserMeetingRecorder, clearMeetingRecordingSegments, countMeetingRecordingSegments, readMeetingRecordingSegment, type MeetingRecordingSource } from "@/lib/meeting-recorder"
+import { prepareVideoAttachment } from "@/lib/video-attachment-processor"
+import { ATTACHMENTS_BUCKET, SERVICE_REQUEST_MEDIA_BUCKET, attachmentStoragePath, serviceRequestMediaStoragePath } from "@/lib/supabase/helpers"
 import {
   configureAndroidScreenShare,
   forwardAndroidScreenSignal,
@@ -66,6 +69,28 @@ type MediaStateSignal = {
   cameraEnabled: boolean
   screenSharing: boolean
   mediaRevision: number
+  sentAt: string
+}
+
+type MeetingRecordingContext = {
+  canRecord: boolean
+  hasContext: boolean
+  status: string
+  recorderId?: string | null
+  workspaceId?: string | null
+  projectId?: string | null
+  activityId?: string | null
+  subactivityId?: string | null
+  requestId?: string | null
+  aqsReviewId?: string | null
+}
+
+type MeetingRecordingState = "idle" | "waiting" | "recording" | "finalizing" | "published" | "error" | "unavailable"
+
+type RecordingStateSignal = {
+  meetingId: string
+  recorderId: string
+  status: "recording" | "finalizing" | "published" | "failed"
   sentAt: string
 }
 
@@ -104,6 +129,21 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((seconds % 3600) / 60)
   const rest = seconds % 60
   return [hours, minutes, rest].map((value) => String(value).padStart(2, "0")).join(":")
+}
+
+function meetingRecordingBaseName(title: string) {
+  const safe = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 72)
+  return safe || "Reuniao"
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 }
 
 function deviceLabel(device: MediaDeviceInfo, index: number, kind: "microfone" | "câmera") {
@@ -511,7 +551,7 @@ export function CallRoom({
   onRestore?: () => void
   onOpenChange: (open: boolean) => void
 }) {
-  const { members, currentUserId, currentUserRole, endMeeting, leaveMeeting, heartbeatMeeting, inviteMeetingUser } = useStore()
+  const { members, currentUserId, currentUserRole, endMeeting, leaveMeeting, heartbeatMeeting, inviteMeetingUser, refreshAll } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
   const [micEnabled, setMicEnabled] = React.useState(true)
   const [cameraEnabled, setCameraEnabled] = React.useState(meeting?.mode === "video")
@@ -519,7 +559,7 @@ export function CallRoom({
   const [nativeScreenSharing, setNativeScreenSharing] = React.useState(false)
   const [deafened, setDeafened] = React.useState(false)
   const [panel, setPanel] = React.useState<PanelMode>(null)
-  const [participantsExpanded, setParticipantsExpanded] = React.useState(true)
+  const [participantsExpanded, setParticipantsExpanded] = React.useState(false)
   const [memberPickerOpen, setMemberPickerOpen] = React.useState(false)
   const [memberQuery, setMemberQuery] = React.useState("")
   const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null)
@@ -541,6 +581,9 @@ export function CallRoom({
   const [now, setNow] = React.useState(Date.now())
   const [endingMeeting, setEndingMeeting] = React.useState(false)
   const [leavingMeeting, setLeavingMeeting] = React.useState(false)
+  const [recordingState, setRecordingState] = React.useState<MeetingRecordingState>("idle")
+  const [recordingMessage, setRecordingMessage] = React.useState("")
+  const [remoteRecordingActive, setRemoteRecordingActive] = React.useState(false)
   const localStreamRef = React.useRef<MediaStream | null>(null)
   const screenStreamRef = React.useRef<MediaStream | null>(null)
   const localVideoRef = React.useRef<HTMLVideoElement | null>(null)
@@ -575,11 +618,20 @@ export function CallRoom({
     mediaRevision: 0,
   })
 
+  const meetingRecorderRef = React.useRef<BrowserMeetingRecorder | null>(null)
+  const recordingContextRef = React.useRef<MeetingRecordingContext | null>(null)
+  const recordingHeartbeatRef = React.useRef<number | null>(null)
+  const recordingClaimTimerRef = React.useRef<number | null>(null)
+  const recordingFinalizePromiseRef = React.useRef<Promise<boolean> | null>(null)
+  const finalizeRecordingRef = React.useRef<(() => Promise<boolean>) | null>(null)
+
   const currentMember = members.find((member) => member.id === currentUserId)
   const currentMeetingState = meeting?.memberStates.find((member) => member.userId === currentUserId)
-  const meetingMembers = meeting?.memberIds
-    .map((id) => members.find((member) => member.id === id))
-    .filter((member): member is Member => Boolean(member)) ?? []
+  const meetingMembers = React.useMemo(() => (
+    meeting?.memberIds
+      .map((id) => members.find((member) => member.id === id))
+      .filter((member): member is Member => Boolean(member)) ?? []
+  ), [meeting?.memberIds, members])
   const canEndMeeting = Boolean(
     meeting && (currentUserRole === "admin" || meeting.createdBy === currentUserId),
   )
@@ -705,6 +757,25 @@ export function CallRoom({
     window.setTimeout(() => void broadcastMediaState(), 180)
     window.setTimeout(() => void broadcastMediaState(), 650)
   }, [broadcastMediaState])
+
+  const broadcastRecordingState = React.useCallback(async (status: RecordingStateSignal["status"]) => {
+    if (!meeting || !channelRef.current) return false
+    try {
+      const result = await channelRef.current.send({
+        type: "broadcast",
+        event: "recording-state",
+        payload: {
+          meetingId: meeting.id,
+          recorderId: currentUserId,
+          status,
+          sentAt: new Date().toISOString(),
+        } satisfies RecordingStateSignal,
+      })
+      return result === "ok"
+    } catch {
+      return false
+    }
+  }, [currentUserId, meeting?.id])
 
   const schedulePresenceReconcile = React.useCallback(() => {
     if (presencePublishTimerRef.current !== null) window.clearTimeout(presencePublishTimerRef.current)
@@ -1349,7 +1420,11 @@ export function CallRoom({
     setDeafened(false)
     setFocusedMemberId(null)
     setPanel(null)
+    setParticipantsExpanded(false)
     setMemberPickerOpen(false)
+    setRecordingState("idle")
+    setRecordingMessage("")
+    setRemoteRecordingActive(false)
     setMemberQuery("")
     setPresences({})
     remoteMediaStateRef.current.clear()
@@ -1373,6 +1448,145 @@ export function CallRoom({
     desktop.addEventListener("change", handleViewport)
     return () => desktop.removeEventListener("change", handleViewport)
   }, [open])
+
+  React.useEffect(() => {
+    if (!open || !meeting || currentMeetingState?.status !== "joined" || mediaReadyMeetingId !== meeting.id) return
+    let disposed = false
+
+    async function attemptClaim() {
+      if (disposed || !meeting) return
+      try {
+        const { data, error } = await supabase.rpc("claim_meeting_recording", { p_meeting_id: meeting.id })
+        if (error) throw error
+        if (disposed) return
+        const context = (data ?? {}) as MeetingRecordingContext
+        recordingContextRef.current = context
+
+        if (!context.hasContext) {
+          setRecordingState("unavailable")
+          setRecordingMessage("Esta reunião não possui um tópico de origem para receber a gravação.")
+          return
+        }
+
+        if (context.status === "published") {
+          setRecordingState("published")
+          setRemoteRecordingActive(false)
+          return
+        }
+
+        if (!context.canRecord) {
+          setRecordingState("waiting")
+          setRemoteRecordingActive(context.status === "recording" || context.status === "finalizing")
+          recordingClaimTimerRef.current = window.setTimeout(() => void attemptClaim(), 12_000)
+          return
+        }
+
+        if (meetingRecorderRef.current) return
+        const previousSegments = await countMeetingRecordingSegments(meeting.id).catch(() => 0)
+        if (disposed) return
+        const recorder = new BrowserMeetingRecorder(meeting.id, previousSegments)
+        meetingRecorderRef.current = recorder
+        await recorder.start()
+        if (disposed) {
+          void recorder.stop()
+          return
+        }
+        setRecordingState("recording")
+        setRecordingMessage(previousSegments > 0 ? "Gravação retomada neste dispositivo." : "Gravação automática em andamento.")
+        setRemoteRecordingActive(false)
+        void broadcastRecordingState("recording")
+
+        if (recordingHeartbeatRef.current !== null) window.clearInterval(recordingHeartbeatRef.current)
+        recordingHeartbeatRef.current = window.setInterval(() => {
+          void supabase.rpc("meeting_recording_heartbeat", { p_meeting_id: meeting.id })
+          void broadcastRecordingState("recording")
+        }, 15_000)
+      } catch (error) {
+        if (disposed) return
+        console.warn("Devboard: gravação automática indisponível", error)
+        const message = toUserFacingError(error, "Não foi possível iniciar a gravação automática desta reunião")
+        if (recordingContextRef.current?.canRecord && meeting) {
+          try { await supabase.rpc("meeting_recording_mark_failed", { p_meeting_id: meeting.id, p_error: message }) } catch {}
+          void broadcastRecordingState("failed")
+        }
+        setRecordingState("error")
+        setRecordingMessage(message)
+      }
+    }
+
+    void attemptClaim()
+    return () => {
+      disposed = true
+      if (recordingClaimTimerRef.current !== null) {
+        window.clearTimeout(recordingClaimTimerRef.current)
+        recordingClaimTimerRef.current = null
+      }
+    }
+  }, [broadcastRecordingState, currentMeetingState?.status, mediaReadyMeetingId, meeting?.id, open, supabase])
+
+  React.useEffect(() => {
+    const recorder = meetingRecorderRef.current
+    if (!recorder || !meeting) return
+
+    const sources: MeetingRecordingSource[] = []
+    for (const member of meetingMembers) {
+      const own = member.id === currentUserId
+      const presence = own ? undefined : Object.values(presences).find((item) => item.userId === member.id)
+      if (!own && !presence) continue
+
+      if (own) {
+        const audioTrack = localStreamRef.current?.getAudioTracks().find((track) => track.readyState === "live")
+        const visualStream = screenStreamRef.current ?? localStreamRef.current
+        const videoTrack = visualStream?.getVideoTracks().find((track) => track.readyState === "live")
+        const tracks: MediaStreamTrack[] = []
+        if (audioTrack) tracks.push(audioTrack)
+        if (videoTrack) tracks.push(videoTrack)
+        sources.push({
+          id: member.id,
+          name: member.name,
+          stream: new MediaStream(tracks),
+          videoEnabled: Boolean(videoTrack && (screenSharing || cameraEnabled)),
+          screenSharing: Boolean(screenSharing),
+        })
+        continue
+      }
+
+      const remote = presence ? remoteStreams[presence.sessionId] : undefined
+      const nativeScreen = presence ? nativeScreenStreams[presence.sessionId] : undefined
+      const audioTrack = remote?.getAudioTracks().find((track) => track.readyState === "live")
+      const visual = presence?.screenSharing && nativeScreen ? nativeScreen : remote
+      const videoTrack = visual?.getVideoTracks().find((track) => track.readyState === "live")
+      const tracks: MediaStreamTrack[] = []
+      if (audioTrack) tracks.push(audioTrack)
+      if (videoTrack) tracks.push(videoTrack)
+      sources.push({
+        id: member.id,
+        name: member.name,
+        stream: new MediaStream(tracks),
+        videoEnabled: Boolean(videoTrack && (presence?.cameraEnabled || presence?.screenSharing)),
+        screenSharing: Boolean(presence?.screenSharing),
+      })
+    }
+    recorder.updateSources(sources)
+  }, [cameraEnabled, currentUserId, meeting?.id, meetingMembers, nativeScreenStreams, presences, remoteStreams, screenSharing, selectedCamera, selectedMic])
+
+  React.useEffect(() => {
+    return () => {
+      if (recordingHeartbeatRef.current !== null) {
+        window.clearInterval(recordingHeartbeatRef.current)
+        recordingHeartbeatRef.current = null
+      }
+      if (recordingClaimTimerRef.current !== null) {
+        window.clearTimeout(recordingClaimTimerRef.current)
+        recordingClaimTimerRef.current = null
+      }
+      const recorder = meetingRecorderRef.current
+      meetingRecorderRef.current = null
+      if (recorder) void recorder.stop()
+      recordingContextRef.current = null
+      recordingFinalizePromiseRef.current = null
+    }
+  }, [meeting?.id])
 
   React.useEffect(() => {
     if (!open || !meeting || currentMeetingState?.status !== "joined") return
@@ -1475,6 +1689,17 @@ export function CallRoom({
       })
     }
 
+    const handleRecordingState = (state: RecordingStateSignal) => {
+      if (state.meetingId !== meeting.id || state.recorderId === currentUserId) return
+      setRemoteRecordingActive(state.status === "recording" || state.status === "finalizing")
+      if (state.status === "published") setRecordingState((current) => current === "recording" ? current : "published")
+    }
+
+    const handleRecordingStopRequest = () => {
+      if (!meetingRecorderRef.current) return
+      void finalizeRecordingRef.current?.()
+    }
+
     const handleSignal = (signal: CallSignal) => {
       if (signal.meetingId !== meeting.id) return
       if (signal.toSession !== sessionIdRef.current || signal.fromSession === sessionIdRef.current) return
@@ -1571,12 +1796,15 @@ export function CallRoom({
           .on("broadcast", { event: "webrtc-signal" }, ({ payload }) => handleSignal(payload as CallSignal))
           .on("broadcast", { event: "native-screen-signal" }, ({ payload }) => handleNativeScreenSignal(payload as NativeScreenSignal))
           .on("broadcast", { event: "media-state" }, ({ payload }) => handleMediaState(payload as MediaStateSignal))
+          .on("broadcast", { event: "recording-state" }, ({ payload }) => handleRecordingState(payload as RecordingStateSignal))
+          .on("broadcast", { event: "recording-stop-request" }, handleRecordingStopRequest)
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
               setMediaError((current) => current.startsWith("Falha na sala") ? "" : current)
               publishPresence()
               window.setTimeout(() => broadcastMediaStateBurst(), 120)
+              if (meetingRecorderRef.current) window.setTimeout(() => void broadcastRecordingState("recording"), 180)
               // Depois de uma reconexão do Realtime, conserva peers conectados e
               // reinicia apenas os que realmente perderam a rota de mídia.
               window.setTimeout(() => {
@@ -1612,6 +1840,8 @@ export function CallRoom({
     currentMeetingState?.status,
     broadcastMediaState,
     broadcastMediaStateBurst,
+    broadcastRecordingState,
+    currentUserId,
     closeAllPeers,
     closePeer,
     enqueuePeerSignal,
@@ -1992,6 +2222,171 @@ export function CallRoom({
     syncRemoteReceiverTracks,
   ])
 
+  const finalizeAndPublishRecording = React.useCallback(async () => {
+    if (!meeting) return true
+    if (recordingFinalizePromiseRef.current) return recordingFinalizePromiseRef.current
+
+    const task = (async () => {
+      const recorder = meetingRecorderRef.current
+      const context = recordingContextRef.current
+      if (!context?.hasContext) return true
+
+      if (!recorder || !context.canRecord) {
+        const { data } = await supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id })
+        return String((data as { status?: string } | null)?.status ?? "") === "published"
+      }
+
+      const uploaded: Array<{ bucket: string; path: string }> = []
+      try {
+        setRecordingState("finalizing")
+        setRecordingMessage("Finalizando a gravação da reunião…")
+        await supabase.rpc("meeting_recording_mark_finalizing", { p_meeting_id: meeting.id })
+        void broadcastRecordingState("finalizing")
+
+        const segmentCount = await recorder.stop()
+        if (recordingHeartbeatRef.current !== null) {
+          window.clearInterval(recordingHeartbeatRef.current)
+          recordingHeartbeatRef.current = null
+        }
+        if (segmentCount <= 0) throw new Error("A reunião terminou antes que o navegador conseguisse gerar a gravação.")
+        if (!context.workspaceId || !context.projectId) throw new Error("O tópico de origem da reunião não pôde ser identificado.")
+
+        const metadata: Array<{ name: string; mimeType: string; size: number; storagePath: string }> = []
+        const base = meetingRecordingBaseName(meeting.title)
+
+        for (let index = 0; index < segmentCount; index += 1) {
+          const stored = await readMeetingRecordingSegment(meeting.id, index)
+          if (!stored?.blob?.size) continue
+          const extension = stored.mimeType.includes("mp4") ? "mp4" : "webm"
+          const sourceName = `Gravacao - ${base} - trecho ${String(index + 1).padStart(2, "0")} de ${String(segmentCount).padStart(2, "0")}.${extension}`
+          const sourceFile = new File([stored.blob], sourceName, { type: stored.mimeType || "video/webm", lastModified: Date.now() })
+
+          setRecordingMessage(`Preparando gravação ${index + 1} de ${segmentCount}…`)
+          const prepared = await prepareVideoAttachment(sourceFile, (progress) => {
+            setRecordingMessage(`${progress.message} ${Math.round(progress.progress * 100)}%`)
+          })
+
+          for (const part of prepared) {
+            const path = context.requestId
+              ? serviceRequestMediaStoragePath(context.workspaceId, context.requestId, currentUserId, part.name)
+              : attachmentStoragePath(context.workspaceId, context.projectId, currentUserId, {
+                  name: part.name,
+                  mimeType: part.type || "video/webm",
+                  size: part.size,
+                  kind: "video",
+                })
+            const bucket = context.requestId ? SERVICE_REQUEST_MEDIA_BUCKET : ATTACHMENTS_BUCKET
+            setRecordingMessage(`Enviando ${metadata.length + 1}ª parte da gravação…`)
+            const { error: uploadError } = await supabase.storage.from(bucket).upload(path, part, {
+              contentType: part.type || "video/webm",
+              cacheControl: "3600",
+              upsert: false,
+            })
+            if (uploadError) throw uploadError
+            uploaded.push({ bucket, path })
+            metadata.push({
+              name: part.name,
+              mimeType: part.type || "video/webm",
+              size: part.size,
+              storagePath: path,
+            })
+          }
+        }
+
+        if (metadata.length === 0) throw new Error("Nenhuma parte válida da gravação foi gerada.")
+        setRecordingMessage("Publicando a gravação no tópico de origem…")
+        const { data, error } = await supabase.rpc("publish_meeting_recording", {
+          p_meeting_id: meeting.id,
+          p_parts: metadata,
+        })
+        if (error) throw error
+        if (data !== true) throw new Error("O servidor não confirmou a publicação da gravação.")
+
+        await clearMeetingRecordingSegments(meeting.id).catch(() => undefined)
+        setRecordingState("published")
+        setRecordingMessage("Gravação enviada ao tópico de origem.")
+        void broadcastRecordingState("published")
+        void refreshAll()
+        return true
+      } catch (error) {
+        console.error("Devboard: falha ao finalizar gravação da reunião", error)
+        for (const item of uploaded) {
+          await supabase.storage.from(item.bucket).remove([item.path]).catch(() => undefined)
+        }
+        const message = toUserFacingError(error, "Não foi possível enviar a gravação da reunião")
+        try {
+          await supabase.rpc("meeting_recording_mark_failed", { p_meeting_id: meeting.id, p_error: message })
+        } catch {}
+        setRecordingState("error")
+        setRecordingMessage(message)
+        void broadcastRecordingState("failed")
+        return false
+      }
+    })()
+
+    recordingFinalizePromiseRef.current = task
+    try {
+      return await task
+    } finally {
+      recordingFinalizePromiseRef.current = null
+    }
+  }, [broadcastRecordingState, currentUserId, meeting?.id, meeting?.title, refreshAll, supabase])
+
+  finalizeRecordingRef.current = finalizeAndPublishRecording
+
+  const ensureRecordingPublishedBeforeEnd = React.useCallback(async () => {
+    if (!meeting) return true
+    if (recordingContextRef.current?.hasContext === false) return true
+    if (meetingRecorderRef.current) return finalizeAndPublishRecording()
+
+    const { data: initial, error: initialError } = await supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id })
+    if (initialError) {
+      setMediaError("Não foi possível confirmar o estado da gravação. Tente encerrar novamente.")
+      return false
+    }
+    const initialStatus = initial as { status?: string; recorderId?: string | null; error?: string | null } | null
+    if (initialStatus?.status === "published") return true
+    if (initialStatus?.status === "failed") {
+      setMediaError(initialStatus.error || "A gravação encontrou um problema no dispositivo responsável. Tente encerrar novamente.")
+      return false
+    }
+    if (!initialStatus?.recorderId) {
+      setMediaError("A gravação automática ainda não foi iniciada. Aguarde alguns segundos e tente encerrar novamente.")
+      return false
+    }
+
+    setRecordingState("finalizing")
+    setRecordingMessage("Aguardando o dispositivo responsável salvar a gravação…")
+    try {
+      await channelRef.current?.send({
+        type: "broadcast",
+        event: "recording-stop-request",
+        payload: { meetingId: meeting.id, requestedBy: currentUserId, sentAt: new Date().toISOString() },
+      })
+    } catch {}
+
+    const deadline = Date.now() + 45_000
+    while (Date.now() < deadline) {
+      await sleep(1400)
+      const { data } = await supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id })
+      const status = data as { status?: string; error?: string | null } | null
+      if (status?.status === "published") {
+        setRecordingState("published")
+        setRecordingMessage("Gravação enviada ao tópico de origem.")
+        return true
+      }
+      if (status?.status === "failed") {
+        setRecordingState("error")
+        setRecordingMessage(status.error || "A gravação não pôde ser enviada.")
+        return false
+      }
+    }
+
+    setRecordingState("error")
+    setRecordingMessage("O dispositivo responsável pela gravação não respondeu a tempo.")
+    return false
+  }, [currentUserId, finalizeAndPublishRecording, meeting?.id, supabase])
+
   React.useEffect(() => {
     if (!memberPickerOpen) return
 
@@ -2028,6 +2423,15 @@ export function CallRoom({
     if (!meeting || leavingMeeting) return
     setLeavingMeeting(true)
     try {
+      if (meetingRecorderRef.current) {
+        const saved = await finalizeAndPublishRecording()
+        if (!saved) {
+          const leaveAnyway = window.confirm(
+            "A gravação automática ainda não foi enviada. Se você sair agora, a reunião continuará para os demais sem este dispositivo gravando. Deseja sair mesmo assim?",
+          )
+          if (!leaveAnyway) return
+        }
+      }
       await leaveMeeting(meeting.id)
       onOpenChange(false)
     } finally {
@@ -2037,9 +2441,14 @@ export function CallRoom({
 
   async function finishMeeting() {
     if (!meeting || !canEndMeeting || endingMeeting) return
-    if (!window.confirm(`Encerrar a reunião “${meeting.title}” para todos os participantes?`)) return
+    if (!window.confirm(`Encerrar a reunião “${meeting.title}” para todos os participantes? A gravação será salva automaticamente no tópico de origem.`)) return
     setEndingMeeting(true)
     try {
+      const recordingSaved = await ensureRecordingPublishedBeforeEnd()
+      if (!recordingSaved) {
+        setMediaError("A reunião não foi encerrada porque a gravação ainda não pôde ser salva. Tente novamente após corrigir o problema indicado.")
+        return
+      }
       if (await endMeeting(meeting.id)) onOpenChange(false)
     } finally {
       setEndingMeeting(false)
@@ -2054,6 +2463,8 @@ export function CallRoom({
     if (!presenceByUser.has(presence.userId)) presenceByUser.set(presence.userId, presence)
   })
   const connectedCount = 1 + meetingMembers.filter((member) => member.id !== currentUserId && presenceByUser.has(member.id)).length
+  const recordingActive = recordingState === "recording" || recordingState === "finalizing" || remoteRecordingActive
+  const recordingFinalizing = recordingState === "finalizing"
   const hasFocusedMember = Boolean(focusedMemberId && meetingMembers.some((member) => member.id === focusedMemberId))
   const orderedMeetingMembers = hasFocusedMember
     ? [...meetingMembers].sort((a, b) => Number(b.id === focusedMemberId) - Number(a.id === focusedMemberId))
@@ -2145,7 +2556,7 @@ export function CallRoom({
 
       {canEndMeeting && (
         <div className="shrink-0 border-t border-border p-2.5">
-          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando…">
+          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText={recordingFinalizing ? "Salvando gravação…" : "Encerrando…"}>
             <PhoneOff className="size-3.5" />
             Encerrar reunião para todos
           </Button>
@@ -2252,6 +2663,19 @@ export function CallRoom({
             <div className="flex min-w-0 items-center gap-2">
               <h2 className={cn("truncate font-semibold", minimized ? "text-xs" : "text-sm sm:text-base")}>{meeting.title}</h2>
               {!minimized && <span className="hidden shrink-0 rounded-md bg-success/12 px-2 py-1 text-[0.58rem] font-medium text-success sm:inline">EM ANDAMENTO</span>}
+              {recordingActive && (
+                <span
+                  className={cn(
+                    "flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[0.56rem] font-semibold",
+                    recordingFinalizing ? "bg-amber-500/12 text-amber-700 dark:text-amber-300" : "bg-destructive/12 text-destructive",
+                    minimized && "px-1.5 py-0.5 text-[0.48rem]",
+                  )}
+                  title={recordingFinalizing ? "Salvando gravação" : "Esta reunião está sendo gravada automaticamente"}
+                >
+                  <span className={cn("size-1.5 rounded-full", recordingFinalizing ? "bg-amber-500" : "bg-destructive animate-pulse")} />
+                  {recordingFinalizing ? "SALVANDO" : "REC"}
+                </span>
+              )}
             </div>
             <p className={cn("truncate font-mono text-muted-foreground", minimized ? "text-[0.5rem]" : "mt-0.5 text-[0.62rem]")}>
               {formatDuration(secondsRunning)} · {connectedCount}/{meetingMembers.length} na sala{!minimized ? ` · ${meeting.mode === "video" ? "Vídeo" : "Áudio"}` : ""}
@@ -2431,7 +2855,14 @@ export function CallRoom({
               {!minimized && <span className="hidden sm:inline">Sair</span>}
             </Button>
           </div>
-          {!minimized && <p className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">{deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; somente “Sair” encerra sua participação</p>}
+          {!minimized && (
+            <div className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">
+              <p>{deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; somente “Sair” encerra sua participação</p>
+              {(recordingState === "finalizing" || recordingState === "error") && recordingMessage && (
+                <p className={cn("mt-1 font-medium", recordingState === "error" ? "text-destructive" : "text-amber-700 dark:text-amber-300")}>{recordingMessage}</p>
+              )}
+            </div>
+          )}
         </footer>
       </section>
 

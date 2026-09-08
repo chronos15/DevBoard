@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 export function LoginForm() {
   const router = useRouter()
@@ -24,7 +25,7 @@ export function LoginForm() {
 
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {
-      setError(authError.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : authError.message)
+      setError(toUserFacingError(authError, "Não foi possível entrar agora"))
       setLoading(false)
       return
     }
@@ -46,7 +47,7 @@ export function LoginForm() {
       options: { redirectTo: callback.toString() },
     })
     if (oauthError) {
-      setError(oauthError.message)
+      setError(toUserFacingError(oauthError, "Não foi possível entrar com o Google agora"))
       setLoading(false)
     }
   }

@@ -58,6 +58,7 @@ import {
   openDeveloperProjectWithAgent,
   pickDeveloperProjectFolder,
 } from "@/lib/developer/windows-agent"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 export type DeveloperIdeKind = "vscode" | "cursor" | "visual-studio" | "delphi" | "jetbrains" | "custom"
 export type DeveloperIdeIcon = "code" | "braces" | "terminal" | "blocks" | "box" | "monitor" | "cpu" | "rocket" | "app"
@@ -392,7 +393,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     let alive = true
     setLoading(true)
     loadEnvironment()
-      .catch((error: any) => alive && onNotice(String(error?.message ?? error ?? "Não foi possível carregar IDEs e projetos locais.")))
+      .catch((error: any) => { console.error("[Devboard/Ambiente]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar IDEs e projetos locais")) })
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
   }, [currentUserId, loadEnvironment, onNotice])
@@ -446,7 +447,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     const { error } = await query
     setSavingIde(false)
     if (error) {
-      onNotice(error.message)
+      console.error("[Devboard/Ambiente]", error)
+      onNotice(toUserFacingError(error, "Não foi possível salvar a IDE"))
       return
     }
     setIdeDialogOpen(false)
@@ -459,7 +461,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     if (!currentUserId || !window.confirm(`Remover a IDE “${ide.name}”? Os projetos vinculados ficarão sem IDE até você escolher outra.`)) return
     const { error } = await supabase.from("developer_ides").delete().eq("id", ide.id).eq("user_id", currentUserId)
     if (error) {
-      onNotice(error.message)
+      console.error("[Devboard/Ambiente]", error)
+      onNotice(toUserFacingError(error, "Não foi possível remover a IDE"))
       return
     }
     await loadEnvironment()
@@ -521,7 +524,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       }))
     } catch (error: any) {
       if (error?.name === "AbortError") return
-      onNotice(String(error?.message ?? error ?? "Não foi possível selecionar a pasta."))
+      onNotice(toUserFacingError(error, "Não foi possível selecionar a pasta"))
     }
   }
 
@@ -562,7 +565,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     if (result.error) {
       setSavingProject(false)
-      onNotice(result.error.message)
+      console.error("[Devboard/Ambiente]", result.error)
+      onNotice(toUserFacingError(result.error, "Não foi possível salvar o projeto local"))
       return
     }
 
@@ -591,7 +595,8 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     if (!currentUserId || !window.confirm(`Remover o atalho local “${project.name}”? Nenhum arquivo da pasta será apagado.`)) return
     const { error } = await supabase.from("developer_local_projects").delete().eq("id", project.id).eq("user_id", currentUserId)
     if (error) {
-      onNotice(error.message)
+      console.error("[Devboard/Ambiente]", error)
+      onNotice(toUserFacingError(error, "Não foi possível remover o projeto local"))
       return
     }
     try { await removeDirectoryHandle(localDirectoryKey(currentUserId, project.id)) } catch { /* metadado local opcional */ }
@@ -631,7 +636,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
         // Só cai para o método antigo se o serviço local realmente não respondeu.
         const health = await getDeveloperAgentHealth()
         if (health?.ok) {
-          onNotice(String(error?.message ?? error ?? `Não foi possível abrir ${ide.name}.`))
+          onNotice(toUserFacingError(error, `Não foi possível abrir ${ide.name}`))
           return
         }
         setAgentAvailable(false)
@@ -852,7 +857,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           </DialogHeader>
           <div className="space-y-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={projectDraft.name} onChange={(event) => setProjectDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: ERP Softwork" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto do Devboard <span className="font-normal">(opcional)</span></label><select value={projectDraft.devboardProjectId} disabled={!vcsLinkSchemaReady} onChange={(event) => setProjectDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-45"><option value="">Não vincular</option>{launchProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="mt-1.5 text-[0.63rem] text-muted-foreground">{vcsLinkSchemaReady ? "Permite associar commits/revisões à subatividade em execução e alertar antes de concluir/enviar para AQS." : "Execute a migration 019 para habilitar o vínculo de controle de versão."}</p></div>
+            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto do Devboard <span className="font-normal">(opcional)</span></label><select value={projectDraft.devboardProjectId} disabled={!vcsLinkSchemaReady} onChange={(event) => setProjectDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-45"><option value="">Não vincular</option>{launchProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="mt-1.5 text-[0.63rem] text-muted-foreground">{vcsLinkSchemaReady ? "Permite associar commits/revisões à subatividade em execução e alertar antes de concluir/enviar para AQS." : "O vínculo com o controle de versão ainda não está disponível neste ambiente."}</p></div>
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">IDE deste projeto</label><select value={projectDraft.ideId} onChange={(event) => setProjectDraft((current) => ({ ...current, ideId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Escolher IDE</option>{ides.map((ide) => <option key={ide.id} value={ide.id}>{ide.name}</option>)}</select></div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label>

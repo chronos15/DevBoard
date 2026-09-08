@@ -4,6 +4,7 @@ import * as React from "react"
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 type CheckStatus = "ok" | "warning" | "critical"
 
@@ -38,9 +39,8 @@ export function SecurityHealthSection() {
     setError(null)
     const { data, error: rpcError } = await supabase.rpc("devboard_security_health")
     if (rpcError) {
-      setError(/devboard_security_health|does not exist|schema cache/i.test(rpcError.message ?? "")
-        ? "Execute a migration 020 para habilitar o diagnóstico administrativo de segurança."
-        : rpcError.message)
+      console.error("[Devboard/Segurança]", rpcError)
+      setError(toUserFacingError(rpcError, "Não foi possível executar o diagnóstico de segurança"))
       setLoading(false)
       return
     }
@@ -60,7 +60,7 @@ export function SecurityHealthSection() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Segurança e diagnóstico</h2>
-          <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">Verificação somente leitura das proteções do backend. Nenhuma chave, token ou dado sensível é exibido aqui.</p>
+          <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">Verificação somente leitura das proteções do ambiente. Nenhuma chave, token ou dado sensível é exibido aqui.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold transition-colors hover:bg-muted disabled:opacity-50">
           <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />Verificar novamente
@@ -72,7 +72,7 @@ export function SecurityHealthSection() {
           <div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" /><div><p className="text-sm font-semibold">Diagnóstico indisponível</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{error}</p></div></div>
         </div>
       ) : loading ? (
-        <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground"><RefreshCw className="size-4 animate-spin" />Auditando configurações do backend...</div>
+        <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground"><RefreshCw className="size-4 animate-spin" />Verificando as configurações de segurança...</div>
       ) : (
         <>
           <div className="grid grid-cols-3 gap-2 sm:max-w-lg">
@@ -91,7 +91,7 @@ export function SecurityHealthSection() {
           </div>
 
           <div className="mt-5 rounded-xl border border-border bg-muted/25 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-            <ShieldCheck className="mr-2 inline size-3.5 text-success" />A publishable key do Supabase pode existir no navegador. A proteção real continua sendo RLS, policies, RPCs restritos e ausência de segredos administrativos no frontend.
+            <ShieldCheck className="mr-2 inline size-3.5 text-success" />A chave pública usada pelo navegador não concede acesso administrativo. Dados sensíveis continuam protegidos pelas regras de acesso do servidor e nenhum segredo administrativo é exposto nesta tela.
           </div>
         </>
       )}

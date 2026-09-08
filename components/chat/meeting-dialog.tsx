@@ -218,7 +218,7 @@ export function MeetingDialog({
 
             <div className="flex items-start gap-2 rounded-xl border border-dashed border-border bg-muted/25 px-3 py-3 text-[0.68rem] leading-relaxed text-muted-foreground">
               <Mic2 className="mt-0.5 size-3.5 shrink-0" />
-              Câmera, microfone e compartilhamento usam as permissões do navegador. O convite e a sinalização usam Supabase; a mídia é WebRTC e cada convidado só entra depois de atender.
+              Câmera, microfone e compartilhamento usam as permissões do navegador. Cada convidado recebe a chamada e só entra na reunião depois de atender.
             </div>
           </div>
 

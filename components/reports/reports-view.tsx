@@ -29,6 +29,7 @@ import {
   Users,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { loadHoursReport, type HoursReportSession } from "@/lib/supabase/hours-report"
 import { useAnalyticsScope } from "@/lib/use-analytics-scope"
 import { useStore } from "@/lib/store"
@@ -357,12 +358,8 @@ export function ReportsView() {
       if (requestId === requestRef.current) setSessions(next)
     } catch (cause: any) {
       if (requestId !== requestRef.current) return
-      const message = String(cause?.message || "Não foi possível carregar o relatório administrativo.")
-      setError(
-        /hours_report|schema cache|does not exist/i.test(message)
-          ? "Execute a migration 025 para habilitar a apuração segura por período, projeto e usuário."
-          : message,
-      )
+      console.error("[Devboard/Relatórios]", cause)
+      setError(toUserFacingError(cause, "Não foi possível carregar o relatório administrativo"))
       setSessions([])
     } finally {
       if (requestId === requestRef.current) setLoading(false)

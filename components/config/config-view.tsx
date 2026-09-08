@@ -218,7 +218,7 @@ function ProfileSection({ me }: { me?: Member }) {
 
   return (
     <form onSubmit={save}>
-      <SectionTitle title="Perfil" subtitle="Dados vinculados à sua conta autenticada no Supabase." />
+      <SectionTitle title="Perfil" subtitle="Dados vinculados à sua conta no Devboard." />
 
       <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-muted/20">
         <div className="flex flex-col gap-5 p-4 sm:flex-row sm:items-center sm:p-5">
@@ -359,7 +359,7 @@ function ProfileSection({ me }: { me?: Member }) {
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
-        {saved && <span className="mr-auto text-xs font-medium text-success">Alterações salvas no Supabase.</span>}
+        {saved && <span className="mr-auto text-xs font-medium text-success">Alterações salvas com sucesso.</span>}
         <button
           type="button"
           onClick={cancelChanges}
@@ -389,14 +389,14 @@ function TeamSection() {
 
   return (
     <div>
-      <SectionTitle title="Equipe" subtitle="Membros autenticados do workspace e seus níveis de acesso." />
+      <SectionTitle title="Equipe" subtitle="Usuários confirmados da equipe e seus níveis de acesso." />
       <ul className="flex flex-col gap-2">
         {members.map((member) => (
           <li key={member.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap">
             <MemberAvatar member={member} className="size-10 text-xs ring-0" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
-              <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta Supabase"}</p>
+              <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
             </div>
             {currentUserRole === "admin" ? (
               <div className="relative min-w-32">
@@ -437,7 +437,7 @@ function TeamSection() {
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        Novos usuários são criados pelo Supabase Auth e entram inicialmente como Membro. Apenas Administradores podem alterar roles. Em produção, mantenha o cadastro público desabilitado se o ambiente for interno.
+        Novos usuários passam a fazer parte da equipe somente após confirmar o e-mail e entram inicialmente como Membro. Apenas Administradores podem alterar o nível de acesso.
       </p>
     </div>
   )

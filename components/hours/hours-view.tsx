@@ -20,6 +20,7 @@ import { MemberAvatar } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/client"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import {
   loadHoursReport,
   type HoursReportSession,
@@ -215,12 +216,8 @@ export function HoursView() {
       if (requestId === requestRef.current) setSessions(next)
     } catch (cause: any) {
       if (requestId !== requestRef.current) return
-      const message = String(cause?.message || "Não foi possível carregar a apuração de horas.")
-      setError(
-        /hours_report|schema cache|does not exist/i.test(message)
-          ? "Execute a migration 025 para habilitar a apuração segura de horas e os filtros administrativos."
-          : message,
-      )
+      console.error("[Devboard/Horas]", cause)
+      setError(toUserFacingError(cause, "Não foi possível carregar a apuração de horas"))
       setSessions([])
     } finally {
       if (requestId === requestRef.current) setLoading(false)

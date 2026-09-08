@@ -24,6 +24,7 @@ import {
   type DeveloperLocalProjectRecord,
 } from "@/lib/developer/context"
 import { openDeveloperProjectSmart } from "@/lib/developer/windows-agent"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type Props = { currentUserId: string; onNotice: (message: string | null) => void }
@@ -78,7 +79,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
   React.useEffect(() => {
     let alive = true
     setLoading(true)
-    load().catch((error: any) => alive && onNotice(String(error?.message ?? error ?? "Não foi possível carregar contextos."))).finally(() => alive && setLoading(false))
+    load().catch((error: any) => { console.error("[Devboard/Contextos]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar os contextos")) }).finally(() => alive && setLoading(false))
     const channel = supabase
       .channel(`devboard-developer-contexts-ui-${currentUserId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "developer_contexts", filter: `user_id=eq.${currentUserId}` }, () => void load())
@@ -133,7 +134,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
       : supabase.from("developer_contexts").insert(row)
     const { error } = await query
     setSaving(false)
-    if (error) { onNotice(error.message); return }
+    if (error) { console.error("[Devboard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível salvar o contexto")); return }
     setDialogOpen(false)
     await load()
     window.dispatchEvent(new Event(DEVELOPER_CONTEXTS_EVENT))
@@ -143,7 +144,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
   async function remove(context: DeveloperContextRecord) {
     if (!window.confirm(`Remover o contexto “${context.name}”? Seus projetos e IDEs não serão apagados.`)) return
     const { error } = await supabase.from("developer_contexts").delete().eq("id", context.id).eq("user_id", currentUserId)
-    if (error) { onNotice(error.message); return }
+    if (error) { console.error("[Devboard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível remover o contexto")); return }
     await load()
     window.dispatchEvent(new Event(DEVELOPER_CONTEXTS_EVENT))
   }
@@ -171,7 +172,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
           a.click()
           a.remove()
         } else {
-          onNotice(opened.error || `${ide.name} não pôde abrir o projeto configurado.`)
+          onNotice(toUserFacingError(opened.error, `${ide.name} não pôde abrir o projeto configurado`))
         }
       }
     } else if (context.autoOpenIde && ide && !local) {

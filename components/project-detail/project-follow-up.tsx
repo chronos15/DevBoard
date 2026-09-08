@@ -72,6 +72,7 @@ import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
@@ -1548,7 +1549,7 @@ export function ProjectFollowUp({
     })
     if (error) {
       setReactions(previous)
-      setComposerError(error.message || "Não foi possível salvar a reação.")
+      setComposerError(toUserFacingError(error, "Não foi possível salvar a reação"))
     }
     setReactionSavingItemId(null)
   }
@@ -1581,7 +1582,7 @@ export function ProjectFollowUp({
       p_marked: nextMarked,
     })
     if (error) {
-      setComposerError(error.message || "Não foi possível marcar a mensagem.")
+      setComposerError(toUserFacingError(error, "Não foi possível marcar a mensagem"))
       return
     }
     setMarkedCommentIds((current) => {

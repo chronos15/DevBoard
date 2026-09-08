@@ -27,13 +27,13 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
 
     if (membershipError || !membership) {
-      return NextResponse.json({ error: "O Devboard Agent é exclusivo para a role developer." }, { status: 403 })
+      return NextResponse.json({ error: "O Devboard Agent está disponível somente para usuários Desenvolvedores." }, { status: 403 })
     }
 
     const { data: registration, error: registrationError } = await supabase.rpc("register_developer_agent")
     if (registrationError) {
       return NextResponse.json(
-        { error: "Backend do Devboard Agent ainda não está preparado. Execute a migration 018." },
+        { error: "A integração do Devboard Agent ainda não foi habilitada neste ambiente." },
         { status: 503 },
       )
     }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
     if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: "Supabase não configurado no servidor." }, { status: 500 })
+      return NextResponse.json({ error: "A configuração do servidor está incompleta. Contate o administrador do Devboard." }, { status: 500 })
     }
 
     const templatePath = path.join(process.cwd(), "public", "downloads", "devboard-agent-setup-template.exe")

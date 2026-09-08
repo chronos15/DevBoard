@@ -371,7 +371,7 @@ export function AttachmentDialog({
 
     const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
     if (tooLarge) {
-      setError(`“${tooLarge.name || "Arquivo colado"}” ultrapassa ${formatBytes(MAX_FILE_BYTES)}, limite configurado no Supabase Storage.`)
+      setError(`“${tooLarge.name || "Arquivo colado"}” ultrapassa o limite de ${formatBytes(MAX_FILE_BYTES)} por arquivo.`)
       return
     }
 
@@ -463,7 +463,7 @@ export function AttachmentDialog({
     try {
       const result = await onAdd(pendingUploads)
       if (result === false) {
-        setError("O Supabase não confirmou o envio. Revise o erro exibido e tente novamente; sua seleção foi preservada.")
+        setError("Não foi possível concluir o envio. Tente novamente; sua seleção foi preservada.")
         return
       }
       revokePreviewUrls(pendingUploads)
@@ -585,7 +585,7 @@ export function AttachmentDialog({
             <p className={cn("mt-2 max-w-full break-words text-[0.62rem] leading-relaxed", error ? "text-destructive" : "text-muted-foreground") }>
               {error || (pendingUploads.length > 0
                 ? "Revise o preview abaixo. Os anexos só serão adicionados após sua confirmação."
-                : "Arquivos ficam ativos por padrão e não podem ser excluídos; somente marcados como inativos. Limite do Supabase Storage: 50 MB por arquivo.")}
+                : "Arquivos ficam ativos por padrão e não podem ser excluídos; somente marcados como inativos. Limite: 50 MB por arquivo.")}
             </p>
           </div>
 

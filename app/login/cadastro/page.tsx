@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 export default function SignUpPage() {
   const supabase = React.useMemo(() => createClient(), [])
@@ -28,7 +29,7 @@ export default function SignUpPage() {
         emailRedirectTo: `${appUrl}/auth/callback`,
       },
     })
-    if (signUpError) setError(signUpError.message)
+    if (signUpError) setError(toUserFacingError(signUpError, "Não foi possível criar sua conta agora"))
     else if (data.session) window.location.assign("/")
     else setMessage("Conta criada. Confirme o e-mail enviado para concluir o acesso.")
     setLoading(false)

@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { DEVBOARD_AGENT_AUTO_UPDATE_MIN_VERSION, DEVBOARD_AGENT_VERSION } from "@/lib/developer/agent-version"
 import { getDeveloperAgentDiagnostics, type DeveloperAgentDiagnostics } from "@/lib/developer/agent-diagnostics"
 import { getDeveloperAgentHealth, requestDeveloperAgentUpdateCheck, type DeveloperAgentUpdateStatus } from "@/lib/developer/windows-agent"
+import { toUserFacingError } from "@/lib/user-facing-error"
 const ONLINE_WINDOW_MS = 35_000
 
 type AgentStatus = {
@@ -155,7 +156,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
       setDiagnostics(result)
     } catch (error) {
       setDiagnostics(null)
-      setDiagnosticsError(error instanceof Error ? error.message : "Não foi possível consultar o diagnóstico local.")
+      setDiagnosticsError(toUserFacingError(error, "Não foi possível consultar o diagnóstico local"))
     } finally {
       setDiagnosticsLoading(false)
     }
@@ -191,7 +192,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
         : "Instalador baixado. Execute-o uma vez; o painel detecta o agente automaticamente.")
       window.setTimeout(() => void loadStatus(true), 2_000)
     } catch (error) {
-      onNotice?.(error instanceof Error ? error.message : "Não foi possível baixar o Devboard Agent.")
+      onNotice?.(toUserFacingError(error, "Não foi possível baixar o Devboard Agent"))
     } finally {
       setDownloading(false)
     }
@@ -230,7 +231,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
           <div className="rounded-xl border border-warning/25 bg-warning/5 p-3">
             <p className="text-xs font-semibold">Integração ainda não preparada</p>
             <p className="mt-1 text-[0.67rem] leading-relaxed text-muted-foreground">
-              Execute a migration 018 para habilitar instalação e monitoramento do agente.
+              Esta integração ainda não foi habilitada no ambiente atual. Atualize a instalação do Devboard e tente novamente.
             </p>
           </div>
         ) : loading ? (

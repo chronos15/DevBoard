@@ -95,7 +95,7 @@ function ValidationStrip({ issues }: { issues: string[] }) {
 
 export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
-  const { createServiceRequest, serviceRequestUnits } = useStore()
+  const { createServiceRequest, serviceRequestUnits, serviceRequests } = useStore()
   const activeUnits = React.useMemo(() => serviceRequestUnits.filter((item) => item.active), [serviceRequestUnits])
 
   const [step, setStep] = React.useState<RequestStep>("identification")
@@ -133,7 +133,15 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
   const requiredCategories = React.useMemo(() => isInternal ? [] : REQUIRED_CATEGORIES, [isInternal])
   const protocolReady = requiredCategories.every((category) => categoriesPresent.has(category))
   const selectedUnit = activeUnits.find((item) => item.id === unitId)
-  const orderNumberValidation = isInternal && !orderNumber.trim() ? null : lengthIssue(orderNumber, LIMITS.orderNumber)
+  const duplicateRequest = React.useMemo(() => {
+    const normalized = orderNumber.trim().toLocaleLowerCase("pt-BR")
+    if (!normalized) return null
+    return serviceRequests.find((item) => item.orderNumber.trim().toLocaleLowerCase("pt-BR") === normalized) ?? null
+  }, [orderNumber, serviceRequests])
+  const duplicateOrderIssue = duplicateRequest
+    ? `Já existe uma solicitação com esta OS (${duplicateRequest.orderNumber}). Abra o protocolo existente ou informe outro número.`
+    : null
+  const orderNumberValidation = (isInternal && !orderNumber.trim() ? null : lengthIssue(orderNumber, LIMITS.orderNumber)) ?? duplicateOrderIssue
 
   const identificationIssues = React.useMemo(() => [
     orderNumberValidation,
@@ -359,19 +367,44 @@ export function NewServiceRequestDialog({ open, onOpenChange }: { open: boolean;
                       {isInternal && <p className="text-[0.62rem] font-medium text-chart-2">Fluxo interno: OS e anexos não são obrigatórios.</p>}
                     </label>
 
-                    <label className="space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Número da OS {isInternal ? <span className="font-normal">(opcional)</span> : "*"}</span>
+                    <div className="space-y-1.5">
+                      <label htmlFor="new-request-order-number" className="block text-xs font-medium text-muted-foreground">
+                        Número da OS {isInternal ? <span className="font-normal">(opcional)</span> : "*"}
+                      </label>
                       <input
+                        id="new-request-order-number"
                         maxLength={LIMITS.orderNumber.max}
                         value={orderNumber}
                         onChange={(event) => setOrderNumber(event.target.value)}
                         placeholder={isInternal ? "Opcional" : "Ex: 198855"}
-                        className={cn("h-9 w-full rounded-xl border bg-card px-3 text-sm outline-none transition-colors focus:border-ring", showValidation && orderNumberValidation ? "border-destructive" : "border-border")}
+                        aria-invalid={Boolean(duplicateOrderIssue || (showValidation && orderNumberValidation))}
+                        className={cn(
+                          "h-9 w-full rounded-xl border bg-card px-3 text-sm outline-none transition-colors focus:border-ring",
+                          duplicateOrderIssue || (showValidation && orderNumberValidation) ? "border-destructive" : "border-border",
+                        )}
                       />
                       {isInternal && !orderNumber.trim()
                         ? <div className="mt-1 flex justify-end text-[0.62rem] leading-none text-muted-foreground"><span className="font-mono">0/{LIMITS.orderNumber.max}</span></div>
-                        : <FieldHint value={orderNumber} min={LIMITS.orderNumber.min} max={LIMITS.orderNumber.max} issue={showValidation ? orderNumberValidation : null} />}
-                    </label>
+                        : <FieldHint
+                            value={orderNumber}
+                            min={LIMITS.orderNumber.min}
+                            max={LIMITS.orderNumber.max}
+                            issue={duplicateOrderIssue ?? (showValidation ? orderNumberValidation : null)}
+                          />}
+                      {duplicateRequest ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenChange(false)
+                            router.push(`/solicitacoes/${duplicateRequest.id}`)
+                          }}
+                          className="inline-flex items-center gap-1 text-[0.65rem] font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          Abrir solicitação existente
+                          <ChevronRight className="size-3" />
+                        </button>
+                      ) : null}
+                    </div>
 
                     <label className="space-y-1.5">
                       <span className="text-xs font-medium text-muted-foreground">Unidade *</span>

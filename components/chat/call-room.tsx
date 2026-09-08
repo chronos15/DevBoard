@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { loadWebRtcIceConfig } from "@/lib/webrtc/ice-servers"
 import { getCallAudioContext, primeCallAudio, resumeCallAudio } from "@/lib/webrtc/audio-playback"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import {
   configureAndroidScreenShare,
   forwardAndroidScreenSignal,
@@ -100,6 +101,14 @@ function formatDuration(totalSeconds: number) {
 
 function deviceLabel(device: MediaDeviceInfo, index: number, kind: "microfone" | "câmera") {
   return device.label || `${kind === "microfone" ? "Microfone" : "Câmera"} ${index + 1}`
+}
+
+function peerConnectionLabel(state?: RTCPeerConnectionState, route?: string) {
+  if (state === "failed" || state === "disconnected") return "Conexão instável"
+  if (state === "connected") return route || "Conectado"
+  if (state === "connecting") return "Conectando"
+  if (state === "closed") return "Encerrado"
+  return "Aguardando"
 }
 
 function ParticipantTile({
@@ -710,12 +719,12 @@ export function CallRoom({
         } satisfies CallSignal,
       })
       if (result !== "ok") {
-        setMediaError("A sinalização da chamada atrasou ou falhou. Tentando reconectar...")
+        setMediaError("A conexão da chamada demorou mais que o esperado. Tentando reconectar...")
         return false
       }
       return true
     } catch {
-      setMediaError("Não foi possível enviar a sinalização WebRTC pelo Supabase Realtime.")
+      setMediaError("Não foi possível manter a conexão da reunião. Tentando reconectar...")
       return false
     }
   }, [meeting?.id, currentUserId])
@@ -887,12 +896,10 @@ export function CallRoom({
       const remote = selectedPair.remoteCandidateId ? stats.get(selectedPair.remoteCandidateId) : undefined
       const types = [local?.candidateType, remote?.candidateType].filter(Boolean)
       const route = types.includes("relay")
-        ? "TURN relay"
-        : types.includes("srflx")
-          ? "STUN / direta"
-          : types.includes("host")
-            ? "Rede local / direta"
-            : "Conectada"
+        ? "Conexão alternativa"
+        : types.includes("host")
+          ? "Rede local"
+          : "Conexão direta"
       setPeerRoutes((current) => ({ ...current, [remoteSession]: route }))
     } catch {
       // Diagnóstico não deve interferir na chamada.
@@ -1065,7 +1072,7 @@ export function CallRoom({
     const failed = results.some((result) => result.status === "rejected")
     if (failed) {
       console.warn("Devboard: não foi possível vincular todas as tracks locais ao peer", remoteSession, results)
-      setMediaError("Uma track local não pôde ser vinculada à chamada. Tentando manter a conexão ativa.")
+      setMediaError("Não foi possível sincronizar um dos dispositivos com a chamada. Tentando manter a conexão ativa.")
     }
     return true
   }, [])
@@ -1088,7 +1095,7 @@ export function CallRoom({
       if (sent) role.initialOfferSent = true
     } catch (error) {
       console.warn("Devboard: falha ao criar oferta determinística WebRTC", error)
-      setMediaError("Não foi possível negociar a mídia com um participante. O Devboard tentará novamente.")
+      setMediaError("Não foi possível conectar o áudio e o vídeo com um participante. O Devboard tentará novamente.")
       role.restartPending = true
     } finally {
       role.offerInFlight = false
@@ -1202,9 +1209,7 @@ export function CallRoom({
         restartTimersRef.current.set(remoteSession, timer)
       } else if (state === "failed") {
         setMediaError(
-          iceHasTurnRef.current
-            ? "A conexão de mídia falhou. O Devboard está reiniciando o ICE automaticamente."
-            : "A conexão de mídia falhou sem TURN. Configure o TURN para funcionar de forma confiável entre redes móveis e desktops.",
+          "A conexão de áudio e vídeo foi interrompida. O Devboard está tentando restabelecer a reunião automaticamente.",
         )
         requestIceRestart(remoteSession, peer)
       } else if (state === "closed") {
@@ -1255,7 +1260,7 @@ export function CallRoom({
     setMediaReadyMeetingId(null)
     setMediaError("")
     if (!navigator.mediaDevices?.getUserMedia) {
-      setMediaError("Seu navegador não disponibilizou câmera/microfone. Use HTTPS ou localhost e verifique as permissões.")
+      setMediaError("O navegador não liberou a câmera ou o microfone nesta página. Verifique as permissões e tente novamente.")
       setMicEnabled(false)
       setCameraEnabled(false)
       setMediaReadyMeetingId(meeting.id)
@@ -1293,11 +1298,10 @@ export function CallRoom({
       syncPeerTracks()
       await refreshDevices()
     } catch (error) {
-      setMediaError(
-        error instanceof Error
-          ? `Não foi possível acessar câmera/microfone: ${error.message}`
-          : "Não foi possível acessar câmera/microfone. Verifique as permissões do navegador.",
-      )
+      setMediaError(toUserFacingError(
+        error,
+        "Não foi possível acessar a câmera ou o microfone. Verifique as permissões do navegador",
+      ))
       setMicEnabled(false)
       setCameraEnabled(false)
       presenceStateRef.current = {
@@ -1347,7 +1351,7 @@ export function CallRoom({
     return subscribeAndroidScreenState(({ active, error }) => {
       setNativeScreenSharing(active)
       commitMediaState({ screenSharing: active })
-      if (error) setMediaError(error)
+      if (error) setMediaError(toUserFacingError(error, "Não foi possível compartilhar a tela"))
       else if (active) setMediaError("")
     })
   }, [commitMediaState, currentMeetingState?.status, meeting?.id, open])
@@ -1506,7 +1510,7 @@ export function CallRoom({
         } catch (error) {
           console.warn("Devboard: falha ao processar sinal WebRTC", signal.type, error)
           if (peer.connectionState !== "connected") {
-            setMediaError("A negociação WebRTC encontrou um erro. O Devboard tentará restabelecer a mídia.")
+            setMediaError("A conexão de áudio e vídeo encontrou um problema. O Devboard tentará restabelecê-la.")
           }
         }
       })
@@ -1663,7 +1667,7 @@ export function CallRoom({
       setMediaError("")
       await refreshDevices()
     } catch {
-      setMediaError("Não foi possível ativar o microfone. Verifique a permissão do Chrome.")
+      setMediaError("Não foi possível ativar o microfone. Verifique a permissão do navegador.")
     }
   }
 
@@ -1677,7 +1681,7 @@ export function CallRoom({
       setMediaError("")
       await refreshDevices()
     } catch {
-      setMediaError("Não foi possível ativar a câmera. Verifique a permissão do Chrome.")
+      setMediaError("Não foi possível ativar a câmera. Verifique a permissão do navegador.")
     }
   }
 
@@ -1712,8 +1716,8 @@ export function CallRoom({
       const isAndroid = /Android/i.test(navigator.userAgent)
       setMediaError(
         isAndroid
-          ? "O Chrome Android não disponibiliza captura da tela do aparelho para páginas web. A chamada continua normalmente, mas compartilhar a tela inteira exige uma versão Android nativa do Devboard (MediaProjection)."
-          : "Este navegador não disponibiliza a API de compartilhamento de tela. Tente um navegador desktop compatível em HTTPS.",
+          ? "Este navegador no Android não permite compartilhar a tela inteira. A chamada pode continuar normalmente."
+          : "Este navegador não permite compartilhar a tela. Tente novamente em um navegador compatível.",
       )
       return
     }
@@ -1732,7 +1736,7 @@ export function CallRoom({
       const videoTrack = stream.getVideoTracks()[0]
       if (!videoTrack) {
         stream.getTracks().forEach((track) => track.stop())
-        setMediaError("O navegador não retornou uma faixa de vídeo para o compartilhamento de tela.")
+        setMediaError("Não foi possível capturar a tela selecionada. Tente novamente.")
         return
       }
 
@@ -2201,9 +2205,9 @@ export function CallRoom({
                       </label>
                       <div className="rounded-xl border border-border bg-muted/20 px-3 py-3 text-[0.65rem] leading-relaxed">
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">Conectividade WebRTC</span>
+                          <span className="font-medium text-foreground">Qualidade da conexão</span>
                           <span className={cn("rounded-md px-2 py-0.5 text-[0.58rem] font-medium", iceTransport.hasTurn ? "bg-success/12 text-success" : "bg-amber-500/12 text-amber-700 dark:text-amber-300")}>
-                            {iceTransport.hasTurn ? "TURN disponível" : "Somente STUN"}
+                            {iceTransport.hasTurn ? "Rota alternativa disponível" : "Conexão direta"}
                           </span>
                         </div>
                         <div className="space-y-1 text-muted-foreground">
@@ -2214,7 +2218,7 @@ export function CallRoom({
                             return (
                               <div key={member.id} className="flex items-center justify-between gap-2">
                                 <MemberName member={member} className="truncate" />
-                                <span className="shrink-0 font-mono text-[0.58rem]">{route ?? state ?? "aguardando"}</span>
+                                <span className="shrink-0 text-[0.58rem] font-medium">{peerConnectionLabel(state, route)}</span>
                               </div>
                             )
                           })}
@@ -2224,7 +2228,7 @@ export function CallRoom({
                         <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
                           <ShieldCheck className="size-3.5" /> Permissões do navegador
                         </div>
-                        O Chrome pode pedir autorização para microfone, câmera e compartilhamento de tela. Em produção, use HTTPS.
+                        O navegador pode pedir autorização para microfone, câmera e compartilhamento de tela. Para maior segurança, acesse o Devboard por uma conexão segura.
                       </div>
                     </div>
                   </>

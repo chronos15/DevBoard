@@ -41,6 +41,7 @@ import {
 import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import { primeIdleDetectionPermission } from "@/lib/idle-detection"
 import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
@@ -97,7 +98,7 @@ const REQUEST_TABLES = new Set(["service_requests", "service_request_participant
 const REQUEST_UNIT_TABLES = new Set(["service_request_units"])
 
 const REALTIME_CONNECTION_ERROR =
-  "A conexão em tempo real com o Supabase continua indisponível. O Devboard seguirá tentando reconectar automaticamente."
+  "A conexão em tempo real foi interrompida. O Devboard continuará tentando reconectar automaticamente."
 
 const REALTIME_RECONNECT_DELAYS = [800, 1500, 3000, 5000, 8000, 12000, 18000, 30000] as const
 
@@ -238,12 +239,6 @@ function findRunningSubForAssignee(projects: Project[], assigneeId: string, exce
     }
   }
   return null
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "object" && error && "message" in error) return String((error as any).message)
-  return fallback
 }
 
 function optimisticSubStatus(projects: Project[], subId: string, status: Status) {
@@ -448,7 +443,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const chatMessageDeliveriesRef = React.useRef<Set<string>>(new Set())
 
   const fail = React.useCallback((error: unknown, fallback: string) => {
-    const message = errorMessage(error, fallback)
+    const message = toUserFacingError(error, fallback)
     console.error("[Devboard/Supabase]", error)
     setLastError(message)
     return message
@@ -646,7 +641,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         })
         .finally(() => setChatHydrated(true))
     } catch (error) {
-      fail(error, "Não foi possível carregar os dados do Supabase")
+      fail(error, "Não foi possível carregar os dados do Devboard")
       setRefreshing(false)
       setHydrated(true)
       setChatHydrated(true)

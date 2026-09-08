@@ -26,6 +26,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { DeveloperEnvironment } from "@/components/developer/developer-environment"
 import { DeveloperSessionHub } from "@/components/developer/developer-session-hub"
 import { DeveloperContexts } from "@/components/developer/developer-contexts"
@@ -273,7 +274,7 @@ export function DeveloperPanel() {
         if (!alive) return
         const text = String(error?.message ?? error ?? "")
         setBackendMissing(/developer_settings|developer_notes|developer_water_logs|schema cache|does not exist/i.test(text))
-        setNotice(text || "Não foi possível carregar o painel do desenvolvedor.")
+        setNotice(toUserFacingError(error, "Não foi possível carregar o painel do desenvolvedor"))
       })
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
@@ -501,7 +502,7 @@ export function DeveloperPanel() {
     }
     setSaving(false)
     if (error) {
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível salvar as configurações"))
       return
     }
     setSettings(normalized)
@@ -534,7 +535,7 @@ export function DeveloperPanel() {
     const { error } = await supabase.from("developer_water_logs").insert({ user_id: currentUserId, amount_ml: safeAmount })
     if (error) {
       setWaterMl(waterMl)
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível registrar a hidratação"))
       return
     }
     window.dispatchEvent(new CustomEvent(DEVELOPER_WATER_EVENT, { detail: { loggedAt: Date.now() } }))
@@ -549,7 +550,7 @@ export function DeveloperPanel() {
     const { error } = await supabase.from("developer_water_logs").delete().eq("user_id", currentUserId).gte("logged_at", range.start).lt("logged_at", range.end)
     if (error) {
       setWaterMl(previous)
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível zerar a hidratação"))
     }
   }
 
@@ -560,7 +561,7 @@ export function DeveloperPanel() {
     const { error } = await supabase.from("developer_notes").insert({ user_id: currentUserId, content })
     if (error) {
       setNoteDraft(content)
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível salvar a anotação"))
       return
     }
     await loadNotes()
@@ -571,7 +572,7 @@ export function DeveloperPanel() {
     const { error } = await supabase.from("developer_notes").update({ pinned: !note.pinned }).eq("id", note.id).eq("user_id", currentUserId)
     if (error) {
       setNotes((current) => current.map((item) => item.id === note.id ? note : item))
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível atualizar a anotação"))
     }
   }
 
@@ -580,7 +581,7 @@ export function DeveloperPanel() {
     const { error } = await supabase.from("developer_notes").delete().eq("id", note.id).eq("user_id", currentUserId)
     if (error) {
       setNotes((current) => [note, ...current])
-      setNotice(error.message)
+      setNotice(toUserFacingError(error, "Não foi possível excluir a anotação"))
     }
   }
 
@@ -635,8 +636,8 @@ export function DeveloperPanel() {
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive"><AlertTriangle className="size-4" /></span>
           <div className="min-w-0">
-            <h2 className="font-semibold">Banco do Painel Dev ainda não foi aplicado</h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Execute as migrations <code className="rounded bg-muted px-1.5 py-0.5 text-xs">015</code>, <code className="rounded bg-muted px-1.5 py-0.5 text-xs">016</code> e <code className="rounded bg-muted px-1.5 py-0.5 text-xs">017_devboard_developer_cockpit_automation.sql</code>, depois rode <code className="rounded bg-muted px-1.5 py-0.5 text-xs">supabase/verify_backend.sql</code>.</p>
+            <h2 className="font-semibold">Painel do desenvolvedor indisponível</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Este recurso ainda não foi habilitado no ambiente atual. Atualize a instalação do Devboard e tente novamente.</p>
           </div>
         </div>
       </Surface>

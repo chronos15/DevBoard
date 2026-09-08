@@ -8,7 +8,7 @@ export async function createClient() {
 
   if (!url || !key) {
     throw new Error(
-      'Supabase não configurado. Defina NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.',
+      'A configuração do ambiente está incompleta. Entre em contato com o administrador do Devboard.',
     )
   }
 

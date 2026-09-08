@@ -92,7 +92,7 @@ export async function loadIdentity(supabase: SupabaseClient) {
 
   const membership = memberships?.[0]
   if (!membership?.workspace_id) {
-    throw new Error('Seu usuário ainda não pertence a um workspace. Execute a migration do Supabase.')
+    throw new Error('Seu usuário ainda não está vinculado a um ambiente de trabalho. Entre em contato com um administrador.')
   }
 
   return {

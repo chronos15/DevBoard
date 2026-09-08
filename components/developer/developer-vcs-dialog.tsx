@@ -35,6 +35,7 @@ import {
   type DeveloperVcsStatus,
 } from "@/lib/developer/vcs"
 import { cn } from "@/lib/utils"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type ActiveTask = {
@@ -132,7 +133,7 @@ export function DeveloperVcsDialog({
       onStatusChanged?.(next)
       return next
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível consultar o controle de versão."))
+      onNotice(toUserFacingError(error, "Não foi possível consultar o controle de versão"))
       return null
     } finally {
       setLoadingStatus(false)
@@ -156,7 +157,7 @@ export function DeveloperVcsDialog({
       const result = await getDeveloperVcsLog(project, { limit: logLimit })
       setLogs(result.entries)
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível carregar os logs."))
+      onNotice(toUserFacingError(error, "Não foi possível carregar o histórico de alterações"))
     } finally {
       setLoadingLogs(false)
     }
@@ -169,7 +170,7 @@ export function DeveloperVcsDialog({
       const result = await getDeveloperVcsDiff(project, path)
       setDiff(result)
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível carregar o diff."))
+      onNotice(toUserFacingError(error, "Não foi possível carregar as diferenças deste arquivo"))
     } finally {
       setLoadingDiff(false)
     }
@@ -217,9 +218,9 @@ export function DeveloperVcsDialog({
     }, { onConflict: "user_id,local_project_id,provider,revision,subactivity_id", ignoreDuplicates: true })
     if (error) {
       if (/developer_vcs_changes/i.test(error.message)) {
-        onNotice("Alteração concluída localmente, mas o vínculo com a tarefa exige a migration 019.")
+        onNotice("Alteração concluída localmente, mas o vínculo automático com a tarefa ainda não está disponível neste ambiente.")
       } else {
-        onNotice(`Alteração concluída, mas não consegui vinculá-la à tarefa: ${error.message}`)
+        onNotice(toUserFacingError(error, "A alteração foi concluída, mas não foi possível vinculá-la à tarefa"))
       }
       return false
     }
@@ -243,7 +244,7 @@ export function DeveloperVcsDialog({
       if (next?.provider !== "none") window.dispatchEvent(new Event(DEVELOPER_VCS_CHANGED_EVENT))
       if (tab === "history") await refreshLogs()
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível concluir o commit."))
+      onNotice(toUserFacingError(error, "Não foi possível concluir o commit"))
     } finally {
       setBusyAction(null)
     }
@@ -260,7 +261,7 @@ export function DeveloperVcsDialog({
       if (tab === "history") await refreshLogs()
       window.dispatchEvent(new Event(DEVELOPER_VCS_CHANGED_EVENT))
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível atualizar o projeto."))
+      onNotice(toUserFacingError(error, "Não foi possível atualizar o projeto"))
     } finally {
       setBusyAction(null)
     }
@@ -275,7 +276,7 @@ export function DeveloperVcsDialog({
       await refreshStatus()
       window.dispatchEvent(new Event(DEVELOPER_VCS_CHANGED_EVENT))
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível enviar os commits."))
+      onNotice(toUserFacingError(error, "Não foi possível enviar os commits"))
     } finally {
       setBusyAction(null)
     }
@@ -288,7 +289,7 @@ export function DeveloperVcsDialog({
       await openDeveloperVcsNative(project, command, command === "commit" ? commitMessage : "")
       onNotice("TortoiseSVN aberto.")
     } catch (error: any) {
-      onNotice(String(error?.message ?? error ?? "Não foi possível abrir o TortoiseSVN."))
+      onNotice(toUserFacingError(error, "Não foi possível abrir o TortoiseSVN"))
     } finally {
       setBusyAction(null)
     }

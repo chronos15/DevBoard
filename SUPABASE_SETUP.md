@@ -714,3 +714,15 @@ Quando o usuário confirma o link enviado pelo Supabase, o trigger ativa automat
 
 Uma conta que for desativada manualmente depois de já estar confirmada **não é reativada** por simples alterações de nome/e-mail no Auth.
 
+
+## Migration 050 — Duplicidade de OS com retorno amigável
+
+Depois da 049, aplique:
+
+```text
+supabase/migrations/050_devboard_friendly_service_request_duplicates.sql
+```
+
+A 050 mantém a regra de **uma solicitação por número de OS em cada workspace**, mas trata a concorrência diretamente no banco para que uma tentativa duplicada nunca exponha a mensagem técnica da constraint. O usuário recebe uma orientação simples para abrir o protocolo existente ou informar outra OS.
+
+A aplicação também passou a converter falhas de autenticação, permissão, rede, armazenamento e inconsistências do banco em mensagens adequadas para a interface. Os detalhes técnicos continuam sendo registrados no console para diagnóstico, mas não devem ser exibidos ao usuário final.

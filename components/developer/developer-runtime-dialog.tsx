@@ -12,6 +12,7 @@ import {
   type DeveloperRuntimeStatus,
 } from "@/lib/developer/runtime"
 import { getDeveloperAgentHealth } from "@/lib/developer/windows-agent"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 const RUNTIME_MIN_AGENT_VERSION = "0.5.0"
 
@@ -70,8 +71,8 @@ export function DeveloperRuntimeDialog({
       setError(null)
     } catch (caught) {
       const nextError = caught instanceof DeveloperRuntimeError
-        ? caught
-        : new DeveloperRuntimeError(caught instanceof Error ? caught.message : "Não foi possível identificar o ambiente local.")
+        ? new DeveloperRuntimeError(toUserFacingError(caught, "Não foi possível identificar o ambiente local"), { code: caught.code, status: caught.status })
+        : new DeveloperRuntimeError(toUserFacingError(caught, "Não foi possível identificar o ambiente local"))
       setError(nextError)
       if (!silent && nextError.code !== "folder_not_found" && nextError.code !== "agent_outdated") {
         onNotice(nextError.message)
@@ -115,8 +116,8 @@ export function DeveloperRuntimeDialog({
       else onNotice(`${next.runningLabel || value} iniciado pelo Devboard Agent.`)
     } catch (caught) {
       const nextError = caught instanceof DeveloperRuntimeError
-        ? caught
-        : new DeveloperRuntimeError(caught instanceof Error ? caught.message : "Não foi possível executar esta ação.")
+        ? new DeveloperRuntimeError(toUserFacingError(caught, "Não foi possível executar esta ação"), { code: caught.code, status: caught.status })
+        : new DeveloperRuntimeError(toUserFacingError(caught, "Não foi possível executar esta ação"))
       setError(nextError)
       onNotice(nextError.message)
     } finally {

@@ -30,6 +30,7 @@ import {
 } from "@/lib/developer/context"
 import { getDeveloperAgentActivity, openDeveloperProjectSmart, syncDeveloperAgentSession } from "@/lib/developer/windows-agent"
 import { getDeveloperVcsStatus } from "@/lib/developer/vcs"
+import { toUserFacingError } from "@/lib/user-facing-error"
 
 const SETTINGS_SELECT_LEGACY = "work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes,auto_focus_on_timer,auto_open_ide_on_timer,auto_open_music_on_timer,notify_forgotten_timer,forgotten_timer_minutes,notify_wrapup,wrapup_minutes"
 const SETTINGS_SELECT = `${SETTINGS_SELECT_LEGACY},idle_detection_enabled,idle_threshold_minutes`
@@ -276,7 +277,7 @@ export function DeveloperAutomationAgent() {
     })
     if (error) {
       setPrompt(null)
-      void notify("Não foi possível ajustar o apontamento", error.message, "devboard-idle-adjust-error")
+      void notify("Não foi possível ajustar o apontamento", toUserFacingError(error, "Tente novamente em instantes"), "devboard-idle-adjust-error")
       return
     }
     setPrompt(null)

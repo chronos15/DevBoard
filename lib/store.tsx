@@ -191,6 +191,8 @@ export type StoreContextValue = {
   removeFollowUpMember: (subId: string, userId: string) => Promise<boolean>
   addProjectAttachments: (projectId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setProjectAttachmentActive: (projectId: string, attachmentId: string, active: boolean) => Promise<boolean>
+  addActivityAttachments: (activityId: string, files: AttachmentUploadInput[]) => Promise<boolean>
+  setActivityAttachmentActive: (activityId: string, attachmentId: string, active: boolean) => Promise<boolean>
   addSubactivityAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
@@ -1489,7 +1491,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshProjects])
 
   const uploadAttachments = React.useCallback(async (
-    target: { projectId: string; subactivityId?: string },
+    target: { projectId: string; activityId?: string; subactivityId?: string },
     files: AttachmentUploadInput[],
     options?: { silent?: boolean },
   ) => {
@@ -1509,16 +1511,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           if (uploadError) throw uploadError
         }
 
-        const { error: metadataError } = await supabase.rpc("add_attachment", {
-          p_project_id: target.subactivityId ? null : target.projectId,
-          p_subactivity_id: target.subactivityId ?? null,
-          p_name: file.name,
-          p_mime_type: file.mimeType,
-          p_size_bytes: file.size,
-          p_kind: file.kind,
-          p_storage_path: storagePath,
-          p_text_content: file.textContent ?? null,
-        })
+        const metadataCall = target.activityId
+          ? supabase.rpc("add_activity_attachment", {
+              p_activity_id: target.activityId,
+              p_name: file.name,
+              p_mime_type: file.mimeType,
+              p_size_bytes: file.size,
+              p_kind: file.kind,
+              p_storage_path: storagePath,
+              p_text_content: file.textContent ?? null,
+            })
+          : supabase.rpc("add_attachment", {
+              p_project_id: target.subactivityId ? null : target.projectId,
+              p_subactivity_id: target.subactivityId ?? null,
+              p_name: file.name,
+              p_mime_type: file.mimeType,
+              p_size_bytes: file.size,
+              p_kind: file.kind,
+              p_storage_path: storagePath,
+              p_text_content: file.textContent ?? null,
+            })
+        const { error: metadataError } = await metadataCall
         if (metadataError) {
           if (storagePath) await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
           throw metadataError
@@ -1537,6 +1550,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [currentUserId, fail, refreshProjects, refreshServiceRequests, supabase, workspaceId])
 
   const addProjectAttachments = React.useCallback((projectId: string, files: AttachmentUploadInput[]) => uploadAttachments({ projectId }, files), [uploadAttachments])
+
+  const addActivityAttachments = React.useCallback(async (activityId: string, files: AttachmentUploadInput[]) => {
+    const project = projects.find((item) => item.activities.some((activity) => activity.id === activityId))
+    if (!project) return false
+    return uploadAttachments({ projectId: project.id, activityId }, files)
+  }, [projects, uploadAttachments])
 
   const addSubactivityAttachments = React.useCallback(async (subId: string, files: AttachmentUploadInput[]) => {
     const found = findSubInProjects(projects, subId)
@@ -1558,6 +1577,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshProjects, refreshServiceRequests])
 
   const setProjectAttachmentActive = React.useCallback(async (_projectId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
+  const setActivityAttachmentActive = React.useCallback(async (_activityId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
   const setSubactivityAttachmentActive = React.useCallback(async (_subId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
 
   const removeConversationMedia = React.useCallback(async (conversationId: string) => {
@@ -2506,6 +2526,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     removeFollowUpMember,
     addProjectAttachments,
     setProjectAttachmentActive,
+    addActivityAttachments,
+    setActivityAttachmentActive,
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
     ensureDirectConversation,
@@ -2531,14 +2553,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
-    activeSubId, addActivity, addProject, addProjectAttachments, addProjectComment, addSubactivity,
+    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
-    setProjectAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
+    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])

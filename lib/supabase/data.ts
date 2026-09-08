@@ -152,6 +152,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       activities(
         id,title,type_id,created_at,
         activity_assignees(user_id),
+        attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
         subactivities(
           id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
           subactivity_members(user_id),
@@ -173,6 +174,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         title: activity.title,
         typeId: activity.type_id ?? undefined,
         assigneeIds: (activity.activity_assignees ?? []).map((item: any) => item.user_id),
+        attachments: await Promise.all((activity.attachments ?? []).map((item: any) => mapAttachment(supabase, item))),
         subactivities: await Promise.all((activity.subactivities ?? [])
           .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
           .map(async (sub: any) => ({

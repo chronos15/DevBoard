@@ -127,6 +127,7 @@ export type Activity = {
   title: string
   typeId?: string
   assigneeIds?: string[]
+  attachments?: AttachmentEntry[]
   subactivities: Subactivity[]
 }
 

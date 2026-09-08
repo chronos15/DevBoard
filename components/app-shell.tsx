@@ -116,10 +116,20 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [currentUserRole, hydrated, router])
 
+  const sharePage = pathname.startsWith("/compartilhar")
   const followUpPage = pathname.startsWith("/acompanhamento")
   const requestsPage = pathname.startsWith("/solicitacoes")
   const analysisPage = pathname.startsWith("/analise")
   const fullHeightWorkspace = followUpPage || requestsPage || analysisPage
+
+  if (sharePage) {
+    return (
+      <div className="min-h-dvh bg-background">
+        {hydrated ? children : <AppLoadingSkeleton />}
+        <BackendErrorBanner />
+      </div>
+    )
+  }
 
   return (
     <div className={cn(

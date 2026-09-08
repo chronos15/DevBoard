@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/manifest.webmanifest', '/devboard-sw.js']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/manifest.webmanifest', '/devboard-sw.js', '/share-target']
 
 type SessionCookie = {
   name: string

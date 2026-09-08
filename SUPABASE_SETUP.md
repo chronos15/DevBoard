@@ -738,3 +738,17 @@ supabase/migrations/051_devboard_service_request_order_per_unit.sql
 A 051 corrige a regra de unicidade das Solicitações: o número da OS passa a ser único **dentro de cada Unidade**, e não no workspace inteiro. Assim, por exemplo, a OS `123` pode existir em `Multsoft.com` e também em outra Unidade, mas não pode ser cadastrada duas vezes na mesma Unidade.
 
 A criação grava `unit_id` junto com a Solicitação antes de validar a duplicidade, mantendo a proteção também quando duas pessoas tentam protocolar a mesma OS ao mesmo tempo. A interface usa a mesma regra ao avisar sobre uma OS já cadastrada e oferece acesso ao protocolo existente somente quando a duplicidade pertence à Unidade selecionada.
+
+## Migration 052 — Compartilhamento PWA e anexos por Atividade
+
+Para habilitar o recebimento de evidências pelo menu **Compartilhar** do Android e permitir que o destino seja Projeto, Atividade ou Subatividade, execute depois da 051:
+
+```text
+supabase/migrations/052_devboard_pwa_share_activity_attachments.sql
+```
+
+A migration é incremental. Ela adiciona `attachments.activity_id`, preserva os anexos já existentes de Projeto/Subatividade, cria a RPC `add_activity_attachment` e atualiza a leitura/ativação de anexos para reconhecer o novo destino.
+
+> Aplique a migration 052 **antes** de publicar o front-end desta versão, pois a consulta de projetos passa a carregar também os anexos vinculados às atividades.
+
+No Android, o recurso depende do Devboard instalado como **PWA pelo Chrome**. O `share_target` do manifesto registra o Devboard no seletor nativo de compartilhamento e o service worker mantém o arquivo temporariamente no aparelho até o usuário escolher o destino.

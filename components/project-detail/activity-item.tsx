@@ -287,7 +287,16 @@ export function ActivityItem({
   focusActivityId?: string | null
   focusSubactivityId?: string | null
 }) {
-  const { deleteActivity, supportTopics, serviceRequests, currentUserId, currentUserRole, projects } = useStore()
+  const {
+    deleteActivity,
+    supportTopics,
+    serviceRequests,
+    currentUserId,
+    currentUserRole,
+    projects,
+    addActivityAttachments,
+    setActivityAttachmentActive,
+  } = useStore()
   const currentProject = projects.find((project) => project.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(currentProject?.memberIds.includes(currentUserId))
   const activityRef = React.useRef<HTMLDivElement>(null)
@@ -401,6 +410,21 @@ export function ActivityItem({
               {formatHours(tracked)}
             </span>
           </button>
+
+          <div className="flex shrink-0 items-stretch border-l border-border">
+            <AttachmentDialog
+              title={`Arquivos · ${activity.title}`}
+              description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
+              attachments={activity.attachments ?? []}
+              onAdd={(files) => addActivityAttachments(activity.id, files)}
+              onSetActive={(attachmentId, active) =>
+                void setActivityAttachmentActive(activity.id, attachmentId, active)
+              }
+              compact
+              buttonLabel="Arquivos"
+              className="m-auto h-full min-h-10 rounded-none px-2.5 sm:min-h-11"
+            />
+          </div>
 
           <div className="flex shrink-0 items-stretch border-l border-border">
             <CopyEntityLinkButton

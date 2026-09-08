@@ -29,6 +29,7 @@ declare
     'public.add_project_comment(uuid,text)',
     'public.add_subactivity_comment(uuid,text)',
     'public.add_attachment(uuid,uuid,text,text,bigint,text,text,text)',
+    'public.add_activity_attachment(uuid,text,text,bigint,text,text,text)',
     'public.set_attachment_active(uuid,boolean)',
     'public.ensure_direct_conversation(uuid)',
     'public.send_chat_message(uuid,text,jsonb)',
@@ -114,6 +115,18 @@ begin
   if has_function_privilege('authenticated','public.add_project_log(uuid,text,text,text,uuid)','EXECUTE')
      or has_function_privilege('authenticated','public.push_notification(uuid,uuid,text,text,text,uuid,uuid,uuid)','EXECUTE') then
     v_missing := array_append(v_missing, 'RPCs internas sem EXECUTE para authenticated');
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema='public' and table_name='attachments' and column_name='activity_id'
+  ) then
+    v_missing := array_append(v_missing, 'column public.attachments.activity_id');
+  end if;
+
+  if not exists(select 1 from pg_indexes where schemaname='public' and indexname='attachments_activity_idx') then
+    v_missing := array_append(v_missing, 'activity attachment index');
   end if;
 
   if not exists(select 1 from pg_indexes where schemaname='public' and indexname='subactivities_one_running_per_user_uidx') then

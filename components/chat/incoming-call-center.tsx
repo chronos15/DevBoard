@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { Phone, PhoneOff, Video } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
+import { openMeetingRoom } from "@/lib/meeting-launcher"
 import {
   Dialog,
   DialogContent,
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/dialog"
 
 export function IncomingCallCenter() {
-  const router = useRouter()
   const {
     chatMeetings,
     members,
@@ -55,9 +54,7 @@ export function IncomingCallCenter() {
       if (inviteNotification && !inviteNotification.readAt) {
         await markNotificationRead(inviteNotification.id)
       }
-      if (accept) {
-        router.push(`/chat?meeting=${encodeURIComponent(incoming.id)}&join=1`)
-      }
+      if (accept) openMeetingRoom(incoming.id)
     } finally {
       setAnswering(null)
     }

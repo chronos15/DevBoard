@@ -91,7 +91,7 @@ const PREFERENCE_TABLES = new Set(["user_preferences"])
 const TIME_TABLES = new Set(["work_sessions"])
 const CHAT_TABLES = new Set(["chat_conversations", "chat_members", "chat_messages"])
 const MEETING_TABLES = new Set(["meetings", "meeting_members"])
-const AQS_TABLES = new Set(["aqs_reviews"])
+const AQS_TABLES = new Set(["aqs_reviews", "aqs_review_participants"])
 const TOPIC_TABLES = new Set(["support_topics", "topic_attachments"])
 const TYPE_TABLES = new Set(["work_item_types"])
 const REQUEST_TABLES = new Set(["service_requests", "service_request_participants", "service_request_messages", "service_request_events", "service_request_attachments"])
@@ -208,7 +208,8 @@ export type StoreContextValue = {
   updateChatGroup: (conversationId: string, data: { name: string; memberIds: string[] }) => Promise<boolean>
   deleteChatGroup: (conversationId: string) => Promise<boolean>
   createMeeting: (data: { title: string; memberIds: string[]; mode: MeetingMode; conversationId?: string }) => Promise<string | null>
-  startActivityMeeting: (activityId: string, mode?: MeetingMode) => Promise<ActivityMeetingLaunch | null>
+  startActivityMeeting: (activityId: string, mode?: MeetingMode, context?: { subactivityId?: string; requestId?: string; aqsReviewId?: string }) => Promise<ActivityMeetingLaunch | null>
+  inviteMeetingUser: (meetingId: string, userId: string, force?: boolean) => Promise<boolean>
   endMeeting: (meetingId: string) => Promise<boolean>
   answerMeetingInvite: (meetingId: string, accept: boolean) => Promise<boolean>
   joinMeeting: (meetingId: string) => Promise<boolean>
@@ -1918,15 +1919,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return id
   }, [callRpc, refreshMeetings])
 
-  const startActivityMeeting = React.useCallback(async (activityId: string, mode: MeetingMode = "video") => {
-    const result = await callRpc<ActivityMeetingLaunch>("start_activity_meeting", {
+  const startActivityMeeting = React.useCallback(async (
+    activityId: string,
+    mode: MeetingMode = "video",
+    context: { subactivityId?: string; requestId?: string; aqsReviewId?: string } = {},
+  ) => {
+    const result = await callRpc<ActivityMeetingLaunch>("start_context_meeting", {
       p_activity_id: activityId,
       p_mode: mode,
-    }, "Não foi possível iniciar a reunião desta atividade")
+      p_subactivity_id: context.subactivityId ?? null,
+      p_request_id: context.requestId ?? null,
+      p_aqs_review_id: context.aqsReviewId ?? null,
+    }, "Não foi possível iniciar a reunião deste item")
     if (!result?.meetingId || !result?.conversationId) return null
-    await Promise.all([refreshChat(), refreshMeetings(), refreshNotifications(), refreshProjects(), refreshServiceRequests()])
+    await Promise.all([refreshChat(), refreshMeetings(), refreshNotifications(), refreshProjects(), refreshServiceRequests(), refreshAqsReviews()])
     return result
-  }, [callRpc, refreshChat, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
+  }, [callRpc, refreshAqsReviews, refreshChat, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
+
+  const inviteMeetingUser = React.useCallback(async (meetingId: string, userId: string, force = false) => {
+    const result = await callRpc<{ status?: string }>("meeting_invite_user", {
+      p_meeting_id: meetingId,
+      p_user_id: userId,
+      p_force: force,
+    }, "Não foi possível chamar este usuário para a reunião")
+    if (!result) return false
+    await Promise.all([refreshChat(), refreshMeetings(), refreshNotifications(), refreshProjects(), refreshServiceRequests(), refreshAqsReviews()])
+    return true
+  }, [callRpc, refreshAqsReviews, refreshChat, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const endMeeting = React.useCallback(async (meetingId: string) => {
     const result = await callRpc<unknown>("end_meeting", { p_meeting_id: meetingId }, "Não foi possível encerrar a reunião")
@@ -2567,6 +2586,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteChatGroup,
     createMeeting,
     startActivityMeeting,
+    inviteMeetingUser,
     endMeeting,
     answerMeetingInvite,
     joinMeeting,
@@ -2580,7 +2600,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
-    answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
+    answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,

@@ -2239,7 +2239,7 @@ export function ProjectFollowUp({
                   </span>
                   <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground tabular-nums">{formatHMS(selectedSub.trackedSeconds)}</span>
                 </div>
-                <ActivityMeetingButton activityId={selectedActivity.id} />
+                <ActivityMeetingButton activityId={selectedActivity.id} subactivityId={selectedSub.id} />
                 <Button
                   type="button"
                   variant={localSearchOpen ? "secondary" : "ghost"}

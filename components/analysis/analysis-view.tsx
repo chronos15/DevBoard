@@ -797,7 +797,7 @@ export function AnalysisView() {
 
                 <span className={cn("hidden shrink-0 rounded-full px-2 py-1 text-[0.6rem] font-medium sm:inline-flex", reviewMeta[selected.review.status].badge)}>{reviewMeta[selected.review.status].shortLabel}</span>
 
-                <ActivityMeetingButton activityId={selected.activity.id} />
+                <ActivityMeetingButton activityId={selected.activity.id} subactivityId={selected.sub.id} aqsReviewId={selected.review.id} />
 
                 {canReview && selected.review.status === "awaiting" && (
                   <Button type="button" size="sm" onClick={() => void startReview(selected.review)} loading={busy.has(selected.review.id)}>

@@ -11,7 +11,11 @@ import {
   MonitorUp,
   Maximize2,
   Minimize2,
+  MessageSquareText,
+  PhoneCall,
   PhoneOff,
+  Search,
+  UserPlus,
   Settings2,
   ShieldCheck,
   Users,
@@ -23,7 +27,7 @@ import type { ChatMeeting, Member } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { MeetingChatPanel } from "@/components/chat/meeting-chat-panel"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { loadWebRtcIceConfig } from "@/lib/webrtc/ice-servers"
@@ -84,7 +88,7 @@ type PeerRoleState = {
   restartPending: boolean
 }
 
-type PanelMode = "participants" | "settings" | null
+type PanelMode = "participants" | "chat" | "settings" | null
 
 function makeSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
@@ -492,13 +496,19 @@ function ParticipantTile({
 export function CallRoom({
   meeting,
   open,
+  minimized = false,
+  onMinimize,
+  onRestore,
   onOpenChange,
 }: {
   meeting: ChatMeeting | null
   open: boolean
+  minimized?: boolean
+  onMinimize?: () => void
+  onRestore?: () => void
   onOpenChange: (open: boolean) => void
 }) {
-  const { members, currentUserId, currentUserRole, endMeeting, leaveMeeting, heartbeatMeeting } = useStore()
+  const { members, currentUserId, currentUserRole, endMeeting, leaveMeeting, heartbeatMeeting, inviteMeetingUser } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
   const [micEnabled, setMicEnabled] = React.useState(true)
   const [cameraEnabled, setCameraEnabled] = React.useState(meeting?.mode === "video")
@@ -506,6 +516,9 @@ export function CallRoom({
   const [nativeScreenSharing, setNativeScreenSharing] = React.useState(false)
   const [deafened, setDeafened] = React.useState(false)
   const [panel, setPanel] = React.useState<PanelMode>(null)
+  const [memberPickerOpen, setMemberPickerOpen] = React.useState(false)
+  const [memberQuery, setMemberQuery] = React.useState("")
+  const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null)
   const [focusedMemberId, setFocusedMemberId] = React.useState<string | null>(null)
   const [mediaError, setMediaError] = React.useState("")
   const [mediaReadyMeetingId, setMediaReadyMeetingId] = React.useState<string | null>(null)
@@ -566,6 +579,15 @@ export function CallRoom({
   const canEndMeeting = Boolean(
     meeting && (currentUserRole === "admin" || meeting.createdBy === currentUserId),
   )
+  const inviteCandidates = members
+    .filter((member) => member.id !== currentUserId)
+    .filter((member) => !memberQuery.trim() || member.name.toLocaleLowerCase("pt-BR").includes(memberQuery.trim().toLocaleLowerCase("pt-BR")))
+    .sort((a, b) => {
+      const aInMeeting = meeting?.memberIds.includes(a.id) ? 1 : 0
+      const bInMeeting = meeting?.memberIds.includes(b.id) ? 1 : 0
+      return aInMeeting - bInMeeting || a.name.localeCompare(b.name, "pt-BR")
+    })
+    .slice(0, 8)
 
   const microphoneDevices = devices.filter((device) => device.kind === "audioinput")
   const cameraDevices = devices.filter((device) => device.kind === "videoinput")
@@ -1322,7 +1344,9 @@ export function CallRoom({
     setMicEnabled(true)
     setDeafened(false)
     setFocusedMemberId(null)
-    setPanel(window.matchMedia("(min-width: 1024px)").matches ? "participants" : null)
+    setPanel(null)
+    setMemberPickerOpen(false)
+    setMemberQuery("")
     setPresences({})
     remoteMediaStateRef.current.clear()
     localMediaRevisionRef.current = 0
@@ -1964,6 +1988,20 @@ export function CallRoom({
     syncRemoteReceiverTracks,
   ])
 
+  async function callUser(userId: string) {
+    if (!meeting || invitingUserId) return
+    setInvitingUserId(userId)
+    try {
+      const ok = await inviteMeetingUser(meeting.id, userId, true)
+      if (ok) {
+        setMemberPickerOpen(false)
+        setMemberQuery("")
+      }
+    } finally {
+      setInvitingUserId(null)
+    }
+  }
+
   async function leaveRoom() {
     if (!meeting || leavingMeeting) return
     setLeavingMeeting(true)
@@ -1999,294 +2037,411 @@ export function CallRoom({
     ? [...meetingMembers].sort((a, b) => Number(b.id === focusedMemberId) - Number(a.id === focusedMemberId))
     : meetingMembers
 
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) void leaveRoom(); else onOpenChange(true) }}>
-      <DialogContent
-        showCloseButton={false}
-        onPointerDownCapture={() => { void primeCallAudio() }}
-        className="h-[min(94dvh,940px)] max-h-[94dvh] w-[calc(100vw-1rem)] max-w-[1500px] overflow-hidden rounded-2xl bg-background p-0 sm:w-[calc(100vw-2rem)] sm:max-w-[1500px]"
-      >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <header className="flex min-h-16 items-center gap-3 border-b border-border bg-card px-3 py-2.5 sm:px-4">
-            <Button type="button" variant="ghost" size="icon" onClick={() => void leaveRoom()} title="Sair da reunião" loading={leavingMeeting}>
-              <ChevronLeft className="size-4" />
-            </Button>
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <h2 className="truncate text-sm font-semibold sm:text-base">{meeting.title}</h2>
-                <span className="hidden shrink-0 rounded-md bg-success/12 px-2 py-1 text-[0.58rem] font-medium text-success sm:inline">
-                  EM ANDAMENTO
-                </span>
+  const participantsPanel = (
+    <div className="flex min-h-0 flex-col">
+      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-3">
+        <div>
+          <p className="text-xs font-semibold">Participantes</p>
+          <p className="mt-0.5 text-[0.62rem] text-muted-foreground">{connectedCount} conectado{connectedCount === 1 ? "" : "s"} · {meetingMembers.length} convidado{meetingMembers.length === 1 ? "" : "s"}</p>
+        </div>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant={memberPickerOpen ? "secondary" : "ghost"}
+          onClick={() => setMemberPickerOpen((current) => !current)}
+          title="Chamar usuário"
+          aria-label="Chamar usuário"
+        >
+          <UserPlus className="size-3.5" />
+        </Button>
+      </div>
+
+      {memberPickerOpen && (
+        <div className="mx-3 mb-2 rounded-xl border border-border bg-background p-2 shadow-sm">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={memberQuery}
+              onChange={(event) => setMemberQuery(event.target.value)}
+              placeholder="Buscar usuário para chamar…"
+              className="h-8 w-full rounded-lg border border-border bg-card pl-7 pr-2 text-[0.65rem] outline-none focus:border-primary/40"
+              autoFocus
+            />
+          </label>
+          <div className="mt-1.5 max-h-44 overflow-y-auto [scrollbar-width:thin]">
+            {inviteCandidates.length === 0 ? (
+              <p className="px-2 py-3 text-center text-[0.6rem] text-muted-foreground">Nenhum usuário encontrado.</p>
+            ) : inviteCandidates.map((member) => {
+              const state = meeting.memberStates.find((row) => row.userId === member.id)?.status
+              const connected = state === "joined" && Boolean(presenceByUser.get(member.id))
+              return (
+                <div key={member.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-muted/50">
+                  <MemberAvatar member={member} className="size-7 ring-0" />
+                  <span className="min-w-0 flex-1">
+                    <MemberName member={member} className="block truncate text-[0.65rem] font-medium" />
+                    <span className="block truncate text-[0.54rem] text-muted-foreground">
+                      {connected ? "Já está na sala" : state === "pending" ? "Convite pendente" : meeting.memberIds.includes(member.id) ? "Pode ser chamado novamente" : "Será adicionado ao contexto"}
+                    </span>
+                  </span>
+                  {!connected && (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="size-7 shrink-0 text-primary"
+                      loading={invitingUserId === member.id}
+                      disabled={Boolean(invitingUserId)}
+                      onClick={() => void callUser(member.id)}
+                      title="Chamar para a reunião"
+                    >
+                      <PhoneCall className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-1.5 px-1 text-[0.52rem] leading-relaxed text-muted-foreground">Ao chamar, o usuário também passa a acompanhar a subatividade, solicitação ou análise AQS vinculada à reunião.</p>
+        </div>
+      )}
+
+      <div className="min-h-0 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
+        {meetingMembers.map((member) => {
+          const own = member.id === currentUserId
+          const presence = presenceByUser.get(member.id)
+          const connected = own || Boolean(presence)
+          const mic = own ? micEnabled : presence?.micEnabled
+          const camera = own ? cameraEnabled : presence?.cameraEnabled
+          const memberState = meeting.memberStates.find((state) => state.userId === member.id)?.status
+          return (
+            <div key={member.id} className="group/member flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/40">
+              <div className="relative">
+                <MemberAvatar member={member} className="size-8 ring-0" />
+                <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card", connected ? "bg-success" : "bg-muted-foreground/40")} />
               </div>
-              <p className="mt-0.5 truncate font-mono text-[0.62rem] text-muted-foreground">
-                {formatDuration(secondsRunning)} · {connectedCount}/{meetingMembers.length} na sala · {meeting.mode === "video" ? "Vídeo" : "Áudio"}
-              </p>
+              <span className="min-w-0 flex-1">
+                <MemberName member={member} className="block truncate text-xs font-medium" suffix={own ? " · Você" : ""} />
+                <span className="block truncate text-[0.56rem] text-muted-foreground">
+                  {connected
+                    ? own
+                      ? "Na reunião"
+                      : `${peerStates[presence?.sessionId ?? ""] === "connected" ? "Mídia conectada" : "Conectando mídia"}${peerRoutes[presence?.sessionId ?? ""] ? ` · ${peerRoutes[presence?.sessionId ?? ""]}` : ""}`
+                    : memberState === "declined"
+                      ? "Recusou · pode chamar novamente"
+                      : memberState === "left"
+                        ? "Saiu · pode chamar novamente"
+                        : "Convidado · aguardando"}
+                </span>
+              </span>
+              {connected ? (
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-destructive" />}
+                  {camera && <Camera className="size-3" />}
+                </span>
+              ) : !own ? (
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="size-7 shrink-0 opacity-100 sm:opacity-0 sm:group-hover/member:opacity-100"
+                  loading={invitingUserId === member.id}
+                  disabled={Boolean(invitingUserId)}
+                  onClick={() => void callUser(member.id)}
+                  title="Chamar novamente"
+                  aria-label={`Chamar ${member.name}`}
+                >
+                  <PhoneCall className="size-3.5" />
+                </Button>
+              ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                type="button"
-                variant={panel === "participants" ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setPanel((current) => current === "participants" ? null : "participants")}
-                title="Participantes"
-              >
-                <Users className="size-4" />
-              </Button>
-              <Button
-                type="button"
-                variant={panel === "settings" ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setPanel((current) => current === "settings" ? null : "settings")}
-                title="Dispositivos"
-              >
-                <Settings2 className="size-4" />
-              </Button>
-            </div>
-          </header>
+          )
+        })}
+      </div>
 
-          {mediaError && (
-            <div className="border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-xs text-destructive">
-              {mediaError}
-            </div>
-          )}
-          {iceTransport.warning && (
-            <div className="border-b border-amber-500/20 bg-amber-500/8 px-4 py-2 text-[0.68rem] text-amber-700 dark:text-amber-300">
-              {iceTransport.warning}
-            </div>
-          )}
+      {canEndMeeting && (
+        <div className="border-t border-border p-2.5">
+          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando…">
+            <PhoneOff className="size-3.5" />
+            Encerrar reunião para todos
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <main className="min-w-0 flex-1 overflow-y-auto bg-muted/10 p-2 sm:p-3 lg:p-4">
-              <div className={cn(
-                "grid min-h-full items-stretch gap-2 sm:gap-3",
-                hasFocusedMember
-                  ? "auto-rows-auto grid-cols-2 content-start lg:grid-cols-12"
+  const settingsPanel = (
+    <div className="min-h-0 overflow-y-auto p-3 [scrollbar-width:thin]">
+      <div className="mb-4 flex items-center gap-2">
+        <Settings2 className="size-4 text-muted-foreground" />
+        <div>
+          <p className="text-xs font-semibold">Áudio e vídeo</p>
+          <p className="text-[0.6rem] text-muted-foreground">Dispositivos desta aba</p>
+        </div>
+      </div>
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-[0.65rem] font-medium text-muted-foreground">Microfone</span>
+          <select
+            value={selectedMic}
+            onChange={(event) => void switchMicrophone(event.target.value)}
+            className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary/40"
+          >
+            <option value="">Padrão do sistema</option>
+            {microphoneDevices.map((device, index) => (
+              <option key={device.deviceId} value={device.deviceId}>{deviceLabel(device, index, "microfone")}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[0.65rem] font-medium text-muted-foreground">Câmera</span>
+          <select
+            value={selectedCamera}
+            onChange={(event) => void switchCamera(event.target.value)}
+            className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary/40"
+          >
+            <option value="">Padrão do sistema</option>
+            {cameraDevices.map((device, index) => (
+              <option key={device.deviceId} value={device.deviceId}>{deviceLabel(device, index, "câmera")}</option>
+            ))}
+          </select>
+        </label>
+        <div className="rounded-xl border border-border bg-muted/20 px-3 py-3 text-[0.65rem] leading-relaxed">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="font-medium text-foreground">Qualidade da conexão</span>
+            <span className={cn("rounded-md px-2 py-0.5 text-[0.58rem] font-medium", iceTransport.hasTurn ? "bg-success/12 text-success" : "bg-amber-500/12 text-amber-700 dark:text-amber-300")}>
+              {iceTransport.hasTurn ? "Rota alternativa disponível" : "Conexão direta"}
+            </span>
+          </div>
+          <div className="space-y-1 text-muted-foreground">
+            {meetingMembers.filter((member) => member.id !== currentUserId).map((member) => {
+              const presence = presenceByUser.get(member.id)
+              const state = presence ? peerStates[presence.sessionId] : undefined
+              const route = presence ? peerRoutes[presence.sessionId] : undefined
+              return (
+                <div key={member.id} className="flex items-center justify-between gap-2">
+                  <MemberName member={member} className="truncate" />
+                  <span className="shrink-0 text-[0.58rem] font-medium">{peerConnectionLabel(state, route)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div className="rounded-xl border border-dashed border-border bg-muted/25 px-3 py-3 text-[0.65rem] leading-relaxed text-muted-foreground">
+          <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground"><ShieldCheck className="size-3.5" /> Permissões do navegador</div>
+          O Chrome pode pedir autorização para microfone, câmera e compartilhamento de tela.
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`Reunião ${meeting.title}`}
+      className={cn(
+        "fixed z-40 transition-[inset,width,height,background-color,padding] duration-200",
+        minimized
+          ? "bottom-3 right-3 h-[220px] w-[min(370px,calc(100vw-1rem))]"
+          : "inset-0 flex items-center justify-center bg-black/35 p-2 sm:p-4",
+      )}
+      onPointerDownCapture={() => { void primeCallAudio() }}
+    >
+      <section className={cn(
+        "flex min-h-0 min-w-0 flex-col overflow-hidden bg-background ring-1 ring-foreground/10 transition-[width,height,border-radius,box-shadow] duration-200",
+        minimized
+          ? "size-full rounded-2xl shadow-2xl"
+          : "h-[min(94dvh,940px)] w-full max-w-[1500px] rounded-2xl shadow-2xl",
+      )}>
+        <header className={cn("flex shrink-0 items-center gap-2 border-b border-border bg-card", minimized ? "min-h-10 px-2 py-1.5" : "min-h-16 px-3 py-2.5 sm:px-4") }>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(minimized && "size-8")}
+            onClick={() => minimized ? onRestore?.() : onMinimize?.()}
+            title={minimized ? "Restaurar reunião" : "Minimizar reunião"}
+          >
+            {minimized ? <Maximize2 className="size-4" /> : <ChevronLeft className="size-4" />}
+          </Button>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className={cn("truncate font-semibold", minimized ? "text-xs" : "text-sm sm:text-base")}>{meeting.title}</h2>
+              {!minimized && <span className="hidden shrink-0 rounded-md bg-success/12 px-2 py-1 text-[0.58rem] font-medium text-success sm:inline">EM ANDAMENTO</span>}
+            </div>
+            <p className={cn("truncate font-mono text-muted-foreground", minimized ? "text-[0.5rem]" : "mt-0.5 text-[0.62rem]")}>
+              {formatDuration(secondsRunning)} · {connectedCount}/{meetingMembers.length} na sala{!minimized ? ` · ${meeting.mode === "video" ? "Vídeo" : "Áudio"}` : ""}
+            </p>
+          </div>
+          <div className={cn("flex shrink-0 items-center gap-1", minimized && "hidden")}>
+            <Button
+              type="button"
+              variant={panel === "participants" ? "secondary" : "ghost"}
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setPanel((current) => current === "participants" ? null : "participants")}
+              title="Participantes"
+            >
+              <Users className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant={panel === "chat" ? "secondary" : "ghost"}
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setPanel((current) => current === "chat" ? null : "chat")}
+              title="Chat da reunião"
+            >
+              <MessageSquareText className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant={panel === "settings" ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setPanel((current) => current === "settings" ? null : "settings")}
+              title="Dispositivos"
+            >
+              <Settings2 className="size-4" />
+            </Button>
+          </div>
+        </header>
+
+        {!minimized && mediaError && (
+          <div className="shrink-0 border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-xs text-destructive">{mediaError}</div>
+        )}
+        {!minimized && iceTransport.warning && (
+          <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/8 px-4 py-2 text-[0.68rem] text-amber-700 dark:text-amber-300">{iceTransport.warning}</div>
+        )}
+
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <main className={cn("min-w-0 flex-1 overflow-hidden bg-muted/10", minimized ? "p-1" : "overflow-y-auto p-2 sm:p-3 lg:p-4")}>
+            <div className={cn(
+              "grid h-full min-h-0 items-stretch",
+              minimized
+                ? "grid-cols-2 gap-1"
+                : hasFocusedMember
+                  ? "auto-rows-auto grid-cols-2 content-start gap-2 sm:gap-3 lg:grid-cols-12"
                   : cn(
-                      "h-full auto-rows-fr",
+                      "auto-rows-fr gap-2 sm:gap-3",
                       meetingMembers.length <= 1
                         ? "grid-cols-1"
                         : meetingMembers.length === 2
                           ? "grid-cols-1 md:grid-cols-2"
                           : "grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3",
                     ),
-              )}>
-                {orderedMeetingMembers.map((member) => {
-                  const own = member.id === currentUserId
-                  const presence = presenceByUser.get(member.id)
-                  const prioritized = hasFocusedMember && member.id === focusedMemberId
-                  const compact = hasFocusedMember && !prioritized
-                  return (
-                    <div
-                      key={member.id}
-                      className={cn(
-                        "min-h-0 min-w-0",
-                        !hasFocusedMember && "h-full",
-                        hasFocusedMember && (prioritized
-                          ? "col-span-2 lg:col-span-9 lg:row-span-2"
-                          : "col-span-1 lg:col-span-3"),
-                      )}
-                    >
-                      <ParticipantTile
-                        member={member}
-                        own={own}
-                        connected={own || Boolean(presence)}
-                        connectionState={presence ? peerStates[presence.sessionId] : undefined}
-                        presence={presence}
-                        cameraEnabled={own ? cameraEnabled : presence?.cameraEnabled}
-                        micEnabled={own ? micEnabled : presence?.micEnabled}
-                        screenSharing={own ? screenSharing : presence?.screenSharing}
-                        localVideoRef={own ? localVideoRef : undefined}
-                        remoteStream={presence ? remoteStreams[presence.sessionId] : undefined}
-                        remoteScreenStream={presence ? nativeScreenStreams[presence.sessionId] : undefined}
-                        nativeScreenShare={own ? nativeScreenSharing : false}
-                        prioritized={prioritized}
-                        compact={compact}
-                        onPrioritize={() => setFocusedMemberId((current) => current === member.id ? null : member.id)}
-                        deafened={deafened}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            </main>
-
-            {panel && (
-              <aside className="absolute inset-x-2 bottom-20 z-20 max-h-[55dvh] overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-xl sm:inset-x-auto sm:right-3 sm:w-80 lg:static lg:max-h-none lg:w-80 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:border-l lg:shadow-none">
-                {panel === "participants" ? (
-                  <>
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold">Participantes</p>
-                        <p className="mt-0.5 text-[0.62rem] text-muted-foreground">{connectedCount} conectado{connectedCount === 1 ? "" : "s"}</p>
-                      </div>
-                      <Users className="size-4 text-muted-foreground" />
-                    </div>
-                    <div className="space-y-1">
-                      {meetingMembers.map((member) => {
-                        const own = member.id === currentUserId
-                        const presence = presenceByUser.get(member.id)
-                        const connected = own || Boolean(presence)
-                        const mic = own ? micEnabled : presence?.micEnabled
-                        const camera = own ? cameraEnabled : presence?.cameraEnabled
-                        return (
-                          <div key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/40">
-                            <div className="relative">
-                              <MemberAvatar member={member} className="size-8 ring-0" />
-                              <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card", connected ? "bg-success" : "bg-muted-foreground/40")} />
-                            </div>
-                            <span className="min-w-0 flex-1">
-                              <MemberName member={member} className="block truncate text-xs font-medium" suffix={own ? " · Você" : ""} />
-                              <span className="block text-[0.58rem] text-muted-foreground">
-                                {connected
-                                  ? own
-                                    ? "Na reunião"
-                                    : `${peerStates[presence?.sessionId ?? ""] === "connected" ? "Mídia conectada" : "Conectando mídia"}${peerRoutes[presence?.sessionId ?? ""] ? ` · ${peerRoutes[presence?.sessionId ?? ""]}` : ""}`
-                                  : meeting?.memberStates.find((state) => state.userId === member.id)?.status === "declined"
-                                    ? "Recusou a chamada"
-                                    : meeting?.memberStates.find((state) => state.userId === member.id)?.status === "left"
-                                      ? "Saiu da reunião"
-                                      : "Convidado · aguardando"}
-                              </span>
-                            </span>
-                            {connected && (
-                              <span className="flex items-center gap-1 text-muted-foreground">
-                                {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-destructive" />}
-                                {camera && <Camera className="size-3" />}
-                              </span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {canEndMeeting && (
-                      <div className="mt-4 border-t border-border pt-3">
-                        <Button type="button" variant="destructive" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando...">
-                          <PhoneOff className="size-3.5" />
-                          Encerrar reunião para todos
-                        </Button>
-                      </div>
+            )}>
+              {orderedMeetingMembers.map((member) => {
+                const own = member.id === currentUserId
+                const presence = presenceByUser.get(member.id)
+                const prioritized = !minimized && hasFocusedMember && member.id === focusedMemberId
+                const compact = minimized || (hasFocusedMember && !prioritized)
+                return (
+                  <div
+                    key={member.id}
+                    className={cn(
+                      "min-h-0 min-w-0 overflow-hidden",
+                      !minimized && !hasFocusedMember && "h-full",
+                      !minimized && hasFocusedMember && (prioritized ? "col-span-2 lg:col-span-9 lg:row-span-2" : "col-span-1 lg:col-span-3"),
                     )}
-                  </>
-                ) : (
-                  <>
-                    <div className="mb-4 flex items-center gap-2">
-                      <Settings2 className="size-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs font-semibold">Áudio e vídeo</p>
-                        <p className="text-[0.6rem] text-muted-foreground">Dispositivos desta aba</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <label className="block">
-                        <span className="mb-1.5 block text-[0.65rem] font-medium text-muted-foreground">Microfone</span>
-                        <select
-                          value={selectedMic}
-                          onChange={(event) => void switchMicrophone(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary/40"
-                        >
-                          <option value="">Padrão do sistema</option>
-                          {microphoneDevices.map((device, index) => (
-                            <option key={device.deviceId} value={device.deviceId}>{deviceLabel(device, index, "microfone")}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1.5 block text-[0.65rem] font-medium text-muted-foreground">Câmera</span>
-                        <select
-                          value={selectedCamera}
-                          onChange={(event) => void switchCamera(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary/40"
-                        >
-                          <option value="">Padrão do sistema</option>
-                          {cameraDevices.map((device, index) => (
-                            <option key={device.deviceId} value={device.deviceId}>{deviceLabel(device, index, "câmera")}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="rounded-xl border border-border bg-muted/20 px-3 py-3 text-[0.65rem] leading-relaxed">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">Qualidade da conexão</span>
-                          <span className={cn("rounded-md px-2 py-0.5 text-[0.58rem] font-medium", iceTransport.hasTurn ? "bg-success/12 text-success" : "bg-amber-500/12 text-amber-700 dark:text-amber-300")}>
-                            {iceTransport.hasTurn ? "Rota alternativa disponível" : "Conexão direta"}
-                          </span>
-                        </div>
-                        <div className="space-y-1 text-muted-foreground">
-                          {meetingMembers.filter((member) => member.id !== currentUserId).map((member) => {
-                            const presence = presenceByUser.get(member.id)
-                            const state = presence ? peerStates[presence.sessionId] : undefined
-                            const route = presence ? peerRoutes[presence.sessionId] : undefined
-                            return (
-                              <div key={member.id} className="flex items-center justify-between gap-2">
-                                <MemberName member={member} className="truncate" />
-                                <span className="shrink-0 text-[0.58rem] font-medium">{peerConnectionLabel(state, route)}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-dashed border-border bg-muted/25 px-3 py-3 text-[0.65rem] leading-relaxed text-muted-foreground">
-                        <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-                          <ShieldCheck className="size-3.5" /> Permissões do navegador
-                        </div>
-                        O navegador pode pedir autorização para microfone, câmera e compartilhamento de tela. Para maior segurança, acesse o Devboard por uma conexão segura.
-                      </div>
-                    </div>
-                  </>
-                )}
-              </aside>
-            )}
-          </div>
-
-          <footer className="border-t border-border bg-card px-2 py-2.5 sm:px-4 sm:py-3">
-            <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-1.5 sm:gap-2">
-              <Button
-                type="button"
-                variant={micEnabled ? "secondary" : "destructive"}
-                size="icon-lg"
-                onClick={() => void toggleMic()}
-                title={micEnabled ? "Mutar microfone" : "Ativar microfone"}
-              >
-                {micEnabled ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-              </Button>
-              <Button
-                type="button"
-                variant={cameraEnabled ? "secondary" : "outline"}
-                size="icon-lg"
-                onClick={() => void toggleCamera()}
-                title={cameraEnabled ? "Desligar câmera" : "Ligar câmera"}
-              >
-                {cameraEnabled ? <Camera className="size-4" /> : <CameraOff className="size-4" />}
-              </Button>
-              <Button
-                type="button"
-                variant={screenSharing ? "default" : "outline"}
-                size="icon-lg"
-                onClick={() => void toggleScreenShare()}
-                title={screenSharing ? "Parar compartilhamento" : "Compartilhar tela"}
-              >
-                <MonitorUp className="size-4" />
-              </Button>
-              <Button
-                type="button"
-                variant={deafened ? "destructive" : "outline"}
-                size="icon-lg"
-                onClick={() => { void primeCallAudio(); setDeafened((current) => !current) }}
-                title={deafened ? "Ouvir áudio da sala" : "Silenciar áudio recebido"}
-              >
-                {deafened ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-              </Button>
-              <div className="mx-1 hidden h-7 w-px bg-border sm:block" />
-              <Button type="button" variant="destructive" className="h-9 gap-1.5 px-4" onClick={leaveRoom}>
-                <PhoneOff className="size-4" />
-                <span className="hidden sm:inline">Sair</span>
-              </Button>
+                  >
+                    <ParticipantTile
+                      member={member}
+                      own={own}
+                      connected={own || Boolean(presence)}
+                      connectionState={presence ? peerStates[presence.sessionId] : undefined}
+                      presence={presence}
+                      cameraEnabled={own ? cameraEnabled : presence?.cameraEnabled}
+                      micEnabled={own ? micEnabled : presence?.micEnabled}
+                      screenSharing={own ? screenSharing : presence?.screenSharing}
+                      localVideoRef={own ? localVideoRef : undefined}
+                      remoteStream={presence ? remoteStreams[presence.sessionId] : undefined}
+                      remoteScreenStream={presence ? nativeScreenStreams[presence.sessionId] : undefined}
+                      nativeScreenShare={own ? nativeScreenSharing : false}
+                      prioritized={prioritized}
+                      compact={compact}
+                      onPrioritize={minimized ? undefined : () => setFocusedMemberId((current) => current === member.id ? null : member.id)}
+                      deafened={deafened}
+                    />
+                  </div>
+                )
+              })}
             </div>
-            <p className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">
-              {deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Compartilhamento usa a janela/tela escolhida no Chrome
-            </p>
-          </footer>
+          </main>
+
+          {!minimized && (
+            <aside className="hidden w-[360px] shrink-0 min-h-0 flex-col border-l border-border bg-card lg:flex">
+              {panel === "settings" ? settingsPanel : (
+                <>
+                  <div className="max-h-[40%] min-h-[190px] shrink-0 overflow-hidden border-b border-border">{participantsPanel}</div>
+                  <MeetingChatPanel meeting={meeting} />
+                </>
+              )}
+            </aside>
+          )}
+
+          {!minimized && panel && (
+            <aside className="absolute inset-x-2 bottom-2 top-2 z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl lg:hidden">
+              <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+                <span className="text-xs font-semibold">{panel === "participants" ? "Participantes" : panel === "chat" ? "Chat da reunião" : "Dispositivos"}</span>
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setPanel(null)} aria-label="Fechar painel"><Minimize2 className="size-3.5" /></Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {panel === "participants" ? participantsPanel : panel === "chat" ? <MeetingChatPanel meeting={meeting} /> : settingsPanel}
+              </div>
+            </aside>
+          )}
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <footer className={cn("shrink-0 border-t border-border bg-card", minimized ? "px-1.5 py-1.5" : "px-2 py-2.5 sm:px-4 sm:py-3")}>
+          <div className={cn("mx-auto flex flex-wrap items-center justify-center", minimized ? "gap-1" : "max-w-4xl gap-1.5 sm:gap-2")}>
+            <Button
+              type="button"
+              variant={micEnabled ? "secondary" : "destructive"}
+              size={minimized ? "icon-sm" : "icon-lg"}
+              onClick={() => void toggleMic()}
+              title={micEnabled ? "Mutar microfone" : "Ativar microfone"}
+            >
+              {micEnabled ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant={cameraEnabled ? "secondary" : "outline"}
+              size={minimized ? "icon-sm" : "icon-lg"}
+              onClick={() => void toggleCamera()}
+              title={cameraEnabled ? "Desligar câmera" : "Ligar câmera"}
+            >
+              {cameraEnabled ? <Camera className="size-4" /> : <CameraOff className="size-4" />}
+            </Button>
+            {!minimized && (
+              <>
+                <Button
+                  type="button"
+                  variant={screenSharing ? "default" : "outline"}
+                  size="icon-lg"
+                  onClick={() => void toggleScreenShare()}
+                  title={screenSharing ? "Parar compartilhamento" : "Compartilhar tela"}
+                >
+                  <MonitorUp className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={deafened ? "destructive" : "outline"}
+                  size="icon-lg"
+                  onClick={() => { void primeCallAudio(); setDeafened((current) => !current) }}
+                  title={deafened ? "Ouvir áudio da sala" : "Silenciar áudio recebido"}
+                >
+                  {deafened ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+                </Button>
+                <div className="mx-1 hidden h-7 w-px bg-border sm:block" />
+              </>
+            )}
+            <Button type="button" variant="destructive" size={minimized ? "icon-sm" : "default"} className={cn(!minimized && "h-9 gap-1.5 px-4")} onClick={leaveRoom} loading={leavingMeeting} title="Sair da reunião">
+              <PhoneOff className="size-4" />
+              {!minimized && <span className="hidden sm:inline">Sair</span>}
+            </Button>
+          </div>
+          {!minimized && <p className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">{deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; somente “Sair” encerra sua participação</p>}
+        </footer>
+      </section>
+    </div>
   )
 }

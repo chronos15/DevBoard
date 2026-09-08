@@ -417,7 +417,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           </div>
 
           <div className={cn("flex flex-wrap items-center justify-end gap-2", embedded && "shrink-0")}>
-            <ActivityMeetingButton activityId={request.activityId} />
+            <ActivityMeetingButton activityId={request.activityId} requestId={request.id} />
             {canAqs && ["received", "waiting-info"].includes(request.status) && <Button type="button" onClick={() => void quick("aqs", () => startServiceRequestAqs(request.id))} disabled={!!quickLoading} loading={quickLoading === "aqs"} loadingText="Assumindo..."><ClipboardCheck className="size-4" /> {request.status === "waiting-info" ? "Retomar análise" : "Assumir análise"}</Button>}
             {canAqs && request.status === "aqs-analysis" && <><Button type="button" variant="outline" onClick={() => setInfoOpen(true)}>Solicitar informações</Button><Button type="button" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRejectOpen(true)}>Recusar</Button><Button type="button" onClick={() => setSendDevOpen(true)}><Code2 className="size-4" /> Enviar ao DEV</Button></>}
             {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <>{linkedTechnicalWork && activityHref && <Button type="button" onClick={() => router.push(activityHref)}><FolderKanban className="size-4" /> Abrir atividade</Button>}<Button type="button" variant={linkedTechnicalWork ? "outline" : "default"} onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button></>}

@@ -29,7 +29,6 @@ import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
 import { MeetingDialog } from "@/components/chat/meeting-dialog"
-import { CallRoom } from "@/components/chat/call-room"
 import { AudioMessage } from "@/components/chat/audio-message"
 import { AudioRecordButton } from "@/components/chat/audio-record-button"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
@@ -39,6 +38,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { cn } from "@/lib/utils"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
+import { openMeetingRoom } from "@/lib/meeting-launcher"
 
 type ChatTab = "conversations" | "groups" | "users" | "meetings"
 
@@ -333,7 +333,6 @@ export function ChatView() {
   const [recordingAudio, setRecordingAudio] = React.useState(false)
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [message, setMessage] = React.useState("")
-  const [activeMeetingId, setActiveMeetingId] = React.useState<string | null>(null)
   const [openingUserId, setOpeningUserId] = React.useState<string | null>(null)
   const [startingMeetingMode, setStartingMeetingMode] = React.useState<MeetingMode | null>(null)
   const [openingMeetingId, setOpeningMeetingId] = React.useState<string | null>(null)
@@ -379,7 +378,6 @@ export function ChatView() {
   )
 
   const selected = myConversations.find((conversation) => conversation.id === selectedId) ?? null
-  const activeMeeting = chatMeetings.find((meeting) => meeting.id === activeMeetingId) ?? null
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!selected || selected.kind !== "group" || !mentionRange) return []
     const queryText = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
@@ -513,12 +511,6 @@ export function ChatView() {
   }, [attachmentPreviewOpen, selected])
 
   React.useEffect(() => {
-    if (activeMeetingId && (!activeMeeting || activeMeeting.endedAt)) {
-      setActiveMeetingId(null)
-    }
-  }, [activeMeeting, activeMeetingId])
-
-  React.useEffect(() => {
     if (typeof window === "undefined" || !currentUserId) return
     let active = true
 
@@ -562,17 +554,6 @@ export function ChatView() {
       window.removeEventListener("devboard:open-chat-user", handleOpenChatUser)
     }
   }, [currentUserId, ensureDirectConversation, members])
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") return
-    const meetingId = new URLSearchParams(window.location.search).get("meeting")
-    if (!meetingId) return
-    const meeting = chatMeetings.find((item) => item.id === meetingId)
-    if (!meeting || meeting.endedAt) return
-    if (meetingStatusFor(meeting, currentUserId) === "joined") {
-      setActiveMeetingId(meeting.id)
-    }
-  }, [chatMeetings, currentUserId])
 
   React.useEffect(() => {
     if (typeof window === "undefined" || myConversations.length === 0) return
@@ -798,7 +779,7 @@ export function ChatView() {
       } else if (status === "left") {
         allowed = await joinMeeting(meeting.id)
       }
-      if (allowed) setActiveMeetingId(meeting.id)
+      if (allowed) openMeetingRoom(meeting.id)
     } finally {
       setOpeningMeetingId(null)
     }
@@ -816,7 +797,7 @@ export function ChatView() {
         memberIds: selected.memberIds,
         conversationId: selected.id,
       })
-      if (id) setActiveMeetingId(id)
+      if (id) openMeetingRoom(id)
     } finally {
       setStartingMeetingMode(null)
     }
@@ -860,7 +841,7 @@ export function ChatView() {
                   <p className="mt-0.5 text-[0.65rem] text-muted-foreground">Mensagens, grupos e reuniões</p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <MeetingDialog compact onCreated={setActiveMeetingId} />
+                  <MeetingDialog compact onCreated={(id) => openMeetingRoom(id)} />
                   <GroupDialog onSaved={(id) => id && setSelectedId(id)} compact />
                 </div>
               </div>
@@ -952,7 +933,7 @@ export function ChatView() {
                     <Radio className="mx-auto size-5 text-muted-foreground/40" />
                     <p className="mt-2 text-xs text-muted-foreground">Nenhuma reunião criada.</p>
                     <div className="mt-3 flex justify-center">
-                      <MeetingDialog onCreated={setActiveMeetingId} />
+                      <MeetingDialog onCreated={(id) => openMeetingRoom(id)} />
                     </div>
                   </div>
                 )
@@ -1444,7 +1425,7 @@ export function ChatView() {
                   Escolha uma conversa ou crie uma reunião para falar com a equipe por áudio, vídeo ou compartilhamento de tela.
                 </p>
                 <div className="mt-4">
-                  <MeetingDialog onCreated={setActiveMeetingId} />
+                  <MeetingDialog onCreated={(id) => openMeetingRoom(id)} />
                 </div>
               </div>
             )}
@@ -1600,13 +1581,6 @@ export function ChatView() {
         </DialogContent>
       </Dialog>
 
-      <CallRoom
-        meeting={activeMeeting}
-        open={Boolean(activeMeeting && !activeMeeting.endedAt)}
-        onOpenChange={(next) => {
-          if (!next) setActiveMeetingId(null)
-        }}
-      />
     </>
   )
 }

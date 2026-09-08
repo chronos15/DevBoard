@@ -35,8 +35,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import {
+  MAX_ATTACHMENT_FILE_BYTES,
+  isSingleVideoSelection,
+  prepareVideoAttachment,
+  type VideoProcessingProgress,
+} from "@/lib/video-attachment-processor"
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 
 const textExtensions = new Set([
@@ -265,6 +271,7 @@ export function AttachmentDialog({
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [error, setError] = React.useState("")
   const [reading, setReading] = React.useState(false)
+  const [videoProgress, setVideoProgress] = React.useState<VideoProcessingProgress | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [statusSavingId, setStatusSavingId] = React.useState<string | null>(null)
   const [resolvedUrls, setResolvedUrls] = React.useState<Record<string, string>>({})
@@ -355,6 +362,7 @@ export function AttachmentDialog({
       revokePreviewUrls(pendingUploads)
       setError("")
       setReading(false)
+      setVideoProgress(null)
       setSaving(false)
       setStatusSavingId(null)
       setPendingUploads([])
@@ -369,28 +377,45 @@ export function AttachmentDialog({
   const stageFiles = React.useCallback(async (files: File[], source: "selection" | "paste") => {
     if (files.length === 0) return
 
-    const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
-    if (tooLarge) {
-      setError(`“${tooLarge.name || "Arquivo colado"}” ultrapassa o limite de ${formatBytes(MAX_FILE_BYTES)} por arquivo.`)
-      return
-    }
+    const singleVideo = isSingleVideoSelection(files)
+    if (!singleVideo) {
+      const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
+      if (tooLarge) {
+        setError(`“${tooLarge.name || "Arquivo colado"}” ultrapassa o limite de ${formatBytes(MAX_FILE_BYTES)} por arquivo.`)
+        return
+      }
 
-    const total = files.reduce((sum, file) => sum + file.size, 0)
-    if (total > MAX_BATCH_BYTES) {
-      setError(`A seleção ultrapassa ${formatBytes(MAX_BATCH_BYTES)}. Envie os arquivos em lotes menores.`)
-      return
+      const total = files.reduce((sum, file) => sum + file.size, 0)
+      if (total > MAX_BATCH_BYTES) {
+        setError(`A seleção ultrapassa ${formatBytes(MAX_BATCH_BYTES)}. Envie os arquivos em lotes menores.`)
+        return
+      }
     }
 
     setReading(true)
+    setVideoProgress(null)
     setError("")
     try {
-      const uploads = await Promise.all(files.map(fileToUpload))
+      const preparedFiles = singleVideo
+        ? await prepareVideoAttachment(files[0], setVideoProgress)
+        : files
+
+      const invalidPart = preparedFiles.find((file) => file.size > MAX_FILE_BYTES)
+      if (invalidPart) {
+        setError(`Não foi possível preparar “${invalidPart.name}” abaixo do limite de ${formatBytes(MAX_FILE_BYTES)}.`)
+        return
+      }
+
+      const uploads = await Promise.all(preparedFiles.map(fileToUpload))
       revokePreviewUrls(pendingUploads)
       setPendingUploads(uploads)
       setPendingIndex(0)
       setPendingSource(source)
-    } catch {
-      setError("Não foi possível ler um dos arquivos selecionados.")
+    } catch (cause) {
+      console.error("[Devboard/Anexos] Falha ao preparar vídeo", cause)
+      setError(cause instanceof Error
+        ? cause.message
+        : "Não foi possível preparar um dos arquivos selecionados.")
     } finally {
       setReading(false)
     }
@@ -453,6 +478,7 @@ export function AttachmentDialog({
     setPendingUploads([])
     setPendingIndex(0)
     setPendingSource("selection")
+    setVideoProgress(null)
     setError("")
   }
 
@@ -569,7 +595,7 @@ export function AttachmentDialog({
                     onClick={() => inputRef.current?.click()}
                     disabled={reading || saving}
                     loading={reading}
-                    loadingText="Lendo..."
+                    loadingText={videoProgress ? "Otimizando..." : "Lendo..."}
                     className="w-full gap-1.5 sm:w-auto"
                   >
                     <Upload className="size-3.5" />
@@ -585,8 +611,18 @@ export function AttachmentDialog({
             <p className={cn("mt-2 max-w-full break-words text-[0.62rem] leading-relaxed", error ? "text-destructive" : "text-muted-foreground") }>
               {error || (pendingUploads.length > 0
                 ? "Revise o preview abaixo. Os anexos só serão adicionados após sua confirmação."
-                : "Arquivos ficam ativos por padrão e não podem ser excluídos; somente marcados como inativos. Limite: 50 MB por arquivo.")}
+                : videoProgress
+                  ? `${videoProgress.message} ${Math.round(videoProgress.progress * 100)}%`
+                  : "Arquivos ficam ativos por padrão. Vídeo único acima de 50 MB é otimizado e dividido automaticamente; os demais arquivos mantêm o limite de 50 MB por arquivo.")}
             </p>
+            {videoProgress && reading && !error && (
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${Math.round(videoProgress.progress * 100)}%` }}
+                />
+              </div>
+            )}
           </div>
 
           {pendingUploads.length > 0 ? (

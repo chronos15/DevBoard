@@ -73,13 +73,19 @@ import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/fo
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import {
+  MAX_ATTACHMENT_FILE_BYTES,
+  isSingleVideoSelection,
+  prepareVideoAttachment,
+  type VideoProcessingProgress,
+} from "@/lib/video-attachment-processor"
 
 const textExtensions = new Set([
   "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
   "js", "ts", "tsx", "jsx", "css", "html", "dart", "pas",
 ])
 const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"])
-const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 const FOLLOW_UP_NAV_MIN_WIDTH = 240
 const FOLLOW_UP_NAV_MAX_WIDTH = 420
@@ -220,6 +226,8 @@ type PendingFollowUpUpload = {
   files: File[]
   createdAt: string
   status: PendingDeliveryStatus
+  videoProgress?: VideoProcessingProgress
+  errorMessage?: string
 }
 
 type TimelineItem =
@@ -228,7 +236,7 @@ type TimelineItem =
   | { kind: "session"; id: string; targetId: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
   | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string }
   | { kind: "pending-comment"; id: string; targetId: string; createdAt: string; authorId: string; pending: PendingFollowUpComment }
-  | { kind: "pending-attachment"; id: string; targetId: string; createdAt: string; authorId: string; batchId: string; file: File; status: PendingDeliveryStatus }
+  | { kind: "pending-attachment"; id: string; targetId: string; createdAt: string; authorId: string; batchId: string; file: File; status: PendingDeliveryStatus; videoProgress?: VideoProcessingProgress; errorMessage?: string }
 
 const FOLLOW_UP_REACTION_EMOJIS = [
   "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "🚀",
@@ -899,6 +907,8 @@ export function ProjectFollowUp({
           batchId: batch.id,
           file,
           status: batch.status,
+          videoProgress: batch.videoProgress,
+          errorMessage: batch.errorMessage,
         })
       })
     }
@@ -1669,8 +1679,11 @@ export function ProjectFollowUp({
   }
 
   function validateFiles(files: File[]) {
+    if (isSingleVideoSelection(files)) return ""
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
-    if (files.some((file) => file.size > MAX_FILE_BYTES)) return "Cada arquivo pode ter no máximo 50 MB."
+    if (files.some((file) => file.size > MAX_FILE_BYTES)) {
+      return "Cada arquivo pode ter no máximo 50 MB. Vídeo único acima desse limite é otimizado e dividido automaticamente."
+    }
     if (totalBytes > MAX_BATCH_BYTES) return "O envio pode ter no máximo 150 MB por vez."
     return ""
   }
@@ -1689,9 +1702,22 @@ export function ProjectFollowUp({
   }
 
   async function deliverPendingUpload(batch: PendingFollowUpUpload) {
-    setPendingUploads((current) => current.map((item) => item.id === batch.id ? { ...item, status: "sending" } : item))
+    setPendingUploads((current) => current.map((item) =>
+      item.id === batch.id ? { ...item, status: "sending", videoProgress: undefined, errorMessage: undefined } : item,
+    ))
     try {
-      const prepared = await Promise.all(batch.files.map(fileToUpload))
+      const sourceFiles = isSingleVideoSelection(batch.files)
+        ? await prepareVideoAttachment(batch.files[0], (videoProgress) => {
+            setPendingUploads((current) => current.map((item) =>
+              item.id === batch.id ? { ...item, videoProgress } : item,
+            ))
+          })
+        : batch.files
+
+      const invalidPart = sourceFiles.find((file) => file.size > MAX_FILE_BYTES)
+      if (invalidPart) throw new Error(`A parte “${invalidPart.name}” ficou acima de 50 MB.`)
+
+      const prepared = await Promise.all(sourceFiles.map(fileToUpload))
       const ok = await addFollowUpAttachments(batch.subactivityId, prepared)
       if (ok) {
         setPendingUploads((current) => current.filter((item) => item.id !== batch.id))
@@ -1699,8 +1725,21 @@ export function ProjectFollowUp({
       }
     } catch (error) {
       console.error("[Devboard/Acompanhamento] Falha ao preparar anexo", error)
+      const errorMessage = error instanceof Error
+        ? error.message
+        : "Não foi possível preparar este vídeo neste dispositivo."
+      setPendingUploads((current) => current.map((item) =>
+        item.id === batch.id
+          ? { ...item, status: "failed", videoProgress: undefined, errorMessage }
+          : item,
+      ))
+      return false
     }
-    setPendingUploads((current) => current.map((item) => item.id === batch.id ? { ...item, status: "failed" } : item))
+    setPendingUploads((current) => current.map((item) =>
+      item.id === batch.id
+        ? { ...item, status: "failed", videoProgress: undefined, errorMessage: "Não foi possível enviar este anexo agora." }
+        : item,
+    ))
     return false
   }
 
@@ -2457,9 +2496,22 @@ export function ProjectFollowUp({
                                 <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
                                 <PendingTimelineFile file={item.file} />
                                 {item.status === "sending" ? (
-                                  <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                                    <LoaderCircle className="size-3 animate-spin" />
-                                    <span>Enviando...</span>
+                                  <div className="mt-1.5 space-y-1.5">
+                                    <div className="flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                      <LoaderCircle className="size-3 animate-spin" />
+                                      <span>{item.videoProgress?.message ?? "Enviando..."}</span>
+                                      {item.videoProgress && (
+                                        <span className="font-mono text-primary">{Math.round(item.videoProgress.progress * 100)}%</span>
+                                      )}
+                                    </div>
+                                    {item.videoProgress && (
+                                      <div className="h-1 max-w-sm overflow-hidden rounded-full bg-muted">
+                                        <div
+                                          className="h-full rounded-full bg-primary transition-[width] duration-300"
+                                          style={{ width: `${Math.round(item.videoProgress.progress * 100)}%` }}
+                                        />
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <button
@@ -2469,7 +2521,7 @@ export function ProjectFollowUp({
                                     title="Tentar enviar novamente"
                                   >
                                     <CircleAlert className="size-3 shrink-0" />
-                                    <span>Falha ao enviar, clique para enviar novamente.</span>
+                                    <span>{item.errorMessage || "Falha ao enviar. Clique para tentar novamente."}</span>
                                   </button>
                                 )}
                               </div>

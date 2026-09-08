@@ -28,10 +28,16 @@ import type { AttachmentKind, AttachmentUploadInput, Project } from "@/lib/types
 import { Button } from "@/components/ui/button"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { cn } from "@/lib/utils"
+import {
+  MAX_ATTACHMENT_FILE_BYTES,
+  isSingleVideoSelection,
+  prepareVideoAttachment,
+  type VideoProcessingProgress,
+} from "@/lib/video-attachment-processor"
 
 const SHARE_CACHE = "devboard-share-target-v1"
 const SHARE_PREFIX = "/__devboard-share-target__/"
-const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 
 const textExtensions = new Set([
@@ -254,6 +260,7 @@ export default function ShareToDevboardPage() {
   const [error, setError] = React.useState("")
   const [warning, setWarning] = React.useState("")
   const [sending, setSending] = React.useState(false)
+  const [videoProgress, setVideoProgress] = React.useState<VideoProcessingProgress | null>(null)
   const [success, setSuccess] = React.useState(false)
 
   React.useEffect(() => {
@@ -377,21 +384,35 @@ export default function ShareToDevboardPage() {
       return
     }
 
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0) + (includeText && sharedText ? sharedText.size : 0)
-    const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
-    if (tooLarge) {
-      setError(`“${tooLarge.name}” ultrapassa o limite de ${formatBytes(MAX_FILE_BYTES)} por arquivo.`)
-      return
-    }
-    if (totalBytes > MAX_BATCH_BYTES) {
-      setError(`O compartilhamento ultrapassa o limite de ${formatBytes(MAX_BATCH_BYTES)} por envio.`)
-      return
+    const singleVideo = isSingleVideoSelection(files)
+    if (!singleVideo) {
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0) + (includeText && sharedText ? sharedText.size : 0)
+      const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
+      if (tooLarge) {
+        setError(`“${tooLarge.name}” ultrapassa o limite de ${formatBytes(MAX_FILE_BYTES)} por arquivo.`)
+        return
+      }
+      if (totalBytes > MAX_BATCH_BYTES) {
+        setError(`O compartilhamento ultrapassa o limite de ${formatBytes(MAX_BATCH_BYTES)} por envio.`)
+        return
+      }
     }
 
     setSending(true)
+    setVideoProgress(null)
     setError("")
     try {
-      const uploads = await Promise.all(files.map(fileToUpload))
+      const preparedFiles = singleVideo
+        ? await prepareVideoAttachment(files[0], setVideoProgress)
+        : files
+
+      const invalidPart = preparedFiles.find((file) => file.size > MAX_FILE_BYTES)
+      if (invalidPart) {
+        setError(`A parte “${invalidPart.name}” ainda ficou acima de ${formatBytes(MAX_FILE_BYTES)}.`)
+        return
+      }
+
+      const uploads = await Promise.all(preparedFiles.map(fileToUpload))
       if (includeText && sharedText) uploads.push(sharedText)
 
       const ok = destination === "project"
@@ -409,7 +430,9 @@ export default function ShareToDevboardPage() {
       setSuccess(true)
     } catch (cause) {
       console.error("[Devboard/PWA Share] Falha ao preparar evidências", cause)
-      setError("Não foi possível preparar um dos arquivos compartilhados.")
+      setError(cause instanceof Error
+        ? cause.message
+        : "Não foi possível preparar um dos arquivos compartilhados.")
     } finally {
       setSending(false)
     }
@@ -512,6 +535,9 @@ export default function ShareToDevboardPage() {
                       <KindIcon kind={kind} className="size-3" />
                       {formatBytes(file.size)}
                       {file.type && <span className="truncate">· {file.type}</span>}
+                      {files.length === 1 && kind === "video" && file.size > MAX_FILE_BYTES && (
+                        <span className="shrink-0 text-primary">· otimização automática</span>
+                      )}
                     </p>
                   </div>
                   <button
@@ -618,6 +644,27 @@ export default function ShareToDevboardPage() {
           )}
         </section>
 
+        {videoProgress && sending && (
+          <div className="mt-3 rounded-2xl border border-primary/15 bg-primary/[0.045] px-4 py-3">
+            <div className="flex items-start gap-3">
+              <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-foreground">Preparando vídeo</p>
+                  <span className="font-mono text-[0.65rem] text-primary">{Math.round(videoProgress.progress * 100)}%</span>
+                </div>
+                <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">{videoProgress.message}</p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-300"
+                    style={{ width: `${Math.round(videoProgress.progress * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {warning && (
           <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/8 px-4 py-3 text-xs leading-relaxed text-warning">
             <div className="flex gap-2.5">
@@ -638,7 +685,7 @@ export default function ShareToDevboardPage() {
             <Button variant="outline" size="lg" className="h-11 flex-1" onClick={() => void discardAndLeave()} disabled={sending}>
               Cancelar
             </Button>
-            <Button size="lg" className="h-11 flex-[1.5]" onClick={() => void sendEvidence()} disabled={!hasContent || sending} loading={sending} loadingText="Anexando…">
+            <Button size="lg" className="h-11 flex-[1.5]" onClick={() => void sendEvidence()} disabled={!hasContent || sending} loading={sending} loadingText={videoProgress ? "Otimizando…" : "Anexando…"}>
               {!sending && <Send className="size-4" />}
               Anexar evidência
             </Button>

@@ -56,7 +56,7 @@ function formatNotificationDate(value: string) {
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
 }
 
-export function NotificationCenter() {
+export function NotificationCenter({ compact = false, popoverSide = "bottom" }: { compact?: boolean; popoverSide?: "bottom" | "right" }) {
   const router = useRouter()
   const {
     notifications,
@@ -142,8 +142,9 @@ export function NotificationCenter() {
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "relative flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-          open && "border-primary/25 bg-primary/[0.06] text-foreground",
+          "relative flex size-10 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          compact ? "rounded-full" : "rounded-xl border border-border bg-card",
+          open && (compact ? "bg-primary/10 text-primary" : "border-primary/25 bg-primary/[0.06] text-foreground"),
         )}
         aria-label={unreadCount ? `Notificações, ${unreadCount} não lidas` : "Notificações"}
         aria-expanded={open}
@@ -157,7 +158,12 @@ export function NotificationCenter() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-[min(380px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl">
+        <div className={cn(
+          "absolute z-[150] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl",
+          popoverSide === "right"
+            ? "bottom-0 left-12 w-[min(380px,calc(100vw-84px))]"
+            : "right-0 top-12 w-[min(380px,calc(100vw-24px))]",
+        )}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Notificações</p>

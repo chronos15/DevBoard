@@ -42,9 +42,9 @@ function formatCreatedAt(value?: string) {
   })
 }
 
-export function RecentSubactivities() {
+export function RecentSubactivities({ compact = false, popoverSide = "bottom" }: { compact?: boolean; popoverSide?: "bottom" | "right" }) {
   const router = useRouter()
-  const { projects, currentUserId } = useStore()
+  const { projects, currentUserId, preferences } = useStore()
   const [open, setOpen] = React.useState(false)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
 
@@ -98,6 +98,16 @@ export function RecentSubactivities() {
 
   function openActivity(item: RecentItem) {
     setOpen(false)
+    if (preferences.interfaceMode === "focused") {
+      const params = new URLSearchParams({
+        space: "project",
+        project: item.projectId,
+        activity: item.activityId,
+        sub: item.subactivityId,
+      })
+      router.push(`/?${params.toString()}`)
+      return
+    }
     router.push(`/projetos/${item.projectId}#activity-${item.activityId}`)
   }
 
@@ -107,8 +117,9 @@ export function RecentSubactivities() {
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "relative flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-          open && "border-primary/25 bg-primary/[0.06] text-foreground",
+          "relative flex size-10 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          compact ? "rounded-full" : "rounded-xl border border-border bg-card",
+          open && (compact ? "bg-primary/10 text-primary" : "border-primary/25 bg-primary/[0.06] text-foreground"),
         )}
         aria-label="Subatividades recentes"
         aria-expanded={open}
@@ -123,7 +134,12 @@ export function RecentSubactivities() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-[min(430px,calc(100vw-16px))] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl">
+        <div className={cn(
+          "absolute z-[150] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl",
+          popoverSide === "right"
+            ? "bottom-0 left-12 w-[min(430px,calc(100vw-84px))]"
+            : "right-0 top-12 w-[min(430px,calc(100vw-16px))]",
+        )}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Subatividades recentes</p>

@@ -36,6 +36,8 @@ import { NewServiceRequestDialog } from "@/components/requests/request-create-di
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { ChatView } from "@/components/chat/chat-view"
 import { MemberAvatar } from "@/components/member-avatar"
+import { RecentSubactivities } from "@/components/recent-subactivities"
+import { NotificationCenter } from "@/components/notifications/notification-center"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
@@ -578,6 +580,9 @@ export function DiscordWorkspace() {
           <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }) }} />
         </div>
         <div className="mt-2 flex flex-col items-center gap-2 border-t border-border pt-2">
+          <NotificationCenter compact popoverSide="right" />
+          <RecentSubactivities compact popoverSide="right" />
+          <div className="h-px w-8 bg-border" />
           <button
             type="button"
             title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}

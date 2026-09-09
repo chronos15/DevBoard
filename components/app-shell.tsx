@@ -21,6 +21,7 @@ import { OPEN_FOLLOW_UP_EVENT, followUpHref, type FollowUpOpenDetail } from "@/l
 import { cn } from "@/lib/utils"
 import { PrimaryColorSync } from "@/components/primary-color-sync"
 import { TimerIdleGuard } from "@/components/timer-idle-guard"
+import { DevboardLogo } from "@/components/devboard-logo"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -37,6 +38,20 @@ function canAccessPath(role: AccessRole, pathname: string) {
     return role === "developer"
   }
   return true
+}
+
+function AppBootstrapScreen({ label = "Carregando Devboard" }: { label?: string }) {
+  return (
+    <div className="flex h-dvh min-h-dvh w-full items-center justify-center overflow-hidden bg-background px-6" aria-label={label}>
+      <div className="flex flex-col items-center text-center">
+        <DevboardLogo className="size-14" priority />
+        <div className="mt-5 h-1 w-24 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-primary" />
+        </div>
+        <p className="mt-3 text-xs font-medium text-muted-foreground">{label}</p>
+      </div>
+    </div>
+  )
 }
 
 function AccessDenied({ role }: { role: AccessRole }) {
@@ -174,7 +189,26 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
   const analysisPage = pathname.startsWith("/analise")
   const focusedMode = preferences.interfaceMode === "focused"
   const focusedHome = focusedMode && pathname === "/"
+  const focusedLegacyRoute = focusedMode
+    && pathname !== "/"
+    && !pathname.startsWith("/config")
+    && !pathname.startsWith("/compartilhar")
   const fullHeightWorkspace = focusedHome || followUpPage || myTasksPage || requestsPage || analysisPage
+
+  // A preferência de interface vem do banco. Enquanto o snapshot inicial ainda
+  // não terminou, não renderizamos o chrome do modo Completo usando o valor
+  // default. Isso elimina o flash de sidebar/topbar ao atualizar uma conta que
+  // já usa o Modo Resumido e também evita o layout recalcular duas vezes.
+  if (!hydrated && !sharePage) {
+    return <AppBootstrapScreen />
+  }
+
+  // Deep links antigos são convertidos para o workspace Resumido pelo effect
+  // acima. Enquanto o router.replace acontece, seguramos a tela para que /chat,
+  // /acompanhamento ou /projetos nunca apareçam por um frame no layout antigo.
+  if (hydrated && focusedLegacyRoute) {
+    return <AppBootstrapScreen label="Abrindo Modo Resumido" />
+  }
 
   if (sharePage) {
     return (

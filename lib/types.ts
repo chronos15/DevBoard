@@ -49,9 +49,15 @@ export type MemberPresence = {
   connections: number
 }
 
+export type FollowUpReplyTargetKind = "comment" | "attachment" | "log" | "session"
+
 export type FollowUpReplyReference = {
-  commentId: string
+  /** Compatibilidade com respostas antigas, que apontavam apenas para comentários. */
+  commentId?: string
+  targetKind?: FollowUpReplyTargetKind
+  targetId?: string
   authorId?: string
+  label?: string
   content?: string
   unavailable?: boolean
 }

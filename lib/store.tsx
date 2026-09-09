@@ -53,6 +53,7 @@ import type {
   ChatMention,
   ChatMessage,
   ChatReplyReference,
+  FollowUpReplyReference,
   MeetingMode,
   Member,
   MemberPresence,
@@ -184,7 +185,7 @@ export type StoreContextValue = {
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
-  addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyToCommentId?: string) => Promise<boolean>
+  addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyTo?: FollowUpReplyReference) => Promise<boolean>
   addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
   deleteFollowUpAttachment: (attachmentId: string, storagePath?: string) => Promise<boolean>
@@ -1445,13 +1446,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshProjects, refreshServiceRequests])
 
-  const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyToCommentId?: string) => {
+  const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference) => {
     try {
-      const { data, error } = await supabase.rpc("add_followup_comment", {
+      const { data, error } = await supabase.rpc("add_followup_comment_v2", {
         p_subactivity_id: subId,
         p_content: content,
         p_mentions: mentions,
-        p_reply_to_comment_id: replyToCommentId ?? null,
+        p_reply: replyTo ? {
+          kind: replyTo.targetKind ?? (replyTo.commentId ? "comment" : null),
+          id: replyTo.targetId ?? replyTo.commentId ?? null,
+        } : null,
       })
       if (error) throw error
       if (!data) throw new Error("O servidor não confirmou o envio da mensagem.")

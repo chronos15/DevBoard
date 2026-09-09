@@ -6,6 +6,7 @@ import type {
   ChatConversation,
   ChatMeeting,
   ChatMessage,
+  FollowUpReplyTargetKind,
   NotificationEntry,
   Project,
   ServiceRequest,
@@ -157,7 +158,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         subactivities(
           id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
           subactivity_members(user_id),
-          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,created_at),
+          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
         )
       )
@@ -196,10 +197,28 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
                 .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))
               const byId = new Map(rows.map((comment: any) => [comment.id, comment]))
               return rows.map((comment: any) => {
-                const replyId = typeof comment.reply_to_comment_id === "string" && comment.reply_to_comment_id
+                const legacyReplyId = typeof comment.reply_to_comment_id === "string" && comment.reply_to_comment_id
                   ? comment.reply_to_comment_id
                   : undefined
-                const reply = replyId ? byId.get(replyId) : undefined
+                const replyTargetKind = typeof comment.reply_target_kind === "string"
+                  && ["comment", "attachment", "log", "session"].includes(comment.reply_target_kind)
+                  ? comment.reply_target_kind as FollowUpReplyTargetKind
+                  : undefined
+                const replyTargetId = typeof comment.reply_target_id === "string" && comment.reply_target_id
+                  ? comment.reply_target_id
+                  : undefined
+                const snapshot = comment.reply_snapshot && typeof comment.reply_snapshot === "object"
+                  ? comment.reply_snapshot
+                  : undefined
+                const legacyReply = legacyReplyId ? byId.get(legacyReplyId) : undefined
+                const genericReplyTo = replyTargetKind && replyTargetId ? {
+                  targetKind: replyTargetKind,
+                  targetId: replyTargetId,
+                  commentId: replyTargetKind === "comment" ? replyTargetId : undefined,
+                  authorId: typeof snapshot?.authorId === "string" ? snapshot.authorId : undefined,
+                  label: typeof snapshot?.label === "string" ? snapshot.label : undefined,
+                  content: typeof snapshot?.content === "string" ? snapshot.content : undefined,
+                } : undefined
                 return {
                   id: comment.id,
                   authorId: comment.author_id,
@@ -210,11 +229,14 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
                         .filter((mention: any) => mention && mention.kind === "user" && typeof mention.id === "string" && typeof mention.label === "string")
                         .map((mention: any) => ({ kind: "user" as const, id: mention.id, label: mention.label }))
                     : [],
-                  replyTo: replyId ? (reply ? {
-                    commentId: replyId,
-                    authorId: reply.author_id,
-                    content: reply.content,
-                  } : { commentId: replyId, unavailable: true }) : undefined,
+                  replyTo: genericReplyTo ?? (legacyReplyId ? (legacyReply ? {
+                    commentId: legacyReplyId,
+                    targetKind: "comment" as const,
+                    targetId: legacyReplyId,
+                    authorId: legacyReply.author_id,
+                    label: "Mensagem",
+                    content: legacyReply.content,
+                  } : { commentId: legacyReplyId, targetKind: "comment" as const, targetId: legacyReplyId, unavailable: true }) : undefined),
                 }
               })
             })(),

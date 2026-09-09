@@ -45,6 +45,7 @@ import type {
   AttachmentUploadInput,
   ChatMention,
   CommentEntry,
+  FollowUpReplyReference,
   Project,
   Status,
   Subactivity,
@@ -190,6 +191,28 @@ function commentReplySummary(comment: CommentEntry) {
   return text.length > 120 ? `${text.slice(0, 120)}…` : text
 }
 
+function followUpReplyTargetKind(reply: FollowUpReplyReference) {
+  return reply.targetKind ?? (reply.commentId ? "comment" : undefined)
+}
+
+function followUpReplyTargetId(reply: FollowUpReplyReference) {
+  return reply.targetId ?? reply.commentId
+}
+
+function followUpReplyLabel(reply: FollowUpReplyReference) {
+  if (reply.label?.trim()) return reply.label.trim()
+  const kind = followUpReplyTargetKind(reply)
+  if (kind === "attachment") return "Anexo"
+  if (kind === "log") return "Log"
+  if (kind === "session") return "Registro de trabalho"
+  return "Mensagem"
+}
+
+function followUpReplySummary(reply: FollowUpReplyReference) {
+  const text = reply.content?.trim() || followUpReplyLabel(reply)
+  return text.length > 140 ? `${text.slice(0, 140)}…` : text
+}
+
 function KindIcon({ kind, className }: { kind: AttachmentKind; className?: string }) {
   const Icon =
     kind === "image" ? FileImage :
@@ -216,7 +239,7 @@ type PendingFollowUpComment = {
   subactivityId: string
   content: string
   mentions: ChatMention[]
-  replyTo?: CommentEntry["replyTo"]
+  replyTo?: FollowUpReplyReference
   createdAt: string
   status: PendingDeliveryStatus
 }
@@ -238,6 +261,46 @@ type TimelineItem =
   | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string }
   | { kind: "pending-comment"; id: string; targetId: string; createdAt: string; authorId: string; pending: PendingFollowUpComment }
   | { kind: "pending-attachment"; id: string; targetId: string; createdAt: string; authorId: string; batchId: string; file: File; status: PendingDeliveryStatus; videoProgress?: VideoProcessingProgress; errorMessage?: string }
+
+type ReplyableTimelineItem = Extract<TimelineItem, { kind: "comment" | "attachment" | "session" | "log" }>
+
+function replyReferenceFromTimelineItem(item: ReplyableTimelineItem): FollowUpReplyReference {
+  if (item.kind === "comment") {
+    return {
+      commentId: item.comment.id,
+      targetKind: "comment",
+      targetId: item.comment.id,
+      authorId: item.comment.authorId,
+      label: "Mensagem",
+      content: commentReplySummary(item.comment),
+    }
+  }
+  if (item.kind === "attachment") {
+    return {
+      targetKind: "attachment",
+      targetId: item.attachment.id,
+      authorId: item.attachment.uploadedBy,
+      label: "Anexo",
+      content: item.attachment.name,
+    }
+  }
+  if (item.kind === "session") {
+    return {
+      targetKind: "session",
+      targetId: item.targetId,
+      authorId: item.authorId,
+      label: "Registro de trabalho",
+      content: `${formatHMS(item.durationSeconds)} registrados`,
+    }
+  }
+  return {
+    targetKind: "log",
+    targetId: item.targetId,
+    authorId: item.authorId,
+    label: "Log",
+    content: [item.title, item.description].filter(Boolean).join(" · "),
+  }
+}
 
 const FOLLOW_UP_REACTION_EMOJIS = [
   "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "🚀",
@@ -602,7 +665,7 @@ export function ProjectFollowUp({
   const [draftMentions, setDraftMentions] = React.useState<ChatMention[]>([])
   const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
   const [mentionIndex, setMentionIndex] = React.useState(0)
-  const [replyingTo, setReplyingTo] = React.useState<CommentEntry | null>(null)
+  const [replyingTo, setReplyingTo] = React.useState<FollowUpReplyReference | null>(null)
   const [markedCommentIds, setMarkedCommentIds] = React.useState<Set<string>>(() => new Set())
   const [pinnedPickerOpen, setPinnedPickerOpen] = React.useState(false)
   const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
@@ -1612,6 +1675,17 @@ export function ProjectFollowUp({
     window.setTimeout(() => setFocusedCommentId((current) => current === commentId ? null : current), 1500)
   }
 
+  function focusReplyReference(reply: FollowUpReplyReference) {
+    const kind = followUpReplyTargetKind(reply)
+    const targetId = followUpReplyTargetId(reply)
+    if (!kind || !targetId) return
+    if (kind === "comment") {
+      focusComment(targetId)
+      return
+    }
+    focusTimelineItem(`${kind}-${targetId}`)
+  }
+
   async function toggleCommentMark(commentId: string) {
     const nextMarked = !markedCommentIds.has(commentId)
     const { error } = await supabase.rpc("toggle_followup_comment_mark", {
@@ -1636,7 +1710,7 @@ export function ProjectFollowUp({
     setDeletingCommentId(comment.id)
     try {
       const ok = await deleteFollowUpComment(comment.id)
-      if (ok && replyingTo?.id === comment.id) setReplyingTo(null)
+      if (ok && replyingTo && followUpReplyTargetKind(replyingTo) === "comment" && followUpReplyTargetId(replyingTo) === comment.id) setReplyingTo(null)
     } finally {
       setDeletingCommentId(null)
     }
@@ -1678,7 +1752,7 @@ export function ProjectFollowUp({
       pending.subactivityId,
       pending.content,
       pending.mentions,
-      pending.replyTo?.commentId,
+      pending.replyTo,
     )
     if (ok) {
       setPendingComments((current) => current.filter((item) => item.id !== pending.id))
@@ -1688,7 +1762,7 @@ export function ProjectFollowUp({
     return false
   }
 
-  function enqueueMessageOptimistically(content: string, mentions: ChatMention[], replyTo?: CommentEntry["replyTo"]) {
+  function enqueueMessageOptimistically(content: string, mentions: ChatMention[], replyTo?: FollowUpReplyReference) {
     if (!selectedSub) return null
     const pending: PendingFollowUpComment = {
       id: pendingFollowUpId("message"),
@@ -1798,12 +1872,7 @@ export function ProjectFollowUp({
     }
     if (content) {
       const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
-      const replyTo = replyingTo ? {
-        commentId: replyingTo.id,
-        authorId: replyingTo.authorId,
-        content: commentReplySummary(replyingTo),
-      } : undefined
-      enqueueMessageOptimistically(content, validMentions, replyTo)
+      enqueueMessageOptimistically(content, validMentions, replyingTo ?? undefined)
     }
 
     setMessage("")
@@ -2469,8 +2538,10 @@ export function ProjectFollowUp({
                                 </div>
                                 {item.pending.replyTo && (
                                   <div className="mt-1.5 block max-w-full overflow-hidden rounded-lg border border-border bg-muted/35 px-2.5 py-2 text-left text-[0.68rem]">
-                                    <span className="block truncate font-medium text-foreground/75"><MemberName member={replyAuthor} fallback="Usuário" /> · resposta</span>
-                                    <span className="mt-0.5 block truncate text-muted-foreground">{item.pending.replyTo.content || "Mensagem"}</span>
+                                    <span className="block truncate font-medium text-foreground/75">
+                                      {item.pending.replyTo.authorId ? <MemberName member={replyAuthor} fallback="Usuário" /> : followUpReplyTargetKind(item.pending.replyTo) === "log" ? "Sistema" : "Item"} · {followUpReplyLabel(item.pending.replyTo)}
+                                    </span>
+                                    <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(item.pending.replyTo)}</span>
                                   </div>
                                 )}
                                 <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
@@ -2560,6 +2631,7 @@ export function ProjectFollowUp({
                                 <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
                                 <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-0 top-8")}
@@ -2578,6 +2650,7 @@ export function ProjectFollowUp({
                                 </div>
                                 <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-1 top-9")}
@@ -2594,7 +2667,7 @@ export function ProjectFollowUp({
                             <article
                               key={item.id}
                               id={`followup-timeline-${item.id}`}
-                              onContextMenu={(event) => { event.preventDefault(); setReplyingTo(comment); messageRef.current?.focus() }}
+                              onContextMenu={(event) => { event.preventDefault(); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }}
                               className={cn(
                                 "group/message relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all hover:bg-muted/25 sm:px-3",
                                 marked && "border-primary/15 bg-primary/[0.035]",
@@ -2615,16 +2688,18 @@ export function ProjectFollowUp({
                                   <button
                                     type="button"
                                     disabled={comment.replyTo.unavailable}
-                                    onClick={() => !comment.replyTo?.unavailable && focusComment(comment.replyTo!.commentId)}
+                                    onClick={() => !comment.replyTo?.unavailable && focusReplyReference(comment.replyTo!)}
                                     className={cn(
                                       "mt-1.5 block max-w-full overflow-hidden rounded-lg border border-border bg-muted/35 px-2.5 py-2 text-left text-[0.68rem] transition-colors",
                                       comment.replyTo.unavailable ? "cursor-default opacity-60" : "hover:bg-muted/60",
                                     )}
                                   >
                                     <span className="block truncate font-medium text-foreground/75">
-                                      {comment.replyTo.unavailable ? "Mensagem original indisponível" : <><MemberName member={replyAuthor} fallback="Usuário" /> · resposta</>}
+                                      {comment.replyTo.unavailable
+                                        ? "Item original indisponível"
+                                        : <>{comment.replyTo.authorId ? <MemberName member={replyAuthor} fallback="Usuário" /> : followUpReplyTargetKind(comment.replyTo) === "log" ? "Sistema" : "Item"} · {followUpReplyLabel(comment.replyTo)}</>}
                                     </span>
-                                    {!comment.replyTo.unavailable && <span className="mt-0.5 block truncate text-muted-foreground">{comment.replyTo.content || "Mensagem"}</span>}
+                                    {!comment.replyTo.unavailable && <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(comment.replyTo)}</span>}
                                   </button>
                                 )}
                                 <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
@@ -2634,7 +2709,7 @@ export function ProjectFollowUp({
                               </div>
                               <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
-                                <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                <button type="button" onClick={() => setReplyingTo(replyReferenceFromTimelineItem(item))} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
                                 <CopyEntityLinkButton
                                   href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
@@ -2661,7 +2736,7 @@ export function ProjectFollowUp({
                                 {compactActionsItemId === item.id && (
                                   <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
-                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(comment); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); void toggleCommentMark(comment.id) }} className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
                                     <CopyEntityLinkButton
                                       href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
@@ -2699,6 +2774,7 @@ export function ProjectFollowUp({
                             </div>
                             <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/attachment:opacity-100 min-[761px]:group-focus-within/attachment:opacity-100">
                               <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                              <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
                               <CopyEntityLinkButton
                                 href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
                                 label="Copiar link do anexo"
@@ -2731,6 +2807,7 @@ export function ProjectFollowUp({
                               {compactActionsItemId === item.id && (
                                 <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
                                   <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                  <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
                                   <CopyEntityLinkButton
                                     href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
                                     label="Copiar link do anexo"
@@ -2767,8 +2844,10 @@ export function ProjectFollowUp({
                     <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.045] px-3 py-2">
                       <Reply className="size-3.5 shrink-0 text-primary" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[0.62rem] font-semibold text-primary">Respondendo a <MemberName member={members.find((member) => member.id === replyingTo.authorId)} fallback="Usuário" /></p>
-                        <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{commentReplySummary(replyingTo)}</p>
+                        <p className="text-[0.62rem] font-semibold text-primary">
+                          Respondendo a {replyingTo.authorId ? <MemberName member={members.find((member) => member.id === replyingTo.authorId)} fallback="Usuário" /> : followUpReplyTargetKind(replyingTo) === "log" ? "Sistema" : "Item"} · {followUpReplyLabel(replyingTo)}
+                        </p>
+                        <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{followUpReplySummary(replyingTo)}</p>
                       </div>
                       <button type="button" onClick={() => setReplyingTo(null)} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Cancelar resposta"><X className="size-3.5" /></button>
                     </div>

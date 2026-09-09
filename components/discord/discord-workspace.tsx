@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Settings,
+  LogOut,
   ShieldCheck,
   Sun,
   Trash2,
@@ -199,6 +200,7 @@ export function DiscordWorkspace() {
     workspaceId,
     refreshAll,
     deleteActivity,
+    signOut,
   } = useStore()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -593,10 +595,19 @@ export function DiscordWorkspace() {
             {themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}
           </button>
           <button type="button" title="Configurações" onClick={() => router.push("/config")} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Settings className="size-4" /></button>
+          <button
+            type="button"
+            title="Sair da conta"
+            aria-label="Sair da conta"
+            onClick={() => void signOut()}
+            className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <LogOut className="size-4" />
+          </button>
         </div>
       </nav>
 
-      {space !== "chat" && <aside className="hidden w-[286px] shrink-0 flex-col border-r border-border bg-card/70 md:flex">{channelSidebar}<div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-background/45 px-2.5">{currentUser && <MemberAvatar member={currentUser} className="size-8" />}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{currentUser?.name ?? "Usuário"}</p><p className="truncate text-[0.56rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : currentUserRole === "developer" ? "Desenvolvedor" : currentUserRole === "aqs" ? "AQS" : currentUserRole === "support" ? "Suporte" : "Membro"}</p></div><button type="button" onClick={toggleTheme} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"} aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}>{themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}</button><button type="button" onClick={() => router.push("/config")} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Configurações"><Settings className="size-4" /></button></div></aside>}
+      {space !== "chat" && <aside className="hidden w-[286px] shrink-0 flex-col border-r border-border bg-card/70 md:flex">{channelSidebar}<div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-background/45 px-2.5">{currentUser && <MemberAvatar member={currentUser} className="size-8" />}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{currentUser?.name ?? "Usuário"}</p><p className="truncate text-[0.56rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : currentUserRole === "developer" ? "Desenvolvedor" : currentUserRole === "aqs" ? "AQS" : currentUserRole === "support" ? "Suporte" : "Membro"}</p></div><button type="button" onClick={toggleTheme} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"} aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}>{themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}</button><button type="button" onClick={() => router.push("/config")} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Configurações"><Settings className="size-4" /></button><button type="button" onClick={() => void signOut()} className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" title="Sair da conta" aria-label="Sair da conta"><LogOut className="size-4" /></button></div></aside>}
 
       <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {space !== "chat" && <button type="button" onClick={() => setMobileChannelsOpen(true)} className="absolute left-2 top-2 z-40 flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm md:hidden" aria-label="Abrir canais"><Hash className="size-4" /></button>}

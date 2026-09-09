@@ -264,6 +264,138 @@ type TimelineItem =
 
 type ReplyableTimelineItem = Extract<TimelineItem, { kind: "comment" | "attachment" | "session" | "log" }>
 
+const MOBILE_SWIPE_REPLY_THRESHOLD = 64
+const MOBILE_SWIPE_REPLY_MAX_OFFSET = 88
+
+function MobileSwipeReply({
+  children,
+  onReply,
+  label,
+}: {
+  children: React.ReactNode
+  onReply: () => void
+  label: string
+}) {
+  const [offset, setOffset] = React.useState(0)
+  const [dragging, setDragging] = React.useState(false)
+  const startRef = React.useRef<{ x: number; y: number } | null>(null)
+  const horizontalRef = React.useRef(false)
+  const armedRef = React.useRef(false)
+  const blockClickUntilRef = React.useRef(0)
+
+  const reset = React.useCallback(() => {
+    startRef.current = null
+    horizontalRef.current = false
+    armedRef.current = false
+    setDragging(false)
+    setOffset(0)
+  }, [])
+
+  function canStart(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") return false
+    const target = event.target as HTMLElement | null
+    if (target?.closest("button, input, textarea, select, video, audio, [data-no-swipe-reply]")) return false
+    return true
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!canStart(event)) return
+    startRef.current = { x: event.clientX, y: event.clientY }
+    horizontalRef.current = false
+    armedRef.current = false
+    setDragging(true)
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const start = startRef.current
+    if (!start) return
+
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+
+    if (!horizontalRef.current) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+        reset()
+        return
+      }
+      if (dx < 0 || Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy) + 3) return
+      horizontalRef.current = true
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+    }
+
+    if (dx <= 0) {
+      setOffset(0)
+      return
+    }
+
+    event.preventDefault()
+    const resisted = dx <= MOBILE_SWIPE_REPLY_THRESHOLD
+      ? dx
+      : MOBILE_SWIPE_REPLY_THRESHOLD + (dx - MOBILE_SWIPE_REPLY_THRESHOLD) * 0.22
+    const nextOffset = Math.min(MOBILE_SWIPE_REPLY_MAX_OFFSET, resisted)
+    setOffset(nextOffset)
+
+    const armed = dx >= MOBILE_SWIPE_REPLY_THRESHOLD
+    if (armed && !armedRef.current) {
+      armedRef.current = true
+      try { navigator.vibrate?.(10) } catch {}
+    } else if (!armed) {
+      armedRef.current = false
+    }
+  }
+
+  function finishSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    if (!startRef.current) return
+    const shouldReply = horizontalRef.current && armedRef.current
+    if (horizontalRef.current) {
+      blockClickUntilRef.current = performance.now() + 350
+      try { event.currentTarget.releasePointerCapture(event.pointerId) } catch {}
+    }
+    reset()
+    if (shouldReply) onReply()
+  }
+
+  return (
+    <div
+      className="relative min-w-0"
+      style={{ touchAction: "pan-y" }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishSwipe}
+      onPointerCancel={reset}
+      onClickCapture={(event) => {
+        if (performance.now() < blockClickUntilRef.current) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      }}
+    >
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute left-2 top-1/2 z-0 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border transition-all",
+          offset >= MOBILE_SWIPE_REPLY_THRESHOLD
+            ? "scale-100 border-primary/30 bg-primary text-primary-foreground shadow-sm"
+            : "scale-90 border-primary/15 bg-primary/10 text-primary",
+        )}
+        style={{
+          opacity: Math.min(1, offset / 30),
+          transform: `translateY(-50%) scale(${0.88 + Math.min(1, offset / MOBILE_SWIPE_REPLY_THRESHOLD) * 0.12})`,
+        }}
+        title={label}
+      >
+        <Reply className="size-4" />
+      </div>
+      <div
+        className={cn("relative z-[1] min-w-0", !dragging && "transition-transform duration-200 ease-out")}
+        style={{ transform: `translate3d(${offset}px, 0, 0)`, willChange: dragging ? "transform" : undefined }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function replyReferenceFromTimelineItem(item: ReplyableTimelineItem): FollowUpReplyReference {
   if (item.kind === "comment") {
     return {
@@ -1686,6 +1818,13 @@ export function ProjectFollowUp({
     focusTimelineItem(`${kind}-${targetId}`)
   }
 
+  function beginReplyToTimelineItem(item: ReplyableTimelineItem) {
+    setCompactActionsItemId(null)
+    setReactionPickerItemId(null)
+    setReplyingTo(replyReferenceFromTimelineItem(item))
+    window.requestAnimationFrame(() => messageRef.current?.focus())
+  }
+
   async function toggleCommentMark(commentId: string) {
     const nextMarked = !markedCommentIds.has(commentId)
     const { error } = await supabase.rpc("toggle_followup_comment_mark", {
@@ -2490,7 +2629,7 @@ export function ProjectFollowUp({
 
               <div
                 ref={timelineViewportRef}
-                className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
+                className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy" }}
                 onDrop={(event) => {
                   event.preventDefault()
@@ -2625,7 +2764,8 @@ export function ProjectFollowUp({
                         if (item.kind === "session") {
                           const member = members.find((entry) => entry.id === item.authorId)
                           return (
-                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/reaction relative my-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                            <MobileSwipeReply key={item.id} label="Responder registro" onReply={() => beginReplyToTimelineItem(item)}>
+                            <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-center gap-2">
                                 <Clock3 className="size-3.5 shrink-0" />
                                 <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
@@ -2636,12 +2776,14 @@ export function ProjectFollowUp({
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-0 top-8")}
                             </div>
+                            </MobileSwipeReply>
                           )
                         }
 
                         if (item.kind === "log") {
                           return (
-                            <div id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                            <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
+                            <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-start gap-2">
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <div className="min-w-0 flex-1">
@@ -2655,6 +2797,7 @@ export function ProjectFollowUp({
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-1 top-9")}
                             </div>
+                            </MobileSwipeReply>
                           )
                         }
 
@@ -2664,8 +2807,8 @@ export function ProjectFollowUp({
                           const marked = markedCommentIds.has(comment.id)
                           const replyAuthor = comment.replyTo?.authorId ? members.find((entry) => entry.id === comment.replyTo?.authorId) : undefined
                           return (
+                            <MobileSwipeReply key={item.id} label="Responder mensagem" onReply={() => beginReplyToTimelineItem(item)}>
                             <article
-                              key={item.id}
                               id={`followup-timeline-${item.id}`}
                               onContextMenu={(event) => { event.preventDefault(); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }}
                               className={cn(
@@ -2753,11 +2896,13 @@ export function ProjectFollowUp({
                               </div>
                               {renderReactionPicker(item)}
                             </article>
+                            </MobileSwipeReply>
                           )
                         }
 
                         return (
-                          <article id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
+                          <MobileSwipeReply key={item.id} label="Responder anexo" onReply={() => beginReplyToTimelineItem(item)}>
+                          <article id={`followup-timeline-${item.id}`} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                             <div className="min-w-0 flex-1 pr-9 min-[761px]:pr-16">
                               <div className="flex min-w-0 items-baseline gap-2">
@@ -2830,6 +2975,7 @@ export function ProjectFollowUp({
                             </div>
                             {renderReactionPicker(item)}
                           </article>
+                          </MobileSwipeReply>
                         )
                       })}
                     </div>

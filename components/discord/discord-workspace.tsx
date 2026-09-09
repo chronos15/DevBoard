@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useTheme } from "next-themes"
 import {
   Archive,
   ArchiveRestore,
@@ -12,10 +13,12 @@ import {
   Inbox,
   LoaderCircle,
   MessageCircleMore,
+  Moon,
   Plus,
   Search,
   Settings,
   ShieldCheck,
+  Sun,
   Trash2,
   UsersRound,
   X,
@@ -174,6 +177,15 @@ function AqsActionBar({ review }: { review: AqsReview }) {
 }
 
 export function DiscordWorkspace() {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [themeMounted, setThemeMounted] = React.useState(false)
+
+  React.useEffect(() => setThemeMounted(true), [])
+
+  const isDarkTheme = resolvedTheme === "dark"
+  const toggleTheme = React.useCallback(() => {
+    setTheme(isDarkTheme ? "light" : "dark")
+  }, [isDarkTheme, setTheme])
   const {
     projects,
     serviceRequests,
@@ -566,11 +578,20 @@ export function DiscordWorkspace() {
           <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }) }} />
         </div>
         <div className="mt-2 flex flex-col items-center gap-2 border-t border-border pt-2">
+          <button
+            type="button"
+            title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}
+            aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}
+            onClick={toggleTheme}
+            className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          </button>
           <button type="button" title="Configurações" onClick={() => router.push("/config")} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Settings className="size-4" /></button>
         </div>
       </nav>
 
-      {space !== "chat" && <aside className="hidden w-[286px] shrink-0 flex-col border-r border-border bg-card/70 md:flex">{channelSidebar}<div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-background/45 px-2.5">{currentUser && <MemberAvatar member={currentUser} className="size-8" />}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{currentUser?.name ?? "Usuário"}</p><p className="truncate text-[0.56rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : currentUserRole === "developer" ? "Desenvolvedor" : currentUserRole === "aqs" ? "AQS" : currentUserRole === "support" ? "Suporte" : "Membro"}</p></div><button type="button" onClick={() => router.push("/config")} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Configurações"><Settings className="size-4" /></button></div></aside>}
+      {space !== "chat" && <aside className="hidden w-[286px] shrink-0 flex-col border-r border-border bg-card/70 md:flex">{channelSidebar}<div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-background/45 px-2.5">{currentUser && <MemberAvatar member={currentUser} className="size-8" />}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{currentUser?.name ?? "Usuário"}</p><p className="truncate text-[0.56rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : currentUserRole === "developer" ? "Desenvolvedor" : currentUserRole === "aqs" ? "AQS" : currentUserRole === "support" ? "Suporte" : "Membro"}</p></div><button type="button" onClick={toggleTheme} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"} aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}>{themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}</button><button type="button" onClick={() => router.push("/config")} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Configurações"><Settings className="size-4" /></button></div></aside>}
 
       <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {space !== "chat" && <button type="button" onClick={() => setMobileChannelsOpen(true)} className="absolute left-2 top-2 z-40 flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm md:hidden" aria-label="Abrir canais"><Hash className="size-4" /></button>}

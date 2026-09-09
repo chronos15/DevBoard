@@ -469,9 +469,18 @@ function PreferenceToggle({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60", checked ? "bg-primary" : "bg-muted")}
+        className={cn(
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-60",
+          checked ? "bg-primary" : "bg-muted",
+        )}
       >
-        <span className={cn("absolute top-0.5 size-5 rounded-full bg-card shadow-sm transition-transform", checked ? "translate-x-[1.375rem]" : "translate-x-0.5")} />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-5 shrink-0 rounded-full bg-background shadow-sm ring-1 ring-foreground/10 transition-transform duration-200 ease-out",
+            checked ? "translate-x-5" : "translate-x-0",
+          )}
+        />
       </button>
     </div>
   )

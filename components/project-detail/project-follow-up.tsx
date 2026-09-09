@@ -13,6 +13,7 @@ import {
   CircleAlert,
   Clock3,
   Download,
+  Ellipsis,
   FileAudio,
   FileCode2,
   FileImage,
@@ -625,6 +626,7 @@ export function ProjectFollowUp({
   const [membersCollapsed, setMembersCollapsed] = React.useState(false)
   const [reactions, setReactions] = React.useState<FollowUpReaction[]>([])
   const [reactionPickerItemId, setReactionPickerItemId] = React.useState<string | null>(null)
+  const [compactActionsItemId, setCompactActionsItemId] = React.useState<string | null>(null)
   const [reactionSavingItemId, setReactionSavingItemId] = React.useState<string | null>(null)
   const [memberRemovalTargetId, setMemberRemovalTargetId] = React.useState<string | null>(null)
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
@@ -1059,6 +1061,24 @@ export function ProjectFollowUp({
       window.removeEventListener("keydown", onKeyDown)
     }
   }, [reactionPickerItemId])
+
+  React.useEffect(() => {
+    if (!compactActionsItemId) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest?.("[data-followup-compact-actions]")) return
+      setCompactActionsItemId(null)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCompactActionsItemId(null)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [compactActionsItemId])
 
   React.useEffect(() => {
     if (!workspaceId || !currentUserId || !selectedSubId) {
@@ -2228,19 +2248,19 @@ export function ProjectFollowUp({
                 {!discordEmbedded && <Button type="button" variant="ghost" size="icon-sm" className="md:hidden" onClick={() => setMobileNavigatorOpen(true)} aria-label="Abrir atividades">
                   <Menu className="size-4" />
                 </Button>}
-                <Hash className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
+                <Hash className="hidden size-4 shrink-0 text-muted-foreground min-[761px]:block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="hidden truncate text-[0.67rem] text-muted-foreground lg:inline">{selectedActivity.title}</span>
                     <ChevronRight className="hidden size-3 shrink-0 text-muted-foreground/60 lg:block" />
-                    <strong className="truncate text-xs sm:text-sm">{selectedSub.title}</strong>
+                    <strong className="min-w-0 text-xs leading-tight sm:text-sm max-[760px]:line-clamp-2 min-[761px]:truncate">{selectedSub.title}</strong>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[0.6rem] text-muted-foreground sm:hidden">
+                  <div className="mt-0.5 flex items-center gap-2 text-[0.6rem] text-muted-foreground min-[900px]:hidden">
                     <span className={cn("size-1.5 rounded-full", selectedRunning ? "bg-success" : statusMeta[selectedSub.status].columnClassName)} />
                     <span>{statusMeta[selectedSub.status].label}</span>
                   </div>
                 </div>
-                <div className="hidden items-center gap-1.5 sm:flex">
+                <div className="hidden items-center gap-1.5 min-[900px]:flex">
                   <span className={cn("rounded-full px-2 py-1 text-[0.62rem] font-medium", statusMeta[selectedSub.status].className)}>
                     {statusMeta[selectedSub.status].label}
                   </span>
@@ -2410,15 +2430,10 @@ export function ProjectFollowUp({
                 }}
               >
                 <div className="w-full min-w-0">
-                  <div className="mb-6 border-b border-border pb-5">
-                    <div className="flex items-start gap-3">
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Hash className="size-5" /></span>
-                      <div className="min-w-0">
-                        <h2 className="break-words text-lg font-semibold">{selectedSub.title}</h2>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          Acompanhamento central da subatividade. Comentários, evidências, áudios e registros de execução aparecem aqui em ordem cronológica.
-                        </p>
-                      </div>
+                  <div className="mb-4 border-b border-border pb-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary min-[761px]:flex"><Hash className="size-5" /></span>
+                      <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
                     </div>
                   </div>
 
@@ -2591,7 +2606,7 @@ export function ProjectFollowUp({
                             >
                               <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                               <div className="min-w-0 flex-1">
-                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-28 sm:pr-32">
+                                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-9 min-[761px]:pr-32">
                                   <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                   <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                                   {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Pin className="size-3 fill-current" /> fixada</span>}
@@ -2617,7 +2632,7 @@ export function ProjectFollowUp({
                                 </p>
                                 {renderReactionSummary(item)}
                               </div>
-                              <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
+                              <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
@@ -2632,6 +2647,35 @@ export function ProjectFollowUp({
                                   </button>
                                 )}
                               </div>
+                              <div className="absolute right-2 top-2 min-[761px]:hidden" data-followup-compact-actions>
+                                <button
+                                  type="button"
+                                  onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}
+                                  className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  title="Ações da mensagem"
+                                  aria-label="Ações da mensagem"
+                                  aria-expanded={compactActionsItemId === item.id}
+                                >
+                                  <Ellipsis className="size-4" />
+                                </button>
+                                {compactActionsItemId === item.id && (
+                                  <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(comment); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); void toggleCommentMark(comment.id) }} className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>
+                                    <CopyEntityLinkButton
+                                      href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
+                                      label="Copiar link da mensagem"
+                                      className="size-8 rounded-md"
+                                    />
+                                    {canDeleteComment(comment) && (
+                                      <button type="button" disabled={deletingCommentId === comment.id} onClick={() => { setCompactActionsItemId(null); void deleteComment(comment) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
+                                        {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                               {renderReactionPicker(item)}
                             </article>
                           )
@@ -2640,7 +2684,7 @@ export function ProjectFollowUp({
                         return (
                           <article id={`followup-timeline-${item.id}`} key={item.id} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
-                            <div className="min-w-0 flex-1 pr-14 sm:pr-16">
+                            <div className="min-w-0 flex-1 pr-9 min-[761px]:pr-16">
                               <div className="flex min-w-0 items-baseline gap-2">
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
@@ -2653,7 +2697,7 @@ export function ProjectFollowUp({
                               />
                               {renderReactionSummary(item)}
                             </div>
-                            <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/attachment:opacity-100 sm:group-focus-within/attachment:opacity-100">
+                            <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/attachment:opacity-100 min-[761px]:group-focus-within/attachment:opacity-100">
                               <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                               <CopyEntityLinkButton
                                 href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
@@ -2671,6 +2715,40 @@ export function ProjectFollowUp({
                                 >
                                   {deletingAttachmentId === item.attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                                 </button>
+                              )}
+                            </div>
+                            <div className="absolute right-2 top-2 min-[761px]:hidden" data-followup-compact-actions>
+                              <button
+                                type="button"
+                                onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}
+                                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                                title="Ações do anexo"
+                                aria-label="Ações do anexo"
+                                aria-expanded={compactActionsItemId === item.id}
+                              >
+                                <Ellipsis className="size-4" />
+                              </button>
+                              {compactActionsItemId === item.id && (
+                                <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
+                                  <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                  <CopyEntityLinkButton
+                                    href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
+                                    label="Copiar link do anexo"
+                                    className="size-8 rounded-md"
+                                  />
+                                  {canDeleteAttachment(item.attachment) && (
+                                    <button
+                                      type="button"
+                                      disabled={deletingAttachmentId === item.attachment.id}
+                                      onClick={() => { setCompactActionsItemId(null); void deleteAttachment(item.attachment) }}
+                                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                      title={currentUserRole === "admin" ? "Excluir anexo" : "Excluir anexo (até 30 min)"}
+                                      aria-label="Excluir anexo"
+                                    >
+                                      {deletingAttachmentId === item.attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
                             {renderReactionPicker(item)}

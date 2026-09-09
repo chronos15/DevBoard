@@ -119,6 +119,35 @@ export function Sidebar({
         : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
     )
 
+  if (focused) {
+    const focusedItemClass = (active: boolean) => cn(
+      "group relative flex size-11 items-center justify-center rounded-[18px] transition-all",
+      active
+        ? "bg-primary text-primary-foreground shadow-sm"
+        : "text-sidebar-foreground/70 hover:rounded-[14px] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+    )
+
+    return (
+      <>
+        <aside className="sticky top-0 z-50 flex h-dvh w-[72px] shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3 text-sidebar-foreground">
+          <Link href="/" onClick={onClose} title="Início" className="mb-4 flex size-12 items-center justify-center rounded-2xl">
+            <DevboardLogo className="size-10" priority />
+          </Link>
+          <Link href="/" onClick={onClose} title="Início" aria-label="Início" className={focusedItemClass(pathname === "/")}>
+            <LayoutDashboard className="size-5" />
+            {pathname === "/" && <span className="absolute -left-[13px] h-8 w-1 rounded-r-full bg-primary" />}
+          </Link>
+          <div className="mt-auto flex flex-col items-center gap-2">
+            <Link href="/config" onClick={onClose} title="Configurações" aria-label="Configurações" className={focusedItemClass(pathname.startsWith("/config"))}>
+              <Settings className="size-5" />
+              {pathname.startsWith("/config") && <span className="absolute -left-[13px] h-8 w-1 rounded-r-full bg-primary" />}
+            </Link>
+          </div>
+        </aside>
+      </>
+    )
+  }
+
   const focusedNav = [
     { href: "/", label: "Início", icon: LayoutDashboard, active: pathname === "/" },
     { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, active: pathname.startsWith("/acompanhamento") && !mineOnly },

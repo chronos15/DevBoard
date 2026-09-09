@@ -946,7 +946,7 @@ function AppearanceSection() {
           <div className="min-w-0">
             <p className="text-sm font-semibold">Interface</p>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Escolha quanto da estrutura do Devboard você quer ver no dia a dia. A alteração vale somente para a sua conta e não muda projetos, permissões ou dados.
+              Escolha a experiência do Devboard para a sua conta. O Modo Discord muda apenas a navegação e a apresentação: projetos, permissões e dados continuam exatamente os mesmos.
             </p>
           </div>
         </div>
@@ -971,11 +971,11 @@ function AppearanceSection() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2 text-sm font-semibold">
-                Focada
+                Discord
                 {draft.interfaceMode === "focused" && <Check className="size-4 text-primary" />}
               </span>
               <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
-                Navegação reduzida, projetos como atalhos de acompanhamento e uma Home voltada ao que precisa da sua atenção agora.
+                Experiência em canais: projetos como servidores, subatividades como canais, solicitações/AQS integradas e conversa como centro do trabalho.
               </span>
             </span>
           </button>

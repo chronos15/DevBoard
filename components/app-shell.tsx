@@ -57,12 +57,22 @@ function AccessDenied({ role }: { role: AccessRole }) {
 const BARE_ROUTES = ["/login"]
 
 function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.ReactNode; menuOpen: boolean; setMenuOpen: React.Dispatch<React.SetStateAction<boolean>> }) {
-  const { hydrated, currentUserRole } = useStore()
+  const { hydrated, currentUserRole, preferences, aqsReviews } = useStore()
   const pathname = usePathname()
   const router = useRouter()
 
   React.useEffect(() => {
     function navigateToFollowUp(detail: FollowUpOpenDetail = {}) {
+      if (preferences.interfaceMode === "focused") {
+        const params = new URLSearchParams()
+        params.set("space", "project")
+        if (detail.projectId) params.set("project", detail.projectId)
+        if (detail.activityId) params.set("activity", detail.activityId)
+        if (detail.subactivityId) params.set("sub", detail.subactivityId)
+        if (detail.timelineId) params.set("focus", detail.timelineId)
+        router.push(`/?${params.toString()}`)
+        return
+      }
       router.push(followUpHref(detail))
     }
 
@@ -92,7 +102,47 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
       window.removeEventListener(OPEN_FOLLOW_UP_EVENT, onOpenFollowUp)
       window.removeEventListener("keydown", onFollowUpShortcut)
     }
-  }, [router])
+  }, [preferences.interfaceMode, router])
+
+  React.useEffect(() => {
+    if (!hydrated || preferences.interfaceMode !== "focused") return
+    const currentPath = window.location.pathname
+    if (currentPath === "/" || currentPath.startsWith("/config") || currentPath.startsWith("/compartilhar")) return
+
+    const currentSearch = new URLSearchParams(window.location.search)
+    let target = "/"
+
+    if (currentPath.startsWith("/acompanhamento")) {
+      const params = new URLSearchParams(currentSearch)
+      params.set("space", "project")
+      params.delete("mine")
+      target = `/?${params.toString()}`
+    } else if (currentPath.startsWith("/minhas-tarefas")) {
+      target = "/?space=project"
+    } else if (currentPath.startsWith("/chat")) {
+      target = "/?space=chat"
+    } else if (currentPath.startsWith("/solicitacoes/")) {
+      const requestId = currentPath.split("/").filter(Boolean)[1]
+      target = requestId ? `/?space=requests&request=${encodeURIComponent(requestId)}` : "/?space=requests"
+    } else if (currentPath.startsWith("/solicitacoes")) {
+      target = "/?space=requests"
+    } else if (currentPath.startsWith("/analise")) {
+      const subId = currentSearch.get("sub")
+      const review = subId ? aqsReviews.find((item) => item.subactivityId === subId) : null
+      target = review
+        ? `/?space=aqs&review=${encodeURIComponent(review.id)}&project=${encodeURIComponent(review.projectId)}&activity=${encodeURIComponent(review.activityId)}&sub=${encodeURIComponent(review.subactivityId)}`
+        : "/?space=aqs"
+    } else {
+      const projectMatch = currentPath.match(/^\/projetos\/([^/]+)/)
+      if (projectMatch) {
+        const hash = window.location.hash
+        const subId = hash.startsWith("#sub-") ? hash.slice(5) : null
+        target = `/?space=project&project=${encodeURIComponent(projectMatch[1])}${subId ? `&sub=${encodeURIComponent(subId)}` : ""}`
+      }
+    }
+
+    router.replace(target)
+  }, [aqsReviews, hydrated, pathname, preferences.interfaceMode, router])
 
   React.useEffect(() => {
     if (!hydrated || currentUserRole !== "developer") return
@@ -122,7 +172,8 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
   const myTasksPage = pathname.startsWith("/minhas-tarefas")
   const requestsPage = pathname.startsWith("/solicitacoes")
   const analysisPage = pathname.startsWith("/analise")
-  const fullHeightWorkspace = followUpPage || myTasksPage || requestsPage || analysisPage
+  const focusedHome = preferences.interfaceMode === "focused" && pathname === "/"
+  const fullHeightWorkspace = focusedHome || followUpPage || myTasksPage || requestsPage || analysisPage
 
   if (sharePage) {
     return (
@@ -140,7 +191,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     )}>
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col">
-        <Topbar onMenu={() => setMenuOpen(true)} />
+        {preferences.interfaceMode === "complete" && <Topbar onMenu={() => setMenuOpen(true)} />}
         <main className={cn(
           "min-w-0 max-w-full flex-1",
           fullHeightWorkspace

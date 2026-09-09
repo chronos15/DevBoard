@@ -526,6 +526,7 @@ export function ProjectFollowUp({
   initialSubactivityId,
   initialTimelineId,
   onProjectChange,
+  discordEmbedded = false,
 }: {
   project: Project
   availableProjects?: Project[]
@@ -535,6 +536,7 @@ export function ProjectFollowUp({
   initialSubactivityId?: string | null
   initialTimelineId?: string | null
   onProjectChange?: (projectId: string, subactivityId?: string | null, timelineId?: string | null, activityId?: string | null) => void
+  discordEmbedded?: boolean
 }) {
   const {
     projects,
@@ -628,6 +630,10 @@ export function ProjectFollowUp({
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
+    if (discordEmbedded) {
+      setMembersCollapsed(false)
+      return
+    }
     try {
       const storedWidth = Number(window.localStorage.getItem("devboard:followup:navigator-width"))
       if (Number.isFinite(storedWidth) && storedWidth > 0) {
@@ -637,7 +643,7 @@ export function ProjectFollowUp({
     } catch {
       // Prefer a stable default when storage is unavailable.
     }
-  }, [])
+  }, [discordEmbedded])
 
   const setMembersPanelCollapsed = React.useCallback((collapsed: boolean) => {
     setMembersCollapsed(collapsed)
@@ -2191,7 +2197,7 @@ export function ProjectFollowUp({
           </div>
         </nav>}
 
-        <aside
+        {!discordEmbedded && <aside
           className="relative hidden min-h-0 shrink-0 flex-col border-r border-border bg-muted/20 md:flex"
           style={{ width: navigatorWidth }}
         >
@@ -2213,15 +2219,15 @@ export function ProjectFollowUp({
               <GripVertical className="size-3 -translate-x-[1px] text-muted-foreground" />
             </span>
           </div>
-        </aside>
+        </aside>}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background/55">
           {selectedSub && selectedActivity ? (
             <>
               <header className="flex min-h-12 min-w-0 items-center gap-2 border-b border-border bg-card/90 px-2.5 py-2 backdrop-blur sm:px-3">
-                <Button type="button" variant="ghost" size="icon-sm" className="md:hidden" onClick={() => setMobileNavigatorOpen(true)} aria-label="Abrir atividades">
+                {!discordEmbedded && <Button type="button" variant="ghost" size="icon-sm" className="md:hidden" onClick={() => setMobileNavigatorOpen(true)} aria-label="Abrir atividades">
                   <Menu className="size-4" />
-                </Button>
+                </Button>}
                 <Hash className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -2848,7 +2854,7 @@ export function ProjectFollowUp({
               <Hash className="size-7 text-muted-foreground/45" />
               <p className="mt-3 text-sm font-medium">Selecione uma subatividade</p>
               <p className="mt-1 max-w-sm text-xs text-muted-foreground">Escolha uma subatividade no painel lateral para abrir o acompanhamento.</p>
-              <Button type="button" variant="outline" size="sm" className="mt-4 md:hidden" onClick={() => setMobileNavigatorOpen(true)}>Abrir atividades</Button>
+              {!discordEmbedded && <Button type="button" variant="outline" size="sm" className="mt-4 md:hidden" onClick={() => setMobileNavigatorOpen(true)}>Abrir atividades</Button>}
             </div>
           )}
         </main>

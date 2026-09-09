@@ -522,7 +522,7 @@ export function DeveloperPanel() {
     setNotificationPermission(permission)
     if (permission === "granted") {
       try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register(SW_PATH) } catch { /* fallback Notification ainda funciona */ }
-      void browserNotification("Notificações ativadas", "O Devboard poderá avisar sobre fim do expediente, hidratação e blocos de foco.", "devboard-developer-enabled")
+      void browserNotification("Notificações ativadas", "O TaskBoard poderá avisar sobre fim do expediente, hidratação e blocos de foco.", "devboard-developer-enabled")
     }
   }
 
@@ -637,7 +637,7 @@ export function DeveloperPanel() {
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive"><AlertTriangle className="size-4" /></span>
           <div className="min-w-0">
             <h2 className="font-semibold">Painel do desenvolvedor indisponível</h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Este recurso ainda não foi habilitado no ambiente atual. Atualize a instalação do Devboard e tente novamente.</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Este recurso ainda não foi habilitado no ambiente atual. Atualize a instalação do TaskBoard e tente novamente.</p>
           </div>
         </div>
       </Surface>
@@ -721,7 +721,7 @@ export function DeveloperPanel() {
                   </div>
                 </div>
                 <div className="min-w-0 flex-1 lg:max-w-md">
-                  <Toggle checked={settings.notifyShiftEnd} onChange={(value) => setSettings((current) => ({ ...current, notifyShiftEnd: value }))} label="Avisar quando o expediente terminar" description="Envia uma notificação do navegador no horário configurado, mesmo se você estiver em outra tela do Devboard." />
+                  <Toggle checked={settings.notifyShiftEnd} onChange={(value) => setSettings((current) => ({ ...current, notifyShiftEnd: value }))} label="Avisar quando o expediente terminar" description="Envia uma notificação do navegador no horário configurado, mesmo se você estiver em outra tela do TaskBoard." />
                 </div>
               </div>
             </div>

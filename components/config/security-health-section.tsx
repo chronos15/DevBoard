@@ -39,7 +39,7 @@ export function SecurityHealthSection() {
     setError(null)
     const { data, error: rpcError } = await supabase.rpc("devboard_security_health")
     if (rpcError) {
-      console.error("[Devboard/Segurança]", rpcError)
+      console.error("[TaskBoard/Segurança]", rpcError)
       setError(toUserFacingError(rpcError, "Não foi possível executar o diagnóstico de segurança"))
       setLoading(false)
       return

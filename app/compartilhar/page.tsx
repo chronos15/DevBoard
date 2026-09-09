@@ -322,7 +322,7 @@ export default function ShareToDevboardPage() {
       setPayload(metadata)
       setIncludeText(Boolean(textEvidence(metadata)))
       setWarning(fileNames.length
-        ? `O Chrome ainda estava usando a versão anterior do PWA e não conseguiu preservar ${fileNames.length === 1 ? `o arquivo “${fileNames[0]}”` : "os arquivos recebidos"}. O Devboard já atualizou o receptor; compartilhe novamente.`
+        ? `O Chrome ainda estava usando a versão anterior do PWA e não conseguiu preservar ${fileNames.length === 1 ? `o arquivo “${fileNames[0]}”` : "os arquivos recebidos"}. O TaskBoard já atualizou o receptor; compartilhe novamente.`
         : "O receptor do PWA acabou de ser atualizado. Os próximos compartilhamentos já serão preservados localmente antes da escolha do destino.")
     } else if (params.get("erro") === "recebimento") {
       setError("Não foi possível receber este compartilhamento. Tente compartilhar novamente pelo Chrome.")
@@ -525,7 +525,7 @@ export default function ShareToDevboardPage() {
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
       setSuccess(true)
     } catch (cause) {
-      console.error("[Devboard/PWA Share] Falha ao preparar evidências", cause)
+      console.error("[TaskBoard/PWA Share] Falha ao preparar evidências", cause)
       setError(cause instanceof Error
         ? cause.message
         : "Não foi possível preparar um dos arquivos compartilhados.")
@@ -605,7 +605,7 @@ export default function ShareToDevboardPage() {
           </button>
           <DevboardLogo className="size-8 shrink-0" priority />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Compartilhar no Devboard</h1>
+            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Compartilhar no TaskBoard</h1>
             <p className="truncate text-[0.68rem] text-muted-foreground">Recebido pelo PWA · Chrome Android</p>
           </div>
           <span className="hidden items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[0.65rem] font-semibold text-muted-foreground sm:flex">
@@ -686,7 +686,7 @@ export default function ShareToDevboardPage() {
               <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
                 <Paperclip className="mx-auto size-5 text-muted-foreground" />
                 <p className="mt-2 text-sm font-semibold">Nenhuma evidência recebida</p>
-                <p className="mt-1 text-xs text-muted-foreground">Abra uma foto, arquivo ou link em outro aplicativo e escolha Compartilhar → Devboard.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Abra uma foto, arquivo ou link em outro aplicativo e escolha Compartilhar → TaskBoard.</p>
               </div>
             )}
           </div>
@@ -700,7 +700,7 @@ export default function ShareToDevboardPage() {
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold">Onde enviar?</h2>
               <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
-                Primeiro escolha o contexto. Depois o Devboard mostra somente os destinos disponíveis para você.
+                Primeiro escolha o contexto. Depois o TaskBoard mostra somente os destinos disponíveis para você.
               </p>
             </div>
           </div>

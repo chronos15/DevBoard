@@ -251,7 +251,7 @@ function ParticipantTile({
       webAudioRef.current = { source, gain, trackId: audioTrack.id }
       return true
     } catch (error) {
-      console.warn("Devboard: Web Audio não conseguiu reproduzir a track remota", error)
+      console.warn("TaskBoard: Web Audio não conseguiu reproduzir a track remota", error)
       return false
     }
   }, [deafened, disconnectWebAudio, own, remoteStream])
@@ -403,7 +403,7 @@ function ParticipantTile({
       if (document.fullscreenElement === tile) await document.exitFullscreen()
       else if (tile.requestFullscreen) await tile.requestFullscreen()
     } catch (error) {
-      console.warn("Devboard: não foi possível alternar tela cheia", error)
+      console.warn("TaskBoard: não foi possível alternar tela cheia", error)
     }
   }, [])
 
@@ -836,7 +836,7 @@ export function CallRoom({
       })
       return result === "ok"
     } catch (error) {
-      console.warn("Devboard: falha ao enviar sinal do compartilhamento Android", error)
+      console.warn("TaskBoard: falha ao enviar sinal do compartilhamento Android", error)
       return false
     }
   }, [meeting?.id])
@@ -933,7 +933,7 @@ export function CallRoom({
             })
           }
         } catch (error) {
-          console.warn("Devboard: não foi possível receber a tela nativa Android", error)
+          console.warn("TaskBoard: não foi possível receber a tela nativa Android", error)
           closeNativeScreenPeer(signal.fromSession)
         }
       })()
@@ -966,11 +966,11 @@ export function CallRoom({
     const videoTrack = screenStreamRef.current?.getVideoTracks()[0] ?? localStreamRef.current?.getVideoTracks()[0] ?? null
     peerSendersRef.current.forEach((senders, remoteSession) => {
       void senders.audio.replaceTrack(audioTrack).catch((error) => {
-        console.warn("Devboard: não foi possível substituir a track de áudio", remoteSession, error)
+        console.warn("TaskBoard: não foi possível substituir a track de áudio", remoteSession, error)
         setMediaError("O navegador não conseguiu sincronizar o microfone com um participante.")
       })
       void senders.video.replaceTrack(videoTrack).catch((error) => {
-        console.warn("Devboard: não foi possível substituir a track de vídeo", remoteSession, error)
+        console.warn("TaskBoard: não foi possível substituir a track de vídeo", remoteSession, error)
         setMediaError("O navegador não conseguiu sincronizar a câmera com um participante.")
       })
     })
@@ -1009,7 +1009,7 @@ export function CallRoom({
       .catch(() => undefined)
       .then(task)
       .catch((error) => {
-        console.warn("Devboard: fila de sinalização WebRTC falhou", sessionId, error)
+        console.warn("TaskBoard: fila de sinalização WebRTC falhou", sessionId, error)
       })
       .finally(() => {
         if (signalQueuesRef.current.get(sessionId) === next) signalQueuesRef.current.delete(sessionId)
@@ -1109,7 +1109,7 @@ export function CallRoom({
       try {
         await peer.addIceCandidate(candidate)
       } catch (error) {
-        console.warn("Devboard: ICE candidate rejeitado após remoteDescription", error)
+        console.warn("TaskBoard: ICE candidate rejeitado após remoteDescription", error)
       }
     }
   }, [])
@@ -1168,7 +1168,7 @@ export function CallRoom({
     ])
     const failed = results.some((result) => result.status === "rejected")
     if (failed) {
-      console.warn("Devboard: não foi possível vincular todas as tracks locais ao peer", remoteSession, results)
+      console.warn("TaskBoard: não foi possível vincular todas as tracks locais ao peer", remoteSession, results)
       setMediaError("Não foi possível sincronizar um dos dispositivos com a chamada. Tentando manter a conexão ativa.")
     }
     return true
@@ -1191,8 +1191,8 @@ export function CallRoom({
       const sent = await postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
       if (sent) role.initialOfferSent = true
     } catch (error) {
-      console.warn("Devboard: falha ao criar oferta determinística WebRTC", error)
-      setMediaError("Não foi possível conectar o áudio e o vídeo com um participante. O Devboard tentará novamente.")
+      console.warn("TaskBoard: falha ao criar oferta determinística WebRTC", error)
+      setMediaError("Não foi possível conectar o áudio e o vídeo com um participante. O TaskBoard tentará novamente.")
       role.restartPending = true
     } finally {
       role.offerInFlight = false
@@ -1279,7 +1279,7 @@ export function CallRoom({
     }
 
     peer.onicecandidateerror = (event) => {
-      console.warn("Devboard: erro ICE", event)
+      console.warn("TaskBoard: erro ICE", event)
     }
 
     peer.oniceconnectionstatechange = () => {
@@ -1306,7 +1306,7 @@ export function CallRoom({
         restartTimersRef.current.set(remoteSession, timer)
       } else if (state === "failed") {
         setMediaError(
-          "A conexão de áudio e vídeo foi interrompida. O Devboard está tentando restabelecer a reunião automaticamente.",
+          "A conexão de áudio e vídeo foi interrompida. O TaskBoard está tentando restabelecer a reunião automaticamente.",
         )
         requestIceRestart(remoteSession, peer)
       } else if (state === "closed") {
@@ -1503,7 +1503,7 @@ export function CallRoom({
         }, 15_000)
       } catch (error) {
         if (disposed) return
-        console.warn("Devboard: gravação automática indisponível", error)
+        console.warn("TaskBoard: gravação automática indisponível", error)
         const message = toUserFacingError(error, "Não foi possível iniciar a gravação automática desta reunião")
         if (recordingContextRef.current?.canRecord && meeting) {
           try { await supabase.rpc("meeting_recording_mark_failed", { p_meeting_id: meeting.id, p_error: message }) } catch {}
@@ -1749,7 +1749,7 @@ export function CallRoom({
             } catch (error) {
               // Em ICE restart o candidate novo pode chegar alguns ms antes do novo SDP.
               // Mantém na fila e tenta novamente assim que setRemoteDescription finalizar.
-              console.warn("Devboard: ICE candidate aguardará a próxima remoteDescription", error)
+              console.warn("TaskBoard: ICE candidate aguardará a próxima remoteDescription", error)
               const queue = pendingIceRef.current.get(signal.fromSession) ?? []
               queue.push(signal.candidate)
               pendingIceRef.current.set(signal.fromSession, queue)
@@ -1761,9 +1761,9 @@ export function CallRoom({
             if (role.offerer) void sendOffer(signal.fromSession, peer, true)
           }
         } catch (error) {
-          console.warn("Devboard: falha ao processar sinal WebRTC", signal.type, error)
+          console.warn("TaskBoard: falha ao processar sinal WebRTC", signal.type, error)
           if (peer.connectionState !== "connected") {
-            setMediaError("A conexão de áudio e vídeo encontrou um problema. O Devboard tentará restabelecê-la.")
+            setMediaError("A conexão de áudio e vídeo encontrou um problema. O TaskBoard tentará restabelecê-la.")
           }
         }
       })
@@ -1815,12 +1815,12 @@ export function CallRoom({
                 })
               }, 900)
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-              console.warn("Devboard: Realtime channel", status, error)
+              console.warn("TaskBoard: Realtime channel", status, error)
               setMediaError("A sala em tempo real está reconectando. A mídia atual será preservada enquanto possível.")
             }
           })
       } catch (error) {
-        console.error("Devboard: não foi possível preparar a sala WebRTC", error)
+        console.error("TaskBoard: não foi possível preparar a sala WebRTC", error)
         if (!disposed) setMediaError("Não foi possível preparar a conexão em tempo real da chamada.")
       }
     })()
@@ -2013,7 +2013,7 @@ export function CallRoom({
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotAllowedError") return
-      console.warn("Devboard: falha ao iniciar compartilhamento de tela", error)
+      console.warn("TaskBoard: falha ao iniciar compartilhamento de tela", error)
       setMediaError("Não foi possível iniciar o compartilhamento de tela neste dispositivo.")
     }
   }
@@ -2309,7 +2309,7 @@ export function CallRoom({
         void refreshAll()
         return true
       } catch (error) {
-        console.error("Devboard: falha ao finalizar gravação da reunião", error)
+        console.error("TaskBoard: falha ao finalizar gravação da reunião", error)
         for (const item of uploaded) {
           await supabase.storage.from(item.bucket).remove([item.path]).catch(() => undefined)
         }

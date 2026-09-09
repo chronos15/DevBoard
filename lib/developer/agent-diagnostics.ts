@@ -53,7 +53,7 @@ export async function getDeveloperAgentDiagnostics(): Promise<DeveloperAgentDiag
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new DeveloperAgentDiagnosticsError(
-        String(payload?.error || `Devboard Agent respondeu ${response.status}.`),
+        String(payload?.error || `TaskBoard Agent respondeu ${response.status}.`),
         { code: payload?.code, status: response.status },
       )
     }

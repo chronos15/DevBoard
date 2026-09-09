@@ -1,16 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { BellRing, X } from "lucide-react"
+import { BellRing } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
+import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
 
 const SW_PATH = "/devboard-sw.js"
 
 export function BrowserNotifications() {
   const { hydrated, notifications, chatMeetings, members, currentUserId } = useStore()
   const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("unsupported")
-  const [dismissed, setDismissed] = React.useState(false)
+  const [dismissed, setDismissed] = React.useState(true)
   const registrationRef = React.useRef<ServiceWorkerRegistration | null>(null)
   const shownRef = React.useRef(new Set<string>())
 
@@ -28,6 +29,20 @@ export function BrowserNotifications() {
   }, [])
 
   React.useEffect(() => {
+    if (!hydrated || !currentUserId || typeof window === "undefined") return
+    setDismissed(isBrowserNotificationPromptDismissed(currentUserId))
+
+    const handlePreference = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; dismissed?: boolean }>).detail
+      if (!detail || detail.userId !== currentUserId) return
+      setDismissed(Boolean(detail.dismissed))
+      if ("Notification" in window) setPermission(Notification.permission)
+    }
+    window.addEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, handlePreference)
+    return () => window.removeEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, handlePreference)
+  }, [currentUserId, hydrated])
+
+  React.useEffect(() => {
     if (!hydrated || permission !== "granted") return
 
     const pending = notifications
@@ -43,7 +58,7 @@ export function BrowserNotifications() {
 
       const caller = members.find((member) => member.id === notification.actorId)
       const title = meeting.mode === "video" ? "Chamada de vídeo recebida" : "Chamada de áudio recebida"
-      const body = `${caller?.name ?? "Um usuário"} está chamando você${meeting.title ? ` · ${meeting.title}` : ""}. Abra o Devboard para atender.`
+      const body = `${caller?.name ?? "Um usuário"} está chamando você${meeting.title ? ` · ${meeting.title}` : ""}. Abra o TaskBoard para atender.`
       const options: NotificationOptions = {
         body,
         icon: "/devboard-icon-192.png",
@@ -161,7 +176,19 @@ export function BrowserNotifications() {
     if (!("Notification" in window)) return
     const next = await Notification.requestPermission()
     setPermission(next)
-    setDismissed(next !== "granted")
+    if (next === "granted") {
+      resetBrowserNotificationPrompt(currentUserId)
+      setDismissed(false)
+      return
+    }
+    // Se o usuário fechar/recusar o prompt nativo, não insistimos a cada refresh.
+    dismissBrowserNotificationPrompt(currentUserId)
+    setDismissed(true)
+  }
+
+  function ignore() {
+    dismissBrowserNotificationPrompt(currentUserId)
+    setDismissed(true)
   }
 
   if (!hydrated || permission !== "default" || dismissed) return null
@@ -175,20 +202,17 @@ export function BrowserNotifications() {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold">Ativar notificações do navegador</p>
           <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">
-            Permita notificações para receber chamadas, mensagens, anexos, mudanças de status e menções dos itens que você acompanha, mesmo com o Devboard em segundo plano.
+            Permita notificações para receber chamadas, mensagens, anexos, mudanças de status e menções dos itens que você acompanha, mesmo com o TaskBoard em segundo plano.
           </p>
-          <Button type="button" size="sm" className="mt-2 h-8" onClick={() => void enable()}>
-            Ativar notificações
-          </Button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" className="h-8" onClick={() => void enable()}>
+              Ativar notificações
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-muted-foreground" onClick={ignore}>
+              Agora não
+            </Button>
+          </div>
         </div>
-        <button
-          type="button"
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => setDismissed(true)}
-          aria-label="Agora não"
-        >
-          <X className="size-3.5" />
-        </button>
       </div>
     </div>
   )

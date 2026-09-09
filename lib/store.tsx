@@ -98,7 +98,7 @@ const REQUEST_TABLES = new Set(["service_requests", "service_request_participant
 const REQUEST_UNIT_TABLES = new Set(["service_request_units"])
 
 const REALTIME_CONNECTION_ERROR =
-  "A conexão em tempo real foi interrompida. O Devboard continuará tentando reconectar automaticamente."
+  "A conexão em tempo real foi interrompida. O TaskBoard continuará tentando reconectar automaticamente."
 
 const REALTIME_RECONNECT_DELAYS = [800, 1500, 3000, 5000, 8000, 12000, 18000, 30000] as const
 
@@ -448,7 +448,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const fail = React.useCallback((error: unknown, fallback: string) => {
     const message = toUserFacingError(error, fallback)
-    console.error("[Devboard/Supabase]", error)
+    console.error("[TaskBoard/Supabase]", error)
     setLastError(message)
     return message
   }, [])
@@ -645,7 +645,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         })
         .finally(() => setChatHydrated(true))
     } catch (error) {
-      fail(error, "Não foi possível carregar os dados do Devboard")
+      fail(error, "Não foi possível carregar os dados do TaskBoard")
       setRefreshing(false)
       setHydrated(true)
       setChatHydrated(true)
@@ -773,7 +773,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       try {
         await supabase.removeChannel(current)
       } catch (error) {
-        console.warn("[Devboard/Realtime] Falha ao remover canal antigo:", error)
+        console.warn("[TaskBoard/Realtime] Falha ao remover canal antigo:", error)
       }
     }
 
@@ -795,7 +795,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // JWT antes de recriar o canal para evitar loop de CHANNEL_ERROR.
         await supabase.realtime.setAuth()
       } catch (error) {
-        console.warn("[Devboard/Realtime] Não foi possível atualizar a autenticação do Realtime:", error)
+        console.warn("[TaskBoard/Realtime] Não foi possível atualizar a autenticação do Realtime:", error)
       }
 
       if (disposed) return
@@ -934,7 +934,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
           const tracked = await channel.track(currentPayload())
           if (tracked !== "ok") {
-            console.warn("[Devboard/Presence] Não foi possível publicar o status online:", tracked)
+            console.warn("[TaskBoard/Presence] Não foi possível publicar o status online:", tracked)
           }
           return
         }
@@ -1314,7 +1314,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const removeProjectIconImage = React.useCallback(async (path?: string | null) => {
     if (!path) return
     const { error } = await supabase.storage.from(PROJECT_ICONS_BUCKET).remove([path])
-    if (error) console.warn("[Devboard/ProjectIcon] Não foi possível remover a imagem anterior do projeto.", error)
+    if (error) console.warn("[TaskBoard/ProjectIcon] Não foi possível remover a imagem anterior do projeto.", error)
   }, [supabase])
 
   const addProject = React.useCallback<StoreContextValue["addProject"]>(async (data, visual) => {
@@ -1460,7 +1460,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // O acompanhamento usa entrega otimista. Falhas aparecem no próprio item
       // da timeline, então não devemos abrir o banner global de sincronização.
-      console.error("[Devboard/Acompanhamento] Falha ao entregar mensagem", error)
+      console.error("[TaskBoard/Acompanhamento] Falha ao entregar mensagem", error)
       return false
     }
   }, [refreshProjects, refreshServiceRequests, supabase])
@@ -1554,7 +1554,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return true
     } catch (error) {
       if (options?.silent) {
-        console.error("[Devboard/Acompanhamento] Falha ao entregar anexo", error)
+        console.error("[TaskBoard/Acompanhamento] Falha ao entregar anexo", error)
       } else {
         fail(error, "Não foi possível enviar o anexo")
       }
@@ -1729,7 +1729,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Erro de envio de chat é mostrado na própria mensagem, evitando snackbar/global error
       // e permitindo retry sem perder o texto digitado.
-      console.error("[Devboard/Chat] Falha ao entregar mensagem", error)
+      console.error("[TaskBoard/Chat] Falha ao entregar mensagem", error)
       setChatConversations((current) => current.map((conversation) => conversation.id === conversationId
         ? {
             ...conversation,
@@ -1982,7 +1982,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const heartbeatMeeting = React.useCallback(async (meetingId: string) => {
     const { error } = await supabase.rpc("heartbeat_meeting", { p_meeting_id: meetingId })
     if (error) {
-      console.warn("[Devboard/Meeting] Falha no heartbeat da reunião", error)
+      console.warn("[TaskBoard/Meeting] Falha no heartbeat da reunião", error)
       return false
     }
     return true
@@ -2010,7 +2010,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const { error } = await query
     if (error) {
-      console.warn("[Devboard/Acompanhamento] Não foi possível atualizar a leitura", error)
+      console.warn("[TaskBoard/Acompanhamento] Não foi possível atualizar a leitura", error)
       return
     }
 
@@ -2076,7 +2076,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (shouldDeletePreviousAvatar && previousAvatarPath) {
         const { error: cleanupError } = await supabase.storage.from(AVATARS_BUCKET).remove([previousAvatarPath])
         if (cleanupError) {
-          console.warn("[Devboard/Profile] Perfil atualizado, mas a foto anterior não pôde ser removida do Storage.", cleanupError)
+          console.warn("[TaskBoard/Profile] Perfil atualizado, mas a foto anterior não pôde ser removida do Storage.", cleanupError)
         }
       }
 
@@ -2088,7 +2088,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (uploadedAvatarPath) {
         const { error: cleanupError } = await supabase.storage.from(AVATARS_BUCKET).remove([uploadedAvatarPath])
         if (cleanupError) {
-          console.warn("[Devboard/Profile] Não foi possível limpar o avatar enviado após falha no perfil.", cleanupError)
+          console.warn("[TaskBoard/Profile] Não foi possível limpar o avatar enviado após falha no perfil.", cleanupError)
         }
       }
       fail(error, "Não foi possível atualizar seu perfil")
@@ -2317,7 +2317,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const removeServiceRequestUnitImage = React.useCallback(async (path?: string | null) => {
     if (!path) return
     const { error } = await supabase.storage.from(SERVICE_REQUEST_UNIT_ICONS_BUCKET).remove([path])
-    if (error) console.warn("[Devboard/RequestUnit] Não foi possível remover a imagem anterior da unidade.", error)
+    if (error) console.warn("[TaskBoard/RequestUnit] Não foi possível remover a imagem anterior da unidade.", error)
   }, [supabase])
 
   const createServiceRequestUnit = React.useCallback<StoreContextValue["createServiceRequestUnit"]>(async (name, visual) => {

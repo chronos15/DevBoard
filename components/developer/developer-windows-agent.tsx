@@ -79,7 +79,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
     if (error) {
       const missing = /developer_agent_status|function .* does not exist|schema cache/i.test(error.message ?? "")
       setBackendMissing(missing)
-      if (!silent && !missing) onNotice?.("Não foi possível verificar o Devboard Agent.")
+      if (!silent && !missing) onNotice?.("Não foi possível verificar o TaskBoard Agent.")
       if (!silent) setLoading(false)
       return
     }
@@ -182,7 +182,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
       const href = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = href
-      anchor.download = "DevboardAgentSetup.exe"
+      anchor.download = "TaskBoardAgentSetup.exe"
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -192,7 +192,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
         : "Instalador baixado. Execute-o uma vez; o painel detecta o agente automaticamente.")
       window.setTimeout(() => void loadStatus(true), 2_000)
     } catch (error) {
-      onNotice?.(toUserFacingError(error, "Não foi possível baixar o Devboard Agent"))
+      onNotice?.(toUserFacingError(error, "Não foi possível baixar o TaskBoard Agent"))
     } finally {
       setDownloading(false)
     }
@@ -231,7 +231,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
           <div className="rounded-xl border border-warning/25 bg-warning/5 p-3">
             <p className="text-xs font-semibold">Integração ainda não preparada</p>
             <p className="mt-1 text-[0.67rem] leading-relaxed text-muted-foreground">
-              Esta integração ainda não foi habilitada no ambiente atual. Atualize a instalação do Devboard e tente novamente.
+              Esta integração ainda não foi habilitada no ambiente atual. Atualize a instalação do TaskBoard e tente novamente.
             </p>
           </div>
         ) : loading ? (
@@ -364,7 +364,7 @@ export function DeveloperWindowsAgent({ currentUserId, onNotice }: { currentUser
         ) : (
           <div className="rounded-xl border border-dashed border-border px-3 py-4 text-center">
             <Laptop className="mx-auto size-5 text-muted-foreground" />
-            <p className="mt-2 text-xs font-semibold">Devboard Agent não encontrado</p>
+            <p className="mt-2 text-xs font-semibold">TaskBoard Agent não encontrado</p>
             <p className="mx-auto mt-1 max-w-[310px] text-[0.66rem] leading-relaxed text-muted-foreground">
               Instale uma vez. Ele inicia sozinho com o Windows e permite abrir o Painel Dev mesmo com o navegador fechado.
             </p>

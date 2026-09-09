@@ -77,7 +77,7 @@ export function DeveloperVcsCompletionWarning({
     return (
       <div className="flex items-start gap-2.5 rounded-xl border border-border bg-muted/35 px-3 py-2.5 text-xs text-muted-foreground">
         <GitBranch className="mt-0.5 size-3.5 shrink-0" />
-        <span><span className="font-medium text-foreground">{localProjectName}</span> usa SVN via TortoiseSVN. O Agent não encontrou <code className="font-mono">svn.exe</code> para validar alterações pendentes dentro do Devboard.</span>
+        <span><span className="font-medium text-foreground">{localProjectName}</span> usa SVN via TortoiseSVN. O Agent não encontrou <code className="font-mono">svn.exe</code> para validar alterações pendentes dentro do TaskBoard.</span>
       </div>
     )
   }

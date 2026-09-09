@@ -64,7 +64,7 @@ export function toUserFacingError(error: unknown, fallback = "Não foi possível
     return "Já existe uma conta cadastrada com este e-mail."
   }
   if (/invalid login credentials|invalid.*credentials/i.test(full)) return "E-mail ou senha inválidos."
-  if (/email not confirmed|email_not_confirmed/i.test(full)) return "Confirme seu e-mail antes de entrar no Devboard."
+  if (/email not confirmed|email_not_confirmed/i.test(full)) return "Confirme seu e-mail antes de entrar no TaskBoard."
   if (/signup.*disabled|signups not allowed/i.test(full)) return "A criação de novas contas está temporariamente desabilitada."
   if (/password.*at least|weak_password|password should/i.test(full)) return "A senha não atende aos requisitos mínimos de segurança."
   if (/same_password/i.test(full)) return "A nova senha precisa ser diferente da senha atual."
@@ -112,7 +112,7 @@ export function toUserFacingError(error: unknown, fallback = "Não foi possível
     return "Você não tem permissão para realizar esta ação."
   }
   if (["42P01", "42703", "42883", "PGRST202", "PGRST204"].includes(code) || /schema cache|could not find the function|does not exist|undefined column|undefined function/i.test(full)) {
-    return "Este recurso ainda não está disponível no ambiente atual. Atualize o Devboard e tente novamente."
+    return "Este recurso ainda não está disponível no ambiente atual. Atualize o TaskBoard e tente novamente."
   }
   if (/bucket not found|storage.*not found/i.test(full)) {
     return "O envio de arquivos ainda não está disponível neste ambiente."

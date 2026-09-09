@@ -41,7 +41,7 @@ function canAccessPath(role: AccessRole, pathname: string) {
   return true
 }
 
-function AppBootstrapScreen({ label = "Carregando Devboard" }: { label?: string }) {
+function AppBootstrapScreen({ label = "Carregando TaskBoard" }: { label?: string }) {
   return (
     <div className="flex h-dvh min-h-dvh w-full items-center justify-center overflow-hidden bg-background px-6" aria-label={label}>
       <div className="flex flex-col items-center text-center">
@@ -63,7 +63,7 @@ function AccessDenied({ role }: { role: AccessRole }) {
       </span>
       <h1 className="mt-4 text-lg font-semibold">Acesso restrito para esta função</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-        Seu perfil está como <strong className="font-medium text-foreground">{ACCESS_ROLE_LABELS[role]}</strong>. O Devboard mantém esta área protegida conforme as permissões do workspace.
+        Seu perfil está como <strong className="font-medium text-foreground">{ACCESS_ROLE_LABELS[role]}</strong>. O TaskBoard mantém esta área protegida conforme as permissões do workspace.
       </p>
     </div>
   )

@@ -84,7 +84,7 @@ async function agentFetch<T>(path: string, init?: RequestInit, timeoutMs = 1800)
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
-      const error = new Error(String(body?.error || `Devboard Agent respondeu ${response.status}.`)) as Error & { code?: string }
+      const error = new Error(String(body?.error || `TaskBoard Agent respondeu ${response.status}.`)) as Error & { code?: string }
       error.code = body?.code
       throw error
     }
@@ -175,7 +175,7 @@ export async function openDeveloperProjectSmart(
     return { opened: true, via: "agent" }
   } catch (error) {
     // Se o Agent não estiver disponível, o chamador ainda pode usar o protocolo do navegador.
-    const message = error instanceof Error ? error.message : "Não foi possível abrir a IDE pelo Devboard Agent."
+    const message = error instanceof Error ? error.message : "Não foi possível abrir a IDE pelo TaskBoard Agent."
     return { opened: false, via: "none", error: message }
   }
 }

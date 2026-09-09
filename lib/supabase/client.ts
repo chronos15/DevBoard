@@ -10,7 +10,7 @@ export function createClient() {
 
   if (!url || !key) {
     throw new Error(
-      'A configuração do ambiente está incompleta. Entre em contato com o administrador do Devboard.',
+      'A configuração do ambiente está incompleta. Entre em contato com o administrador do TaskBoard.',
     )
   }
 

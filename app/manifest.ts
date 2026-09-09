@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Devboard",
-    short_name: "Devboard",
+    name: "TaskBoard",
+    short_name: "TaskBoard",
     description: "Gestão de projetos, atividades, subatividades, horas e colaboração em equipe.",
     start_url: "/",
     display: "standalone",

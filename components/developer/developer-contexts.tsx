@@ -79,7 +79,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
   React.useEffect(() => {
     let alive = true
     setLoading(true)
-    load().catch((error: any) => { console.error("[Devboard/Contextos]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar os contextos")) }).finally(() => alive && setLoading(false))
+    load().catch((error: any) => { console.error("[TaskBoard/Contextos]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar os contextos")) }).finally(() => alive && setLoading(false))
     const channel = supabase
       .channel(`devboard-developer-contexts-ui-${currentUserId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "developer_contexts", filter: `user_id=eq.${currentUserId}` }, () => void load())
@@ -134,7 +134,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
       : supabase.from("developer_contexts").insert(row)
     const { error } = await query
     setSaving(false)
-    if (error) { console.error("[Devboard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível salvar o contexto")); return }
+    if (error) { console.error("[TaskBoard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível salvar o contexto")); return }
     setDialogOpen(false)
     await load()
     window.dispatchEvent(new Event(DEVELOPER_CONTEXTS_EVENT))
@@ -144,7 +144,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
   async function remove(context: DeveloperContextRecord) {
     if (!window.confirm(`Remover o contexto “${context.name}”? Seus projetos e IDEs não serão apagados.`)) return
     const { error } = await supabase.from("developer_contexts").delete().eq("id", context.id).eq("user_id", currentUserId)
-    if (error) { console.error("[Devboard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível remover o contexto")); return }
+    if (error) { console.error("[TaskBoard/Contextos]", error); onNotice(toUserFacingError(error, "Não foi possível remover o contexto")); return }
     await load()
     window.dispatchEvent(new Event(DEVELOPER_CONTEXTS_EVENT))
   }
@@ -220,7 +220,7 @@ export function DeveloperContexts({ currentUserId, onNotice }: Props) {
           <div className="grid gap-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: ERP Delphi" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto no Devboard</label><select value={draft.devboardProjectId} onChange={(event) => setDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Sem vínculo</option>{devboardProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>
+              <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto no TaskBoard</label><select value={draft.devboardProjectId} onChange={(event) => setDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Sem vínculo</option>{devboardProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>
               <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto local</label><select value={draft.localProjectId} onChange={(event) => changeLocalProject(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Sem projeto local</option>{localProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">

@@ -170,7 +170,7 @@ export function ProjectLogDialog({ project }: { project: Project }) {
       <tbody>${rows}</tbody>
     </table>
   ` : '<div class="empty">Nenhum registro encontrado para o período informado.</div>'}
-  <footer>Relatório de auditoria do projeto · Devboard</footer>
+  <footer>Relatório de auditoria do projeto · TaskBoard</footer>
   <script>window.addEventListener('load', () => setTimeout(() => { window.focus(); window.print(); }, 150));<\/script>
 </body>
 </html>`)

@@ -16,14 +16,14 @@ export async function GET() {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.microsoft.portable-executable",
-        "Content-Disposition": 'inline; filename="DevboardAgentUpdate.exe"',
+        "Content-Disposition": 'inline; filename="TaskBoardAgentUpdate.exe"',
         "Cache-Control": "public, no-store, max-age=0, must-revalidate",
         "Content-Length": String(template.length),
         "X-Content-Type-Options": "nosniff",
       },
     })
   } catch (error) {
-    console.error("Falha ao servir binário de atualização do Devboard Agent", error)
+    console.error("Falha ao servir binário de atualização do TaskBoard Agent", error)
     return NextResponse.json({ error: "Binário de atualização indisponível." }, { status: 503 })
   }
 }

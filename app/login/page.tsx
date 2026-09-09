@@ -5,8 +5,8 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { DevboardLogo } from "@/components/devboard-logo"
 
 export const metadata: Metadata = {
-  title: "Entrar — Devboard",
-  description: "Acesse sua conta Devboard para gerenciar projetos e horas.",
+  title: "Entrar — TaskBoard",
+  description: "Acesse sua conta TaskBoard para gerenciar projetos e horas.",
 }
 
 const highlights = [
@@ -23,7 +23,7 @@ export default function LoginPage() {
         <div className="flex items-center gap-2.5">
           <DevboardLogo className="size-9" priority />
           <span className="text-lg font-bold tracking-tight text-sidebar-accent-foreground">
-            Devboard
+            TaskBoard
           </span>
         </div>
 
@@ -54,7 +54,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-xs text-sidebar-foreground/50">
-          © {new Date().getFullYear()} Devboard. Todos os direitos reservados.
+          © {new Date().getFullYear()} TaskBoard. Todos os direitos reservados.
         </p>
       </section>
 
@@ -69,7 +69,7 @@ export default function LoginPage() {
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <DevboardLogo className="size-9" priority />
             <span className="text-lg font-bold tracking-tight text-foreground">
-              Devboard
+              TaskBoard
             </span>
           </div>
 

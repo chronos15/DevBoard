@@ -412,7 +412,7 @@ export function AttachmentDialog({
       setPendingIndex(0)
       setPendingSource(source)
     } catch (cause) {
-      console.error("[Devboard/Anexos] Falha ao preparar vídeo", cause)
+      console.error("[TaskBoard/Anexos] Falha ao preparar vídeo", cause)
       setError(cause instanceof Error
         ? cause.message
         : "Não foi possível preparar um dos arquivos selecionados.")

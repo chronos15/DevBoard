@@ -68,7 +68,7 @@ async function runtimeFetch(path: string, body: unknown, timeoutMs = 5000): Prom
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new DeveloperRuntimeError(
-        String(data?.error || `Devboard Agent respondeu ${response.status}.`),
+        String(data?.error || `TaskBoard Agent respondeu ${response.status}.`),
         { code: data?.code, status: response.status },
       )
     }
@@ -76,9 +76,9 @@ async function runtimeFetch(path: string, body: unknown, timeoutMs = 5000): Prom
   } catch (error) {
     if (error instanceof DeveloperRuntimeError) throw error
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new DeveloperRuntimeError("O Devboard Agent demorou mais que o esperado para responder.", { code: "timeout" })
+      throw new DeveloperRuntimeError("O TaskBoard Agent demorou mais que o esperado para responder.", { code: "timeout" })
     }
-    throw new DeveloperRuntimeError("Não foi possível comunicar com o Devboard Agent.", { code: "agent_unavailable" })
+    throw new DeveloperRuntimeError("Não foi possível comunicar com o TaskBoard Agent.", { code: "agent_unavailable" })
   } finally {
     window.clearTimeout(timeout)
   }

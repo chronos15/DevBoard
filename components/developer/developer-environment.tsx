@@ -350,7 +350,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     // A versão anterior tinha o caminho completo. A seleção por File System Access API não revela
     // esse caminho ao navegador, portanto recuperamos automaticamente o caminho antigo (ou o
-    // repository local já cadastrado no Devboard) quando o nome da pasta confere.
+    // repository local já cadastrado no TaskBoard) quando o nome da pasta confere.
     for (const project of mappedProjects) {
       const persistedPath = project.legacyPath.trim()
       if (persistedPath && !isAbsoluteLocalPath(persistedPath)) {
@@ -393,7 +393,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     let alive = true
     setLoading(true)
     loadEnvironment()
-      .catch((error: any) => { console.error("[Devboard/Ambiente]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar IDEs e projetos locais")) })
+      .catch((error: any) => { console.error("[TaskBoard/Ambiente]", error); if (alive) onNotice(toUserFacingError(error, "Não foi possível carregar IDEs e projetos locais")) })
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
   }, [currentUserId, loadEnvironment, onNotice])
@@ -447,7 +447,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     const { error } = await query
     setSavingIde(false)
     if (error) {
-      console.error("[Devboard/Ambiente]", error)
+      console.error("[TaskBoard/Ambiente]", error)
       onNotice(toUserFacingError(error, "Não foi possível salvar a IDE"))
       return
     }
@@ -461,7 +461,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     if (!currentUserId || !window.confirm(`Remover a IDE “${ide.name}”? Os projetos vinculados ficarão sem IDE até você escolher outra.`)) return
     const { error } = await supabase.from("developer_ides").delete().eq("id", ide.id).eq("user_id", currentUserId)
     if (error) {
-      console.error("[Devboard/Ambiente]", error)
+      console.error("[TaskBoard/Ambiente]", error)
       onNotice(toUserFacingError(error, "Não foi possível remover a IDE"))
       return
     }
@@ -565,7 +565,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     if (result.error) {
       setSavingProject(false)
-      console.error("[Devboard/Ambiente]", result.error)
+      console.error("[TaskBoard/Ambiente]", result.error)
       onNotice(toUserFacingError(result.error, "Não foi possível salvar o projeto local"))
       return
     }
@@ -595,7 +595,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
     if (!currentUserId || !window.confirm(`Remover o atalho local “${project.name}”? Nenhum arquivo da pasta será apagado.`)) return
     const { error } = await supabase.from("developer_local_projects").delete().eq("id", project.id).eq("user_id", currentUserId)
     if (error) {
-      console.error("[Devboard/Ambiente]", error)
+      console.error("[TaskBoard/Ambiente]", error)
       onNotice(toUserFacingError(error, "Não foi possível remover o projeto local"))
       return
     }
@@ -619,7 +619,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
       return
     }
 
-    // Prioridade: Devboard Agent. Ele abre o executável real da IDE e passa a pasta/projeto
+    // Prioridade: TaskBoard Agent. Ele abre o executável real da IDE e passa a pasta/projeto
     // como argumento, sem depender de vscode://, cursor:// ou do navegador conhecer o path.
     if (agentAvailable) {
       try {
@@ -657,13 +657,13 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
 
     const uri = buildLaunchUri(ide, project)
     if (!uri) {
-      onNotice(`${ide.name} precisa do Devboard Agent para abrir diretamente o projeto nesta IDE.`)
+      onNotice(`${ide.name} precisa do TaskBoard Agent para abrir diretamente o projeto nesta IDE.`)
       return
     }
 
     window.location.href = uri
     if ((ide.kind === "vscode" || ide.kind === "cursor") && !project.legacyPath) {
-      onNotice(`O Devboard Agent não está disponível. ${ide.name} foi aberto sem forçar a pasta.`)
+      onNotice(`O TaskBoard Agent não está disponível. ${ide.name} foi aberto sem forçar a pasta.`)
     }
   }
 
@@ -747,7 +747,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
                       onClick={() => setRuntimeProject(project)}
                       disabled={!agentAvailable}
                       className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-                      title={agentAvailable ? "Executar, build, testes e terminal" : "Devboard Agent necessário para ações locais"}
+                      title={agentAvailable ? "Executar, build, testes e terminal" : "TaskBoard Agent necessário para ações locais"}
                     >
                       <Play className="size-3.5" />
                     </button>
@@ -756,7 +756,7 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
                       onClick={() => setVcsProject(project)}
                       disabled={!agentAvailable}
                       className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30", vcs?.conflicted && "border-destructive/30 bg-destructive/5 text-destructive", vcs && vcs.changedCount > 0 && !vcs.conflicted && "border-warning/25 bg-warning/5 text-warning")}
-                      title={agentAvailable ? "Git / SVN deste projeto" : "Devboard Agent necessário para Git/SVN"}
+                      title={agentAvailable ? "Git / SVN deste projeto" : "TaskBoard Agent necessário para Git/SVN"}
                     >
                       <GitBranch className="size-3.5" />
                     </button>
@@ -857,15 +857,15 @@ export function DeveloperEnvironment({ currentUserId, onNotice }: Props) {
           </DialogHeader>
           <div className="space-y-4">
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nome</label><input value={projectDraft.name} onChange={(event) => setProjectDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: ERP Softwork" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" /></div>
-            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto do Devboard <span className="font-normal">(opcional)</span></label><select value={projectDraft.devboardProjectId} disabled={!vcsLinkSchemaReady} onChange={(event) => setProjectDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-45"><option value="">Não vincular</option>{launchProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="mt-1.5 text-[0.63rem] text-muted-foreground">{vcsLinkSchemaReady ? "Permite associar commits/revisões à subatividade em execução e alertar antes de concluir/enviar para AQS." : "O vínculo com o controle de versão ainda não está disponível neste ambiente."}</p></div>
+            <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">Projeto do TaskBoard <span className="font-normal">(opcional)</span></label><select value={projectDraft.devboardProjectId} disabled={!vcsLinkSchemaReady} onChange={(event) => setProjectDraft((current) => ({ ...current, devboardProjectId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-45"><option value="">Não vincular</option>{launchProjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="mt-1.5 text-[0.63rem] text-muted-foreground">{vcsLinkSchemaReady ? "Permite associar commits/revisões à subatividade em execução e alertar antes de concluir/enviar para AQS." : "O vínculo com o controle de versão ainda não está disponível neste ambiente."}</p></div>
             <div><label className="mb-1.5 block text-xs font-medium text-muted-foreground">IDE deste projeto</label><select value={projectDraft.ideId} onChange={(event) => setProjectDraft((current) => ({ ...current, ideId: event.target.value }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"><option value="">Escolher IDE</option>{ides.map((ide) => <option key={ide.id} value={ide.id}>{ide.name}</option>)}</select></div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pasta</label>
               <button type="button" onClick={() => void chooseFolderForDraft()} disabled={!agentAvailable && !pickerSupported} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors", projectDraft.handle || projectDraft.currentFolderName ? "border-success/25 bg-success/5" : "border-dashed border-border bg-background hover:bg-muted/35", !agentAvailable && !pickerSupported && "cursor-not-allowed opacity-45")}>
                 <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", projectDraft.handle || projectDraft.currentFolderName ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{projectDraft.handle || projectDraft.currentFolderName ? <FolderCheck className="size-4" /> : <FolderOpen className="size-4" />}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name || projectDraft.currentFolderName || "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle || projectDraft.currentFolderName ? "Clique para trocar a pasta" : agentAvailable ? "Abre o seletor nativo do Windows pelo Devboard Agent" : "Abre o seletor de diretórios do navegador"}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{projectDraft.handle?.name || projectDraft.currentFolderName || "Escolher pasta do projeto"}</span><span className="mt-0.5 block text-[0.63rem] text-muted-foreground">{projectDraft.handle || projectDraft.currentFolderName ? "Clique para trocar a pasta" : agentAvailable ? "Abre o seletor nativo do Windows pelo TaskBoard Agent" : "Abre o seletor de diretórios do navegador"}</span></span>
               </button>
-              {!agentAvailable && !pickerSupported && <p className="mt-1.5 text-[0.63rem] text-muted-foreground">Instale/atualize o Devboard Agent ou use Chrome/Edge atualizado para selecionar diretórios.</p>}
+              {!agentAvailable && !pickerSupported && <p className="mt-1.5 text-[0.63rem] text-muted-foreground">Instale/atualize o TaskBoard Agent ou use Chrome/Edge atualizado para selecionar diretórios.</p>}
               {projectDraft.currentFolderName && projectDraft.legacyPath && <p className="mt-1.5 flex items-center gap-1.5 text-[0.63rem] font-medium text-success"><FolderCheck className="size-3" />{agentAvailable ? "Pasta vinculada ao Agent: abertura direta na IDE disponível." : "Abertura direta disponível para VS Code/Cursor."}</p>}
             </div>
           </div>

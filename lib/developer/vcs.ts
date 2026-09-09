@@ -116,7 +116,7 @@ async function vcsFetch<T>(path: string, body: unknown, timeoutMs: number): Prom
     })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
-      const error = new Error(String(payload?.error || `Devboard Agent respondeu ${response.status}.`)) as AgentError
+      const error = new Error(String(payload?.error || `TaskBoard Agent respondeu ${response.status}.`)) as AgentError
       error.code = payload?.code
       throw error
     }

@@ -1751,7 +1751,7 @@ export function ProjectFollowUp({
         return true
       }
     } catch (error) {
-      console.error("[Devboard/Acompanhamento] Falha ao preparar anexo", error)
+      console.error("[TaskBoard/Acompanhamento] Falha ao preparar anexo", error)
       const errorMessage = error instanceof Error
         ? error.message
         : "Não foi possível preparar este vídeo neste dispositivo."
@@ -1865,7 +1865,7 @@ export function ProjectFollowUp({
       recorder.start(250)
       setRecording(true)
     } catch (error) {
-      console.error("[Devboard/Acompanhamento] Não foi possível iniciar o microfone:", error)
+      console.error("[TaskBoard/Acompanhamento] Não foi possível iniciar o microfone:", error)
       setComposerError("Não foi possível acessar o microfone. Verifique a permissão do navegador.")
     }
   }

@@ -190,7 +190,7 @@ export function Sidebar({
             href="/"
             className={cn("flex min-w-0 items-center gap-2.5", collapsed && "lg:justify-center")}
             onClick={onClose}
-            title={collapsed ? "Devboard" : undefined}
+            title={collapsed ? "TaskBoard" : undefined}
           >
             <DevboardLogo className="size-9" priority />
             <span
@@ -199,7 +199,7 @@ export function Sidebar({
                 collapsed && "lg:hidden",
               )}
             >
-              Devboard
+              TaskBoard
             </span>
           </Link>
           <button

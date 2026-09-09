@@ -358,7 +358,7 @@ export function ReportsView() {
       if (requestId === requestRef.current) setSessions(next)
     } catch (cause: any) {
       if (requestId !== requestRef.current) return
-      console.error("[Devboard/Relatórios]", cause)
+      console.error("[TaskBoard/Relatórios]", cause)
       setError(toUserFacingError(cause, "Não foi possível carregar o relatório administrativo"))
       setSessions([])
     } finally {
@@ -721,7 +721,7 @@ export function ReportsView() {
 
   const exportExcel = () => {
     const summaryRows = [
-      excelRow([excelCell("DEVBOARD — RELATÓRIO GERENCIAL", "String", "Title")]),
+      excelRow([excelCell("TASKBOARD — RELATÓRIO GERENCIAL", "String", "Title")]),
       excelRow([excelCell("Período"), excelCell(periodLabel(applied.startDate, applied.endDate))]),
       excelRow([excelCell("Filtros"), excelCell(filterSummary.join(" | "))]),
       excelRow([excelCell("Emitido em"), excelCell(new Date().toLocaleString("pt-BR"))]),
@@ -955,7 +955,7 @@ export function ReportsView() {
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<title>Devboard — Relatório Gerencial</title>
+<title>TaskBoard — Relatório Gerencial</title>
 <style>
   @page { size: A4 landscape; margin: 10mm; }
   * { box-sizing: border-box; }
@@ -1014,7 +1014,7 @@ export function ReportsView() {
 <body>
 <header>
   <div>
-    <div class="brand">Devboard</div>
+    <div class="brand">TaskBoard</div>
     <h1>Relatório gerencial</h1>
     <div class="muted">Controle administrativo de projetos, atividades, subatividades e horas.</div>
   </div>
@@ -1053,7 +1053,7 @@ ${ganttPrintHtml}
     <tbody>${detailRows || '<tr><td colspan="9">Sem dados para os filtros selecionados.</td></tr>'}</tbody>
   </table>
 </div>
-<footer><span>DEVBOARD · Relatório administrativo</span><span>Documento gerado conforme os filtros aplicados no sistema.</span></footer>
+<footer><span>TASKBOARD · Relatório administrativo</span><span>Documento gerado conforme os filtros aplicados no sistema.</span></footer>
 </body>
 </html>`
 

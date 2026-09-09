@@ -216,7 +216,7 @@ export function HoursView() {
       if (requestId === requestRef.current) setSessions(next)
     } catch (cause: any) {
       if (requestId !== requestRef.current) return
-      console.error("[Devboard/Horas]", cause)
+      console.error("[TaskBoard/Horas]", cause)
       setError(toUserFacingError(cause, "Não foi possível carregar a apuração de horas"))
       setSessions([])
     } finally {

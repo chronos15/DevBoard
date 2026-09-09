@@ -80,7 +80,7 @@ export async function loadIdentity(supabase: SupabaseClient) {
   assertNoError(userError, 'Não foi possível validar a sessão')
   if (!userData.user) throw new Error('Sessão não encontrada')
   if (!userData.user.email_confirmed_at) {
-    throw new Error('Confirme seu e-mail antes de acessar o Devboard.')
+    throw new Error('Confirme seu e-mail antes de acessar o TaskBoard.')
   }
 
   const { data: memberships, error: membershipError } = await supabase

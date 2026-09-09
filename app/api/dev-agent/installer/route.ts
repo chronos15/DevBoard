@@ -27,13 +27,13 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
 
     if (membershipError || !membership) {
-      return NextResponse.json({ error: "O Devboard Agent está disponível somente para usuários Desenvolvedores." }, { status: 403 })
+      return NextResponse.json({ error: "O TaskBoard Agent está disponível somente para usuários Desenvolvedores." }, { status: 403 })
     }
 
     const { data: registration, error: registrationError } = await supabase.rpc("register_developer_agent")
     if (registrationError) {
       return NextResponse.json(
-        { error: "A integração do Devboard Agent ainda não foi habilitada neste ambiente." },
+        { error: "A integração do TaskBoard Agent ainda não foi habilitada neste ambiente." },
         { status: 503 },
       )
     }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
     if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: "A configuração do servidor está incompleta. Contate o administrador do Devboard." }, { status: 500 })
+      return NextResponse.json({ error: "A configuração do servidor está incompleta. Contate o administrador do TaskBoard." }, { status: 500 })
     }
 
     const templatePath = path.join(process.cwd(), "public", "downloads", "devboard-agent-setup-template.exe")
@@ -69,13 +69,13 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.microsoft.portable-executable",
-        "Content-Disposition": 'attachment; filename="DevboardAgentSetup.exe"',
+        "Content-Disposition": 'attachment; filename="TaskBoardAgentSetup.exe"',
         "Cache-Control": "private, no-store, max-age=0",
         "Content-Length": String(payload.length),
       },
     })
   } catch (error) {
-    console.error("Falha ao gerar instalador do Devboard Agent", error)
+    console.error("Falha ao gerar instalador do TaskBoard Agent", error)
     return NextResponse.json({ error: "Não foi possível gerar o instalador agora." }, { status: 500 })
   }
 }

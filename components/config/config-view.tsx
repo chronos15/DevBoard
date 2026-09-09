@@ -9,6 +9,7 @@ import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
 import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
+import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
 
 const sections = [
   { id: "perfil", label: "Perfil", icon: User, adminOnly: false },
@@ -218,7 +219,7 @@ function ProfileSection({ me }: { me?: Member }) {
 
   return (
     <form onSubmit={save}>
-      <SectionTitle title="Perfil" subtitle="Dados vinculados à sua conta no Devboard." />
+      <SectionTitle title="Perfil" subtitle="Dados vinculados à sua conta no TaskBoard." />
 
       <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-muted/20">
         <div className="flex flex-col gap-5 p-4 sm:flex-row sm:items-center sm:p-5">
@@ -236,7 +237,7 @@ function ProfileSection({ me }: { me?: Member }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">Seu avatar</p>
             <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-              Use uma foto ou deixe suas iniciais representarem você. A cor escolhida aparece em todo o Devboard quando não houver foto.
+              Use uma foto ou deixe suas iniciais representarem você. A cor escolhida aparece em todo o TaskBoard quando não houver foto.
             </p>
 
             <input
@@ -495,11 +496,118 @@ function usePreferenceEditor() {
   return { draft, saving, patch }
 }
 
+function BrowserNotificationSettings() {
+  const { currentUserId } = useStore()
+  const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("unsupported")
+  const [dismissed, setDismissed] = React.useState(false)
+  const [requesting, setRequesting] = React.useState(false)
+  const [showHelp, setShowHelp] = React.useState(false)
+
+  const refresh = React.useCallback(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPermission("unsupported")
+      return
+    }
+    setPermission(Notification.permission)
+    setDismissed(isBrowserNotificationPromptDismissed(currentUserId))
+  }, [currentUserId])
+
+  React.useEffect(() => {
+    refresh()
+    if (typeof window === "undefined") return
+    const onPreference = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; dismissed?: boolean }>).detail
+      if (!detail || detail.userId !== currentUserId) return
+      setDismissed(Boolean(detail.dismissed))
+    }
+    const onVisibility = () => { if (document.visibilityState === "visible") refresh() }
+    window.addEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [currentUserId, refresh])
+
+  async function activate() {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (Notification.permission === "denied") {
+      setPermission("denied")
+      setShowHelp(true)
+      return
+    }
+    setRequesting(true)
+    try {
+      const next = await Notification.requestPermission()
+      setPermission(next)
+      if (next === "granted") {
+        resetBrowserNotificationPrompt(currentUserId)
+        setDismissed(false)
+        setShowHelp(false)
+        try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/devboard-sw.js") } catch {}
+      } else {
+        dismissBrowserNotificationPrompt(currentUserId)
+        setDismissed(true)
+        setShowHelp(next === "denied")
+      }
+    } finally {
+      setRequesting(false)
+    }
+  }
+
+  const status = permission === "granted"
+    ? { label: "Ativadas", className: "bg-success/10 text-success", description: "O Chrome pode exibir chamadas, mensagens, menções e atualizações do TaskBoard." }
+    : permission === "denied"
+      ? { label: "Bloqueadas", className: "bg-destructive/10 text-destructive", description: "O Chrome bloqueou as notificações para este site. A liberação precisa ser feita nas permissões do navegador." }
+      : permission === "unsupported"
+        ? { label: "Indisponíveis", className: "bg-muted text-muted-foreground", description: "Este navegador não oferece suporte às notificações utilizadas pelo TaskBoard." }
+        : dismissed
+          ? { label: "Ignoradas", className: "bg-warning/10 text-warning", description: "Você escolheu não ativar agora. O aviso automático não será exibido novamente neste dispositivo." }
+          : { label: "Não configuradas", className: "bg-muted text-muted-foreground", description: "Ative se quiser receber avisos do TaskBoard mesmo quando estiver em outra tela." }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Bell className="size-4.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">Notificações do navegador</p>
+            <span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", status.className)}>{status.label}</span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{status.description}</p>
+        </div>
+        {permission !== "granted" && permission !== "unsupported" && (
+          <button
+            type="button"
+            disabled={requesting}
+            onClick={() => void activate()}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {requesting && <Loader2 className="size-3.5 animate-spin" />}
+            {permission === "denied" ? "Como ativar" : "Ativar notificações"}
+          </button>
+        )}
+      </div>
+
+      {(showHelp || permission === "denied") && (
+        <div className="mt-4 rounded-xl border border-warning/20 bg-warning/[0.05] px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
+          <strong className="font-semibold text-foreground">Permissão bloqueada no Chrome.</strong> Abra as informações do site (ícone ao lado do endereço), entre em <strong className="font-medium text-foreground">Permissões / Configurações do site → Notificações</strong> e selecione <strong className="font-medium text-foreground">Permitir</strong>. Depois volte ao TaskBoard; o status será atualizado automaticamente.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NotificationsSection() {
   const { draft, saving, patch } = usePreferenceEditor()
   return (
     <div>
       <SectionTitle title="Notificações" subtitle="Preferências persistidas no seu perfil do workspace." />
+      <BrowserNotificationSettings />
       <PreferenceToggle label="Atribuições" description="Avisar quando você for adicionado a projeto, atividade ou subatividade." checked={draft.notifyAssignments} disabled={saving} onChange={(value) => void patch({ notifyAssignments: value })} />
       <PreferenceToggle label="Comentários" description="Avisar quando outra pessoa comentar em uma subatividade sua." checked={draft.notifyComments} disabled={saving} onChange={(value) => void patch({ notifyComments: value })} />
       <PreferenceToggle label="Atividade da equipe" description="Reserva a preferência para eventos gerais de conclusão da equipe." checked={draft.notifyTeamActivity} disabled={saving} onChange={(value) => void patch({ notifyTeamActivity: value })} />
@@ -636,7 +744,7 @@ function ServiceRequestUnitsSection() {
 
   return (
     <div>
-      <SectionTitle title="Unidades" subtitle="Cadastre as unidades que organizam a navegação das Solicitações. Cada unidade pode usar um ícone do Devboard ou uma imagem própria." />
+      <SectionTitle title="Unidades" subtitle="Cadastre as unidades que organizam a navegação das Solicitações. Cada unidade pode usar um ícone do TaskBoard ou uma imagem própria." />
 
       <form onSubmit={saveUnit} className="mb-5 rounded-2xl border border-border bg-muted/20 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
@@ -946,7 +1054,7 @@ function AppearanceSection() {
           <div className="min-w-0">
             <p className="text-sm font-semibold">Interface</p>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Escolha a experiência do Devboard para a sua conta. O Modo Resumido muda apenas a navegação e a apresentação: projetos, permissões e dados continuam exatamente os mesmos.
+              Escolha a experiência do TaskBoard para a sua conta. O Modo Resumido muda apenas a navegação e a apresentação: projetos, permissões e dados continuam exatamente os mesmos.
             </p>
           </div>
         </div>
@@ -1047,7 +1155,7 @@ function AppearanceSection() {
             )}
           >
             <span className="size-4 rounded-full border border-black/5" style={{ backgroundColor: DEFAULT_PRIMARY_PREVIEW }} />
-            Padrão Devboard
+            Padrão TaskBoard
             {!selectedPrimary && <Check className="size-3.5 text-primary" />}
           </button>
 

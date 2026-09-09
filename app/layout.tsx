@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Devboard — Gestão de Projetos',
+  title: 'TaskBoard — Gestão de Projetos',
   description:
     'Gerencie projetos, atividades e subatividades com controle de horas em tempo real.',
   generator: 'v0.app',

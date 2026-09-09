@@ -53,7 +53,7 @@ export function DeveloperShiftNotifier() {
       .select("work_start,work_end,break_start,break_end,work_days,hydration_goal_ml,hydration_cup_ml,hydration_reminder_minutes,notify_shift_end,notify_hydration,music_provider,music_url,ide_kind,ide_workspace_path,ide_custom_uri,focus_minutes,break_minutes")
       .eq("user_id", currentUserId)
       .maybeSingle()
-    // Migration ainda não aplicada: o restante do Devboard não deve ser afetado.
+    // Migration ainda não aplicada: o restante do TaskBoard não deve ser afetado.
     if (error) return
     setSettings(mapDeveloperSettings(data))
   }, [currentUserId, currentUserRole, supabase])

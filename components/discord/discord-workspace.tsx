@@ -565,7 +565,7 @@ export function DiscordWorkspace() {
   } else if (selectedProject && projectSelection) {
     content = <ProjectFollowUp key={`${selectedProject.id}:${projectSelection.subactivityId}`} project={selectedProject} availableProjects={accessibleProjects} initialActivityId={projectSelection.activityId} initialSubactivityId={projectSelection.subactivityId} discordEmbedded />
   } else {
-    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao Devboard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Resumido, tudo acontece em canais e conversas.</p></div></div>
+    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao TaskBoard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Resumido, tudo acontece em canais e conversas.</p></div></div>
   }
 
   return (

@@ -293,7 +293,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
               </span>
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold">Identidade do projeto</h2>
-                <p className="text-[0.68rem] text-muted-foreground">Use um ícone do Devboard ou envie sua própria imagem.</p>
+                <p className="text-[0.68rem] text-muted-foreground">Use um ícone do TaskBoard ou envie sua própria imagem.</p>
               </div>
             </div>
 

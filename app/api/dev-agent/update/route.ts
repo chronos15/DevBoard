@@ -31,7 +31,7 @@ export async function GET() {
       },
     )
   } catch (error) {
-    console.error("Falha ao montar manifesto de atualização do Devboard Agent", error)
+    console.error("Falha ao montar manifesto de atualização do TaskBoard Agent", error)
     return NextResponse.json({ error: "Atualização do Agent indisponível." }, { status: 503 })
   }
 }

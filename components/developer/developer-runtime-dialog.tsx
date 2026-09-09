@@ -57,7 +57,7 @@ export function DeveloperRuntimeDialog({
       const version = health?.version ?? null
       setAgentVersion(version)
       if (!health?.ok) {
-        throw new DeveloperRuntimeError("O Devboard Agent não está respondendo neste computador.", { code: "agent_unavailable" })
+        throw new DeveloperRuntimeError("O TaskBoard Agent não está respondendo neste computador.", { code: "agent_unavailable" })
       }
       if (version && compareVersions(version, RUNTIME_MIN_AGENT_VERSION) < 0) {
         throw new DeveloperRuntimeError(
@@ -113,7 +113,7 @@ export function DeveloperRuntimeDialog({
       setError(null)
       if (value === "terminal") onNotice("Terminal aberto na pasta do projeto.")
       else if (value === "stop") onNotice("Processo local encerrado.")
-      else onNotice(`${next.runningLabel || value} iniciado pelo Devboard Agent.`)
+      else onNotice(`${next.runningLabel || value} iniciado pelo TaskBoard Agent.`)
     } catch (caught) {
       const nextError = caught instanceof DeveloperRuntimeError
         ? new DeveloperRuntimeError(toUserFacingError(caught, "Não foi possível executar esta ação"), { code: caught.code, status: caught.status })

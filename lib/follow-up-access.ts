@@ -30,3 +30,27 @@ export function scopeFollowUpProjects(
     return activities.length > 0 ? [{ ...project, activities }] : []
   })
 }
+
+export function scopeMyWorkProjects(
+  projects: Project[],
+  userId: string,
+): Project[] {
+  if (!userId) return []
+
+  return projects.flatMap((project) => {
+    const activities = project.activities.flatMap((activity) => {
+      const activityOwned = Boolean(activity.assigneeIds?.includes(userId))
+      const subactivities = activityOwned
+        ? activity.subactivities
+        : activity.subactivities.filter((subactivity) =>
+            subactivity.assigneeId === userId || Boolean(subactivity.memberIds?.includes(userId)),
+          )
+
+      return activityOwned || subactivities.length > 0
+        ? [{ ...activity, subactivities }]
+        : []
+    })
+
+    return activities.length > 0 ? [{ ...project, activities }] : []
+  })
+}

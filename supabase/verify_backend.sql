@@ -15,7 +15,7 @@ declare
   ];
   v_functions text[] := array[
     'public.update_my_profile(text,text,text,boolean)',
-    'public.update_my_preferences(boolean,boolean,boolean,boolean,boolean,boolean,text)',
+    'public.update_my_preferences(boolean,boolean,boolean,boolean,boolean,boolean,text,text,text)',
     'public.set_workspace_member_role(uuid,text)',
     'public.create_project(text,text,text,text,text,date,text,uuid[])',
     'public.update_project(uuid,text,text,text,text,text,date,text,uuid[])',

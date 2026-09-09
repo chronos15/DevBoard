@@ -23,6 +23,7 @@ import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference, serviceRequestStatusTone } from "@/lib/service-requests"
+import { FocusedDashboard } from "@/components/dashboard/focused-dashboard"
 
 
 function FollowUpQuickButton() {
@@ -147,9 +148,11 @@ function RequestsDashboard({ firstName }: { firstName: string }) {
 }
 
 export default function DashboardPage() {
-  const { currentUserId, currentUserRole, members } = useStore()
+  const { currentUserId, currentUserRole, members, preferences } = useStore()
   const currentUser = members.find((member) => member.id === currentUserId)
   const firstName = currentUser?.name?.trim().split(/\s+/)[0] || ""
+
+  if (preferences.interfaceMode === "focused") return <FocusedDashboard />
 
   if (currentUserRole === "aqs") return <AqsDashboard firstName={firstName} />
   if (currentUserRole === "support" || currentUserRole === "member") return <RequestsDashboard firstName={firstName} />

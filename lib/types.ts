@@ -28,6 +28,7 @@ export type UserPreferences = {
   reducedMotion: boolean
   density: "comfortable" | "compact"
   primaryColor: string | null
+  interfaceMode: "complete" | "focused"
 }
 export type ActivityFilter = "all" | "open" | "waiting" | "waiting-aqs" | "in-progress" | "done"
 

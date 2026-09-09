@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { Bell, Building2, Camera, Check, ImageIcon, Loader2, Palette, Pencil, Pipette, Plus, RotateCcw, ShieldCheck, Tags, TimerOff, Trash2, Upload, User, Users, X } from "lucide-react"
+import { Bell, Building2, Camera, Check, ImageIcon, LayoutDashboard, Loader2, Palette, Pencil, Pipette, Plus, RotateCcw, ShieldCheck, Sparkles, Tags, TimerOff, Trash2, Upload, User, Users, X } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -937,6 +937,78 @@ function AppearanceSection() {
   return (
     <div>
       <SectionTitle title="Aparência" subtitle="Preferências de interface sincronizadas com sua conta." />
+
+      <div className="mb-6 rounded-2xl border border-border bg-card/55 p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Sparkles className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Interface</p>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              Escolha quanto da estrutura do Devboard você quer ver no dia a dia. A alteração vale somente para a sua conta e não muda projetos, permissões ou dados.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void patch({ interfaceMode: "focused" })}
+            className={cn(
+              "group flex min-h-28 items-start gap-3 rounded-2xl border p-4 text-left transition-all disabled:opacity-60",
+              draft.interfaceMode === "focused"
+                ? "border-primary bg-primary/8 ring-2 ring-primary/12"
+                : "border-border bg-background hover:border-primary/35 hover:bg-muted/35",
+            )}
+          >
+            <span className={cn(
+              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl",
+              draft.interfaceMode === "focused" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+            )}>
+              <Sparkles className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                Focada
+                {draft.interfaceMode === "focused" && <Check className="size-4 text-primary" />}
+              </span>
+              <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                Navegação reduzida, projetos como atalhos de acompanhamento e uma Home voltada ao que precisa da sua atenção agora.
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void patch({ interfaceMode: "complete" })}
+            className={cn(
+              "group flex min-h-28 items-start gap-3 rounded-2xl border p-4 text-left transition-all disabled:opacity-60",
+              draft.interfaceMode === "complete"
+                ? "border-primary bg-primary/8 ring-2 ring-primary/12"
+                : "border-border bg-background hover:border-primary/35 hover:bg-muted/35",
+            )}
+          >
+            <span className={cn(
+              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl",
+              draft.interfaceMode === "complete" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+            )}>
+              <LayoutDashboard className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                Completa
+                {draft.interfaceMode === "complete" && <Check className="size-4 text-primary" />}
+              </span>
+              <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                Mantém a experiência atual com todos os módulos, páginas gerenciais e ferramentas avançadas visíveis na navegação.
+              </span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <div className="mb-6 rounded-2xl border border-border bg-card/55 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

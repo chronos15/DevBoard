@@ -10,6 +10,7 @@ import {
   ListTodo,
   Menu,
   Search,
+  Sparkles,
   UserRound,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -21,6 +22,7 @@ import { NotificationCenter } from "@/components/notifications/notification-cent
 import { ACCESS_ROLE_LABELS, type AqsReviewStatus } from "@/lib/types"
 import { serviceRequestReference } from "@/lib/service-requests"
 import { cn } from "@/lib/utils"
+import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 
 type GlobalSearchKind = "user" | "project" | "activity" | "subactivity" | "analysis" | "request"
 
@@ -98,9 +100,19 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     aqsReviews,
     currentUserId,
     currentUserRole,
+    preferences,
+    updatePreferences,
   } = useStore()
   const me = members.find((member) => member.id === currentUserId)
-  const canBrowseProjects = currentUserRole === "admin" || currentUserRole === "developer"
+  const searchableProjects = React.useMemo(
+    () => preferences.interfaceMode === "focused"
+      ? scopeFollowUpProjects(projects, currentUserId, currentUserRole)
+      : projects,
+    [currentUserId, currentUserRole, preferences.interfaceMode, projects],
+  )
+  const canBrowseProjects = preferences.interfaceMode === "focused"
+    ? searchableProjects.length > 0
+    : currentUserRole === "admin" || currentUserRole === "developer"
   const canBrowseAnalysis = currentUserRole === "admin" || currentUserRole === "developer" || currentUserRole === "aqs"
   const [query, setQuery] = React.useState("")
   const [focused, setFocused] = React.useState(false)
@@ -128,13 +140,15 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     }
 
     if (canBrowseProjects) {
-      for (const project of projects) {
+      for (const project of searchableProjects) {
         candidates.push({
           id: `project:${project.id}`,
           kind: "project",
           label: project.name,
           meta: [project.client, project.version ? `v${project.version}` : ""].filter(Boolean).join(" · ") || "Projeto",
-          href: `/projetos/${project.id}`,
+          href: preferences.interfaceMode === "focused"
+            ? `/acompanhamento?project=${encodeURIComponent(project.id)}`
+            : `/projetos/${project.id}`,
           keywords: `${project.name} ${project.client} ${project.description} ${project.tag} ${project.repository ?? ""} ${project.version ?? ""} ${project.build ?? ""}`,
         })
 
@@ -144,7 +158,9 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             kind: "activity",
             label: activity.title,
             meta: `${project.name} · atividade`,
-            href: `/projetos/${project.id}#activity-${activity.id}`,
+            href: preferences.interfaceMode === "focused"
+              ? `/acompanhamento?project=${encodeURIComponent(project.id)}&activity=${encodeURIComponent(activity.id)}`
+              : `/projetos/${project.id}#activity-${activity.id}`,
             keywords: `${activity.title} ${project.name} ${project.client}`,
           })
 
@@ -155,7 +171,9 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
               kind: "subactivity",
               label: subactivity.title,
               meta: `${project.name} · ${activity.title}`,
-              href: `/projetos/${project.id}#sub-${subactivity.id}`,
+              href: preferences.interfaceMode === "focused"
+                ? `/acompanhamento?project=${encodeURIComponent(project.id)}&activity=${encodeURIComponent(activity.id)}&sub=${encodeURIComponent(subactivity.id)}`
+                : `/projetos/${project.id}#sub-${subactivity.id}`,
               keywords: `${subactivity.title} ${activity.title} ${project.name} ${assignee?.name ?? ""} ${subactivity.status}`,
             })
           }
@@ -206,7 +224,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         return a.label.localeCompare(b.label, "pt-BR")
       })
       .slice(0, 14)
-  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, projects, query, serviceRequests])
+  }, [aqsReviews, canBrowseAnalysis, canBrowseProjects, currentUserId, currentUserRole, members, preferences.interfaceMode, projects, query, searchableProjects, serviceRequests])
 
   React.useEffect(() => {
     setActiveIndex(0)
@@ -357,9 +375,36 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
+        <button
+          type="button"
+          onClick={() => void updatePreferences({
+            ...preferences,
+            interfaceMode: preferences.interfaceMode === "focused" ? "complete" : "focused",
+          })}
+          className={cn(
+            "hidden h-9 items-center gap-2 rounded-xl border px-3 text-[0.7rem] font-semibold transition-colors xl:flex",
+            preferences.interfaceMode === "focused"
+              ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
+              : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+          title={preferences.interfaceMode === "focused" ? "Alternar para interface completa" : "Alternar para interface focada"}
+          aria-label={preferences.interfaceMode === "focused" ? "Usar interface completa" : "Usar interface focada"}
+        >
+          <Sparkles className="size-3.5" />
+          Interface: {preferences.interfaceMode === "focused" ? "Focada" : "Completa"}
+          <span className={cn(
+            "relative h-4 w-7 rounded-full transition-colors",
+            preferences.interfaceMode === "focused" ? "bg-primary" : "bg-muted-foreground/25",
+          )}>
+            <span className={cn(
+              "absolute top-0.5 size-3 rounded-full bg-white shadow-sm transition-transform",
+              preferences.interfaceMode === "focused" ? "translate-x-3.5" : "translate-x-0.5",
+            )} />
+          </span>
+        </button>
         <RunningTimerChip />
         <ThemeToggle />
-        <RecentSubactivities />
+        {preferences.interfaceMode === "complete" && <RecentSubactivities />}
         <NotificationCenter />
 
         <button

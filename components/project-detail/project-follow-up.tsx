@@ -546,6 +546,7 @@ export function ProjectFollowUp({
     runningSubIds,
     currentUserId,
     currentUserRole,
+    preferences,
     serviceRequests,
     canManageSubactivity,
     addFollowUpComment,
@@ -1915,7 +1916,7 @@ export function ProjectFollowUp({
                 </span>
               )}
             </p>
-            <p className="truncate text-[0.65rem] text-muted-foreground">Atividades e subatividades</p>
+            <p className="truncate text-[0.65rem] text-muted-foreground">{preferences.interfaceMode === "focused" ? "Tópicos do projeto" : "Atividades e subatividades"}</p>
           </div>
           {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
         </div>
@@ -1938,7 +1939,7 @@ export function ProjectFollowUp({
                 >
                   {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
                   <Hash className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{index + 1}. {activity.title}</span>
+                  <span className="min-w-0 flex-1 truncate">{preferences.interfaceMode === "focused" ? activity.title : `${index + 1}. ${activity.title}`}</span>
                   {activityUnread && (
                     <span
                       className={cn(
@@ -2146,7 +2147,7 @@ export function ProjectFollowUp({
   return (
     <>
       <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-card">
-        <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
+        {preferences.interfaceMode === "complete" && <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
           <div className="flex h-12 items-center justify-center border-b border-border">
             <FolderKanban className="size-4 text-muted-foreground" />
           </div>
@@ -2188,7 +2189,7 @@ export function ProjectFollowUp({
               })}
             </div>
           </div>
-        </nav>
+        </nav>}
 
         <aside
           className="relative hidden min-h-0 shrink-0 flex-col border-r border-border bg-muted/20 md:flex"

@@ -119,9 +119,10 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
 
   const sharePage = pathname.startsWith("/compartilhar")
   const followUpPage = pathname.startsWith("/acompanhamento")
+  const myTasksPage = pathname.startsWith("/minhas-tarefas")
   const requestsPage = pathname.startsWith("/solicitacoes")
   const analysisPage = pathname.startsWith("/analise")
-  const fullHeightWorkspace = followUpPage || requestsPage || analysisPage
+  const fullHeightWorkspace = followUpPage || myTasksPage || requestsPage || analysisPage
 
   if (sharePage) {
     return (

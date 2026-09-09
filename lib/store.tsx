@@ -959,7 +959,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (typeof document === "undefined") return
     document.documentElement.dataset.density = preferences.density
     document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false"
-  }, [preferences.density, preferences.reducedMotion])
+    document.documentElement.dataset.interfaceMode = preferences.interfaceMode
+  }, [preferences.density, preferences.interfaceMode, preferences.reducedMotion])
 
   const runningSubIds = React.useMemo(
     () => projects.flatMap((project) => project.activities.flatMap((activity) => activity.subactivities.filter((sub) => sub.status === "in-progress").map((sub) => sub.id))),
@@ -2109,6 +2110,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_reduced_motion: next.reducedMotion,
       p_density: next.density,
       p_primary_color: next.primaryColor,
+      p_interface_mode: next.interfaceMode,
     }, "Não foi possível salvar suas preferências")
     if (result === undefined) {
       setPreferences(previous)

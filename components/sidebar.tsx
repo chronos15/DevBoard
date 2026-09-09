@@ -20,11 +20,14 @@ import {
   MessageSquareText,
   MessagesSquare,
   Settings,
+  Sparkles,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useStore } from "@/lib/store"
 import { DevboardLogo } from "@/components/devboard-logo"
+import { ProjectIcon } from "@/components/projects/project-icon"
+import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 
 const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
@@ -67,9 +70,22 @@ export function Sidebar({
   onClose: () => void
 }) {
   const pathname = usePathname()
-  const { signOut, currentUserRole } = useStore()
+  const {
+    signOut,
+    currentUserRole,
+    currentUserId,
+    preferences,
+    projects,
+  } = useStore()
   const [collapsed, setCollapsed] = React.useState(false)
   const [requestsOpen, setRequestsOpen] = React.useState(true)
+  const focused = preferences.interfaceMode === "focused"
+  const mineOnly = pathname.startsWith("/minhas-tarefas")
+
+  const focusedProjects = React.useMemo(
+    () => scopeFollowUpProjects(projects, currentUserId, currentUserRole).slice(0, 8),
+    [currentUserId, currentUserRole, projects],
+  )
 
   React.useEffect(() => {
     try {
@@ -102,6 +118,17 @@ export function Sidebar({
         ? "bg-primary text-primary-foreground"
         : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
     )
+
+  const focusedNav = [
+    { href: "/", label: "Início", icon: LayoutDashboard, active: pathname === "/" },
+    { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, active: pathname.startsWith("/acompanhamento") && !mineOnly },
+    { href: "/minhas-tarefas", label: "Minhas tarefas", icon: ClipboardCheck, active: mineOnly },
+    { href: "/solicitacoes", label: "Solicitações", icon: Inbox, active: pathname.startsWith("/solicitacoes") },
+    { href: "/chat", label: "Chat", icon: MessagesSquare, active: pathname.startsWith("/chat") },
+    ...(currentUserRole === "aqs"
+      ? [{ href: "/analise", label: "Análise AQS", icon: ClipboardCheck, active: pathname.startsWith("/analise") }]
+      : []),
+  ]
 
   return (
     <>
@@ -167,76 +194,134 @@ export function Sidebar({
               collapsed && "lg:hidden",
             )}
           >
-            Workspace
+            {focused ? "Trabalho" : "Workspace"}
           </p>
-          {nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole)).map((item) => {
-            const active = isActive(item.href)
-            const hasChildren = "children" in item && Array.isArray(item.children)
-            if (!hasChildren) {
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={navLinkClass(active)}
-                  title={collapsed ? item.label : undefined}
-                  aria-label={collapsed ? item.label : undefined}
-                >
-                  <item.icon className="size-[1.15rem] shrink-0" />
-                  <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
-                </Link>
-              )
-            }
 
-            const visibleChildren = item.children.filter((child) => (child.roles as readonly string[]).includes(currentUserRole))
-            const expanded = requestsOpen || active
-            return (
-              <div key={item.href} className="min-w-0">
-                <div className="relative">
+          {focused ? (
+            focusedNav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={navLinkClass(item.active)}
+                title={collapsed ? item.label : undefined}
+                aria-label={collapsed ? item.label : undefined}
+              >
+                <item.icon className="size-[1.15rem] shrink-0" />
+                <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+              </Link>
+            ))
+          ) : (
+            nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole)).map((item) => {
+              const active = isActive(item.href)
+              const hasChildren = "children" in item && Array.isArray(item.children)
+              if (!hasChildren) {
+                return (
                   <Link
+                    key={item.href}
                     href={item.href}
                     onClick={onClose}
-                    className={cn(navLinkClass(active), !collapsed && "pr-9")}
+                    className={navLinkClass(active)}
                     title={collapsed ? item.label : undefined}
                     aria-label={collapsed ? item.label : undefined}
                   >
                     <item.icon className="size-[1.15rem] shrink-0" />
                     <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
                   </Link>
-                  {!collapsed && (
-                    <button
-                      type="button"
-                      onClick={(event) => { event.preventDefault(); setRequestsOpen((value) => !value) }}
-                      className="absolute right-1.5 top-1/2 hidden size-7 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
-                      aria-label={expanded ? "Recolher Solicitações" : "Expandir Solicitações"}
+                )
+              }
+
+              const visibleChildren = item.children.filter((child) => (child.roles as readonly string[]).includes(currentUserRole))
+              const expanded = requestsOpen || active
+              return (
+                <div key={item.href} className="min-w-0">
+                  <div className="relative">
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      className={cn(navLinkClass(active), !collapsed && "pr-9")}
+                      title={collapsed ? item.label : undefined}
+                      aria-label={collapsed ? item.label : undefined}
                     >
-                      <ChevronDown className={cn("size-3.5 transition-transform", !expanded && "-rotate-90")} />
-                    </button>
+                      <item.icon className="size-[1.15rem] shrink-0" />
+                      <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                    </Link>
+                    {!collapsed && (
+                      <button
+                        type="button"
+                        onClick={(event) => { event.preventDefault(); setRequestsOpen((value) => !value) }}
+                        className="absolute right-1.5 top-1/2 hidden size-7 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
+                        aria-label={expanded ? "Recolher Solicitações" : "Expandir Solicitações"}
+                      >
+                        <ChevronDown className={cn("size-3.5 transition-transform", !expanded && "-rotate-90")} />
+                      </button>
+                    )}
+                  </div>
+                  {!collapsed && expanded && (
+                    <div className="ml-5 mt-1 hidden border-l border-sidebar-border pl-2 lg:block">
+                      {visibleChildren.map((child) => {
+                        const childActive = pathname === child.href
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={onClose}
+                            className={cn(
+                              "flex min-h-8 items-center rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
+                              childActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/68 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+                            )}
+                          >
+                            {child.label}
+                          </Link>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-                {!collapsed && expanded && (
-                  <div className="ml-5 mt-1 hidden border-l border-sidebar-border pl-2 lg:block">
-                    {visibleChildren.map((child) => {
-                      const childActive = pathname === child.href
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={onClose}
-                          className={cn(
-                            "flex min-h-8 items-center rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
-                            childActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/68 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
-                          )}
-                        >
-                          {child.label}
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              )
+            })
+          )}
+
+          {focused && (
+            <>
+              <p className={cn("px-3 pt-5 pb-1 font-mono text-[0.65rem] tracking-widest text-sidebar-foreground/50 uppercase", collapsed && "lg:hidden")}>
+                Projetos
+              </p>
+              {!collapsed && focusedProjects.length === 0 && (
+                <div className="mx-2 rounded-xl border border-dashed border-sidebar-border px-3 py-3 text-[0.68rem] leading-relaxed text-sidebar-foreground/55">
+                  Seus projetos acompanhados aparecerão aqui.
+                </div>
+              )}
+              {focusedProjects.map((project) => {
+                const selected = false
+                return (
+                  <Link
+                    key={project.id}
+                    href={`/acompanhamento?project=${encodeURIComponent(project.id)}`}
+                    onClick={onClose}
+                    className={cn(
+                      "flex min-h-10 min-w-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                      collapsed && "lg:justify-center lg:px-0",
+                      selected
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/78 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    )}
+                    title={collapsed ? project.name : undefined}
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary">
+                      <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-3.5" imageClassName="size-full rounded-none object-cover" />
+                    </span>
+                    <span className={cn("min-w-0 truncate", collapsed && "lg:hidden")}>{project.name}</span>
+                  </Link>
+                )
+              })}
+              {!collapsed && focusedProjects.length >= 8 && (
+                <Link href="/acompanhamento" onClick={onClose} className="px-3 py-2 text-[0.68rem] font-medium text-sidebar-foreground/55 hover:text-sidebar-accent-foreground">
+                  Ver todos no acompanhamento
+                </Link>
+              )}
+            </>
+          )}
 
           <div className={cn("hidden", collapsed && "lg:mx-2 lg:my-2 lg:block lg:border-t lg:border-sidebar-border")} />
           <p
@@ -266,6 +351,19 @@ export function Sidebar({
         </nav>
 
         <div className={cn("shrink-0 border-t border-sidebar-border px-3 py-3", collapsed && "lg:px-2")}>
+          {focused && !collapsed && (
+            <Link
+              href="/config?section=aparencia"
+              onClick={onClose}
+              className="mb-2 flex items-start gap-2.5 rounded-xl border border-primary/15 bg-primary/8 px-3 py-2.5 text-sidebar-accent-foreground transition-colors hover:bg-primary/12"
+            >
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold">Modo Focado</span>
+                <span className="mt-0.5 block text-[0.62rem] leading-relaxed text-sidebar-foreground/55">Menos ruído, mesma estrutura.</span>
+              </span>
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => { onClose(); void signOut() }}

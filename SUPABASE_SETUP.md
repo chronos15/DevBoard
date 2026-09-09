@@ -752,3 +752,45 @@ A migration é incremental. Ela adiciona `attachments.activity_id`, preserva os 
 > Aplique a migration 052 **antes** de publicar o front-end desta versão, pois a consulta de projetos passa a carregar também os anexos vinculados às atividades.
 
 No Android, o recurso depende do Devboard instalado como **PWA pelo Chrome**. O `share_target` do manifesto registra o Devboard no seletor nativo de compartilhamento e o service worker mantém o arquivo temporariamente no aparelho até o usuário escolher o destino.
+
+## Migration 053 — Compartilhamento por acompanhamento e notificações
+
+Depois da 052, aplique:
+
+```text
+supabase/migrations/053_devboard_share_following_notifications.sql
+```
+
+A 053 restringe o compartilhamento de não-admin aos contextos realmente acompanhados e amplia as notificações de mensagens, anexos e alterações de status feitas por outros usuários.
+
+## Migration 054 — Reunião persistente com chat
+
+Depois da 053, aplique:
+
+```text
+supabase/migrations/054_devboard_persistent_meeting_chat.sql
+```
+
+A 054 persiste o contexto de origem da reunião, participantes extras e reações do chat, permitindo minimizar a chamada sem desmontar a sessão WebRTC.
+
+## Migration 055 — Gravação automática de reunião
+
+Depois da 054, aplique:
+
+```text
+supabase/migrations/055_devboard_automatic_meeting_recording.sql
+```
+
+A 055 adiciona o controle da gravação automática e o vínculo da gravação com o tópico de origem da reunião.
+
+## Migration 056 — Interface Focada por usuário
+
+Depois da 055, aplique:
+
+```text
+supabase/migrations/056_devboard_focused_interface_mode.sql
+```
+
+A 056 adiciona `user_preferences.interface_mode`, com `complete` como padrão e `focused` como alternativa. A preferência pertence somente ao usuário autenticado e não modifica roles, permissões, projetos ou regras de negócio.
+
+No **Modo Focado**, o Devboard reutiliza os mesmos dados e componentes do modo completo, mas reduz a navegação, prioriza Acompanhamento/Minhas tarefas/Solicitações e apresenta uma Home orientada ao que exige atenção. O usuário pode alternar entre os modos em **Configurações → Aparência** ou pelo atalho de interface no topo da aplicação.

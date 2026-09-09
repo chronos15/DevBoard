@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useStore } from "@/lib/store"
 import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { ProjectIcon } from "@/components/projects/project-icon"
-import { scopeFollowUpProjects } from "@/lib/follow-up-access"
+import { scopeFollowUpProjects, scopeMyWorkProjects } from "@/lib/follow-up-access"
 import { followUpUnreadLevel, isFollowUpUnreadNotification } from "@/lib/follow-up-unread"
 
 function FollowUpPageSkeleton() {
@@ -50,8 +50,8 @@ function FollowUpPageSkeleton() {
   )
 }
 
-export function FollowUpPage() {
-  const { projects, runningSubIds, currentUserId, currentUserRole, notifications } = useStore()
+export function FollowUpPage({ mineOnly: mineOnlyProp = false }: { mineOnly?: boolean } = {}) {
+  const { projects, runningSubIds, currentUserId, currentUserRole, notifications, preferences } = useStore()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = React.useState(true)
@@ -62,23 +62,30 @@ export function FollowUpPage() {
     [currentUserId, currentUserRole, projects],
   )
 
+  const mineOnly = mineOnlyProp || searchParams.get("mine") === "1"
+  const basePath = mineOnlyProp ? "/minhas-tarefas" : "/acompanhamento"
+  const visibleProjects = React.useMemo(
+    () => mineOnly ? scopeMyWorkProjects(projects, currentUserId) : scopedProjects,
+    [currentUserId, mineOnly, projects, scopedProjects],
+  )
+
   const fallbackProjectId = React.useMemo(() => {
-    for (const project of scopedProjects) {
+    for (const project of visibleProjects) {
       if (project.activities.some((activity) => activity.subactivities.some((sub) => runningSubIds.includes(sub.id)))) {
         return project.id
       }
     }
-    return scopedProjects[0]?.id ?? null
-  }, [runningSubIds, scopedProjects])
+    return visibleProjects[0]?.id ?? null
+  }, [runningSubIds, visibleProjects])
 
   const requestedProjectId = searchParams.get("project")
-  const projectId = requestedProjectId && scopedProjects.some((project) => project.id === requestedProjectId)
+  const projectId = requestedProjectId && visibleProjects.some((project) => project.id === requestedProjectId)
     ? requestedProjectId
     : fallbackProjectId
   const requestedActivityId = searchParams.get("activity")
   const requestedSubactivityId = searchParams.get("sub")
   const initialTimelineId = searchParams.get("focus")
-  const selectedProject = scopedProjects.find((project) => project.id === projectId) ?? null
+  const selectedProject = visibleProjects.find((project) => project.id === projectId) ?? null
   const selectedProjectUnread = React.useMemo(() => followUpUnreadLevel(
     notifications.filter((notification) =>
       isFollowUpUnreadNotification(notification, currentUserId) && notification.projectId === projectId,
@@ -93,15 +100,16 @@ export function FollowUpPage() {
     if (!nextProjectId) return
     setLoading(true)
     const params = new URLSearchParams()
+    if (mineOnly) params.set("mine", "1")
     params.set("project", nextProjectId)
     if (activityId) params.set("activity", activityId)
     if (subactivityId) params.set("sub", subactivityId)
     if (timelineId) params.set("focus", timelineId)
-    router.replace(`/acompanhamento?${params.toString()}`, { scroll: false })
-  }, [router])
+    router.replace(`${basePath}?${params.toString()}`, { scroll: false })
+  }, [basePath, mineOnly, router])
 
   React.useEffect(() => {
-    if (!scopedProjects.length || !projectId) {
+    if (!visibleProjects.length || !projectId) {
       setLoading(false)
       return
     }
@@ -111,17 +119,18 @@ export function FollowUpPage() {
     return () => {
       if (switchTimerRef.current) window.clearTimeout(switchTimerRef.current)
     }
-  }, [projectId, scopedProjects.length])
+  }, [projectId, visibleProjects.length])
 
   React.useEffect(() => {
     if (!projectId || requestedProjectId === projectId) return
     const params = new URLSearchParams()
+    if (mineOnly) params.set("mine", "1")
     params.set("project", projectId)
     if (requestedActivityId) params.set("activity", requestedActivityId)
     if (initialSubactivityId) params.set("sub", initialSubactivityId)
     if (initialTimelineId) params.set("focus", initialTimelineId)
-    router.replace(`/acompanhamento?${params.toString()}`, { scroll: false })
-  }, [initialSubactivityId, initialTimelineId, projectId, requestedActivityId, requestedProjectId, router])
+    router.replace(`${basePath}?${params.toString()}`, { scroll: false })
+  }, [basePath, initialSubactivityId, initialTimelineId, mineOnly, projectId, requestedActivityId, requestedProjectId, router])
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-background" aria-label="Acompanhamento de projetos">
@@ -130,8 +139,8 @@ export function FollowUpPage() {
           <MessageSquareText className="size-4" />
         </span>
         <div className="hidden min-w-0 md:block">
-          <h1 className="text-sm font-semibold leading-tight">Acompanhamento</h1>
-          <p className="mt-0.5 text-[0.66rem] text-muted-foreground">Mensagens, evidências, execução e equipe em uma única visão.</p>
+          <h1 className="text-sm font-semibold leading-tight">{mineOnly ? "Minhas tarefas" : "Acompanhamento"}</h1>
+          <p className="mt-0.5 text-[0.66rem] text-muted-foreground">{mineOnly ? "Somente atividades e subatividades relacionadas diretamente a você." : "Mensagens, evidências, execução e equipe em uma única visão."}</p>
         </div>
 
         <div className="ml-0 flex min-w-0 flex-1 items-center gap-2 md:ml-4">
@@ -155,34 +164,34 @@ export function FollowUpPage() {
             <select
               value={projectId ?? ""}
               onChange={(event) => showProject(event.target.value, null)}
-              disabled={!scopedProjects.length}
+              disabled={!visibleProjects.length}
               className="h-9 w-full min-w-0 rounded-xl border border-border bg-background px-3 text-xs font-medium outline-none transition-colors hover:bg-muted focus:border-primary/40 disabled:opacity-60"
             >
-              {!scopedProjects.length && <option value="">Nenhum acompanhamento disponível</option>}
-              {scopedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              {!visibleProjects.length && <option value="">Nenhum acompanhamento disponível</option>}
+              {visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 rounded-lg bg-muted px-2 py-1 text-[0.6rem] text-muted-foreground lg:flex">
+        {preferences.interfaceMode === "complete" && <div className="hidden shrink-0 items-center gap-2 rounded-lg bg-muted px-2 py-1 text-[0.6rem] text-muted-foreground lg:flex">
           <Keyboard className="size-3.5" />
           <span><kbd className="font-mono">Ctrl F</kbd> local</span>
           <span className="text-border">·</span>
           <span><kbd className="font-mono">Ctrl K</kbd> geral</span>
           <span className="text-border">·</span>
           <span><kbd className="font-mono">Ctrl P</kbd> abrir</span>
-        </div>
+        </div>}
       </header>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {!scopedProjects.length ? (
+        {!visibleProjects.length ? (
           <div className="flex h-full items-center justify-center p-6 text-center">
             <div>
               <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                 <MessageSquareText className="size-5" />
               </span>
-              <h2 className="mt-4 text-sm font-semibold">Nenhum acompanhamento disponível</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Você verá aqui apenas atividades e subatividades relacionadas a você.</p>
+              <h2 className="mt-4 text-sm font-semibold">{mineOnly ? "Nenhuma tarefa relacionada a você" : "Nenhum acompanhamento disponível"}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{mineOnly ? "Quando você for responsável ou participante de uma atividade, ela aparecerá aqui." : "Você verá aqui apenas atividades e subatividades relacionadas a você."}</p>
             </div>
           </div>
         ) : !selectedProject || loading ? (
@@ -191,7 +200,7 @@ export function FollowUpPage() {
           <ProjectFollowUp
             key={selectedProject.id}
             project={selectedProject}
-            availableProjects={scopedProjects}
+            availableProjects={visibleProjects}
             initialActivityId={requestedActivityId}
             initialSubactivityId={initialSubactivityId}
             initialTimelineId={initialTimelineId}

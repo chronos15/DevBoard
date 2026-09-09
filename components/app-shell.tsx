@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import { PrimaryColorSync } from "@/components/primary-color-sync"
 import { TimerIdleGuard } from "@/components/timer-idle-guard"
 import { DevboardLogo } from "@/components/devboard-logo"
+import { FocusedRunningTimer } from "@/components/focused-running-timer"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -214,6 +215,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     return (
       <div className="min-h-dvh bg-background">
         {hydrated ? children : <AppLoadingSkeleton />}
+        {hydrated && <FocusedRunningTimer />}
         <BackendErrorBanner />
       </div>
     )
@@ -251,6 +253,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
         <BrowserNotifications />
         <FollowUpAppBadge />
         <TimerIdleGuard />
+        <FocusedRunningTimer />
         <DeveloperShiftNotifier />
         <DeveloperAutomationAgent />
         <IncomingCallCenter />

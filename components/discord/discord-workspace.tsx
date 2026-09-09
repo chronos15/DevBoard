@@ -3,6 +3,8 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -22,6 +24,8 @@ import { useStore } from "@/lib/store"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 import { statusMeta } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
+import { toUserFacingError } from "@/lib/user-facing-error"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { RequestDetail } from "@/components/requests/request-detail"
@@ -34,7 +38,29 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
 import type { AqsReview, Project } from "@/lib/types"
 
-type DiscordSpace = "project" | "requests" | "aqs" | "chat"
+type DiscordSpace = "project" | "channels" | "requests" | "aqs" | "chat"
+
+type WorkspaceChannel = {
+  id: string
+  workspaceId: string
+  conversationId: string
+  name: string
+  description?: string
+  createdBy: string
+  closedAt?: string
+  closedBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SearchResult = {
+  key: string
+  kind: "Canal" | "Projeto" | "Tópico" | "Solicitação" | "Análise AQS" | "Área"
+  title: string
+  subtitle?: string
+  closed?: boolean
+  target: Record<string, string | undefined>
+}
 
 const CLOSED_REQUEST_STATUSES = new Set(["completed", "rejected", "cancelled"])
 
@@ -93,7 +119,7 @@ function ChannelButton({ active, label, muted, statusClass, onClick }: { active:
       <Hash className="size-4 shrink-0 opacity-70" />
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
       {statusClass && <span className={cn("size-1.5 shrink-0 rounded-full", statusClass)} />}
-      {muted && <span className="max-w-16 shrink-0 truncate text-[0.55rem] opacity-60">{muted}</span>}
+      {muted && <span className="max-w-20 shrink-0 truncate text-[0.55rem] opacity-60">{muted}</span>}
     </button>
   )
 }
@@ -156,34 +182,56 @@ export function DiscordWorkspace() {
     members,
     currentUserId,
     currentUserRole,
+    workspaceId,
+    refreshAll,
     deleteActivity,
   } = useStore()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const supabase = React.useMemo(() => createClient(), [])
+
   const [channelSearch, setChannelSearch] = React.useState("")
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set())
   const [createRequestOpen, setCreateRequestOpen] = React.useState(false)
   const [mobileChannelsOpen, setMobileChannelsOpen] = React.useState(false)
   const [deletingActivityId, setDeletingActivityId] = React.useState<string | null>(null)
+  const [workspaceChannels, setWorkspaceChannels] = React.useState<WorkspaceChannel[]>([])
+  const [channelsLoading, setChannelsLoading] = React.useState(false)
+  const [channelsError, setChannelsError] = React.useState<string | null>(null)
+  const [createChannelOpen, setCreateChannelOpen] = React.useState(false)
+  const [createChannelBusy, setCreateChannelBusy] = React.useState(false)
+  const [createChannelName, setCreateChannelName] = React.useState("")
+  const [createChannelDescription, setCreateChannelDescription] = React.useState("")
+  const [createChannelError, setCreateChannelError] = React.useState<string | null>(null)
+  const [archiveBusy, setArchiveBusy] = React.useState(false)
+  const [archiveTarget, setArchiveTarget] = React.useState<WorkspaceChannel | null>(null)
+  const [commandOpen, setCommandOpen] = React.useState(false)
+  const [commandQuery, setCommandQuery] = React.useState("")
+  const [commandIndex, setCommandIndex] = React.useState(0)
 
   const accessibleProjects = React.useMemo(() => scopeFollowUpProjects(projects, currentUserId, currentUserRole), [projects, currentUserId, currentUserRole])
   const visibleRequests = React.useMemo(() => serviceRequests, [serviceRequests])
   const visibleReviews = React.useMemo(() => aqsReviews, [aqsReviews])
+  const openWorkspaceChannels = React.useMemo(() => workspaceChannels.filter((channel) => !channel.closedAt), [workspaceChannels])
+  const workspaceChannelConversationIds = React.useMemo(() => workspaceChannels.map((channel) => channel.conversationId), [workspaceChannels])
 
   const requestedSpace = searchParams.get("space") as DiscordSpace | null
   const requestedProjectId = searchParams.get("project")
   const requestedRequestId = searchParams.get("request")
   const requestedReviewId = searchParams.get("review")
+  const requestedChannelId = searchParams.get("channel")
   const requestedSubId = searchParams.get("sub")
   const requestedActivityId = searchParams.get("activity")
 
-  const space: DiscordSpace = requestedSpace && ["project", "requests", "aqs", "chat"].includes(requestedSpace)
+  const space: DiscordSpace = requestedSpace && ["project", "channels", "requests", "aqs", "chat"].includes(requestedSpace)
     ? requestedSpace
-    : requestedRequestId ? "requests" : requestedReviewId ? "aqs" : "project"
+    : requestedChannelId ? "channels" : requestedRequestId ? "requests" : requestedReviewId ? "aqs" : "project"
 
   const selectedProject = accessibleProjects.find((project) => project.id === requestedProjectId) ?? accessibleProjects[0] ?? null
   const selectedRequest = visibleRequests.find((request) => request.id === requestedRequestId) ?? null
   const selectedReview = visibleReviews.find((review) => review.id === requestedReviewId || (!requestedReviewId && requestedSubId && review.subactivityId === requestedSubId)) ?? null
+  const selectedWorkspaceChannel = workspaceChannels.find((channel) => channel.id === requestedChannelId)
+    ?? (space === "channels" ? openWorkspaceChannels[0] ?? null : null)
 
   const projectSelection = React.useMemo(() => {
     if (!selectedProject) return null
@@ -205,12 +253,71 @@ export function DiscordWorkspace() {
   const canManageSelectedProject = Boolean(selectedProject && (currentUserRole === "admin" || selectedProject.memberIds.includes(currentUserId)))
   const openRequestsCount = visibleRequests.filter((request) => !CLOSED_REQUEST_STATUSES.has(request.status)).length
   const activeAqsCount = visibleReviews.filter((review) => review.status === "awaiting" || review.status === "evaluating").length
+  const isAdmin = currentUserRole === "admin"
 
   const setLocation = React.useCallback((next: Record<string, string | null | undefined>) => {
     const params = new URLSearchParams()
     Object.entries(next).forEach(([key, value]) => { if (value) params.set(key, value) })
     router.replace(`/?${params.toString()}`, { scroll: false })
   }, [router])
+
+  const loadWorkspaceChannels = React.useCallback(async () => {
+    if (!workspaceId) {
+      setWorkspaceChannels([])
+      return
+    }
+    setChannelsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("workspace_channels")
+        .select("id,workspace_id,conversation_id,name,description,created_by,closed_at,closed_by,created_at,updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("closed_at", { ascending: true, nullsFirst: true })
+        .order("updated_at", { ascending: false })
+      if (error) throw error
+      setWorkspaceChannels((data ?? []).map((row: any) => ({
+        id: row.id,
+        workspaceId: row.workspace_id,
+        conversationId: row.conversation_id,
+        name: row.name,
+        description: row.description ?? undefined,
+        createdBy: row.created_by,
+        closedAt: row.closed_at ?? undefined,
+        closedBy: row.closed_by ?? undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })))
+      setChannelsError(null)
+    } catch (error) {
+      setChannelsError(toUserFacingError(error, "Não foi possível carregar os canais do workspace"))
+    } finally {
+      setChannelsLoading(false)
+    }
+  }, [supabase, workspaceId])
+
+  React.useEffect(() => {
+    void loadWorkspaceChannels()
+    if (!workspaceId) return
+    const realtime = supabase
+      .channel(`discord-workspace-channels-${workspaceId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_channels", filter: `workspace_id=eq.${workspaceId}` }, () => void loadWorkspaceChannels())
+      .subscribe()
+    return () => { void supabase.removeChannel(realtime) }
+  }, [loadWorkspaceChannels, supabase, workspaceId])
+
+  React.useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.code !== "KeyK") return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      setCommandOpen(true)
+      setCommandQuery("")
+      setCommandIndex(0)
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [])
 
   function selectProject(project: Project) {
     const first = projectFirstSub(project)
@@ -224,8 +331,114 @@ export function DiscordWorkspace() {
     return unread.length ? "unread" as const : null
   }, [currentUserId, notifications])
 
+  async function createWorkspaceChannel() {
+    const name = createChannelName.trim().replace(/^#+\s*/, "")
+    if (!name || createChannelBusy) return
+    setCreateChannelBusy(true)
+    setCreateChannelError(null)
+    try {
+      const { data, error } = await supabase.rpc("create_workspace_channel", {
+        p_name: name,
+        p_description: createChannelDescription.trim() || null,
+      })
+      if (error) throw error
+      await Promise.all([loadWorkspaceChannels(), refreshAll()])
+      setCreateChannelName("")
+      setCreateChannelDescription("")
+      setCreateChannelOpen(false)
+      if (typeof data === "string") setLocation({ space: "channels", channel: data })
+    } catch (error) {
+      setCreateChannelError(toUserFacingError(error, "Não foi possível criar o canal"))
+    } finally {
+      setCreateChannelBusy(false)
+    }
+  }
+
+  async function setChannelClosed(channel: WorkspaceChannel, closed: boolean) {
+    if (archiveBusy) return
+    const fallbackOpenChannel = closed ? workspaceChannels.find((item) => item.id !== channel.id && !item.closedAt) : null
+    setArchiveBusy(true)
+    try {
+      const { error } = await supabase.rpc("set_workspace_channel_closed", { p_channel_id: channel.id, p_closed: closed })
+      if (error) throw error
+      await loadWorkspaceChannels()
+      setArchiveTarget(null)
+      setLocation({ space: "channels", channel: closed ? fallbackOpenChannel?.id : channel.id })
+    } catch (error) {
+      setChannelsError(toUserFacingError(error, closed ? "Não foi possível fechar o canal" : "Não foi possível reabrir o canal"))
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const commandResults = React.useMemo<SearchResult[]>(() => {
+    const q = normalize(commandQuery.trim())
+    const results: SearchResult[] = []
+    const matches = (value: string) => !q || normalize(value).includes(q)
+
+    for (const channel of workspaceChannels) {
+      // Fechados ficam realmente fora da navegação e só aparecem quando o usuário pesquisa algo.
+      if (channel.closedAt && !q) continue
+      if (!matches(`${channel.name} ${channel.description ?? ""}`)) continue
+      results.push({
+        key: `channel:${channel.id}`,
+        kind: "Canal",
+        title: `# ${channel.name}`,
+        subtitle: channel.closedAt ? "Canal fechado · histórico" : channel.description || "Canal do workspace",
+        closed: Boolean(channel.closedAt),
+        target: { space: "channels", channel: channel.id },
+      })
+    }
+
+    for (const project of accessibleProjects) {
+      if (matches(project.name)) {
+        const first = projectFirstSub(project)
+        results.push({ key: `project:${project.id}`, kind: "Projeto", title: project.name, subtitle: project.client || "Projeto", target: { space: "project", project: project.id, activity: first?.activityId, sub: first?.subactivityId } })
+      }
+      if (q) {
+        for (const activity of project.activities) {
+          for (const sub of activity.subactivities) {
+            if (!matches(`${sub.title} ${activity.title} ${project.name}`)) continue
+            results.push({ key: `sub:${sub.id}`, kind: "Tópico", title: `# ${sub.title}`, subtitle: `${project.name} · ${activity.title}`, target: { space: "project", project: project.id, activity: activity.id, sub: sub.id } })
+          }
+        }
+      }
+    }
+
+    if (q) for (const request of visibleRequests) {
+      if (!matches(`${request.title} ${request.orderNumber} ${request.unit} ${request.module}`)) continue
+      results.push({ key: `request:${request.id}`, kind: "Solicitação", title: `${serviceRequestReference(request)} · ${request.title}`, subtitle: SERVICE_REQUEST_STATUS_LABELS[request.status], target: { space: "requests", request: request.id } })
+    }
+
+    if (q) for (const review of visibleReviews) {
+      const project = projects.find((item) => item.id === review.projectId)
+      const activity = project?.activities.find((item) => item.id === review.activityId)
+      const sub = activity?.subactivities.find((item) => item.id === review.subactivityId)
+      if (!matches(`${sub?.title ?? ""} ${activity?.title ?? ""} ${project?.name ?? ""}`)) continue
+      results.push({ key: `aqs:${review.id}`, kind: "Análise AQS", title: sub?.title ?? "Análise AQS", subtitle: project?.name, target: { space: "aqs", review: review.id, project: review.projectId, activity: review.activityId, sub: review.subactivityId } })
+    }
+
+    if (matches("canais tópicos workspace")) results.push({ key: "area:channels", kind: "Área", title: "Canais", subtitle: "Canais gerais do workspace", target: { space: "channels", channel: openWorkspaceChannels[0]?.id } })
+    if (matches("solicitações protocolos atendimento")) results.push({ key: "area:requests", kind: "Área", title: "Solicitações", subtitle: "Protocolos e atendimento", target: { space: "requests", request: visibleRequests.find((item) => !CLOSED_REQUEST_STATUSES.has(item.status))?.id ?? visibleRequests[0]?.id } })
+    if (matches("mensagens chat grupos reuniões")) results.push({ key: "area:chat", kind: "Área", title: "Mensagens", subtitle: "Chats, grupos e reuniões", target: { space: "chat" } })
+
+    return results.slice(0, 60)
+  }, [accessibleProjects, commandQuery, openWorkspaceChannels, projects, visibleRequests, visibleReviews, workspaceChannels])
+
+  React.useEffect(() => {
+    setCommandIndex((current) => Math.min(current, Math.max(0, commandResults.length - 1)))
+  }, [commandResults.length])
+
+  function openCommandResult(result: SearchResult) {
+    setCommandOpen(false)
+    setCommandQuery("")
+    setChannelSearch("")
+    setLocation(result.target)
+  }
+
   const channelSidebar = React.useMemo(() => {
     const q = normalize(channelSearch.trim())
+
     if (space === "project" && selectedProject) {
       const projectRequests = visibleRequests.filter((request) => request.projectId === selectedProject.id && !CLOSED_REQUEST_STATUSES.has(request.status))
       const projectReviews = visibleReviews.filter((review) => review.projectId === selectedProject.id && (review.status === "awaiting" || review.status === "evaluating"))
@@ -251,6 +464,29 @@ export function DiscordWorkspace() {
       )
     }
 
+    if (space === "channels") {
+      const filtered = openWorkspaceChannels.filter((channel) => !q || normalize(`${channel.name} ${channel.description ?? ""}`).includes(q))
+      return (
+        <>
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+            <Hash className="size-4 text-primary" />
+            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Canais</p><p className="truncate text-[0.58rem] text-muted-foreground">Conversas gerais do workspace</p></div>
+            {isAdmin && <Button size="icon-xs" onClick={() => setCreateChannelOpen(true)} title="Criar canal"><Plus className="size-3.5" /></Button>}
+          </div>
+          <div className="p-2"><div className="relative"><Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /><input value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder="Buscar canais abertos" className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none focus:border-ring" /></div></div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
+            <div className="mt-1">
+              <CategoryHeader label="Canais" open={!collapsed.has("workspace:channels")} count={filtered.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("workspace:channels") ? next.delete("workspace:channels") : next.add("workspace:channels"); return next })} actions={isAdmin ? <button type="button" onClick={() => setCreateChannelOpen(true)} title="Criar canal" className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-3.5" /></button> : undefined} />
+              {!collapsed.has("workspace:channels") && <div className="space-y-0.5">{filtered.map((channel) => <ChannelButton key={channel.id} active={selectedWorkspaceChannel?.id === channel.id && !selectedWorkspaceChannel.closedAt} label={channel.name} muted={channel.description} onClick={() => { setLocation({ space: "channels", channel: channel.id }); setMobileChannelsOpen(false) }} />)}</div>}
+            </div>
+            {!channelsLoading && filtered.length === 0 && <div className="px-3 py-8 text-center text-xs text-muted-foreground">{isAdmin ? "Nenhum canal aberto. Crie o primeiro canal para a equipe." : "Nenhum canal aberto no momento."}</div>}
+            {channelsError && <div className="mx-1 mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-[0.65rem] text-destructive">{channelsError}</div>}
+            {selectedWorkspaceChannel?.closedAt && <div className="mx-1 mt-3 rounded-lg border border-border bg-muted/30 px-2.5 py-2 text-[0.65rem] text-muted-foreground"><Archive className="mr-1 inline size-3" />O canal aberto pela pesquisa está fechado e não aparece nesta lista.</div>}
+          </div>
+        </>
+      )
+    }
+
     if (space === "requests") {
       const filtered = visibleRequests.filter((request) => !q || normalize(`${request.title} ${request.orderNumber} ${request.unit} ${request.module}`).includes(q))
       const open = filtered.filter((request) => !CLOSED_REQUEST_STATUSES.has(request.status))
@@ -267,11 +503,44 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canManageSelectedProject, channelSearch, collapsed, deleteActivity, deletingActivityId, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedRequest?.id, selectedReview?.id, setLocation, space, visibleRequests, visibleReviews])
+  }, [canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, deleteActivity, deletingActivityId, isAdmin, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {
-    content = <ChatView />
+    content = <ChatView embedded excludeConversationIds={workspaceChannelConversationIds} />
+  } else if (space === "channels" && selectedWorkspaceChannel) {
+    content = (
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-border bg-card/70 px-3 py-1.5">
+          <Hash className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold">{selectedWorkspaceChannel.name}</p>
+            <p className="truncate text-[0.58rem] text-muted-foreground">{selectedWorkspaceChannel.closedAt ? "Canal fechado · somente histórico" : selectedWorkspaceChannel.description || "Canal geral do workspace"}</p>
+          </div>
+          {selectedWorkspaceChannel.closedAt && <span className="hidden rounded-full bg-muted px-2 py-1 text-[0.58rem] font-medium text-muted-foreground sm:inline">Arquivado</span>}
+          {isAdmin && (
+            <Button type="button" size="sm" variant="ghost" disabled={archiveBusy} onClick={() => selectedWorkspaceChannel.closedAt ? void setChannelClosed(selectedWorkspaceChannel, false) : setArchiveTarget(selectedWorkspaceChannel)} className="h-8 gap-1.5 px-2 text-xs">
+              {archiveBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : selectedWorkspaceChannel.closedAt ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+              <span className="hidden sm:inline">{selectedWorkspaceChannel.closedAt ? "Reabrir" : "Fechar"}</span>
+            </Button>
+          )}
+        </div>
+        <div className="min-h-0 flex-1">
+          <ChatView embedded conversationOnly conversationId={selectedWorkspaceChannel.conversationId} readOnly={Boolean(selectedWorkspaceChannel.closedAt)} />
+        </div>
+      </div>
+    )
+  } else if (space === "channels") {
+    content = (
+      <div className="flex h-full items-center justify-center p-8 text-center">
+        <div>
+          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><Hash className="size-7" /></div>
+          <h2 className="mt-4 text-lg font-semibold">Canais da equipe</h2>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">Canais gerais funcionam como no Discord: toda a equipe participa e o histórico fica centralizado.</p>
+          {isAdmin && <Button className="mt-4" onClick={() => setCreateChannelOpen(true)}><Plus className="size-4" /> Criar primeiro canal</Button>}
+        </div>
+      </div>
+    )
   } else if (selectedRequest && (space === "requests" || requestedRequestId)) {
     content = <RequestDetail requestId={selectedRequest.id} embedded backHref="/" />
   } else if (selectedReview) {
@@ -280,7 +549,7 @@ export function DiscordWorkspace() {
   } else if (selectedProject && projectSelection) {
     content = <ProjectFollowUp key={`${selectedProject.id}:${projectSelection.subactivityId}`} project={selectedProject} availableProjects={accessibleProjects} initialActivityId={projectSelection.activityId} initialSubactivityId={projectSelection.subactivityId} discordEmbedded />
   } else {
-    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao Devboard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, solicitação ou análise na lateral para começar. No Modo Discord, tudo acontece em canais e conversas.</p></div></div>
+    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao Devboard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Discord, tudo acontece em canais e conversas.</p></div></div>
   }
 
   return (
@@ -291,6 +560,7 @@ export function DiscordWorkspace() {
             {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} onClick={() => selectProject(project)} />)}
           </div>
           <div className="mx-auto my-2 h-px w-8 bg-border" />
+          <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }) }} />
           <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }) }} />
           {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }) }} />}
           <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }) }} />
@@ -310,6 +580,69 @@ export function DiscordWorkspace() {
       {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside className="absolute inset-y-0 left-[64px] flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
 
       <NewServiceRequestDialog open={createRequestOpen} onOpenChange={setCreateRequestOpen} />
+
+      <Dialog open={createChannelOpen} onOpenChange={(open) => { if (!createChannelBusy) { setCreateChannelOpen(open); if (!open) setCreateChannelError(null) } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Criar canal</DialogTitle>
+            <DialogDescription>Crie uma conversa geral para todo o workspace. Todos os usuários ativos entram automaticamente.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <label className="block"><span className="mb-1.5 block text-xs font-medium">Nome do canal</span><div className="relative"><Hash className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input autoFocus value={createChannelName} onChange={(event) => setCreateChannelName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && createChannelName.trim()) { event.preventDefault(); void createWorkspaceChannel() } }} maxLength={80} placeholder="duvidas-gerais" className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-ring" /></div></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-medium">Descrição <span className="font-normal text-muted-foreground">(opcional)</span></span><textarea value={createChannelDescription} onChange={(event) => setCreateChannelDescription(event.target.value)} maxLength={300} rows={3} placeholder="Para que este canal será usado?" className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" /></label>
+            {createChannelError && <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">{createChannelError}</div>}
+          </div>
+          <DialogFooter><Button variant="outline" disabled={createChannelBusy} onClick={() => setCreateChannelOpen(false)}>Cancelar</Button><Button disabled={!createChannelName.trim() || createChannelBusy} onClick={() => void createWorkspaceChannel()}>{createChannelBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />} Criar canal</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => { if (!open && !archiveBusy) setArchiveTarget(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fechar canal</DialogTitle>
+            <DialogDescription>
+              O canal <strong className="font-semibold text-foreground">#{archiveTarget?.name}</strong> sairá da navegação de todos. O histórico continuará disponível somente pela pesquisa <kbd className="rounded border border-border bg-muted px-1 font-mono text-[0.65rem]">Ctrl K</kbd>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl border border-border bg-muted/25 px-3 py-3 text-xs text-muted-foreground">Nenhuma mensagem será apagada. Como o canal ficará fechado, novas mensagens e chamadas serão bloqueadas até ele ser reaberto.</div>
+          <DialogFooter>
+            <Button variant="outline" disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>Cancelar</Button>
+            <Button variant="destructive" disabled={!archiveTarget || archiveBusy} onClick={() => archiveTarget && void setChannelClosed(archiveTarget, true)}>{archiveBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Archive className="size-4" />} Fechar canal</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={commandOpen} onOpenChange={setCommandOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="sr-only"><DialogTitle>Pesquisa geral</DialogTitle><DialogDescription>Procure projetos, canais, tópicos, solicitações e análises.</DialogDescription></DialogHeader>
+          <div className="flex h-14 items-center gap-3 border-b border-border px-4">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              value={commandQuery}
+              onChange={(event) => { setCommandQuery(event.target.value); setCommandIndex(0) }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") { event.preventDefault(); setCommandIndex((current) => commandResults.length ? (current + 1) % commandResults.length : 0) }
+                else if (event.key === "ArrowUp") { event.preventDefault(); setCommandIndex((current) => commandResults.length ? (current - 1 + commandResults.length) % commandResults.length : 0) }
+                else if (event.key === "Enter" && commandResults[commandIndex]) { event.preventDefault(); openCommandResult(commandResults[commandIndex]) }
+              }}
+              placeholder="Buscar canais, projetos, tópicos, solicitações..."
+              className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <kbd className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-[0.58rem] text-muted-foreground">Esc</kbd>
+          </div>
+          <div className="max-h-[min(62vh,520px)] overflow-y-auto p-2">
+            {commandResults.length ? commandResults.map((result, index) => (
+              <button key={result.key} type="button" onMouseEnter={() => setCommandIndex(index)} onClick={() => openCommandResult(result)} className={cn("flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors", index === commandIndex ? "bg-primary/10 text-foreground" : "hover:bg-muted")}> 
+                <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", result.closed ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary")}>{result.kind === "Projeto" ? <UsersRound className="size-4" /> : result.kind === "Solicitação" ? <Inbox className="size-4" /> : result.kind === "Análise AQS" ? <ClipboardCheck className="size-4" /> : result.closed ? <Archive className="size-4" /> : <Hash className="size-4" />}</span>
+                <span className="min-w-0 flex-1"><span className="flex min-w-0 items-center gap-2"><span className="truncate text-xs font-semibold">{result.title}</span>{result.closed && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.52rem] font-medium text-muted-foreground">Fechado</span>}</span><span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{result.kind}{result.subtitle ? ` · ${result.subtitle}` : ""}</span></span>
+                {index === commandIndex && <span className="shrink-0 font-mono text-[0.56rem] text-muted-foreground">Enter</span>}
+              </button>
+            )) : <div className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum resultado encontrado.</div>}
+          </div>
+          <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2 text-[0.58rem] text-muted-foreground"><span>↑↓ navegar · Enter abrir</span><span>Ctrl K pesquisa geral</span></div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

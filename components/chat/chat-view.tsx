@@ -39,6 +39,7 @@ import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { cn } from "@/lib/utils"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom } from "@/lib/meeting-launcher"
+import { createClient } from "@/lib/supabase/client"
 
 type ChatTab = "conversations" | "groups" | "users" | "meetings"
 
@@ -304,7 +305,26 @@ function MeetingListItem({
   )
 }
 
-export function ChatView() {
+type ChatViewProps = {
+  /** Remove o cartão externo e ocupa toda a altura/largura do contêiner pai. */
+  embedded?: boolean
+  /** Abre uma conversa específica; usado pelos canais globais do Modo Discord. */
+  conversationId?: string | null
+  /** Esconde a lista de conversas e transforma o chat em um único canal. */
+  conversationOnly?: boolean
+  /** Mantém o histórico visível, mas bloqueia novas mensagens/anexos/chamadas. */
+  readOnly?: boolean
+  /** Conversas técnicas (ex.: canais globais) que não devem aparecer na Central de Chat. */
+  excludeConversationIds?: string[]
+}
+
+export function ChatView({
+  embedded = false,
+  conversationId = null,
+  conversationOnly = false,
+  readOnly = false,
+  excludeConversationIds = [],
+}: ChatViewProps = {}) {
   const {
     members,
     memberPresence,
@@ -314,6 +334,7 @@ export function ChatView() {
     chatMeetings,
     currentUserId,
     currentUserRole,
+    workspaceId,
     chatHydrated,
     ensureDirectConversation,
     sendChatMessage,
@@ -331,7 +352,7 @@ export function ChatView() {
   const [tab, setTab] = React.useState<ChatTab>("conversations")
   const [query, setQuery] = React.useState("")
   const [recordingAudio, setRecordingAudio] = React.useState(false)
-  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+  const [selectedId, setSelectedId] = React.useState<string | null>(() => conversationId)
   const [message, setMessage] = React.useState("")
   const [openingUserId, setOpeningUserId] = React.useState<string | null>(null)
   const [startingMeetingMode, setStartingMeetingMode] = React.useState<MeetingMode | null>(null)
@@ -360,13 +381,40 @@ export function ChatView() {
   const replyFocusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedMessagesRef = React.useRef<ChatMessage[]>([])
   const navigationUserRef = React.useRef<string | null>(null)
+  const supabase = React.useMemo(() => createClient(), [])
+  const [workspaceChannelConversationIds, setWorkspaceChannelConversationIds] = React.useState<string[]>([])
 
+  React.useEffect(() => {
+    if (!workspaceId || conversationOnly) {
+      setWorkspaceChannelConversationIds([])
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from("workspace_channels")
+      .select("conversation_id")
+      .eq("workspace_id", workspaceId)
+      .then(({ data, error }) => {
+        // Compatibilidade: antes da migration 057 a tabela ainda não existe. Nesse caso
+        // o Chat tradicional continua funcionando e a V51 passa a ocultá-los assim que
+        // a migration for aplicada. Nenhum erro técnico é exibido ao usuário.
+        if (cancelled || error) return
+        setWorkspaceChannelConversationIds((data ?? []).map((row: any) => String(row.conversation_id)).filter(Boolean))
+      })
+    return () => { cancelled = true }
+  }, [conversationOnly, supabase, workspaceId])
+
+  const excludedConversationIds = React.useMemo(
+    () => new Set([...excludeConversationIds, ...workspaceChannelConversationIds]),
+    [excludeConversationIds, workspaceChannelConversationIds],
+  )
   const myConversations = React.useMemo(
     () =>
       chatConversations
         .filter((conversation) => conversation.memberIds.includes(currentUserId))
+        .filter((conversation) => conversationOnly || !excludedConversationIds.has(conversation.id))
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [chatConversations, currentUserId],
+    [chatConversations, conversationOnly, currentUserId, excludedConversationIds],
   )
 
   const myMeetings = React.useMemo(
@@ -419,10 +467,17 @@ export function ChatView() {
   }, [selected?.messages])
 
   React.useEffect(() => {
-    if (selectedId && !myConversations.some((conversation) => conversation.id === selectedId)) {
-      setSelectedId(null)
+    if (!conversationId) return
+    if (myConversations.some((conversation) => conversation.id === conversationId)) {
+      setSelectedId(conversationId)
     }
-  }, [myConversations, selectedId])
+  }, [conversationId, myConversations])
+
+  React.useEffect(() => {
+    if (selectedId && !myConversations.some((conversation) => conversation.id === selectedId)) {
+      setSelectedId(conversationId && myConversations.some((conversation) => conversation.id === conversationId) ? conversationId : null)
+    }
+  }, [conversationId, myConversations, selectedId])
 
   React.useEffect(() => {
     const requestId = ++historyRequestRef.current
@@ -727,7 +782,7 @@ export function ChatView() {
   }
 
   function submitMessage() {
-    if (!selected || !message.trim()) return
+    if (readOnly || !selected || !message.trim()) return
     const content = message
     const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
 
@@ -752,7 +807,7 @@ export function ChatView() {
   }
 
   async function submitMedia(caption: string) {
-    if (!selected || !stagedFiles.length || sendingMedia) return
+    if (readOnly || !selected || !stagedFiles.length || sendingMedia) return
     setSendingMedia(true)
     try {
       const sent = await sendChatMedia(selected.id, stagedFiles, caption)
@@ -786,6 +841,7 @@ export function ChatView() {
   }
 
   async function startQuickMeeting(mode: MeetingMode) {
+    if (readOnly) return
     if (!selected || startingMeetingMode) return
     void primeCallAudio()
     setStartingMeetingMode(mode)
@@ -831,9 +887,20 @@ export function ChatView() {
 
   return (
     <>
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/8 lg:h-[calc(100dvh-7.4rem)] lg:min-h-[580px]">
-        <div className="grid h-full min-h-[640px] grid-cols-1 lg:min-h-0 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_250px]">
-          <aside className={cn("min-h-0 flex-col border-r border-border bg-muted/15", selected ? "hidden lg:flex" : "flex")}>
+      <div className={cn(
+        "overflow-hidden bg-card",
+        embedded || conversationOnly
+          ? "h-full min-h-0 w-full rounded-none ring-0"
+          : "rounded-2xl ring-1 ring-foreground/8 lg:h-[calc(100dvh-7.4rem)] lg:min-h-[580px]",
+      )}>
+        <div className={cn(
+          "grid h-full grid-cols-1",
+          embedded || conversationOnly ? "min-h-0" : "min-h-[640px] lg:min-h-0",
+          conversationOnly
+            ? "xl:grid-cols-[minmax(0,1fr)_250px]"
+            : "lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_250px]",
+        )}>
+          {!conversationOnly && <aside className={cn("min-h-0 flex-col border-r border-border bg-muted/15", selected ? "hidden lg:flex" : "flex")}>
             <div className="border-b border-border px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -989,20 +1056,22 @@ export function ChatView() {
                 </div>
               )}
             </div>
-          </aside>
+          </aside>}
 
-          <section className={cn("min-h-0 flex-col", selected ? "flex" : "hidden lg:flex")}>
+          <section className={cn("min-h-0 flex-col", selected ? "flex" : conversationOnly ? "flex" : "hidden lg:flex")}>
             {selected ? (
               <>
                 <header className="flex min-h-16 items-center gap-2 border-b border-border px-3 py-2.5 sm:gap-3 sm:px-4">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(null)}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted lg:hidden"
-                    aria-label="Voltar às conversas"
-                  >
-                    <ArrowLeft className="size-4" />
-                  </button>
+                  {!conversationOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(null)}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted lg:hidden"
+                      aria-label="Voltar às conversas"
+                    >
+                      <ArrowLeft className="size-4" />
+                    </button>
+                  )}
                   <span className="relative shrink-0">
                     <ConversationAvatar conversation={selected} currentUserId={currentUserId} members={members} className="size-9" />
                     {selected.kind === "direct" && (
@@ -1025,7 +1094,7 @@ export function ChatView() {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
-                    {conversationMeeting ? (
+                    {!readOnly && (conversationMeeting ? (
                       <Button
                         type="button"
                         size="sm"
@@ -1059,23 +1128,25 @@ export function ChatView() {
                           <Video className="size-4" />
                         </Button>
                       </>
-                    )}
-                    {selected.kind === "group" && (
+                    ))}
+                    {!readOnly && !conversationOnly && selected.kind === "group" && (
                       <GroupDialog group={selected} compact onSaved={(id) => setSelectedId(id)} />
                     )}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setConversationActionOpen(true)}
-                      title={selected.kind === "group" ? (selectedIsLastGroupMember ? "Excluir grupo" : "Sair do grupo") : "Remover conversa"}
-                    >
-                      {selected.kind === "group" && !selectedIsLastGroupMember ? <LogOut className="size-4" /> : <Trash2 className="size-4" />}
-                    </Button>
+                    {!conversationOnly && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setConversationActionOpen(true)}
+                        title={selected.kind === "group" ? (selectedIsLastGroupMember ? "Excluir grupo" : "Sair do grupo") : "Remover conversa"}
+                      >
+                        {selected.kind === "group" && !selectedIsLastGroupMember ? <LogOut className="size-4" /> : <Trash2 className="size-4" />}
+                      </Button>
+                    )}
                   </div>
                 </header>
 
-                {conversationMeeting && (
+                {conversationMeeting && !readOnly && (
                   <button
                     type="button"
                     onClick={() => void openMeeting(conversationMeeting)}
@@ -1252,6 +1323,12 @@ export function ChatView() {
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
+                  {readOnly ? (
+                    <div className="mx-auto flex min-h-10 max-w-3xl items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-4 text-center text-xs text-muted-foreground">
+                      Este canal está fechado. O histórico permanece disponível somente para consulta.
+                    </div>
+                  ) : (
+                    <>
                   <div className="mx-auto max-w-3xl">
                     {!recordingAudio && replyingTo && (
                       <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
@@ -1413,6 +1490,8 @@ export function ChatView() {
                     </div>
                   </div>
                   <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Segure uma mensagem para responder</p>
+                    </>
+                  )}
                 </footer>
               </>
             ) : (

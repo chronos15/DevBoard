@@ -8,7 +8,7 @@ import { Topbar } from "@/components/topbar"
 import { BackendErrorBanner } from "@/components/backend-error-banner"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { useStore } from "@/lib/store"
-import { ShieldAlert } from "lucide-react"
+import { ArrowLeft, ShieldAlert } from "lucide-react"
 import { ACCESS_ROLE_LABELS, type AccessRole } from "@/lib/types"
 import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { MeetingSessionHost } from "@/components/chat/meeting-session-host"
@@ -172,7 +172,8 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
   const myTasksPage = pathname.startsWith("/minhas-tarefas")
   const requestsPage = pathname.startsWith("/solicitacoes")
   const analysisPage = pathname.startsWith("/analise")
-  const focusedHome = preferences.interfaceMode === "focused" && pathname === "/"
+  const focusedMode = preferences.interfaceMode === "focused"
+  const focusedHome = focusedMode && pathname === "/"
   const fullHeightWorkspace = focusedHome || followUpPage || myTasksPage || requestsPage || analysisPage
 
   if (sharePage) {
@@ -189,14 +190,26 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
       "flex max-w-full overflow-x-clip",
       fullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen",
     )}>
-      <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
-      <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col">
+      {!focusedMode && <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />}
+      <div className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col">
+        {focusedMode && pathname.startsWith("/config") && (
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="fixed left-3 top-3 z-[90] inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card/95 px-3 text-xs font-semibold text-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
+            title="Voltar ao Modo Discord"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span className="hidden sm:inline">Voltar ao Discord</span>
+          </button>
+        )}
         {preferences.interfaceMode === "complete" && <Topbar onMenu={() => setMenuOpen(true)} />}
         <main className={cn(
           "min-w-0 max-w-full flex-1",
           fullHeightWorkspace
             ? "min-h-0 overflow-hidden p-0"
             : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
+          focusedMode && pathname.startsWith("/config") && "pt-16 sm:pt-16",
         )}>
           {hydrated ? (canAccessPath(currentUserRole, pathname) ? children : <AccessDenied role={currentUserRole} />) : <AppLoadingSkeleton />}
         </main>

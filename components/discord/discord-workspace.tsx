@@ -536,7 +536,7 @@ export function DiscordWorkspace() {
         <div>
           <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><Hash className="size-7" /></div>
           <h2 className="mt-4 text-lg font-semibold">Canais da equipe</h2>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">Canais gerais funcionam como no Discord: toda a equipe participa e o histórico fica centralizado.</p>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">Canais gerais são compartilhados com toda a equipe e mantêm o histórico centralizado.</p>
           {isAdmin && <Button className="mt-4" onClick={() => setCreateChannelOpen(true)}><Plus className="size-4" /> Criar primeiro canal</Button>}
         </div>
       </div>
@@ -549,7 +549,7 @@ export function DiscordWorkspace() {
   } else if (selectedProject && projectSelection) {
     content = <ProjectFollowUp key={`${selectedProject.id}:${projectSelection.subactivityId}`} project={selectedProject} availableProjects={accessibleProjects} initialActivityId={projectSelection.activityId} initialSubactivityId={projectSelection.subactivityId} discordEmbedded />
   } else {
-    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao Devboard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Discord, tudo acontece em canais e conversas.</p></div></div>
+    content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao Devboard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Resumido, tudo acontece em canais e conversas.</p></div></div>
   }
 
   return (

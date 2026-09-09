@@ -90,5 +90,5 @@ export function serviceRequestScopeTitle(scope: ServiceRequestScope) {
   if (scope === "aqs") return { eyebrow: "Solicitações", title: "Fila AQS", subtitle: "Triagem, análise, retorno do desenvolvimento e validação final em uma única fila." }
   if (scope === "dev") return { eyebrow: "Solicitações", title: "Fila DEV", subtitle: "Solicitações liberadas pelo AQS para designação, execução e reavaliação." }
   if (scope === "completed") return { eyebrow: "Solicitações", title: "Concluídas", subtitle: "Histórico encerrado de solicitações, recusas e cancelamentos do processo." }
-  return { eyebrow: "Solicitações", title: "Caixa de entrada", subtitle: "Centralize o protocolo entre solicitante, AQS e DEV sem depender do Discord." }
+  return { eyebrow: "Solicitações", title: "Caixa de entrada", subtitle: "Centralize o protocolo entre solicitante, AQS e DEV sem depender de ferramentas externas." }
 }

@@ -308,7 +308,7 @@ function MeetingListItem({
 type ChatViewProps = {
   /** Remove o cartão externo e ocupa toda a altura/largura do contêiner pai. */
   embedded?: boolean
-  /** Abre uma conversa específica; usado pelos canais globais do Modo Discord. */
+  /** Abre uma conversa específica; usado pelos canais globais do Modo Resumido. */
   conversationId?: string | null
   /** Esconde a lista de conversas e transforma o chat em um único canal. */
   conversationOnly?: boolean

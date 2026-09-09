@@ -197,10 +197,10 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
             type="button"
             onClick={() => router.push("/")}
             className="fixed left-3 top-3 z-[90] inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card/95 px-3 text-xs font-semibold text-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
-            title="Voltar ao Modo Discord"
+            title="Voltar ao Modo Resumido"
           >
             <ArrowLeft className="size-3.5" />
-            <span className="hidden sm:inline">Voltar ao Discord</span>
+            <span className="hidden sm:inline">Voltar ao Resumido</span>
           </button>
         )}
         {preferences.interfaceMode === "complete" && <Topbar onMenu={() => setMenuOpen(true)} />}

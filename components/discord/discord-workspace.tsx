@@ -17,6 +17,8 @@ import {
   Plus,
   Search,
   Settings,
+  PanelLeftOpen,
+  PanelLeftClose,
   LogOut,
   ShieldCheck,
   Sun,
@@ -89,12 +91,12 @@ function projectFirstSub(project?: Project | null) {
   return activity && sub ? { activityId: activity.id, subactivityId: sub.id } : null
 }
 
-function ProjectServerButton({ project, active, unread, onClick }: { project: Project; active: boolean; unread: "mention" | "unread" | null; onClick: () => void }) {
+function ProjectServerButton({ project, active, unread, expanded, onClick }: { project: Project; active: boolean; unread: "mention" | "unread" | null; expanded?: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} title={project.name} className="group relative flex h-12 w-full items-center justify-center">
+    <button type="button" onClick={onClick} title={project.name} className={cn("group relative flex h-12 w-full items-center transition-colors", expanded ? "justify-start gap-2 px-2" : "justify-center")}>
       <span className={cn("absolute left-0 w-1 rounded-r-full bg-foreground transition-all", active ? "h-10" : unread ? "h-2" : "h-0 group-hover:h-5")} />
       <span className={cn(
-        "relative flex size-11 items-center justify-center overflow-visible rounded-[22px] bg-muted text-muted-foreground ring-1 ring-border transition-all duration-150 group-hover:rounded-[15px] group-hover:bg-primary/15 group-hover:text-primary",
+        "relative flex size-11 shrink-0 items-center justify-center overflow-visible rounded-[22px] bg-muted text-muted-foreground ring-1 ring-border transition-all duration-150 group-hover:rounded-[15px] group-hover:bg-primary/15 group-hover:text-primary",
         active && "rounded-[15px] bg-primary text-primary-foreground ring-primary",
       )}>
         <span className="flex size-full items-center justify-center overflow-hidden rounded-[inherit]">
@@ -103,18 +105,20 @@ function ProjectServerButton({ project, active, unread, onClick }: { project: Pr
         {unread === "mention" && <span className="absolute -bottom-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.52rem] font-bold leading-4 text-destructive-foreground ring-2 ring-background">@</span>}
         {unread === "unread" && <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-sky-400 ring-2 ring-background" />}
       </span>
+      {expanded && <span className="min-w-0 flex-1 truncate text-left text-xs font-medium text-foreground/85">{project.name}</span>}
     </button>
   )
 }
 
-function SpecialServerButton({ title, active, icon: Icon, badge, onClick }: { title: string; active: boolean; icon: typeof Inbox; badge?: number; onClick: () => void }) {
+function SpecialServerButton({ title, active, icon: Icon, badge, expanded, onClick }: { title: string; active: boolean; icon: typeof Inbox; badge?: number; expanded?: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} title={title} className="group relative flex h-12 w-full items-center justify-center">
+    <button type="button" onClick={onClick} title={title} className={cn("group relative flex h-12 w-full items-center transition-colors", expanded ? "justify-start gap-2 px-2" : "justify-center")}>
       <span className={cn("absolute left-0 w-1 rounded-r-full bg-foreground transition-all", active ? "h-10" : "h-0 group-hover:h-5")} />
-      <span className={cn("relative flex size-11 items-center justify-center rounded-[22px] bg-muted text-muted-foreground ring-1 ring-border transition-all group-hover:rounded-[15px] group-hover:bg-primary group-hover:text-primary-foreground", active && "rounded-[15px] bg-primary text-primary-foreground ring-primary")}>
+      <span className={cn("relative flex size-11 shrink-0 items-center justify-center rounded-[22px] bg-muted text-muted-foreground ring-1 ring-border transition-all group-hover:rounded-[15px] group-hover:bg-primary group-hover:text-primary-foreground", active && "rounded-[15px] bg-primary text-primary-foreground ring-primary")}>
         <Icon className="size-5" />
         {!!badge && <span className="absolute -bottom-1 -right-1 min-w-4 rounded-full bg-destructive px-1 text-center font-mono text-[0.5rem] font-bold leading-4 text-destructive-foreground ring-2 ring-background">{badge > 99 ? "99+" : badge}</span>}
       </span>
+      {expanded && <span className="min-w-0 flex-1 truncate text-left text-xs font-medium text-foreground/85">{title}</span>}
     </button>
   )
 }
@@ -224,6 +228,19 @@ export function DiscordWorkspace() {
   const [commandOpen, setCommandOpen] = React.useState(false)
   const [commandQuery, setCommandQuery] = React.useState("")
   const [commandIndex, setCommandIndex] = React.useState(0)
+  const [serverRailExpanded, setServerRailExpanded] = React.useState(false)
+
+  React.useEffect(() => {
+    try { setServerRailExpanded(window.localStorage.getItem("taskboard:resumido:server-rail-expanded") === "1") } catch {}
+  }, [])
+
+  React.useEffect(() => {
+    try { window.localStorage.setItem("taskboard:resumido:server-rail-expanded", serverRailExpanded ? "1" : "0") } catch {}
+  }, [serverRailExpanded])
+
+  const collapseServerRailOnSmallScreen = React.useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) setServerRailExpanded(false)
+  }, [])
 
   const accessibleProjects = React.useMemo(() => scopeFollowUpProjects(projects, currentUserId, currentUserRole), [projects, currentUserId, currentUserRole])
   const visibleRequests = React.useMemo(() => serviceRequests, [serviceRequests])
@@ -570,39 +587,54 @@ export function DiscordWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background">
-      <nav className="flex w-[64px] shrink-0 flex-col border-r border-border bg-background/95 py-2" aria-label="Projetos e áreas">
+      <nav className={cn("flex shrink-0 flex-col border-r border-border bg-background/95 py-2 transition-[width] duration-200 ease-out", serverRailExpanded ? "w-[220px]" : "w-[64px]")} aria-label="Projetos e áreas">
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex flex-col items-center gap-1">
-            {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} onClick={() => selectProject(project)} />)}
+          <div className={cn("mb-1 flex", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
+            <button
+              type="button"
+              onClick={() => setServerRailExpanded((current) => !current)}
+              className={cn("flex h-9 items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", serverRailExpanded ? "w-full justify-between gap-2 px-2" : "w-10 justify-center")}
+              title={serverRailExpanded ? "Recolher nomes" : "Mostrar nomes"}
+              aria-label={serverRailExpanded ? "Recolher barra de projetos" : "Expandir barra de projetos"}
+              aria-expanded={serverRailExpanded}
+            >
+              {serverRailExpanded && <span className="truncate text-xs font-semibold">TaskBoard</span>}
+              {serverRailExpanded ? <PanelLeftClose className="size-4 shrink-0" /> : <PanelLeftOpen className="size-4" />}
+            </button>
           </div>
-          <div className="mx-auto my-2 h-px w-8 bg-border" />
-          <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }) }} />
-          <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }) }} />
-          {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }) }} />}
-          <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }) }} />
+          <div className="flex flex-col items-stretch gap-1">
+            {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
+          </div>
+          <div className={cn("mx-auto my-2 h-px bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
+          <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />
+          <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />
+          {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}
+          <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }); collapseServerRailOnSmallScreen() }} />
         </div>
-        <div className="mt-2 flex flex-col items-center gap-2 border-t border-border pt-2">
-          <NotificationCenter compact popoverSide="right" />
-          <RecentSubactivities compact popoverSide="right" />
-          <div className="h-px w-8 bg-border" />
+        <div className={cn("mt-2 flex flex-col gap-2 border-t border-border pt-2", serverRailExpanded ? "items-stretch px-2" : "items-center")}>
+          <div className={cn(serverRailExpanded && "flex items-center gap-2 rounded-lg px-1")}><NotificationCenter compact popoverSide="right" />{serverRailExpanded && <span className="truncate text-xs text-muted-foreground">Notificações</span>}</div>
+          <div className={cn(serverRailExpanded && "flex items-center gap-2 rounded-lg px-1")}><RecentSubactivities compact popoverSide="right" />{serverRailExpanded && <span className="truncate text-xs text-muted-foreground">Subatividades recentes</span>}</div>
+          <div className={cn("h-px bg-border", serverRailExpanded ? "w-full" : "w-8")} />
           <button
             type="button"
             title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}
             aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}
             onClick={toggleTheme}
-            className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={cn("flex h-10 items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", serverRailExpanded ? "w-full justify-start gap-2 px-3" : "w-10 justify-center")}
           >
-            {themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}
+            {themeMounted && !isDarkTheme ? <Moon className="size-4 shrink-0" /> : <Sun className="size-4 shrink-0" />}
+            {serverRailExpanded && <span className="truncate text-xs">{isDarkTheme ? "Tema claro" : "Tema escuro"}</span>}
           </button>
-          <button type="button" title="Configurações" onClick={() => router.push("/config")} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Settings className="size-4" /></button>
+          <button type="button" title="Configurações" onClick={() => router.push("/config")} className={cn("flex h-10 items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", serverRailExpanded ? "w-full justify-start gap-2 px-3" : "w-10 justify-center")}><Settings className="size-4 shrink-0" />{serverRailExpanded && <span className="truncate text-xs">Configurações</span>}</button>
           <button
             type="button"
             title="Sair da conta"
             aria-label="Sair da conta"
             onClick={() => void signOut()}
-            className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            className={cn("flex h-10 items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive", serverRailExpanded ? "w-full justify-start gap-2 px-3" : "w-10 justify-center")}
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4 shrink-0" />
+            {serverRailExpanded && <span className="truncate text-xs">Sair da conta</span>}
           </button>
         </div>
       </nav>
@@ -614,7 +646,7 @@ export function DiscordWorkspace() {
         {content}
       </main>
 
-      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside className="absolute inset-y-0 left-[64px] flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
+      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside style={{ left: serverRailExpanded ? 220 : 64 }} className="absolute inset-y-0 flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
 
       <NewServiceRequestDialog open={createRequestOpen} onOpenChange={setCreateRequestOpen} />
 

@@ -132,6 +132,18 @@ function formatShortTime(value: string) {
   return new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
 }
 
+function parseLogDescription(description?: string) {
+  const clean = (description ?? "").replace(/\s+/g, " ").trim()
+  if (!clean) return { summary: "", reason: "" }
+  const marker = "Motivo:"
+  const index = clean.lastIndexOf(marker)
+  if (index < 0) return { summary: clean, reason: "" }
+  return {
+    summary: clean.slice(0, index).trim().replace(/[·\-–—:,;.]+$/, "").trim(),
+    reason: clean.slice(index + marker.length).trim(),
+  }
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -825,6 +837,7 @@ export function ProjectFollowUp({
   const [compactActionsItemId, setCompactActionsItemId] = React.useState<string | null>(null)
   const [reactionSavingItemId, setReactionSavingItemId] = React.useState<string | null>(null)
   const [memberRemovalTargetId, setMemberRemovalTargetId] = React.useState<string | null>(null)
+  const [logDetailItem, setLogDetailItem] = React.useState<Extract<TimelineItem, { kind: "log" }> | null>(null)
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -2786,15 +2799,19 @@ export function ProjectFollowUp({
                         }
 
                         if (item.kind === "log") {
+                          const logText = parseLogDescription(item.description)
                           return (
                             <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
                             <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-start gap-2">
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-medium text-foreground/80">{item.title}</p>
-                                  {item.description && <p className="mt-0.5 max-w-full truncate leading-relaxed" title={item.description}>{item.description}</p>}
-                                </div>
+                                <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <p className="min-w-0 flex-1 truncate font-medium text-foreground/80">{item.title}</p>
+                                    {logText.reason && <span className="max-w-[46%] shrink-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[0.56rem] font-medium text-primary" title={`Motivo: ${logText.reason}`}>Motivo: {logText.reason}</span>}
+                                  </div>
+                                  {logText.summary && <p className="mt-0.5 max-w-full truncate leading-relaxed">{logText.summary}</p>}
+                                </button>
                                 <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
@@ -3279,6 +3296,56 @@ export function ProjectFollowUp({
         currentProjectId={project.id}
         onOpenResult={openGlobalSearchResult}
       />
+
+      <Dialog open={Boolean(logDetailItem)} onOpenChange={(open) => { if (!open) setLogDetailItem(null) }}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-lg overflow-hidden p-0">
+          {logDetailItem && (() => {
+            const detail = parseLogDescription(logDetailItem.description)
+            const actor = logDetailItem.authorId ? members.find((entry) => entry.id === logDetailItem.authorId) : undefined
+            return (
+              <>
+                <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left">
+                  <div className="flex items-start gap-3 pr-7">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ActivityIcon className="size-4" /></span>
+                    <div className="min-w-0 flex-1">
+                      <DialogTitle className="break-words text-base leading-snug">{logDetailItem.title}</DialogTitle>
+                      <DialogDescription className="mt-1 text-xs">Detalhes completos do registro</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="max-h-[min(64vh,520px)] space-y-4 overflow-y-auto px-5 py-4">
+                  {detail.reason && (
+                    <div className="rounded-xl border border-primary/15 bg-primary/[0.06] p-3">
+                      <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-primary">Motivo</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-foreground">{detail.reason}</p>
+                    </div>
+                  )}
+                  {logDetailItem.description && (
+                    <div>
+                      <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted-foreground">Descrição</p>
+                      <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{logDetailItem.description}</p>
+                    </div>
+                  )}
+                  <div className="grid gap-3 rounded-xl border border-border bg-muted/20 p-3 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <p className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Registrado por</p>
+                      <p className="mt-1 truncate text-xs font-medium text-foreground">{actor?.name ?? "Sistema"}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Data e hora</p>
+                      <p className="mt-1 text-xs font-medium text-foreground">{new Date(logDetailItem.createdAt).toLocaleString("pt-BR")}</p>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter className="border-t border-border px-5 py-4">
+                  <Button type="button" variant="outline" onClick={() => setLogDetailItem(null)}>Fechar</Button>
+                  <Button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(logDetailItem)); setLogDetailItem(null); window.requestAnimationFrame(() => messageRef.current?.focus()) }}><Reply className="size-4" /> Responder</Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(memberRemovalTarget)} onOpenChange={(open) => {
         if (!open && !removingMemberId) setMemberRemovalTargetId(null)

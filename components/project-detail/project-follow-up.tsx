@@ -2784,12 +2784,23 @@ export function ProjectFollowUp({
                           return (
                             <MobileSwipeReply key={item.id} label="Responder registro" onReply={() => beginReplyToTimelineItem(item)}>
                             <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 pr-9 min-[761px]:pr-20">
                                 <Clock3 className="size-3.5 shrink-0" />
                                 <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
                                 <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
-                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
-                                <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
+                              </div>
+                              <div className="absolute right-1 top-0 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/reaction:opacity-100 min-[761px]:group-focus-within/reaction:opacity-100">
+                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
+                              </div>
+                              <div className="absolute right-1 top-0 min-[761px]:hidden" data-followup-compact-actions>
+                                <button type="button" onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Ações do registro" aria-label="Ações do registro" aria-expanded={compactActionsItemId === item.id}><Ellipsis className="size-4" /></button>
+                                {compactActionsItemId === item.id && (
+                                  <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
+                                  </div>
+                                )}
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-0 top-8")}
@@ -2803,7 +2814,7 @@ export function ProjectFollowUp({
                           return (
                             <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
                             <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
-                              <div className="flex items-start gap-2">
+                              <div className="flex items-start gap-2 pr-9 min-[761px]:pr-20">
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
                                   <div className="flex min-w-0 items-center gap-2">
@@ -2813,7 +2824,11 @@ export function ProjectFollowUp({
                                   {logText.summary && <p className="mt-0.5 max-w-full truncate leading-relaxed">{logText.summary}</p>}
                                 </button>
                                 <time className="shrink-0 pt-0.5 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
-                                <div className="relative shrink-0" data-followup-compact-actions>
+                                <div className="absolute right-2 top-1 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/reaction:opacity-100 min-[761px]:group-focus-within/reaction:opacity-100">
+                                  <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                  <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
+                                </div>
+                                <div className="absolute right-2 top-1 min-[761px]:hidden" data-followup-compact-actions>
                                   <button
                                     type="button"
                                     onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}
@@ -2942,7 +2957,7 @@ export function ProjectFollowUp({
                           <MobileSwipeReply key={item.id} label="Responder anexo" onReply={() => beginReplyToTimelineItem(item)}>
                           <article id={`followup-timeline-${item.id}`} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
-                            <div className="min-w-0 flex-1 pr-9">
+                            <div className="min-w-0 flex-1 pr-9 min-[761px]:pr-32">
                               <div className="flex min-w-0 items-baseline gap-2">
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
@@ -2955,7 +2970,21 @@ export function ProjectFollowUp({
                               />
                               {renderReactionSummary(item)}
                             </div>
-                            <div className="absolute right-2 top-2" data-followup-compact-actions>
+                            <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/attachment:opacity-100 min-[761px]:group-focus-within/attachment:opacity-100">
+                              <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                              <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
+                              <CopyEntityLinkButton
+                                href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
+                                label="Copiar link do anexo"
+                                className="size-7 rounded-md"
+                              />
+                              {canDeleteAttachment(item.attachment) && (
+                                <button type="button" disabled={deletingAttachmentId === item.attachment.id} onClick={() => void deleteAttachment(item.attachment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir anexo" : "Excluir anexo (até 30 min)"} aria-label="Excluir anexo">
+                                  {deletingAttachmentId === item.attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                            <div className="absolute right-2 top-2 min-[761px]:hidden" data-followup-compact-actions>
                               <button
                                 type="button"
                                 onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}

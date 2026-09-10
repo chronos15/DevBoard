@@ -596,12 +596,12 @@ export function DiscordWorkspace() {
         {serverRailExpanded && (
           <button
             type="button"
-            className="fixed inset-0 z-[128] bg-black/45 backdrop-blur-[1px] md:hidden"
+            className="fixed inset-0 z-[70] bg-black/45 backdrop-blur-[1px] md:hidden"
             onClick={() => setServerRailExpanded(false)}
             aria-label="Fechar navegação expandida"
           />
         )}
-        <nav className={cn("absolute inset-y-0 left-0 z-[129] flex flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
+        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className={cn("mb-1 flex", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
             <button
@@ -661,7 +661,7 @@ export function DiscordWorkspace() {
         {content}
       </main>
 
-      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside style={{ left: 64 }} className="absolute inset-y-0 flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
+      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[72] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside style={{ left: 64 }} className="absolute inset-y-0 flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
 
       <NewServiceRequestDialog open={createRequestOpen} onOpenChange={setCreateRequestOpen} />
 

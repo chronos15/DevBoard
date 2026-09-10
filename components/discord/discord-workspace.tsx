@@ -6,24 +6,30 @@ import { useTheme } from "next-themes"
 import {
   Archive,
   ArchiveRestore,
+  Code2,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
   Hash,
+  Image as ImageIcon,
   Inbox,
   LoaderCircle,
+  Link as LinkIcon,
   MessageCircleMore,
   Moon,
   Plus,
   Search,
   Settings,
+  Terminal,
   PanelLeftOpen,
   PanelLeftClose,
   LogOut,
   ShieldCheck,
   Sun,
   Trash2,
+  Type as TypeIcon,
   UsersRound,
+  Video,
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -37,14 +43,14 @@ import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { RequestDetail } from "@/components/requests/request-detail"
 import { NewServiceRequestDialog } from "@/components/requests/request-create-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
-import { ChatView } from "@/components/chat/chat-view"
+import { ChatView, type ChatSlashCommand } from "@/components/chat/chat-view"
 import { MemberAvatar } from "@/components/member-avatar"
 import { RecentSubactivities } from "@/components/recent-subactivities"
 import { NotificationCenter } from "@/components/notifications/notification-center"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
-import type { AqsReview, Project } from "@/lib/types"
+import type { AqsReview, ChatCommandBlock, Project } from "@/lib/types"
 
 type DiscordSpace = "project" | "channels" | "requests" | "aqs" | "chat"
 
@@ -59,6 +65,37 @@ type WorkspaceChannel = {
   closedBy?: string
   createdAt: string
   updatedAt: string
+}
+
+type WorkspaceChannelCommand = ChatSlashCommand & {
+  workspaceId: string
+  channelId: string
+  description?: string
+  body: ChatCommandBlock[]
+  active: boolean
+  usageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+type CommandBlockType = ChatCommandBlock["type"]
+
+const COMMAND_BLOCK_OPTIONS: Array<{ type: CommandBlockType; label: string; icon: typeof TypeIcon }> = [
+  { type: "text", label: "Texto", icon: TypeIcon },
+  { type: "code", label: "Código / Script", icon: Code2 },
+  { type: "html", label: "HTML", icon: Code2 },
+  { type: "image", label: "Imagem", icon: ImageIcon },
+  { type: "video", label: "Vídeo", icon: Video },
+  { type: "link", label: "Link", icon: LinkIcon },
+]
+
+function blankCommandBlock(type: CommandBlockType): ChatCommandBlock {
+  if (type === "text") return { type, content: "" }
+  if (type === "code") return { type, content: "", language: "text" }
+  if (type === "html") return { type, content: "" }
+  if (type === "image") return { type, url: "", caption: "" }
+  if (type === "video") return { type, url: "", caption: "" }
+  return { type: "link", url: "", label: "" }
 }
 
 type SearchResult = {
@@ -225,6 +262,16 @@ export function DiscordWorkspace() {
   const [createChannelError, setCreateChannelError] = React.useState<string | null>(null)
   const [archiveBusy, setArchiveBusy] = React.useState(false)
   const [archiveTarget, setArchiveTarget] = React.useState<WorkspaceChannel | null>(null)
+  const [workspaceChannelCommands, setWorkspaceChannelCommands] = React.useState<WorkspaceChannelCommand[]>([])
+  const [channelCommandsLoading, setChannelCommandsLoading] = React.useState(false)
+  const [manageChannelCommandsOpen, setManageChannelCommandsOpen] = React.useState(false)
+  const [channelCommandBusy, setChannelCommandBusy] = React.useState(false)
+  const [channelCommandError, setChannelCommandError] = React.useState<string | null>(null)
+  const [editingChannelCommandId, setEditingChannelCommandId] = React.useState<string | null>(null)
+  const [channelCommandName, setChannelCommandName] = React.useState("")
+  const [channelCommandTitle, setChannelCommandTitle] = React.useState("")
+  const [channelCommandDescription, setChannelCommandDescription] = React.useState("")
+  const [channelCommandBlocks, setChannelCommandBlocks] = React.useState<ChatCommandBlock[]>([])
   const [commandOpen, setCommandOpen] = React.useState(false)
   const [commandQuery, setCommandQuery] = React.useState("")
   const [commandIndex, setCommandIndex] = React.useState(0)
@@ -270,6 +317,10 @@ export function DiscordWorkspace() {
   const selectedReview = visibleReviews.find((review) => review.id === requestedReviewId || (!requestedReviewId && requestedSubId && review.subactivityId === requestedSubId)) ?? null
   const selectedWorkspaceChannel = workspaceChannels.find((channel) => channel.id === requestedChannelId)
     ?? (space === "channels" ? openWorkspaceChannels[0] ?? null : null)
+  const selectedChannelCommands = React.useMemo(
+    () => workspaceChannelCommands.filter((command) => command.channelId === selectedWorkspaceChannel?.id && command.active),
+    [selectedWorkspaceChannel?.id, workspaceChannelCommands],
+  )
 
   const projectSelection = React.useMemo(() => {
     if (!selectedProject) return null
@@ -333,15 +384,52 @@ export function DiscordWorkspace() {
     }
   }, [supabase, workspaceId])
 
+  const loadWorkspaceChannelCommands = React.useCallback(async () => {
+    if (!workspaceId) {
+      setWorkspaceChannelCommands([])
+      return
+    }
+    setChannelCommandsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("workspace_channel_commands")
+        .select("id,workspace_id,channel_id,command,title,description,body,active,usage_count,created_at,updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("command", { ascending: true })
+      if (error) throw error
+      setWorkspaceChannelCommands((data ?? []).map((row: any) => ({
+        id: row.id,
+        workspaceId: row.workspace_id,
+        channelId: row.channel_id,
+        command: row.command,
+        title: row.title,
+        description: row.description ?? undefined,
+        body: Array.isArray(row.body) ? row.body : [],
+        active: row.active !== false,
+        usageCount: Number(row.usage_count ?? 0),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })))
+    } catch (error) {
+      // Durante rollout da migration 060, os canais continuam operando normalmente.
+      console.warn("[TaskBoard/Canais] Comandos indisponíveis", error)
+      setWorkspaceChannelCommands([])
+    } finally {
+      setChannelCommandsLoading(false)
+    }
+  }, [supabase, workspaceId])
+
   React.useEffect(() => {
     void loadWorkspaceChannels()
+    void loadWorkspaceChannelCommands()
     if (!workspaceId) return
     const realtime = supabase
       .channel(`discord-workspace-channels-${workspaceId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "workspace_channels", filter: `workspace_id=eq.${workspaceId}` }, () => void loadWorkspaceChannels())
+      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_channel_commands", filter: `workspace_id=eq.${workspaceId}` }, () => void loadWorkspaceChannelCommands())
       .subscribe()
     return () => { void supabase.removeChannel(realtime) }
-  }, [loadWorkspaceChannels, supabase, workspaceId])
+  }, [loadWorkspaceChannelCommands, loadWorkspaceChannels, supabase, workspaceId])
 
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -408,6 +496,84 @@ export function DiscordWorkspace() {
       setArchiveBusy(false)
     }
   }
+
+  function resetChannelCommandEditor(command?: WorkspaceChannelCommand) {
+    setEditingChannelCommandId(command?.id ?? null)
+    setChannelCommandName(command?.command ?? "")
+    setChannelCommandTitle(command?.title ?? "")
+    setChannelCommandDescription(command?.description ?? "")
+    setChannelCommandBlocks(command?.body?.length ? command.body : [blankCommandBlock("text")])
+    setChannelCommandError(null)
+  }
+
+  function updateChannelCommandBlock(index: number, next: ChatCommandBlock) {
+    setChannelCommandBlocks((current) => current.map((block, currentIndex) => currentIndex === index ? next : block))
+  }
+
+  function removeChannelCommandBlock(index: number) {
+    setChannelCommandBlocks((current) => current.filter((_, currentIndex) => currentIndex !== index))
+  }
+
+  async function saveChannelCommand() {
+    if (!selectedWorkspaceChannel || channelCommandBusy) return
+    const command = channelCommandName.trim().replace(/^\/+/, "").toLocaleLowerCase("pt-BR")
+    const title = channelCommandTitle.trim()
+    if (!command || !title) {
+      setChannelCommandError("Informe o comando e o título do retorno.")
+      return
+    }
+    setChannelCommandBusy(true)
+    setChannelCommandError(null)
+    try {
+      const { error } = await supabase.rpc("save_workspace_channel_command", {
+        p_channel_id: selectedWorkspaceChannel.id,
+        p_command: command,
+        p_title: title,
+        p_description: channelCommandDescription.trim() || null,
+        p_body: channelCommandBlocks,
+        p_command_id: editingChannelCommandId,
+      })
+      if (error) throw error
+      await loadWorkspaceChannelCommands()
+      resetChannelCommandEditor()
+    } catch (error) {
+      setChannelCommandError(toUserFacingError(error, "Não foi possível salvar o comando"))
+    } finally {
+      setChannelCommandBusy(false)
+    }
+  }
+
+  async function deleteChannelCommand(command: WorkspaceChannelCommand) {
+    if (channelCommandBusy || !window.confirm(`Excluir /${command.command}? O histórico já publicado será mantido.`)) return
+    setChannelCommandBusy(true)
+    setChannelCommandError(null)
+    try {
+      const { error } = await supabase.rpc("delete_workspace_channel_command", { p_command_id: command.id })
+      if (error) throw error
+      await loadWorkspaceChannelCommands()
+      if (editingChannelCommandId === command.id) resetChannelCommandEditor()
+    } catch (error) {
+      setChannelCommandError(toUserFacingError(error, "Não foi possível excluir o comando"))
+    } finally {
+      setChannelCommandBusy(false)
+    }
+  }
+
+  const executeSelectedChannelCommand = React.useCallback(async (command: ChatSlashCommand) => {
+    if (!selectedWorkspaceChannel || selectedWorkspaceChannel.closedAt) return false
+    try {
+      const { error } = await supabase.rpc("execute_workspace_channel_command", {
+        p_channel_id: selectedWorkspaceChannel.id,
+        p_command_id: command.id,
+      })
+      if (error) throw error
+      await refreshAll()
+      return true
+    } catch (error) {
+      setChannelsError(toUserFacingError(error, `Não foi possível executar /${command.command}`))
+      return false
+    }
+  }, [refreshAll, selectedWorkspaceChannel, supabase])
 
   const commandResults = React.useMemo<SearchResult[]>(() => {
     const q = normalize(commandQuery.trim())
@@ -556,6 +722,13 @@ export function DiscordWorkspace() {
             <p className="truncate text-[0.58rem] text-muted-foreground">{selectedWorkspaceChannel.closedAt ? "Canal fechado · somente histórico" : selectedWorkspaceChannel.description || "Canal geral do workspace"}</p>
           </div>
           {selectedWorkspaceChannel.closedAt && <span className="hidden rounded-full bg-muted px-2 py-1 text-[0.58rem] font-medium text-muted-foreground sm:inline">Arquivado</span>}
+          {isAdmin && !selectedWorkspaceChannel.closedAt && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => { resetChannelCommandEditor(); setManageChannelCommandsOpen(true) }} className="h-8 gap-1.5 px-2 text-xs" title="Gerenciar comandos deste canal">
+              <Terminal className="size-3.5" />
+              <span className="hidden sm:inline">Comandos</span>
+              {selectedChannelCommands.length > 0 && <span className="rounded-full bg-primary/10 px-1.5 font-mono text-[0.55rem] text-primary">{selectedChannelCommands.length}</span>}
+            </Button>
+          )}
           {isAdmin && (
             <Button type="button" size="sm" variant="ghost" disabled={archiveBusy} onClick={() => selectedWorkspaceChannel.closedAt ? void setChannelClosed(selectedWorkspaceChannel, false) : setArchiveTarget(selectedWorkspaceChannel)} className="h-8 gap-1.5 px-2 text-xs">
               {archiveBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : selectedWorkspaceChannel.closedAt ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
@@ -564,7 +737,14 @@ export function DiscordWorkspace() {
           )}
         </div>
         <div className="min-h-0 flex-1">
-          <ChatView embedded conversationOnly conversationId={selectedWorkspaceChannel.conversationId} readOnly={Boolean(selectedWorkspaceChannel.closedAt)} />
+          <ChatView
+            embedded
+            conversationOnly
+            conversationId={selectedWorkspaceChannel.conversationId}
+            readOnly={Boolean(selectedWorkspaceChannel.closedAt)}
+            slashCommands={selectedChannelCommands}
+            onExecuteSlashCommand={executeSelectedChannelCommand}
+          />
         </div>
       </div>
     )
@@ -677,6 +857,64 @@ export function DiscordWorkspace() {
             {createChannelError && <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">{createChannelError}</div>}
           </div>
           <DialogFooter><Button variant="outline" disabled={createChannelBusy} onClick={() => setCreateChannelOpen(false)}>Cancelar</Button><Button disabled={!createChannelName.trim() || createChannelBusy} onClick={() => void createWorkspaceChannel()}>{createChannelBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />} Criar canal</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manageChannelCommandsOpen} onOpenChange={(open) => { if (!channelCommandBusy) { setManageChannelCommandsOpen(open); if (open) resetChannelCommandEditor(); else setChannelCommandError(null) } }}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-4xl overflow-hidden p-0 sm:w-[calc(100vw-40px)]">
+          <DialogHeader className="border-b border-border px-5 py-4 text-left sm:px-6">
+            <DialogTitle className="flex items-center gap-2"><Terminal className="size-4 text-primary" /> Comandos de #{selectedWorkspaceChannel?.name}</DialogTitle>
+            <DialogDescription>Cadastre respostas rápidas para este canal. Digitar <span className="font-mono text-foreground">/</span> no chat mostra os comandos disponíveis.</DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[min(76vh,760px)] min-h-0 md:grid-cols-[240px_minmax(0,1fr)]">
+            <aside className="min-h-0 border-b border-border bg-muted/15 p-3 md:border-b-0 md:border-r">
+              <Button type="button" size="sm" className="w-full" onClick={() => resetChannelCommandEditor()}><Plus className="size-3.5" /> Novo comando</Button>
+              <div className="mt-3 max-h-48 space-y-1 overflow-y-auto md:max-h-[60vh]">
+                {channelCommandsLoading ? <div className="flex items-center justify-center py-8 text-xs text-muted-foreground"><LoaderCircle className="mr-2 size-3.5 animate-spin" /> Carregando...</div> : selectedChannelCommands.length ? selectedChannelCommands.map((command) => (
+                  <button key={command.id} type="button" onClick={() => resetChannelCommandEditor(command)} className={cn("group flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left", editingChannelCommandId === command.id ? "bg-primary/10 text-foreground" : "hover:bg-muted")}> 
+                    <Terminal className="size-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs font-semibold">/{command.command}</span><span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">{command.title}</span></span>
+                    <span className="font-mono text-[0.52rem] text-muted-foreground">{command.usageCount}</span>
+                  </button>
+                )) : <p className="px-2 py-8 text-center text-xs text-muted-foreground">Nenhum comando neste canal.</p>}
+              </div>
+            </aside>
+
+            <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block"><span className="mb-1.5 block text-xs font-medium">Comando</span><div className="flex h-10 items-center rounded-xl border border-border bg-background px-3 focus-within:border-ring"><span className="font-mono text-sm text-muted-foreground">/</span><input value={channelCommandName} onChange={(event) => setChannelCommandName(event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").toLocaleLowerCase("pt-BR"))} maxLength={32} placeholder="beta" className="min-w-0 flex-1 bg-transparent px-1 font-mono text-sm outline-none" /></div></label>
+                <label className="block"><span className="mb-1.5 block text-xs font-medium">Título da resposta</span><input value={channelCommandTitle} onChange={(event) => setChannelCommandTitle(event.target.value)} maxLength={100} placeholder="Versão beta" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring" /></label>
+              </div>
+              <label className="mt-3 block"><span className="mb-1.5 block text-xs font-medium">Descrição <span className="font-normal text-muted-foreground">(opcional)</span></span><input value={channelCommandDescription} onChange={(event) => setChannelCommandDescription(event.target.value)} maxLength={300} placeholder="Última versão disponível para testes" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring" /></label>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                <div><p className="text-xs font-semibold">Conteúdo do comando</p><p className="mt-0.5 text-[0.62rem] text-muted-foreground">Os blocos são publicados na ordem abaixo. Scripts são exibidos como código e HTML roda isolado, sem JavaScript.</p></div>
+                <div className="flex flex-wrap gap-1.5">
+                  {COMMAND_BLOCK_OPTIONS.map(({ type, label, icon: Icon }) => <Button key={type} type="button" size="sm" variant="outline" onClick={() => setChannelCommandBlocks((current) => [...current, blankCommandBlock(type)])} className="h-8 gap-1.5 px-2 text-[0.65rem]"><Icon className="size-3" /> {label}</Button>)}
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {channelCommandBlocks.map((block, index) => (
+                  <div key={`${block.type}-${index}`} className="rounded-xl border border-border bg-muted/15 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2"><span className="rounded-md bg-muted px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground">{COMMAND_BLOCK_OPTIONS.find((item) => item.type === block.type)?.label ?? block.type}</span><button type="button" onClick={() => removeChannelCommandBlock(index)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remover bloco"><Trash2 className="size-3.5" /></button></div>
+                    {block.type === "text" && <textarea value={block.content} onChange={(event) => updateChannelCommandBlock(index, { ...block, content: event.target.value })} rows={4} placeholder="Texto que será exibido..." className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring" />}
+                    {block.type === "code" && <div className="space-y-2"><input value={block.language ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, language: event.target.value })} placeholder="Linguagem: delphi, sql, json..." className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-ring" /><textarea value={block.content} onChange={(event) => updateChannelCommandBlock(index, { ...block, content: event.target.value })} rows={7} spellCheck={false} placeholder="Cole o código ou script..." className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-ring" /></div>}
+                    {block.type === "html" && <textarea value={block.content} onChange={(event) => updateChannelCommandBlock(index, { ...block, content: event.target.value })} rows={8} spellCheck={false} placeholder={'<div>Conteúdo HTML...</div>'} className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-ring" />}
+                    {(block.type === "image" || block.type === "video") && <div className="space-y-2"><input value={block.url} onChange={(event) => updateChannelCommandBlock(index, { ...block, url: event.target.value })} placeholder={block.type === "image" ? "https://.../imagem.png" : "https://.../video.mp4"} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /><input value={block.caption ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, caption: event.target.value })} placeholder="Legenda (opcional)" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /></div>}
+                    {block.type === "link" && <div className="space-y-2"><input value={block.url} onChange={(event) => updateChannelCommandBlock(index, { ...block, url: event.target.value })} placeholder="https://..." className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /><input value={block.label ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, label: event.target.value })} placeholder="Texto do link (opcional)" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /></div>}
+                  </div>
+                ))}
+                {!channelCommandBlocks.length && <button type="button" onClick={() => setChannelCommandBlocks([blankCommandBlock("text")])} className="flex w-full items-center justify-center rounded-xl border border-dashed border-border px-4 py-10 text-xs text-muted-foreground hover:bg-muted/30"><Plus className="mr-2 size-3.5" /> Adicionar conteúdo</button>}
+              </div>
+              {channelCommandError && <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">{channelCommandError}</div>}
+            </div>
+          </div>
+          <DialogFooter className="border-t border-border bg-muted/[0.08] px-4 py-3 sm:px-6">
+            {editingChannelCommandId && <Button type="button" variant="destructive" disabled={channelCommandBusy} onClick={() => { const command = selectedChannelCommands.find((item) => item.id === editingChannelCommandId); if (command) void deleteChannelCommand(command) }} className="sm:mr-auto"><Trash2 className="size-3.5" /> Excluir</Button>}
+            <Button type="button" variant="outline" disabled={channelCommandBusy} onClick={() => setManageChannelCommandsOpen(false)}>Fechar</Button>
+            <Button type="button" disabled={channelCommandBusy || !channelCommandName.trim() || !channelCommandTitle.trim()} onClick={() => void saveChannelCommand()}>{channelCommandBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Terminal className="size-3.5" />} {editingChannelCommandId ? "Salvar alterações" : "Cadastrar comando"}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

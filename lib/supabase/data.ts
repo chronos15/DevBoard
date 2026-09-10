@@ -290,6 +290,31 @@ function chatMessageType(value: unknown): ChatMessage['type'] {
   return value === 'audio' ? 'audio' : value === 'media' ? 'media' : 'text'
 }
 
+
+function mapChatCommandSnapshot(value: unknown): ChatMessage['command'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const source = value as Record<string, unknown>
+  if (typeof source.command !== 'string' || typeof source.title !== 'string' || !Array.isArray(source.body)) return undefined
+  const body = source.body.flatMap((raw): any[] => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+    const block = raw as Record<string, unknown>
+    const type = block.type
+    if (type === 'text' && typeof block.content === 'string') return [{ type, content: block.content }]
+    if (type === 'code' && typeof block.content === 'string') return [{ type, content: block.content, language: typeof block.language === 'string' ? block.language : undefined }]
+    if (type === 'html' && typeof block.content === 'string') return [{ type, content: block.content }]
+    if ((type === 'image' || type === 'video') && typeof block.url === 'string') return [{ type, url: block.url, caption: typeof block.caption === 'string' ? block.caption : undefined }]
+    if (type === 'link' && typeof block.url === 'string') return [{ type, url: block.url, label: typeof block.label === 'string' ? block.label : undefined }]
+    return []
+  })
+  return {
+    commandId: typeof source.commandId === 'string' ? source.commandId : undefined,
+    command: source.command,
+    title: source.title,
+    description: typeof source.description === 'string' ? source.description : undefined,
+    body,
+  }
+}
+
 function mapChatMessageRow(message: any): ChatMessage {
   const replyMessageId = typeof message.reply_to_message_id === 'string' && message.reply_to_message_id
     ? message.reply_to_message_id
@@ -312,6 +337,7 @@ function mapChatMessageRow(message: any): ChatMessage {
           .map((mention: any) => ({ kind: mention.kind, id: mention.id, label: mention.label }))
       : [],
     replyTo: replyMessageId ? { messageId: replyMessageId, unavailable: true } : undefined,
+    command: mapChatCommandSnapshot(message.command_payload),
     createdAt: message.created_at,
   }
 }
@@ -353,7 +379,8 @@ async function hydrateChatReplyReferences(supabase: SupabaseClient, messages: Ch
 }
 
 const CHAT_MESSAGE_BASE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at'
-const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS},reply_to_message_id`
+const CHAT_MESSAGE_REPLY_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS},reply_to_message_id`
+const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_REPLY_COLUMNS},command_name,command_payload`
 
 export async function loadChatMessagesPage(
   supabase: SupabaseClient,
@@ -378,6 +405,9 @@ export async function loadChatMessagesPage(
   // de replies. Nesse intervalo o chat continua abrindo normalmente, apenas sem
   // referências de resposta até o banco receber a coluna nova.
   let result = await buildQuery(CHAT_MESSAGE_COLUMNS)
+  if (result.error && /command_name|command_payload/i.test(String(result.error.message ?? ''))) {
+    result = await buildQuery(CHAT_MESSAGE_REPLY_COLUMNS)
+  }
   if (result.error && String(result.error.message ?? '').includes('reply_to_message_id')) {
     result = await buildQuery(CHAT_MESSAGE_BASE_COLUMNS)
   }

@@ -287,6 +287,22 @@ export type ChatReplyReference = {
   unavailable?: boolean
 }
 
+export type ChatCommandBlock =
+  | { type: "text"; content: string }
+  | { type: "code"; content: string; language?: string }
+  | { type: "html"; content: string }
+  | { type: "image"; url: string; caption?: string }
+  | { type: "video"; url: string; caption?: string }
+  | { type: "link"; url: string; label?: string }
+
+export type ChatCommandSnapshot = {
+  commandId?: string
+  command: string
+  title: string
+  description?: string
+  body: ChatCommandBlock[]
+}
+
 export type ChatMessage = {
   id: string
   senderId: string
@@ -300,6 +316,7 @@ export type ChatMessage = {
   mediaKind?: AttachmentKind
   mentions?: ChatMention[]
   replyTo?: ChatReplyReference
+  command?: ChatCommandSnapshot
   /** Estado local de entrega usado para envio otimista no chat. Mensagens vindas do backend deixam este campo indefinido. */
   deliveryStatus?: "sending" | "failed"
   createdAt: string

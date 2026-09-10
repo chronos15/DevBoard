@@ -2818,12 +2818,16 @@ export function ProjectFollowUp({
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
                                   <div className="flex min-w-0 items-center gap-2">
-                                    <p className="min-w-0 flex-1 truncate font-medium text-foreground/80">{item.title}</p>
-                                    {logText.reason && <span className="max-w-[46%] shrink-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[0.56rem] font-medium text-primary" title={`Motivo: ${logText.reason}`}>Motivo: {logText.reason}</span>}
+                                    <p className="min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
+                                    <time className="shrink-0 text-[0.58rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                                   </div>
-                                  {logText.summary && <p className="mt-0.5 max-w-full truncate leading-relaxed">{logText.summary}</p>}
+                                  {(logText.summary || logText.reason) && (
+                                    <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                                      {logText.summary && <p className="min-w-0 flex-1 truncate leading-relaxed">{logText.summary}</p>}
+                                      {logText.reason && <span className="max-w-[46%] shrink-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[0.56rem] font-medium text-primary" title={`Motivo: ${logText.reason}`}>Motivo: {logText.reason}</span>}
+                                    </div>
+                                  )}
                                 </button>
-                                <time className="shrink-0 pt-0.5 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                                 <div className="absolute right-2 top-1 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/reaction:opacity-100 min-[761px]:group-focus-within/reaction:opacity-100">
                                   <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                   <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>

@@ -7,8 +7,11 @@ import {
   AtSign,
   CircleAlert,
   Clock3,
+  Code2,
+  ExternalLink,
   FolderKanban,
   Headphones,
+  Image as ImageIcon,
   LoaderCircle,
   LogOut,
   MessageCircleMore,
@@ -18,13 +21,14 @@ import {
   Reply,
   Search,
   Send,
+  Terminal,
   Trash2,
   UserRound,
   UsersRound,
   Video,
   X,
 } from "lucide-react"
-import type { ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member, MemberPresence } from "@/lib/types"
+import type { ChatCommandSnapshot, ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member, MemberPresence } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
@@ -223,6 +227,101 @@ function messageReplyReference(message: ChatMessage): ChatReplyReference {
   }
 }
 
+function safeHttpUrl(value: string | undefined) {
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null
+  } catch {
+    return null
+  }
+}
+
+function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; executor?: Member }) {
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="border-l-[3px] border-primary px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Terminal className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="min-w-0 truncate text-sm font-semibold text-foreground">{command.title}</p>
+              <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[0.58rem] font-medium text-primary">/{command.command}</span>
+            </div>
+            {command.description && <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">{command.description}</p>}
+            {executor && <p className="mt-1.5 text-[0.58rem] text-muted-foreground">Executado por {executor.name}</p>}
+          </div>
+        </div>
+
+        {command.body.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {command.body.map((block, index) => {
+              if (block.type === "text") {
+                return <p key={index} className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{block.content}</p>
+              }
+              if (block.type === "code") {
+                return (
+                  <div key={index} className="overflow-hidden rounded-lg border border-border bg-muted/35">
+                    <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[0.58rem] text-muted-foreground">
+                      <Code2 className="size-3" /><span>{block.language?.trim() || "Código / script"}</span>
+                    </div>
+                    <pre className="max-h-80 overflow-auto p-3 text-left font-mono text-[0.72rem] leading-5 text-foreground"><code>{block.content}</code></pre>
+                  </div>
+                )
+              }
+              if (block.type === "html") {
+                return (
+                  <div key={index} className="overflow-hidden rounded-lg border border-border bg-background">
+                    <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[0.58rem] text-muted-foreground">
+                      <Code2 className="size-3" /><span>HTML seguro</span>
+                    </div>
+                    <iframe
+                      title={`Conteúdo HTML de /${command.command}`}
+                      sandbox=""
+                      srcDoc={block.content}
+                      className="h-56 w-full border-0 bg-white"
+                    />
+                  </div>
+                )
+              }
+              if (block.type === "image") {
+                const url = safeHttpUrl(block.url)
+                if (!url) return null
+                return (
+                  <figure key={index} className="overflow-hidden rounded-lg border border-border bg-muted/20">
+                    <img src={url} alt={block.caption || command.title} loading="lazy" className="max-h-[420px] w-full object-contain" />
+                    {block.caption && <figcaption className="border-t border-border px-3 py-2 text-xs text-muted-foreground">{block.caption}</figcaption>}
+                  </figure>
+                )
+              }
+              if (block.type === "video") {
+                const url = safeHttpUrl(block.url)
+                if (!url) return null
+                return (
+                  <figure key={index} className="overflow-hidden rounded-lg border border-border bg-black/90">
+                    <video src={url} controls preload="metadata" className="max-h-[420px] w-full" />
+                    {block.caption && <figcaption className="border-t border-border bg-card px-3 py-2 text-xs text-muted-foreground">{block.caption}</figcaption>}
+                  </figure>
+                )
+              }
+              const url = safeHttpUrl(block.url)
+              if (!url) return null
+              return (
+                <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/25 px-3 py-2.5 text-sm text-primary transition-colors hover:bg-muted/50">
+                  <ExternalLink className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{block.label?.trim() || url}</span>
+                </a>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ConversationAvatar({
   conversation,
   currentUserId,
@@ -305,6 +404,13 @@ function MeetingListItem({
   )
 }
 
+export type ChatSlashCommand = {
+  id: string
+  command: string
+  title: string
+  description?: string
+}
+
 type ChatViewProps = {
   /** Remove o cartão externo e ocupa toda a altura/largura do contêiner pai. */
   embedded?: boolean
@@ -316,6 +422,10 @@ type ChatViewProps = {
   readOnly?: boolean
   /** Conversas técnicas (ex.: canais globais) que não devem aparecer na Central de Chat. */
   excludeConversationIds?: string[]
+  /** Comandos / disponíveis no canal atual. */
+  slashCommands?: ChatSlashCommand[]
+  /** Executa um comando do canal e publica a resposta rica no histórico. */
+  onExecuteSlashCommand?: (command: ChatSlashCommand) => Promise<boolean>
 }
 
 export function ChatView({
@@ -324,6 +434,8 @@ export function ChatView({
   conversationOnly = false,
   readOnly = false,
   excludeConversationIds = [],
+  slashCommands = [],
+  onExecuteSlashCommand,
 }: ChatViewProps = {}) {
   const {
     members,
@@ -370,6 +482,8 @@ export function ChatView({
   const [conversationActionBusy, setConversationActionBusy] = React.useState(false)
   const [replyingTo, setReplyingTo] = React.useState<ChatReplyReference | null>(null)
   const [focusedReplyMessageId, setFocusedReplyMessageId] = React.useState<string | null>(null)
+  const [slashCommandIndex, setSlashCommandIndex] = React.useState(0)
+  const [executingSlashCommandId, setExecutingSlashCommandId] = React.useState<string | null>(null)
   const messagesViewportRef = React.useRef<HTMLDivElement | null>(null)
   const historyRequestRef = React.useRef(0)
   const historyLoadingRef = React.useRef(false)
@@ -452,6 +566,22 @@ export function ChatView({
       })
       .slice(0, 8)
   }, [currentUserId, members, mentionRange, projects, selected])
+  const slashCommandQuery = React.useMemo(() => {
+    const match = message.match(/^\/([^\s/]*)$/)
+    return match ? match[1].toLocaleLowerCase("pt-BR") : null
+  }, [message])
+  const slashCommandCandidates = React.useMemo(() => {
+    if (slashCommandQuery === null || !onExecuteSlashCommand) return []
+    return slashCommands
+      .filter((item) => !slashCommandQuery || item.command.toLocaleLowerCase("pt-BR").includes(slashCommandQuery) || item.title.toLocaleLowerCase("pt-BR").includes(slashCommandQuery))
+      .sort((a, b) => {
+        const aStarts = a.command.toLocaleLowerCase("pt-BR").startsWith(slashCommandQuery) ? 0 : 1
+        const bStarts = b.command.toLocaleLowerCase("pt-BR").startsWith(slashCommandQuery) ? 0 : 1
+        return aStarts - bStarts || a.command.localeCompare(b.command, "pt-BR")
+      })
+      .slice(0, 8)
+  }, [onExecuteSlashCommand, slashCommandQuery, slashCommands])
+
   const q = query.trim().toLowerCase()
   const visibleConversations = myConversations.filter((conversation) =>
     conversationTitle(conversation, currentUserId, members).toLowerCase().includes(q),
@@ -461,6 +591,10 @@ export function ChatView({
     (member) => member.id !== currentUserId && member.name.toLowerCase().includes(q),
   )
   const visibleMeetings = myMeetings.filter((meeting) => meeting.title.toLowerCase().includes(q))
+
+  React.useEffect(() => {
+    setSlashCommandIndex(0)
+  }, [slashCommandQuery])
 
   React.useEffect(() => {
     selectedMessagesRef.current = selected?.messages ?? []
@@ -781,8 +915,31 @@ export function ChatView({
     replyFocusTimerRef.current = setTimeout(() => setFocusedReplyMessageId(null), 1400)
   }
 
+  async function executeSlashCommand(command: ChatSlashCommand) {
+    if (readOnly || !onExecuteSlashCommand || executingSlashCommandId) return
+    setExecutingSlashCommandId(command.id)
+    setMessage("")
+    setDraftMentions([])
+    setMentionRange(null)
+    setReplyingTo(null)
+    stickToBottomRef.current = true
+    try {
+      const ok = await onExecuteSlashCommand(command)
+      if (!ok) setMessage(`/${command.command}`)
+    } finally {
+      setExecutingSlashCommandId(null)
+      window.requestAnimationFrame(() => messageInputRef.current?.focus())
+    }
+  }
+
   function submitMessage() {
     if (readOnly || !selected || !message.trim()) return
+    const trimmed = message.trim()
+    if (onExecuteSlashCommand && /^\/[^\s/]+$/.test(trimmed)) {
+      const name = trimmed.slice(1).toLocaleLowerCase("pt-BR")
+      const exact = slashCommands.find((item) => item.command.toLocaleLowerCase("pt-BR") === name)
+      if (exact) { void executeSlashCommand(exact); return }
+    }
     const content = message
     const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
 
@@ -1205,6 +1362,8 @@ export function ChatView({
                       {selected.messages.map((item) => {
                         const sender = members.find((member) => member.id === item.senderId)
                         const own = item.senderId === currentUserId
+                        const commandMessage = Boolean(item.command)
+                        const alignOwn = own && !commandMessage
                         return (
                           <div
                             key={item.id}
@@ -1224,13 +1383,15 @@ export function ChatView({
                             }}
                             className={cn(
                               "group/message flex items-end gap-2 rounded-xl transition-[background-color,box-shadow] duration-200",
-                              own && "flex-row-reverse",
+                              alignOwn && "flex-row-reverse",
                               (focusedReplyMessageId === item.id || replyingTo?.messageId === item.id) && "bg-primary/5 ring-1 ring-primary/15",
                             )}
                             title="Segure a mensagem para responder"
                           >
-                            {!own && <MemberAvatar member={sender} className="size-7 ring-0" />}
-                            <div className={cn("relative max-w-[78%]", own && "text-right")}>
+                            {commandMessage ? (
+                              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Terminal className="size-3.5" /></span>
+                            ) : !own ? <MemberAvatar member={sender} className="size-7 ring-0" /> : null}
+                            <div className={cn("relative", commandMessage ? "w-full max-w-[92%] sm:max-w-[86%]" : "max-w-[78%]", alignOwn && "text-right")}>
                               {!item.deliveryStatus && (
                                 <button
                                   type="button"
@@ -1238,7 +1399,7 @@ export function ChatView({
                                   onClick={() => selectMessageForReply(item)}
                                   className={cn(
                                     "absolute top-1/2 z-10 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 shadow-sm ring-1 ring-foreground/10 transition-all hover:text-primary group-hover/message:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:flex",
-                                    own ? "-left-9" : "-right-9",
+                                    alignOwn ? "-left-9" : "-right-9",
                                   )}
                                   title="Responder mensagem"
                                   aria-label="Responder mensagem"
@@ -1246,15 +1407,17 @@ export function ChatView({
                                   <Reply className="size-3.5" />
                                 </button>
                               )}
-                              {!own && selected.kind === "group" && (
+                              {commandMessage ? (
+                                <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground">TaskBoard · /{item.command?.command}</p>
+                              ) : !own && selected.kind === "group" ? (
                                 <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>
-                              )}
+                              ) : null}
                               <div
                                 className={cn(
-                                  "rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
-                                  own
+                                  commandMessage ? "text-left" : "rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
+                                  !commandMessage && (own
                                     ? "rounded-br-md bg-primary text-primary-foreground"
-                                    : "rounded-bl-md bg-card ring-1 ring-foreground/8",
+                                    : "rounded-bl-md bg-card ring-1 ring-foreground/8"),
                                 )}
                               >
                                 {item.replyTo && (
@@ -1280,7 +1443,9 @@ export function ChatView({
                                     </span>
                                   </button>
                                 )}
-                                {item.type === "audio" ? (
+                                {item.command ? (
+                                  <ChatCommandCard command={item.command} executor={sender} />
+                                ) : item.type === "audio" ? (
                                   <AudioMessage storagePath={item.mediaPath} durationMs={item.mediaDurationMs} own={own} />
                                 ) : item.type === "media" ? (
                                   <ChatMediaMessage
@@ -1355,7 +1520,32 @@ export function ChatView({
                     <div className="relative flex items-center gap-2">
                     {!recordingAudio && (
                       <>
-                        {selected.kind === "group" && mentionRange && mentionCandidates.length > 0 && (
+                        {slashCommandCandidates.length > 0 && (
+                          <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-50 w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-1.5 shadow-xl">
+                            <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[0.68rem] font-medium text-muted-foreground">
+                              <Terminal className="size-3.5" /> Comandos deste canal
+                            </div>
+                            <div className="max-h-64 overflow-y-auto py-1">
+                              {slashCommandCandidates.map((command, index) => (
+                                <button
+                                  key={command.id}
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => void executeSlashCommand(command)}
+                                  className={cn("flex w-full min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors", index === slashCommandIndex ? "bg-primary/10 text-foreground" : "hover:bg-muted")}
+                                >
+                                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Terminal className="size-3.5" /></span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-mono text-xs font-semibold">/{command.command}</span>
+                                    <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{command.title}{command.description ? ` · ${command.description}` : ""}</span>
+                                  </span>
+                                  {executingSlashCommandId === command.id ? <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" /> : index === slashCommandIndex ? <span className="text-[0.58rem] text-muted-foreground">Enter</span> : null}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {slashCommandCandidates.length === 0 && selected.kind === "group" && mentionRange && mentionCandidates.length > 0 && (
                           <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-1.5 shadow-xl">
                             <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[0.68rem] font-medium text-muted-foreground">
                               <AtSign className="size-3.5" />
@@ -1406,6 +1596,23 @@ export function ChatView({
                             syncMentionRange(message, event.currentTarget.selectionStart)
                           }}
                           onKeyDown={(event) => {
+                            if (slashCommandCandidates.length > 0) {
+                              if (event.key === "ArrowDown") {
+                                event.preventDefault()
+                                setSlashCommandIndex((current) => (current + 1) % slashCommandCandidates.length)
+                                return
+                              }
+                              if (event.key === "ArrowUp") {
+                                event.preventDefault()
+                                setSlashCommandIndex((current) => (current - 1 + slashCommandCandidates.length) % slashCommandCandidates.length)
+                                return
+                              }
+                              if (event.key === "Enter" || event.key === "Tab") {
+                                event.preventDefault()
+                                void executeSlashCommand(slashCommandCandidates[slashCommandIndex] ?? slashCommandCandidates[0])
+                                return
+                              }
+                            }
                             if (mentionRange && mentionCandidates.length > 0) {
                               if (event.key === "ArrowDown") {
                                 event.preventDefault()
@@ -1440,7 +1647,7 @@ export function ChatView({
                           }}
                           rows={2}
                           maxLength={2500}
-                          placeholder={selected.kind === "group" ? `Mensagem para ${selectedTitle}... Use @ para mencionar` : `Mensagem para ${selectedTitle}...`}
+                          placeholder={slashCommands.length ? `Mensagem para ${selectedTitle}... Use / para comandos${selected.kind === "group" ? " ou @ para mencionar" : ""}` : selected.kind === "group" ? `Mensagem para ${selectedTitle}... Use @ para mencionar` : `Mensagem para ${selectedTitle}...`}
                           className="min-h-14 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-5 outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                         />
                         <input
@@ -1479,7 +1686,7 @@ export function ChatView({
                         type="button"
                         size="icon-lg"
                         onClick={submitMessage}
-                        disabled={!message.trim()}
+                        disabled={!message.trim() || Boolean(executingSlashCommandId)}
                         loading={false}
                         className="self-center"
                       >
@@ -1489,7 +1696,7 @@ export function ChatView({
                     )}
                     </div>
                   </div>
-                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo · Segure uma mensagem para responder</p>
+                  <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo{slashCommands.length ? " · / usa comandos" : ""} · Segure uma mensagem para responder</p>
                     </>
                   )}
                 </footer>

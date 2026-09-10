@@ -222,7 +222,8 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           title={`Comentários · ${sub.title}`}
           description="Discussão da subatividade. Todos os usuários podem comentar, mesmo quando a tarefa pertence a outro responsável."
           comments={sub.comments ?? []}
-          onAdd={(content) => addSubactivityComment(sub.id, content)}
+          onAdd={(content, mentions) => addSubactivityComment(sub.id, content, mentions)}
+          enableMentions
           compact
         />
         <AttachmentDialog

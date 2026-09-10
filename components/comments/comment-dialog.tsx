@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { MessageSquare, Send } from "lucide-react"
-import type { CommentEntry } from "@/lib/types"
+import { AtSign, MessageSquare, Send } from "lucide-react"
+import type { ChatMention, CommentEntry } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
 
 function formatCommentDate(value: string) {
   const date = new Date(value)
@@ -32,31 +33,74 @@ export function CommentDialog({
   onAdd,
   compact = false,
   className,
+  enableMentions = false,
 }: {
   title: string
   description: string
   comments: CommentEntry[]
-  onAdd: (content: string) => Promise<boolean> | boolean | void
+  onAdd: (content: string, mentions?: ChatMention[]) => Promise<boolean> | boolean | void
   compact?: boolean
   className?: string
+  enableMentions?: boolean
 }) {
-  const { members, currentUserId } = useStore()
+  const { members, memberPresence, currentUserId } = useStore()
   const [open, setOpen] = React.useState(false)
   const [text, setText] = React.useState("")
+  const [mentions, setMentions] = React.useState<ChatMention[]>([])
+  const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
+  const [mentionIndex, setMentionIndex] = React.useState(0)
   const [sending, setSending] = React.useState(false)
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const currentUser = members.find((member) => member.id === currentUserId)
   const sortedComments = React.useMemo(
     () => [...comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
     [comments],
   )
+  const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
+    if (!enableMentions || !mentionRange) return []
+    return buildMentionCandidates({ members, currentUserId, query: mentionRange.query, memberPresence, userLimit: 7 })
+  }, [currentUserId, enableMentions, memberPresence, members, mentionRange])
+
+  function detectMention(value: string, caret: number | null) {
+    if (!enableMentions) return
+    const position = caret ?? value.length
+    const before = value.slice(0, position)
+    const match = before.match(/(?:^|\s)@([^\s@]*)$/)
+    if (!match) {
+      setMentionRange(null)
+      return
+    }
+    const query = match[1] ?? ""
+    setMentionRange({ start: position - query.length - 1, end: position, query })
+    setMentionIndex(0)
+  }
+
+  function selectMention(candidate: MentionCandidate) {
+    if (!mentionRange) return
+    const token = mentionTokenForCandidate(candidate)
+    const next = `${text.slice(0, mentionRange.start)}${token} ${text.slice(mentionRange.end)}`
+    const caret = mentionRange.start + token.length + 1
+    setText(next)
+    setMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
+    setMentionRange(null)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(caret, caret)
+    })
+  }
 
   async function submit() {
     const clean = text.trim()
     if (!clean || sending) return
     setSending(true)
     try {
-      const result = await onAdd(clean)
-      if (result !== false) setText("")
+      const validMentions = mentions.filter((mention) => clean.includes(`@${mention.label}`))
+      const result = await onAdd(clean, validMentions)
+      if (result !== false) {
+        setText("")
+        setMentions([])
+        setMentionRange(null)
+      }
     } finally {
       setSending(false)
     }
@@ -147,13 +191,46 @@ export function CommentDialog({
             )}
           </div>
 
-          <div className="min-w-0 border-t border-border bg-card px-4 py-3 sm:px-5">
+          <div className="relative min-w-0 border-t border-border bg-card px-4 py-3 sm:px-5">
+            {enableMentions && mentionRange && mentionCandidates.length > 0 && (
+              <div className="absolute bottom-[calc(100%-0.25rem)] left-4 right-4 z-30 max-h-60 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl sm:left-5 sm:right-5">
+                <div className="px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted-foreground">Mencionar pessoa ou equipe</div>
+                {mentionCandidates.map((candidate, index) => candidate.kind === "group" ? (
+                  <button key={`group-${candidate.key}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(candidate)} className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", index === mentionIndex ? "bg-primary/10" : "hover:bg-muted")}>
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-primary">{candidate.title}</span><span className="block truncate text-[0.58rem] text-muted-foreground">{candidate.description}</span></span>
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.55rem] text-muted-foreground">{candidate.userIds.length}</span>
+                  </button>
+                ) : (
+                  <button key={candidate.id} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(candidate)} className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", index === mentionIndex ? "bg-primary/10" : "hover:bg-muted")}>
+                    <MemberAvatar member={candidate.member} className="size-7 ring-0" />
+                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{candidate.member.name}</span><span className="block truncate text-[0.58rem] text-muted-foreground">{candidate.member.email ?? candidate.member.role}</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex min-w-0 items-end gap-2">
               <MemberAvatar member={currentUser} className="mb-1 size-8 ring-0" />
+              {enableMentions && (
+                <button type="button" onClick={() => { const spacer = text && !text.endsWith(" ") ? " " : ""; const next = `${text}${spacer}@`; setText(next); detectMention(next, next.length); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="mb-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-3.5" /></button>
+              )}
               <textarea
+                ref={textareaRef}
                 value={text}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setText(value)
+                  setMentions((current) => current.filter((mention) => value.includes(`@${mention.label}`)))
+                  detectMention(value, event.target.selectionStart)
+                }}
+                onClick={(event) => detectMention(event.currentTarget.value, event.currentTarget.selectionStart)}
                 onKeyDown={(event) => {
+                  if (enableMentions && mentionRange && mentionCandidates.length > 0) {
+                    if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
+                    if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
+                    if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") { event.preventDefault(); selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]); return }
+                    if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault()
                     void submit()
@@ -169,7 +246,7 @@ export function CommentDialog({
                 <span className="sr-only">Enviar comentário</span>
               </Button>
             </div>
-            <p className="mt-1.5 pl-10 text-[0.6rem] text-muted-foreground">Enter envia · Shift + Enter quebra a linha</p>
+            <p className={cn("mt-1.5 text-[0.6rem] text-muted-foreground", enableMentions ? "pl-20" : "pl-10")}>Enter envia · Shift + Enter quebra a linha{enableMentions ? " · @todos, @here, @desenvolvedores, @aqs e @admin" : ""}</p>
           </div>
         </DialogContent>
       </Dialog>

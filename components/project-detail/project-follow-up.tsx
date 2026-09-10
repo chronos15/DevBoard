@@ -82,8 +82,9 @@ import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
-import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, type MentionCandidate } from "@/lib/mention-groups"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -1218,19 +1219,17 @@ export function ProjectFollowUp({
     [presenceAllowedMemberIds],
   )
 
-  const mentionCandidates = React.useMemo(() => {
+  const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
-    const query = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
-    return members
-      .filter((member) => member.id !== currentUserId)
-      .filter((member) => !query || member.name.toLocaleLowerCase("pt-BR").includes(query) || member.email?.toLocaleLowerCase("pt-BR").includes(query))
-      .sort((a, b) => {
-        const aRank = selectedSubMemberIds.includes(a.id) ? 0 : projectMemberIds.includes(a.id) ? 1 : 2
-        const bRank = selectedSubMemberIds.includes(b.id) ? 0 : projectMemberIds.includes(b.id) ? 1 : 2
-        return aRank - bRank || a.name.localeCompare(b.name, "pt-BR")
-      })
-      .slice(0, 8)
-  }, [currentUserId, members, mentionRange, projectMemberIds, selectedSubMemberIds])
+    return buildMentionCandidates({
+      members,
+      currentUserId,
+      query: mentionRange.query,
+      memberPresence,
+      hereUserIds: watchingIds,
+      userLimit: 8,
+    })
+  }, [currentUserId, memberPresence, members, mentionRange, watchingIds])
 
   const onlineMemberIds = selectedSubMemberIds.filter((id) => memberPresence[id]?.online)
   const offlineMemberIds = selectedSubMemberIds.filter((id) => !memberPresence[id]?.online)
@@ -1298,17 +1297,22 @@ export function ProjectFollowUp({
     for (const log of project.logs ?? []) {
       if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
 
-      if (selectedActivity && isActivityMeetingLog(log, selectedActivity.id)) {
-        items.push({
-          kind: "log",
-          id: `log-${log.id}`,
-          targetId: log.id,
-          createdAt: log.createdAt,
-          authorId: log.actorId,
-          title: log.title,
-          description: visibleMeetingLogDescription(log.description),
-          logType: log.type,
-        })
+      const isMeetingLog = log.type === "meeting-started" || log.type === "meeting-ended"
+      if (isMeetingLog) {
+        if (selectedActivity && isSubactivityMeetingLog(log, selectedSub.id)) {
+          items.push({
+            kind: "log",
+            id: `log-${log.id}`,
+            targetId: log.id,
+            createdAt: log.createdAt,
+            authorId: log.actorId,
+            title: log.title,
+            description: visibleMeetingLogDescription(log.description),
+            logType: log.type,
+          })
+        }
+        // Logs de reunião são sempre contextuais. Nunca caem no filtro textual
+        // da subatividade, evitando "vazar" a reunião de um tópico para outro.
         continue
       }
 
@@ -1841,16 +1845,14 @@ export function ProjectFollowUp({
     setMentionRange({ start: position - query.length - 1, end: position, query })
   }
 
-  function selectMention(memberId: string) {
+  function selectMention(candidate: MentionCandidate) {
     if (!mentionRange) return
-    const member = members.find((item) => item.id === memberId)
-    if (!member) return
-    const mention: ChatMention = { kind: "user", id: member.id, label: member.name }
-    const token = mentionToken(mention)
+    if (isGroupCandidate(candidate) && candidate.userIds.length === 0) return
+    const token = mentionTokenForCandidate(candidate)
     const next = `${message.slice(0, mentionRange.start)}${token} ${message.slice(mentionRange.end)}`
     const caret = mentionRange.start + token.length + 1
     setMessage(next)
-    setDraftMentions((current) => current.some((item) => item.kind === "user" && item.id === member.id) ? current : [...current, mention])
+    setDraftMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
     setMentionRange(null)
     window.requestAnimationFrame(() => {
       messageRef.current?.focus()
@@ -3274,8 +3276,34 @@ export function ProjectFollowUp({
 
                   {!selectedDeveloperObserver && mentionRange && mentionCandidates.length > 0 && (
                     <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 max-h-72 max-w-4xl overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl sm:left-4 sm:right-4">
-                      <div className="px-2 py-1 text-[0.6rem] font-semibold tracking-wide text-muted-foreground uppercase">Mencionar usuário</div>
-                      {mentionCandidates.map((member, index) => {
+                      <div className="px-2 py-1 text-[0.6rem] font-semibold tracking-wide text-muted-foreground uppercase">Mencionar pessoa ou equipe</div>
+                      {mentionCandidates.map((candidate, index) => {
+                        if (candidate.kind === "group") {
+                          const empty = candidate.userIds.length === 0
+                          return (
+                            <button
+                              key={`group-${candidate.key}`}
+                              type="button"
+                              disabled={empty}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => selectMention(candidate)}
+                              className={cn(
+                                "flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
+                                empty && "cursor-not-allowed opacity-45",
+                                index === mentionIndex && !empty ? "bg-primary/10 text-foreground" : !empty && "hover:bg-muted",
+                              )}
+                            >
+                              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-semibold text-primary">{candidate.title}</p>
+                                <p className="truncate text-[0.6rem] text-muted-foreground">{candidate.description}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-muted px-2 py-1 font-mono text-[0.58rem] text-muted-foreground">{candidate.userIds.length}</span>
+                              {index === mentionIndex && !empty && <span className="hidden text-[0.58rem] text-muted-foreground sm:inline">Enter</span>}
+                            </button>
+                          )
+                        }
+                        const member = candidate.member
                         const alreadyInProject = projectMemberIds.includes(member.id)
                         const alreadyInSubactivity = selectedSubMemberIds.includes(member.id)
                         return (
@@ -3283,7 +3311,7 @@ export function ProjectFollowUp({
                             key={member.id}
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => selectMention(member.id)}
+                            onClick={() => selectMention(candidate)}
                             className={cn(
                               "flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
                               index === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-muted",
@@ -3376,7 +3404,7 @@ export function ProjectFollowUp({
                           if (mentionRange && mentionCandidates.length > 0) {
                             if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
                             if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
-                            if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex]?.id ?? mentionCandidates[0].id); return }
+                            if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]); return }
                             if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
                           }
                           if (event.key === "Escape" && replyingTo) { event.preventDefault(); setReplyingTo(null); return }

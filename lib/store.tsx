@@ -185,7 +185,7 @@ export type StoreContextValue = {
   updateProject: (projectId: string, data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean; removeExistingImage?: boolean }) => Promise<boolean>
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
-  addSubactivityComment: (subId: string, content: string) => Promise<boolean>
+  addSubactivityComment: (subId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
   addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyTo?: FollowUpReplyReference) => Promise<boolean>
   addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
@@ -1469,12 +1469,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshProjects])
 
-  const addSubactivityComment = React.useCallback(async (subId: string, content: string) => {
-    const result = await callRpc<string>("add_subactivity_comment", { p_subactivity_id: subId, p_content: content }, "Não foi possível salvar o comentário")
+  const addSubactivityComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = []) => {
+    const result = await callRpc<string>("add_subactivity_comment_v2", {
+      p_subactivity_id: subId,
+      p_content: content,
+      p_mentions: mentions,
+    }, "Não foi possível salvar o comentário")
     if (!result) return false
-    await Promise.all([refreshProjects(), refreshServiceRequests()])
+    await Promise.all([refreshProjects(), refreshServiceRequests(), refreshNotifications(), refreshAqsReviews(), refreshMeetings()])
     return true
-  }, [callRpc, refreshProjects, refreshServiceRequests])
+  }, [callRpc, refreshAqsReviews, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference) => {
     try {
@@ -1725,18 +1729,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     chatMessageDeliveriesRef.current.add(localId)
 
     try {
-      const payload = replyTo?.messageId
-        ? {
-            p_conversation_id: conversationId,
-            p_content: content,
-            p_mentions: mentions,
-            p_reply_to_message_id: replyTo.messageId,
-          }
-        : {
-            p_conversation_id: conversationId,
-            p_content: content,
-            p_mentions: mentions,
-          }
+      const payload = {
+        p_conversation_id: conversationId,
+        p_content: content,
+        p_mentions: mentions,
+        p_reply_to_message_id: replyTo?.messageId ?? null,
+      }
       const { data, error } = await supabase.rpc("send_chat_message", payload)
       if (error) throw error
       const serverId = typeof data === "string" && data ? data : null

@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   AlertTriangle,
+  AtSign,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -31,7 +32,7 @@ import {
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
-import type { AqsReview, AqsReviewStatus, AttachmentEntry, CommentEntry, Project, Subactivity } from "@/lib/types"
+import type { AqsReview, AqsReviewStatus, AttachmentEntry, ChatMention, CommentEntry, Project, Subactivity } from "@/lib/types"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { Button } from "@/components/ui/button"
@@ -50,7 +51,8 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
-import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
   awaiting: {
@@ -153,6 +155,7 @@ export function AnalysisView() {
     aqsReviews,
     projects,
     members,
+    memberPresence,
     currentUserId,
     currentUserRole,
     startAqsReview,
@@ -175,7 +178,11 @@ export function AnalysisView() {
   const [revokeTarget, setRevokeTarget] = React.useState<AqsReview | null>(null)
   const [reason, setReason] = React.useState("")
   const [comment, setComment] = React.useState("")
+  const [commentMentions, setCommentMentions] = React.useState<ChatMention[]>([])
+  const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
+  const [mentionIndex, setMentionIndex] = React.useState(0)
   const [sendingComment, setSendingComment] = React.useState(false)
+  const commentRef = React.useRef<HTMLTextAreaElement>(null)
   const timelineRef = React.useRef<HTMLDivElement>(null)
   const [vcsChangesBySubactivity, setVcsChangesBySubactivity] = React.useState<Record<string, DeveloperTaskVcsChange[]>>({})
 
@@ -247,6 +254,44 @@ export function AnalysisView() {
     selected ? `followup:sub:${selected.sub.id}` : null,
     Boolean(selected),
   )
+  const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
+    if (!mentionRange) return []
+    return buildMentionCandidates({
+      members,
+      currentUserId,
+      query: mentionRange.query,
+      memberPresence,
+      userLimit: 8,
+    })
+  }, [currentUserId, memberPresence, members, mentionRange])
+
+  function detectMention(value: string, caret: number | null) {
+    const position = caret ?? value.length
+    const before = value.slice(0, position)
+    const match = before.match(/(?:^|\s)@([^\s@]*)$/)
+    if (!match) {
+      setMentionRange(null)
+      return
+    }
+    const query = match[1] ?? ""
+    setMentionRange({ start: position - query.length - 1, end: position, query })
+    setMentionIndex(0)
+  }
+
+  function selectMention(candidate: MentionCandidate) {
+    if (!mentionRange) return
+    const token = mentionTokenForCandidate(candidate)
+    const next = `${comment.slice(0, mentionRange.start)}${token} ${comment.slice(mentionRange.end)}`
+    const caret = mentionRange.start + token.length + 1
+    setComment(next)
+    setCommentMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
+    setMentionRange(null)
+    setMentionIndex(0)
+    requestAnimationFrame(() => {
+      commentRef.current?.focus()
+      commentRef.current?.setSelectionRange(caret, caret)
+    })
+  }
 
   const counts = React.useMemo(() => ({
     active: locatedReviews.filter((item) => reviewMatchesFilter(item.review, "active")).length,
@@ -405,7 +450,7 @@ export function AnalysisView() {
       items.push({ id: `attachment-${entry.id}`, kind: "attachment", createdAt: entry.createdAt, attachment: entry })
     }
     for (const log of selected.project.logs ?? []) {
-      if (!isActivityMeetingLog(log, selected.activity.id)) continue
+      if (!isSubactivityMeetingLog(log, selected.sub.id)) continue
       items.push({
         id: `meeting-${log.id}`,
         kind: "system",
@@ -454,10 +499,14 @@ export function AnalysisView() {
     if (!selected || !comment.trim() || sendingComment) return
     setSendingComment(true)
     try {
-      const result = await addSubactivityComment(selected.sub.id, comment.trim())
+      const content = comment.trim()
+      const validMentions = commentMentions.filter((mention) => content.includes(`@${mention.label}`))
+      const result = await addSubactivityComment(selected.sub.id, content, validMentions)
       if (result !== false) {
         stopTyping()
         setComment("")
+        setCommentMentions([])
+        setMentionRange(null)
       }
     } finally {
       setSendingComment(false)
@@ -906,11 +955,28 @@ export function AnalysisView() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-border bg-card px-3 py-3 sm:px-4">
+              <div className="relative shrink-0 border-t border-border bg-card px-3 py-3 sm:px-4">
                 {canReview && selected.review.status === "evaluating" && (
                   <div className="mb-2 flex items-center gap-2 sm:hidden">
                     <Button type="button" size="sm" variant="outline" className="flex-1 text-destructive hover:text-destructive" disabled={lockedByOther || busy.has(selected.review.id)} onClick={() => { setReason(""); setRevokeTarget(selected.review) }}><RotateCcw className="size-3.5" /> Revogar</Button>
                     <Button type="button" size="sm" className="flex-1" disabled={lockedByOther} loading={busy.has(selected.review.id)} onClick={() => void completeReview(selected.review)}><CheckCircle2 className="size-3.5" /> Concluir</Button>
+                  </div>
+                )}
+                {mentionRange && mentionCandidates.length > 0 && (
+                  <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-30 max-h-64 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl sm:left-4 sm:right-4 sm:max-w-xl">
+                    <div className="px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted-foreground">Mencionar pessoa ou equipe</div>
+                    {mentionCandidates.map((candidate, index) => candidate.kind === "group" ? (
+                      <button key={`group-${candidate.key}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(candidate)} className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left", index === mentionIndex ? "bg-primary/10" : "hover:bg-muted")}>
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-primary">{candidate.title}</span><span className="block truncate text-[0.6rem] text-muted-foreground">{candidate.description}</span></span>
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{candidate.userIds.length}</span>
+                      </button>
+                    ) : (
+                      <button key={candidate.id} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(candidate)} className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left", index === mentionIndex ? "bg-primary/10" : "hover:bg-muted")}>
+                        <MemberAvatar member={candidate.member} className="size-7 text-[0.55rem]" />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{candidate.member.name}</span><span className="block truncate text-[0.6rem] text-muted-foreground">{candidate.member.email ?? candidate.member.role}</span></span>
+                      </button>
+                    ))}
                   </div>
                 )}
                 <div className="flex min-w-0 items-end gap-2 rounded-xl border border-border bg-background px-2.5 py-2 focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/8">
@@ -924,19 +990,30 @@ export function AnalysisView() {
                     buttonLabel="Evidências"
                     className="mb-0.5 shrink-0"
                   />
+                  <button type="button" onClick={() => { const spacer = comment && !comment.endsWith(" ") ? " " : ""; const next = `${comment}${spacer}@`; setComment(next); detectMention(next, next.length); requestAnimationFrame(() => commentRef.current?.focus()) }} className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-3.5" /></button>
                   <textarea
+                    ref={commentRef}
                     value={comment}
                     onChange={(event) => {
                       const value = event.target.value
                       setComment(value)
+                      setCommentMentions((current) => current.filter((mention) => value.includes(`@${mention.label}`)))
+                      detectMention(value, event.target.selectionStart)
                       reportTyping(value)
                     }}
                     onKeyDown={(event) => {
+                      if (mentionRange && mentionCandidates.length > 0) {
+                        if (event.key === "ArrowDown") { event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return }
+                        if (event.key === "ArrowUp") { event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return }
+                        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]); return }
+                        if (event.key === "Escape") { event.preventDefault(); setMentionRange(null); return }
+                      }
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault()
                         void sendComment()
                       }
                     }}
+                    onClick={(event) => detectMention(event.currentTarget.value, event.currentTarget.selectionStart)}
                     rows={1}
                     maxLength={1200}
                     placeholder={`Conversar em “${selected.sub.title}”`}
@@ -947,7 +1024,7 @@ export function AnalysisView() {
                   </Button>
                 </div>
                 <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
-                <p className="mt-1.5 px-1 text-[0.56rem] text-muted-foreground">Enter envia · Shift+Enter quebra a linha · evidências ficam vinculadas à subatividade.</p>
+                <p className="mt-1.5 px-1 text-[0.56rem] text-muted-foreground">Enter envia · Shift+Enter quebra a linha · use @todos, @here, @desenvolvedores, @aqs ou @admin.</p>
               </div>
             </>
           ) : (

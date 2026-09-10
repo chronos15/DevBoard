@@ -12,7 +12,7 @@ import {
   SmilePlus,
   X,
 } from "lucide-react"
-import type { ChatMention, ChatMessage, ChatReplyReference, ChatMeeting, Member } from "@/lib/types"
+import type { ChatMention, ChatMessage, ChatReplyReference, ChatMeeting } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -22,9 +22,9 @@ import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-p
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
 
 type MentionRange = { start: number; end: number; query: string }
-type MentionCandidate = ChatMention & { subtitle: string; member?: Member }
 type ReactionRow = { messageId: string; userId: string; emoji: string }
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "✅"] as const
@@ -144,25 +144,25 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
 
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
-    const query = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
-    return members
-      .filter((member) => member.id !== currentUserId)
-      .map((member) => {
-        const state = meeting.memberStates.find((row) => row.userId === member.id)?.status
-        const subtitle = state === "joined"
+    const joinedIds = meeting.memberStates.filter((row) => row.status === "joined").map((row) => row.userId)
+    return buildMentionCandidates({
+      members,
+      currentUserId,
+      query: mentionRange.query,
+      hereUserIds: joinedIds,
+      userLimit: 8,
+    }).map((candidate) => {
+      if (candidate.kind === "group") return candidate
+      const state = meeting.memberStates.find((row) => row.userId === candidate.id)?.status
+      return {
+        ...candidate,
+        description: state === "joined"
           ? "Já está na reunião"
           : state === "pending"
             ? "Convite pendente"
-            : "Será adicionado ao contexto e chamado"
-        return { kind: "user" as const, id: member.id, label: member.name, subtitle, member }
-      })
-      .filter((candidate) => !query || candidate.label.toLocaleLowerCase("pt-BR").includes(query))
-      .sort((a, b) => {
-        const aStarts = a.label.toLocaleLowerCase("pt-BR").startsWith(query) ? 0 : 1
-        const bStarts = b.label.toLocaleLowerCase("pt-BR").startsWith(query) ? 0 : 1
-        return aStarts - bStarts || a.label.localeCompare(b.label, "pt-BR")
-      })
-      .slice(0, 8)
+            : "Será associado ao contexto e chamado",
+      }
+    })
   }, [currentUserId, meeting.memberStates, members, mentionRange])
 
   const loadReactions = React.useCallback(async () => {
@@ -233,13 +233,11 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
 
   function selectMention(candidate: MentionCandidate) {
     if (!mentionRange) return
-    const token = mentionToken(candidate)
+    const token = mentionTokenForCandidate(candidate)
     const next = `${message.slice(0, mentionRange.start)}${token} ${message.slice(mentionRange.end)}`
     const caret = mentionRange.start + token.length + 1
     setMessage(next)
-    setDraftMentions((current) => current.some((item) => item.kind === candidate.kind && item.id === candidate.id)
-      ? current
-      : [...current, { kind: candidate.kind, id: candidate.id, label: candidate.label }])
+    setDraftMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
     setMentionRange(null)
     setMentionIndex(0)
     requestAnimationFrame(() => {
@@ -515,7 +513,23 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           <div className="absolute bottom-[calc(100%-0.1rem)] left-2 right-2 z-30 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl">
             <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5 text-[0.58rem] font-medium text-muted-foreground"><AtSign className="size-3" /> Adicionar e mencionar</div>
             <div className="max-h-52 overflow-y-auto py-1">
-              {mentionCandidates.map((candidate, index) => (
+              {mentionCandidates.map((candidate, index) => candidate.kind === "group" ? (
+                <button
+                  key={`group-${candidate.key}`}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectMention(candidate)}
+                  className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", index === mentionIndex ? "bg-primary/10" : "hover:bg-muted")}
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.65rem] font-semibold text-primary">{candidate.title}</span>
+                    <span className="block truncate text-[0.54rem] text-muted-foreground">{candidate.description}</span>
+                  </span>
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.5rem] text-muted-foreground">{candidate.userIds.length}</span>
+                  {index === mentionIndex && <span className="text-[0.5rem] text-muted-foreground">Enter</span>}
+                </button>
+              ) : (
                 <button
                   key={candidate.id}
                   type="button"
@@ -526,7 +540,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                   <MemberAvatar member={candidate.member} className="size-7 ring-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[0.65rem] font-semibold">@{candidate.label}</span>
-                    <span className="block truncate text-[0.54rem] text-muted-foreground">{candidate.subtitle}</span>
+                    <span className="block truncate text-[0.54rem] text-muted-foreground">{candidate.description}</span>
                   </span>
                   {index === mentionIndex && <span className="text-[0.5rem] text-muted-foreground">Enter</span>}
                 </button>
@@ -566,7 +580,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
             }}
             rows={1}
             maxLength={2500}
-            placeholder="Mensagem… use @ para chamar alguém"
+            placeholder="Mensagem… use @ para chamar pessoas ou equipes"
             className="max-h-28 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-2.5 py-2 text-[0.7rem] leading-5 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
           />
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(event.target.files); event.currentTarget.value = "" }} />

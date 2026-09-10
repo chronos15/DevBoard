@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -285,7 +286,7 @@ function CompleteRequestDialog({ open, onOpenChange, requestId }: { open: boolea
 }
 
 function RequestComposer({ request }: { request: ServiceRequest }) {
-  const { members, currentUserId, addServiceRequestMessage } = useStore()
+  const { members, memberPresence, currentUserId, addServiceRequestMessage } = useStore()
   const [draft, setDraft] = React.useState("")
   const [mentions, setMentions] = React.useState<ChatMention[]>([])
   const [files, setFiles] = React.useState<ServiceRequestFileInput[]>([])
@@ -298,16 +299,15 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
     const match = draft.match(/(?:^|\s)@([^\s@]{0,40})$/u)
     return match ? match[1].toLocaleLowerCase("pt-BR") : null
   }, [draft])
-  const mentionOptions = React.useMemo(() => {
+  const mentionOptions = React.useMemo<MentionCandidate[]>(() => {
     if (mentionQuery === null) return []
-    return members.filter((member) => member.id !== currentUserId && (member.name.toLocaleLowerCase("pt-BR").includes(mentionQuery) || member.email?.toLocaleLowerCase("pt-BR").includes(mentionQuery))).slice(0, 6)
-  }, [currentUserId, members, mentionQuery])
+    return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, userLimit: 6 })
+  }, [currentUserId, memberPresence, members, mentionQuery])
 
-  function chooseMention(memberId: string) {
-    const member = members.find((item) => item.id === memberId)
-    if (!member) return
-    setDraft((current) => current.replace(/(?:^|\s)@([^\s@]{0,40})$/u, (full) => `${full.startsWith(" ") ? " " : ""}@${member.name} `))
-    setMentions((current) => current.some((item) => item.kind === "user" && item.id === member.id) ? current : [...current, { kind: "user", id: member.id, label: member.name }])
+  function chooseMention(candidate: MentionCandidate) {
+    const token = mentionTokenForCandidate(candidate)
+    setDraft((current) => current.replace(/(?:^|\s)@([^\s@]{0,40})$/u, (full) => `${full.startsWith(" ") ? " " : ""}${token} `))
+    setMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
@@ -315,7 +315,9 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
     if ((!draft.trim() && files.length === 0) || sending) return
     setSending(true)
     try {
-      const ok = await addServiceRequestMessage(request.id, draft.trim(), mentions, files)
+      const content = draft.trim()
+      const validMentions = mentions.filter((mention) => content.includes(`@${mention.label}`))
+      const ok = await addServiceRequestMessage(request.id, content, validMentions, files)
       if (ok) { stopTyping(); setDraft(""); setMentions([]); setFiles([]) }
     } finally { setSending(false) }
   }
@@ -325,14 +327,14 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1">{files.map((item, index) => <div key={`${item.file.name}-${index}`} className="relative flex w-52 shrink-0 items-center gap-2 rounded-xl border border-border bg-muted/30 p-2"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><Paperclip className="size-3.5" /></span><span className="min-w-0 flex-1"><span className="block truncate text-[0.68rem] font-semibold">{item.file.name}</span><span className="block text-[0.6rem] text-muted-foreground">{formatBytes(item.file.size)}</span></span><button type="button" onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"><X className="size-3.5" /></button></div>)}</div>}
       <div className="relative flex min-w-0 items-end gap-2 rounded-2xl border border-border bg-background p-2 focus-within:border-ring">
         <button type="button" onClick={() => inputRef.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Adicionar arquivo"><Paperclip className="size-4" /></button>
-        <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar usuário"><AtSign className="size-4" /></button>
-        <textarea ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length === 0) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+        <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-4" /></button>
+        <textarea ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length > 0) { event.preventDefault(); chooseMention(mentionOptions[0]); return } if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
         <Button type="button" size="icon" className="size-9 shrink-0 rounded-xl" disabled={(!draft.trim() && files.length === 0) || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 200 * 1024 * 1024).map((file) => ({ file, category: "other" as const })); setFiles((current) => [...current, ...picked]); event.currentTarget.value = "" }} />
       </div>
       <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
-      {mentionOptions.length > 0 && <div className="absolute bottom-[calc(100%-4px)] left-16 z-30 w-[min(320px,calc(100%-80px))] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl">{mentionOptions.map((member) => <button key={member.id} type="button" onClick={() => chooseMention(member.id)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><MemberAvatar member={member} className="size-6 text-[0.55rem]" /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{member.name}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{member.email ?? member.role}</span></span></button>)}</div>}
-      <p className="mt-1.5 px-1 text-[0.62rem] text-muted-foreground">Enter envia · Shift+Enter quebra linha · @ menciona e inclui o usuário no protocolo.</p>
+      {mentionOptions.length > 0 && <div className="absolute bottom-[calc(100%-4px)] left-16 z-30 w-[min(360px,calc(100%-80px))] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl">{mentionOptions.map((candidate) => candidate.kind === "group" ? <button key={`group-${candidate.key}`} type="button" onClick={() => chooseMention(candidate)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-primary">{candidate.title}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{candidate.description}</span></span><span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{candidate.userIds.length}</span></button> : <button key={candidate.id} type="button" onClick={() => chooseMention(candidate)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><MemberAvatar member={candidate.member} className="size-6 text-[0.55rem]" /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{candidate.member.name}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{candidate.member.email ?? candidate.member.role}</span></span></button>)}</div>}
+      <p className="mt-1.5 px-1 text-[0.62rem] text-muted-foreground">Enter envia · Shift+Enter quebra linha · @todos, @here, @desenvolvedores, @aqs e @admin são suportados.</p>
     </div>
   )
 }

@@ -444,7 +444,8 @@ export function SubactivityKanban({
                               title={`Comentários · ${item.sub.title}`}
                               description="Discussão da subatividade. Todos os usuários podem comentar."
                               comments={item.sub.comments ?? []}
-                              onAdd={(content) => addSubactivityComment(item.sub.id, content)}
+                              onAdd={(content, mentions) => addSubactivityComment(item.sub.id, content, mentions)}
+                              enableMentions
                               compact
                             />
                             <AttachmentDialog

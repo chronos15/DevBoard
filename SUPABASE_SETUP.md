@@ -846,3 +846,17 @@ A 068 **não cria nem altera tabelas**. Ela adiciona apenas a RPC `set_subactivi
 O arquivo ZIP é enviado pelo fluxo de anexos já existente da subatividade e mantém o limite de 50 MB. Por isso, nenhuma coluna ou bucket novo é necessário.
 
 O indicador **“digitando...”** desta versão usa **Supabase Realtime Presence** e não depende da migration para persistência. Ele compartilha o mesmo escopo entre Acompanhamento/Subatividade e Análise AQS, além de funcionar nos canais/conversas e nas Solicitações. O estado é efêmero: não é salvo no banco nem gera histórico.
+
+## Migration 069 — Reunião por subatividade + menções coletivas
+
+Depois da 068, execute:
+
+```text
+supabase/migrations/069_taskboard_context_meeting_logs_and_group_mentions.sql
+```
+
+A 069 corrige o escopo dos logs de reunião. Reuniões iniciadas em uma subatividade passam a registrar também o `meeting-id` e a `subactivity-id`, permitindo que o Acompanhamento e a Análise AQS mostrem **somente** os logs pertencentes à subatividade aberta. Logs antigos sem essa identificação deixam de ser exibidos dentro de uma subatividade para não vazar histórico de outro tópico; eles continuam disponíveis no histórico geral do projeto.
+
+Também amplia as menções para `@here`, `@todos`, `@desenvolvedores`, `@aqs` e `@admin`. O front-end resolve cada alias em usuários ativos do workspace e o backend preserva as regras existentes: menções em Acompanhamento/Subatividade associam o usuário ao projeto/subatividade; se houver análise AQS ativa, ele também entra como participante da análise; em Solicitações entra como participante do protocolo; e, no chat da reunião, a menção chama o usuário e o associa ao contexto da reunião. `@here` usa as pessoas presentes/online no contexto quando essa informação está disponível.
+
+A migration eleva o limite técnico de metadados de menção do Chat para 250 destinatários para que `@todos` funcione em workspaces maiores. Nenhuma role é alterada e uma menção coletiva não transforma automaticamente ninguém em responsável principal da atividade/subatividade.

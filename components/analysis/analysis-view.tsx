@@ -49,6 +49,7 @@ import { DeveloperVcsTaskChanges, type DeveloperTaskVcsChange } from "@/componen
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
+import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { isActivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
@@ -240,6 +241,11 @@ export function AnalysisView() {
   const selected = React.useMemo(
     () => locatedReviews.find((item) => item.review.id === selectedReviewId) ?? null,
     [locatedReviews, selectedReviewId],
+  )
+
+  const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
+    selected ? `followup:sub:${selected.sub.id}` : null,
+    Boolean(selected),
   )
 
   const counts = React.useMemo(() => ({
@@ -449,7 +455,10 @@ export function AnalysisView() {
     setSendingComment(true)
     try {
       const result = await addSubactivityComment(selected.sub.id, comment.trim())
-      if (result !== false) setComment("")
+      if (result !== false) {
+        stopTyping()
+        setComment("")
+      }
     } finally {
       setSendingComment(false)
     }
@@ -917,7 +926,11 @@ export function AnalysisView() {
                   />
                   <textarea
                     value={comment}
-                    onChange={(event) => setComment(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setComment(value)
+                      reportTyping(value)
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault()
@@ -933,6 +946,7 @@ export function AnalysisView() {
                     <Send className="size-3.5" /><span className="sr-only">Enviar comentário</span>
                   </Button>
                 </div>
+                <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
                 <p className="mt-1.5 px-1 text-[0.56rem] text-muted-foreground">Enter envia · Shift+Enter quebra a linha · evidências ficam vinculadas à subatividade.</p>
               </div>
             </>

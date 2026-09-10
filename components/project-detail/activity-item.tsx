@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
-import type { Activity, ServiceRequest, Subactivity } from "@/lib/types"
+import type { Activity, ServiceRequest, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
   activityTracked,
@@ -25,6 +25,7 @@ import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-ba
 import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { serviceRequestReference } from "@/lib/service-requests"
+import { chatMediaKind } from "@/lib/supabase/helpers"
 import {
   Dialog,
   DialogContent,
@@ -95,11 +96,27 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     void setSubStatus(sub.id, nextStatus).finally(() => setStatusSaving(false))
   }
 
-  async function confirmStatus() {
+  async function confirmStatus(release: SubactivityReleaseDraft) {
     if (!pendingStatus || statusSaving) return
     setStatusSaving(true)
     try {
-      const ok = await setSubStatus(sub.id, pendingStatus)
+      if (release.zipFile) {
+        const uploaded = await addSubactivityAttachments(sub.id, [{
+          file: release.zipFile,
+          name: release.zipFile.name,
+          mimeType: release.zipFile.type || "application/zip",
+          size: release.zipFile.size,
+          kind: chatMediaKind(release.zipFile),
+        }])
+        if (!uploaded) return
+      }
+
+      const ok = await setSubStatus(sub.id, pendingStatus, {
+        folderPath: release.folderPath,
+        version: release.version,
+        build: release.build,
+        zipName: release.zipFile?.name ?? release.zipName,
+      })
       if (ok) {
         setPendingStatus(null)
         setPendingFromStatus(null)
@@ -270,7 +287,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         fromStatus={pendingFromStatus ?? sub.status}
         toStatus={pendingStatus}
         isAdmin={currentUserRole === "admin"}
-        onConfirm={confirmStatus}
+        onConfirm={(release) => { void confirmStatus(release) }}
         loading={statusSaving}
         projectId={projectId}
       />

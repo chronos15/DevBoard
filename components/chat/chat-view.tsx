@@ -46,6 +46,7 @@ import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { createClient } from "@/lib/supabase/client"
 import { WORKSPACE_COMMAND_FILES_BUCKET } from "@/lib/supabase/helpers"
+import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 
 type ChatTab = "conversations" | "groups" | "users" | "meetings"
 
@@ -586,6 +587,10 @@ export function ChatView({
   )
 
   const selected = myConversations.find((conversation) => conversation.id === selectedId) ?? null
+  const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
+    selected ? `chat:${selected.id}` : null,
+    Boolean(selected) && !readOnly,
+  )
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!selected || selected.kind !== "group" || !mentionRange) return []
     const queryText = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
@@ -964,6 +969,7 @@ export function ChatView({
   async function executeSlashCommand(command: ChatSlashCommand) {
     if (readOnly || !onExecuteSlashCommand || executingSlashCommandId) return
     setExecutingSlashCommandId(command.id)
+    stopTyping()
     setMessage("")
     setDraftMentions([])
     setMentionRange(null)
@@ -988,6 +994,8 @@ export function ChatView({
     }
     const content = message
     const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
+
+    stopTyping()
 
     // UX otimista: a mensagem entra no histórico no mesmo frame do clique/Enter.
     // A confirmação do Supabase acontece em paralelo; em caso de falha, a própria
@@ -1633,6 +1641,7 @@ export function ChatView({
                           onChange={(event) => {
                             const value = event.target.value
                             setMessage(value)
+                            reportTyping(value)
                             setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
                             syncMentionRange(value, event.target.selectionStart)
                           }}
@@ -1741,6 +1750,7 @@ export function ChatView({
                       </Button>
                     )}
                     </div>
+                    <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
                   </div>
                   <p className="mx-auto mt-1.5 max-w-3xl text-[0.58rem] text-muted-foreground">Enter envia · Shift + Enter quebra linha · Ctrl+V cola mídia · @ menciona no grupo{slashCommands.length ? " · / usa comandos" : ""} · Segure uma mensagem para responder</p>
                     </>

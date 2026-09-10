@@ -46,6 +46,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
+import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -291,6 +292,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   const [sending, setSending] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(`request:${request.id}`)
 
   const mentionQuery = React.useMemo(() => {
     const match = draft.match(/(?:^|\s)@([^\s@]{0,40})$/u)
@@ -314,7 +316,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
     setSending(true)
     try {
       const ok = await addServiceRequestMessage(request.id, draft.trim(), mentions, files)
-      if (ok) { setDraft(""); setMentions([]); setFiles([]) }
+      if (ok) { stopTyping(); setDraft(""); setMentions([]); setFiles([]) }
     } finally { setSending(false) }
   }
 
@@ -324,10 +326,11 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       <div className="relative flex min-w-0 items-end gap-2 rounded-2xl border border-border bg-background p-2 focus-within:border-ring">
         <button type="button" onClick={() => inputRef.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Adicionar arquivo"><Paperclip className="size-4" /></button>
         <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar usuário"><AtSign className="size-4" /></button>
-        <textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length === 0) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+        <textarea ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length === 0) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
         <Button type="button" size="icon" className="size-9 shrink-0 rounded-xl" disabled={(!draft.trim() && files.length === 0) || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 200 * 1024 * 1024).map((file) => ({ file, category: "other" as const })); setFiles((current) => [...current, ...picked]); event.currentTarget.value = "" }} />
       </div>
+      <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
       {mentionOptions.length > 0 && <div className="absolute bottom-[calc(100%-4px)] left-16 z-30 w-[min(320px,calc(100%-80px))] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl">{mentionOptions.map((member) => <button key={member.id} type="button" onClick={() => chooseMention(member.id)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><MemberAvatar member={member} className="size-6 text-[0.55rem]" /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{member.name}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{member.email ?? member.role}</span></span></button>)}</div>}
       <p className="mt-1.5 px-1 text-[0.62rem] text-muted-foreground">Enter envia · Shift+Enter quebra linha · @ menciona e inclui o usuário no protocolo.</p>
     </div>

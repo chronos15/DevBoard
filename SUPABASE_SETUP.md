@@ -832,3 +832,17 @@ A 067 **não cria nem altera tabelas**. Ela separa a permissão de **visualizar*
 O observador pode consultar a conversa e o checklist, reagir aos itens do histórico e adicionar um comentário somente pelo comando **Responder**. Ele não pode enviar uma mensagem nova, anexar arquivos, usar menções, alterar checklist, membros, status, cronômetro ou iniciar reunião daquela subatividade. Essas limitações são aplicadas na interface e, nos pontos de escrita do Acompanhamento, também no backend.
 
 A migration mantém `can_access_followup_subactivity()` intacta para não ampliar por acidente as permissões de edição existentes. O novo helper `can_view_followup_subactivity()` é usado apenas onde a leitura/reação do observador precisa ser permitida.
+
+## Migration 068 — Entrega de versão + indicador “digitando...”
+
+Depois da 067, execute:
+
+```text
+supabase/migrations/068_taskboard_release_handoff_and_typing.sql
+```
+
+A 068 **não cria nem altera tabelas**. Ela adiciona apenas a RPC `set_subactivity_status_with_release_info`, reutilizando a validação oficial de `set_subactivity_status` e registrando no histórico os dados opcionais de entrega quando uma subatividade é enviada para **AQS** ou concluída diretamente: caminho da pasta, número da versão, build e nome do ZIP. Se nenhum desses dados for informado, o avanço continua permitido e o histórico registra explicitamente que a entrega foi feita sem essas informações.
+
+O arquivo ZIP é enviado pelo fluxo de anexos já existente da subatividade e mantém o limite de 50 MB. Por isso, nenhuma coluna ou bucket novo é necessário.
+
+O indicador **“digitando...”** desta versão usa **Supabase Realtime Presence** e não depende da migration para persistência. Ele compartilha o mesmo escopo entre Acompanhamento/Subatividade e Análise AQS, além de funcionar nos canais/conversas e nas Solicitações. O estado é efêmero: não é salvo no banco nem gera histórico.

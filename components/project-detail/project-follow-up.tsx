@@ -54,6 +54,7 @@ import type {
   ProjectLogType,
   Status,
   Subactivity,
+  SubactivityReleaseDraft,
 } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -75,6 +76,7 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
@@ -1059,6 +1061,10 @@ export function ProjectFollowUp({
     selectedSub &&
     currentUserRole === "developer" &&
     !selectedIsParticipant
+  )
+  const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
+    selectedSub ? `followup:sub:${selectedSub.id}` : null,
+    Boolean(selectedSub) && (!selectedDeveloperObserver || Boolean(replyingTo)),
   )
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
 
@@ -2188,6 +2194,7 @@ export function ProjectFollowUp({
       enqueueMessageOptimistically(content, validMentions, replyingTo ?? undefined)
     }
 
+    stopTyping()
     setMessage("")
     setDraftMentions([])
     setMentionRange(null)
@@ -2283,11 +2290,22 @@ export function ProjectFollowUp({
     void setSubStatus(selectedSub.id, nextStatus).finally(() => setStatusSaving(false))
   }
 
-  async function confirmSelectedStatus() {
+  async function confirmSelectedStatus(release: SubactivityReleaseDraft) {
     if (!selectedSub || !pendingStatus || statusSaving) return
     setStatusSaving(true)
     try {
-      const ok = await setSubStatus(selectedSub.id, pendingStatus)
+      if (release.zipFile) {
+        const upload = await fileToUpload(release.zipFile)
+        const uploaded = await addSubactivityAttachments(selectedSub.id, [upload])
+        if (!uploaded) return
+      }
+
+      const ok = await setSubStatus(selectedSub.id, pendingStatus, {
+        folderPath: release.folderPath?.trim() || undefined,
+        version: release.version?.trim() || undefined,
+        build: release.build?.trim() || undefined,
+        zipName: release.zipFile?.name || release.zipName?.trim() || undefined,
+      })
       if (ok) {
         setPendingStatus(null)
         setPendingFromStatus(null)
@@ -3331,6 +3349,7 @@ export function ProjectFollowUp({
                         onChange={(event) => {
                           const value = event.target.value
                           setMessage(value)
+                          reportTyping(value)
                           setDraftMentions((current) => current.filter((mention) => value.includes(mentionToken(mention))))
                           detectMention(value, event.target.selectionStart)
                           resizeComposer(event.currentTarget)
@@ -3389,6 +3408,7 @@ export function ProjectFollowUp({
                       </Button>
                     </div>
                   </div>
+                  <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
                   {composerError ? (
                     <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
                   ) : selectedDeveloperObserver ? (
@@ -3509,7 +3529,7 @@ export function ProjectFollowUp({
           isAdmin={currentUserRole === "admin"}
           projectId={project.id}
           loading={statusSaving}
-          onConfirm={() => { void confirmSelectedStatus() }}
+          onConfirm={(release) => { void confirmSelectedStatus(release) }}
         />
       )}
 

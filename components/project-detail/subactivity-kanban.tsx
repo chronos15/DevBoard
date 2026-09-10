@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { AlertTriangle, Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square } from "lucide-react"
-import type { ActivityFilter, Project, ServiceRequest, Status, Subactivity } from "@/lib/types"
+import type { ActivityFilter, Project, ServiceRequest, Status, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
   formatHMS,
@@ -19,6 +19,7 @@ import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-ba
 import { cn } from "@/lib/utils"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { serviceRequestReference } from "@/lib/service-requests"
+import { chatMediaKind } from "@/lib/supabase/helpers"
 
 type KanbanItem = {
   activityId: string
@@ -224,10 +225,26 @@ export function SubactivityKanban({
       })),
   )
 
-  async function commitStatus(subId: string, status: Status) {
+  async function commitStatus(subId: string, status: Status, release?: SubactivityReleaseDraft) {
     setPendingIds((current) => new Set(current).add(subId))
     try {
-      return await setSubStatus(subId, status)
+      if (release?.zipFile) {
+        const uploaded = await addSubactivityAttachments(subId, [{
+          file: release.zipFile,
+          name: release.zipFile.name,
+          mimeType: release.zipFile.type || "application/zip",
+          size: release.zipFile.size,
+          kind: chatMediaKind(release.zipFile),
+        }])
+        if (!uploaded) return false
+      }
+
+      return await setSubStatus(subId, status, release ? {
+        folderPath: release.folderPath,
+        version: release.version,
+        build: release.build,
+        zipName: release.zipFile?.name ?? release.zipName,
+      } : undefined)
     } finally {
       setPendingIds((current) => {
         const next = new Set(current)
@@ -282,9 +299,9 @@ export function SubactivityKanban({
     setOverStatus(null)
   }
 
-  async function confirmTransition() {
+  async function confirmTransition(release: SubactivityReleaseDraft) {
     if (!pendingTransition) return
-    const ok = await commitStatus(pendingTransition.subId, pendingTransition.toStatus)
+    const ok = await commitStatus(pendingTransition.subId, pendingTransition.toStatus, release)
     if (ok) setPendingTransition(null)
   }
 
@@ -503,7 +520,7 @@ export function SubactivityKanban({
           fromStatus={pendingTransition.fromStatus}
           toStatus={pendingTransition.toStatus}
           isAdmin={currentUserRole === "admin"}
-          onConfirm={confirmTransition}
+          onConfirm={(release) => { void confirmTransition(release) }}
           loading={pendingIds.has(pendingTransition.subId)}
           projectId={project.id}
         />

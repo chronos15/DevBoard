@@ -115,6 +115,17 @@ export type WorkSession = {
   durationSeconds: number
 }
 
+export type SubactivityReleaseInfo = {
+  folderPath?: string
+  version?: string
+  build?: string
+  zipName?: string
+}
+
+export type SubactivityReleaseDraft = SubactivityReleaseInfo & {
+  zipFile?: File
+}
+
 export type Subactivity = {
   id: string
   title: string

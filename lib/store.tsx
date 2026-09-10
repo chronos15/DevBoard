@@ -66,6 +66,7 @@ import type {
   ServiceRequestInput,
   ServiceRequestUnit,
   Status,
+  SubactivityReleaseInfo,
   SupportTopic,
   SupportTopicInput,
   Subactivity,
@@ -167,7 +168,7 @@ export type StoreContextValue = {
   canManageSubactivity: (sub: Subactivity) => boolean
   startTimer: (subId: string) => Promise<boolean>
   stopTimer: (subId?: string, reason?: string) => Promise<boolean>
-  setSubStatus: (subId: string, status: Status) => Promise<boolean>
+  setSubStatus: (subId: string, status: Status, releaseInfo?: SubactivityReleaseInfo) => Promise<boolean>
   addSubactivity: (
     projectId: string,
     activityId: string,
@@ -1137,13 +1138,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [activeSubId, callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule])
 
-  const setSubStatus = React.useCallback(async (subId: string, status: Status) => {
+  const setSubStatus = React.useCallback(async (subId: string, status: Status, releaseInfo?: SubactivityReleaseInfo) => {
     if (status === "in-progress") return startTimer(subId)
 
     const rollback = captureOptimisticSubs(projects, subId, status)
     setProjects((current) => optimisticSubStatus(current, subId, status))
 
-    const result = await callRpc<unknown>("set_subactivity_status", { p_subactivity_id: subId, p_status: status }, "Não foi possível alterar o status")
+    const shouldRecordRelease = Boolean(releaseInfo) && (status === "waiting-aqs" || status === "done")
+    const result = shouldRecordRelease
+      ? await callRpc<unknown>(
+          "set_subactivity_status_with_release_info",
+          {
+            p_subactivity_id: subId,
+            p_status: status,
+            p_folder_path: releaseInfo?.folderPath?.trim() || null,
+            p_version: releaseInfo?.version?.trim() || null,
+            p_build: releaseInfo?.build?.trim() || null,
+            p_zip_name: releaseInfo?.zipName?.trim() || null,
+          },
+          "Não foi possível concluir a etapa da subatividade",
+        )
+      : await callRpc<unknown>(
+          "set_subactivity_status",
+          { p_subactivity_id: subId, p_status: status },
+          "Não foi possível alterar o status",
+        )
     if (result === undefined) {
       setProjects((current) => restoreOptimisticSubs(current, rollback))
       return false

@@ -265,6 +265,7 @@ export function DiscordWorkspace() {
   const [workspaceChannelCommands, setWorkspaceChannelCommands] = React.useState<WorkspaceChannelCommand[]>([])
   const [channelCommandsLoading, setChannelCommandsLoading] = React.useState(false)
   const [manageChannelCommandsOpen, setManageChannelCommandsOpen] = React.useState(false)
+  const [channelCommandMobileEditorOpen, setChannelCommandMobileEditorOpen] = React.useState(false)
   const [channelCommandBusy, setChannelCommandBusy] = React.useState(false)
   const [channelCommandError, setChannelCommandError] = React.useState<string | null>(null)
   const [editingChannelCommandId, setEditingChannelCommandId] = React.useState<string | null>(null)
@@ -860,28 +861,36 @@ export function DiscordWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={manageChannelCommandsOpen} onOpenChange={(open) => { if (!channelCommandBusy) { setManageChannelCommandsOpen(open); if (open) resetChannelCommandEditor(); else setChannelCommandError(null) } }}>
-        <DialogContent className="w-[calc(100vw-24px)] max-w-4xl overflow-hidden p-0 sm:w-[calc(100vw-40px)]">
-          <DialogHeader className="border-b border-border px-5 py-4 text-left sm:px-6">
-            <DialogTitle className="flex items-center gap-2"><Terminal className="size-4 text-primary" /> Comandos de #{selectedWorkspaceChannel?.name}</DialogTitle>
-            <DialogDescription>Cadastre respostas rápidas para este canal. Digitar <span className="font-mono text-foreground">/</span> no chat mostra os comandos disponíveis.</DialogDescription>
+      <Dialog open={manageChannelCommandsOpen} onOpenChange={(open) => { if (!channelCommandBusy) { setManageChannelCommandsOpen(open); if (open) { resetChannelCommandEditor(); setChannelCommandMobileEditorOpen(false) } else { setChannelCommandError(null); setChannelCommandMobileEditorOpen(false) } } }}>
+        <DialogContent className="grid h-[min(88dvh,820px)] max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0 sm:w-[calc(100vw-40px)] sm:max-w-[1100px] lg:max-w-[1180px]">
+          <DialogHeader className="border-b border-border px-4 py-4 pr-12 text-left sm:px-6">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-base sm:text-lg"><Terminal className="size-4 shrink-0 text-primary" /><span className="truncate">Comandos de #{selectedWorkspaceChannel?.name}</span></DialogTitle>
+            <DialogDescription className="max-w-3xl">Cadastre respostas rápidas para este canal. Digitar <span className="font-mono text-foreground">/</span> no chat mostra os comandos disponíveis.</DialogDescription>
           </DialogHeader>
-          <div className="grid max-h-[min(76vh,760px)] min-h-0 md:grid-cols-[240px_minmax(0,1fr)]">
-            <aside className="min-h-0 border-b border-border bg-muted/15 p-3 md:border-b-0 md:border-r">
-              <Button type="button" size="sm" className="w-full" onClick={() => resetChannelCommandEditor()}><Plus className="size-3.5" /> Novo comando</Button>
-              <div className="mt-3 max-h-48 space-y-1 overflow-y-auto md:max-h-[60vh]">
+
+          <div className="grid min-h-0 min-w-0 md:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className={cn("min-h-0 min-w-0 flex-col border-border bg-muted/15 md:flex md:border-r", channelCommandMobileEditorOpen ? "hidden" : "flex")}>
+              <div className="shrink-0 border-b border-border p-3">
+                <Button type="button" size="sm" className="w-full" onClick={() => { resetChannelCommandEditor(); setChannelCommandMobileEditorOpen(true) }}><Plus className="size-3.5" /> Novo comando</Button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
                 {channelCommandsLoading ? <div className="flex items-center justify-center py-8 text-xs text-muted-foreground"><LoaderCircle className="mr-2 size-3.5 animate-spin" /> Carregando...</div> : selectedChannelCommands.length ? selectedChannelCommands.map((command) => (
-                  <button key={command.id} type="button" onClick={() => resetChannelCommandEditor(command)} className={cn("group flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left", editingChannelCommandId === command.id ? "bg-primary/10 text-foreground" : "hover:bg-muted")}> 
+                  <button key={command.id} type="button" onClick={() => { resetChannelCommandEditor(command); setChannelCommandMobileEditorOpen(true) }} className={cn("group flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2.5 text-left transition-colors", editingChannelCommandId === command.id ? "bg-primary/10 text-foreground" : "hover:bg-muted")}> 
                     <Terminal className="size-3.5 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs font-semibold">/{command.command}</span><span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">{command.title}</span></span>
-                    <span className="font-mono text-[0.52rem] text-muted-foreground">{command.usageCount}</span>
+                    <span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs font-semibold">/{command.command}</span><span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{command.title}</span></span>
+                    <span className="shrink-0 font-mono text-[0.55rem] text-muted-foreground">{command.usageCount}</span>
                   </button>
-                )) : <p className="px-2 py-8 text-center text-xs text-muted-foreground">Nenhum comando neste canal.</p>}
+                )) : <div className="flex min-h-40 items-center justify-center px-4 text-center text-xs text-muted-foreground">Nenhum comando neste canal.</div>}
               </div>
             </aside>
 
-            <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
-              <div className="grid gap-3 sm:grid-cols-2">
+            <div className={cn("min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 sm:p-6", channelCommandMobileEditorOpen ? "block" : "hidden md:block")}>
+              <div className="mb-4 flex items-center gap-2 md:hidden">
+                <Button type="button" size="sm" variant="outline" onClick={() => setChannelCommandMobileEditorOpen(false)} className="h-8 px-2.5"><ChevronRight className="size-3.5 rotate-180" /> Comandos</Button>
+                <span className="truncate text-xs text-muted-foreground">{editingChannelCommandId ? `Editando /${channelCommandName}` : "Novo comando"}</span>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
                 <label className="block"><span className="mb-1.5 block text-xs font-medium">Comando</span><div className="flex h-10 items-center rounded-xl border border-border bg-background px-3 focus-within:border-ring"><span className="font-mono text-sm text-muted-foreground">/</span><input value={channelCommandName} onChange={(event) => setChannelCommandName(event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").toLocaleLowerCase("pt-BR"))} maxLength={32} placeholder="beta" className="min-w-0 flex-1 bg-transparent px-1 font-mono text-sm outline-none" /></div></label>
                 <label className="block"><span className="mb-1.5 block text-xs font-medium">Título da resposta</span><input value={channelCommandTitle} onChange={(event) => setChannelCommandTitle(event.target.value)} maxLength={100} placeholder="Versão beta" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring" /></label>
               </div>
@@ -910,7 +919,7 @@ export function DiscordWorkspace() {
               {channelCommandError && <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">{channelCommandError}</div>}
             </div>
           </div>
-          <DialogFooter className="border-t border-border bg-muted/[0.08] px-4 py-3 sm:px-6">
+          <DialogFooter className={cn("m-0 shrink-0 rounded-none border-t border-border bg-muted/[0.08] px-4 py-3 [&>button]:w-full sm:px-6 sm:[&>button]:w-auto", !channelCommandMobileEditorOpen && "hidden md:flex")}>
             {editingChannelCommandId && <Button type="button" variant="destructive" disabled={channelCommandBusy} onClick={() => { const command = selectedChannelCommands.find((item) => item.id === editingChannelCommandId); if (command) void deleteChannelCommand(command) }} className="sm:mr-auto"><Trash2 className="size-3.5" /> Excluir</Button>}
             <Button type="button" variant="outline" disabled={channelCommandBusy} onClick={() => setManageChannelCommandsOpen(false)}>Fechar</Button>
             <Button type="button" disabled={channelCommandBusy || !channelCommandName.trim() || !channelCommandTitle.trim()} onClick={() => void saveChannelCommand()}>{channelCommandBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Terminal className="size-3.5" />} {editingChannelCommandId ? "Salvar alterações" : "Cadastrar comando"}</Button>

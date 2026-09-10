@@ -20,6 +20,7 @@ import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
+import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
@@ -305,6 +306,7 @@ export function ActivityItem({
   } = useStore()
   const currentProject = projects.find((project) => project.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(currentProject?.memberIds.includes(currentUserId))
+  const canCreateSubactivity = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(currentProject?.memberIds.includes(currentUserId))
   const activityRef = React.useRef<HTMLDivElement>(null)
   const hasFocusedSubactivity = Boolean(
     focusSubactivityId && activity.subactivities.some((sub) => sub.id === focusSubactivityId),
@@ -418,6 +420,10 @@ export function ActivityItem({
           </button>
 
           <div className="flex shrink-0 items-stretch border-l border-border">
+            <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-10 rounded-none sm:size-11" />
+          </div>
+
+          <div className="flex shrink-0 items-stretch border-l border-border">
             <AttachmentDialog
               title={`Arquivos · ${activity.title}`}
               description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
@@ -490,7 +496,7 @@ export function ActivityItem({
               )}
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 px-1 pt-1">
-              {canManageStructure && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
+              {canCreateSubactivity && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
               <button
                 type="button"
                 onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}

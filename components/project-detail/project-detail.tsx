@@ -63,7 +63,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   } = useStore()
   const project = projects.find((p) => p.id === projectId)
   const [newActivity, setNewActivity] = React.useState("")
-  const [newActivityAssignee, setNewActivityAssignee] = React.useState(currentUserId)
+  const [newActivityAssignee, setNewActivityAssignee] = React.useState("")
   const [newActivityTypeId, setNewActivityTypeId] = React.useState("")
   const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
@@ -91,13 +91,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     return () => window.removeEventListener("hashchange", readFocusFromHash)
   }, [])
 
-  React.useEffect(() => {
-    const currentExecutionMember = members.find(
-      (member) => member.id === currentUserId && (member.role === "developer" || member.role === "admin"),
-    )
-    const fallbackExecutionMember = members.find((member) => member.role === "developer" || member.role === "admin")
-    setNewActivityAssignee(currentExecutionMember?.id ?? fallbackExecutionMember?.id ?? "")
-  }, [currentUserId, members])
 
   React.useEffect(() => {
     if (!project?.activities.length) {
@@ -526,6 +519,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                       className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
                       aria-label="Responsável pela nova atividade"
                     >
+                      <option value="">Sem responsável específico</option>
                       {executionMembers.map((member) => (
                         <option key={member.id} value={member.id}>{member.name}</option>
                       ))}
@@ -570,6 +564,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                       className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
                       aria-label="Responsável pela nova atividade"
                     >
+                      <option value="">Sem responsável específico</option>
                       {executionMembers.map((member) => (
                         <option key={member.id} value={member.id}>{member.name}</option>
                       ))}

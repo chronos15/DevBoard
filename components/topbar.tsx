@@ -387,11 +387,11 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
               ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
               : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
-          title={preferences.interfaceMode === "focused" ? "Alternar para interface completa" : "Alternar para interface focada"}
-          aria-label={preferences.interfaceMode === "focused" ? "Usar interface completa" : "Usar interface focada"}
+          title={preferences.interfaceMode === "focused" ? "Alternar para interface completa" : "Alternar para interface resumida"}
+          aria-label={preferences.interfaceMode === "focused" ? "Usar interface completa" : "Usar interface resumida"}
         >
           <Sparkles className="size-3.5" />
-          Interface: {preferences.interfaceMode === "focused" ? "Focada" : "Completa"}
+          Interface: {preferences.interfaceMode === "focused" ? "Resumida" : "Completa"}
           <span className={cn(
             "relative h-4 w-7 rounded-full transition-colors",
             preferences.interfaceMode === "focused" ? "bg-primary" : "bg-muted-foreground/25",

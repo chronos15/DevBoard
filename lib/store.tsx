@@ -1243,7 +1243,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
     const project = projects.find((item) => item.id === projectId)
-    const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+    const canManageStructure = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId))
     if (!canManageStructure) {
       fail(new Error("Você precisa estar integrado ao projeto para criar subatividades."), "Sem permissão para criar subatividades")
       return false

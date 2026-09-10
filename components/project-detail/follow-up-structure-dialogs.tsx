@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { useStore } from "@/lib/store"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
@@ -27,17 +26,9 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
   const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
-  const [assigneeId, setAssigneeId] = React.useState(
-    executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
-  )
+  const [assigneeId, setAssigneeId] = React.useState("")
   const [typeId, setTypeId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!assigneeId) {
-      setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
-    }
-  }, [assigneeId, currentUserId, executionMembers])
 
   if (!canManageStructure) return null
 
@@ -62,7 +53,7 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+        if (next) setAssigneeId("")
       }}
     >
       <Button
@@ -87,13 +78,16 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
         <form id="followup-add-activity" onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Título</label>
-            <Input
+            <textarea
               autoFocus
+              rows={4}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Ex.: Implementar integração de pagamentos"
-              maxLength={300}
+              placeholder="Descreva a atividade com o nível de detalhe necessário..."
+              maxLength={1200}
+              className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring"
             />
+            <p className="text-[0.65rem] text-muted-foreground">Pode usar múltiplas linhas. O texto completo fica disponível no painel de informações da atividade.</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -111,16 +105,17 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Responsável</label>
-            <select
-              value={assigneeId}
-              onChange={(event) => setAssigneeId(event.target.value)}
-              className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
-            >
-              {executionMembers.map((member) => (
-                <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
-            </select>
+              <label className="text-xs font-medium text-muted-foreground">Responsável <span className="font-normal opacity-70">(opcional)</span></label>
+              <select
+                value={assigneeId}
+                onChange={(event) => setAssigneeId(event.target.value)}
+                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+              >
+                <option value="">Sem responsável específico</option>
+                {executionMembers.map((member) => (
+                  <option key={member.id} value={member.id}>{member.name}</option>
+                ))}
+              </select>
             </div>
           </div>
         </form>
@@ -146,7 +141,7 @@ export function FollowUpAddSubactivityDialog({
   const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
-  const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+  const canManageStructure = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId))
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")

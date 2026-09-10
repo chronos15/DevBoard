@@ -24,6 +24,7 @@ import {
   Hash,
   LoaderCircle,
   ListChecks,
+  ListTodo,
   Check,
   Menu,
   Mic,
@@ -49,6 +50,7 @@ import type {
   CommentEntry,
   FollowUpReplyReference,
   Project,
+  ProjectLogType,
   Status,
   Subactivity,
 } from "@/lib/types"
@@ -297,7 +299,7 @@ type TimelineItem =
   | { kind: "comment"; id: string; targetId: string; createdAt: string; authorId: string; comment: CommentEntry }
   | { kind: "attachment"; id: string; targetId: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
   | { kind: "session"; id: string; targetId: string; createdAt: string; authorId: string; durationSeconds: number; endedAt?: string }
-  | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string }
+  | { kind: "log"; id: string; targetId: string; createdAt: string; authorId?: string; title: string; description?: string; logType?: ProjectLogType }
   | { kind: "pending-comment"; id: string; targetId: string; createdAt: string; authorId: string; pending: PendingFollowUpComment }
   | { kind: "pending-attachment"; id: string; targetId: string; createdAt: string; authorId: string; batchId: string; file: File; status: PendingDeliveryStatus; videoProgress?: VideoProcessingProgress; errorMessage?: string }
 
@@ -796,6 +798,7 @@ export function ProjectFollowUp({
     deleteActivity,
     startTimer,
     setSubStatus,
+    refreshAll,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
   const supabase = React.useMemo(() => createClient(), [])
@@ -1100,7 +1103,7 @@ export function ProjectFollowUp({
       const { error } = await supabase.rpc("add_subactivity_checklist_item", { p_subactivity_id: selectedSub.id, p_content: content })
       if (error) throw error
       setChecklistDraft("")
-      await loadChecklist(selectedSub.id, true)
+      await Promise.all([loadChecklist(selectedSub.id, true), refreshAll()])
     } catch (error) {
       console.error("[TaskBoard/Checklist] Falha ao adicionar item:", error)
       setChecklistError(toUserFacingError(error, "Não foi possível adicionar esta anotação."))
@@ -1118,7 +1121,7 @@ export function ProjectFollowUp({
     try {
       const { error } = await supabase.rpc("set_subactivity_checklist_item_completed", { p_item_id: item.id, p_completed: completed })
       if (error) throw error
-      await loadChecklist(selectedSub.id, true)
+      await Promise.all([loadChecklist(selectedSub.id, true), refreshAll()])
     } catch (error) {
       setChecklistItems(previous)
       console.error("[TaskBoard/Checklist] Falha ao atualizar item:", error)
@@ -1136,6 +1139,7 @@ export function ProjectFollowUp({
       const { error } = await supabase.rpc("delete_subactivity_checklist_item", { p_item_id: item.id })
       if (error) throw error
       setChecklistItems((items) => items.filter((entry) => entry.id !== item.id))
+      await refreshAll()
     } catch (error) {
       console.error("[TaskBoard/Checklist] Falha ao excluir item:", error)
       setChecklistError(toUserFacingError(error, "Não foi possível excluir esta anotação."))
@@ -1283,6 +1287,7 @@ export function ProjectFollowUp({
           authorId: log.actorId,
           title: log.title,
           description: visibleMeetingLogDescription(log.description),
+          logType: log.type,
         })
         continue
       }
@@ -1290,7 +1295,7 @@ export function ProjectFollowUp({
       if (!needle) continue
       const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
       if (!haystack.includes(needle)) continue
-      items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description })
+      items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description, logType: log.type })
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
@@ -2972,7 +2977,7 @@ export function ProjectFollowUp({
                             <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
                             <div id={`followup-timeline-${item.id}`} className={cn("tb-chat-meta group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-start gap-2 pr-9 min-[761px]:pr-20">
-                                <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                                {item.logType?.startsWith("checklist-") ? <ListTodo className="mt-0.5 size-3.5 shrink-0 text-chart-2" /> : <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />}
                                 <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
                                   <div className="flex min-w-0 items-center gap-2">
                                     <p className="tb-chat-title min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
@@ -3617,7 +3622,7 @@ export function ProjectFollowUp({
               <>
                 <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left sm:px-6 sm:pb-5 sm:pt-6">
                   <div className="flex items-start gap-3 pr-8">
-                    <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ActivityIcon className="size-4.5" /></span>
+                    <span className={cn("mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl", logDetailItem.logType?.startsWith("checklist-") ? "bg-chart-2/10 text-chart-2" : "bg-primary/10 text-primary")}>{logDetailItem.logType?.startsWith("checklist-") ? <ListTodo className="size-4.5" /> : <ActivityIcon className="size-4.5" />}</span>
                     <div className="min-w-0 flex-1">
                       <DialogTitle className="break-words text-base leading-snug sm:text-lg">{logDetailItem.title}</DialogTitle>
                       <DialogDescription className="mt-1.5 text-xs sm:text-sm">Detalhes completos do registro</DialogDescription>

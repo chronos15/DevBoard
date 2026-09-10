@@ -9,6 +9,7 @@ import {
   GitCommitHorizontal,
   History,
   MessageSquare,
+  ListTodo,
   Paperclip,
   PackageCheck,
   Pencil,
@@ -50,6 +51,10 @@ const iconByType: Record<ProjectLogType, typeof History> = {
   "topic-to-activity": GitCommitHorizontal,
   "meeting-started": Video,
   "meeting-ended": Video,
+  "checklist-added": ListTodo,
+  "checklist-completed": ListTodo,
+  "checklist-reopened": ListTodo,
+  "checklist-removed": ListTodo,
 }
 
 function escapeHtml(value: string) {

@@ -159,6 +159,10 @@ export type ProjectLogType =
   | "topic-to-activity"
   | "meeting-started"
   | "meeting-ended"
+  | "checklist-added"
+  | "checklist-completed"
+  | "checklist-reopened"
+  | "checklist-removed"
 
 export type ProjectLogEntry = {
   id: string

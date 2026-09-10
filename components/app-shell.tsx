@@ -74,7 +74,7 @@ function AccessDenied({ role }: { role: AccessRole }) {
 const BARE_ROUTES = ["/login"]
 
 function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.ReactNode; menuOpen: boolean; setMenuOpen: React.Dispatch<React.SetStateAction<boolean>> }) {
-  const { hydrated, currentUserRole, preferences, aqsReviews } = useStore()
+  const { hydrated, currentUserRole, preferences, aqsReviews, updatePreferences } = useStore()
   const pathname = usePathname()
   const router = useRouter()
 
@@ -160,6 +160,30 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
 
     router.replace(target)
   }, [aqsReviews, hydrated, pathname, preferences.interfaceMode, router])
+
+  React.useEffect(() => {
+    if (!hydrated) return
+
+    let switching = false
+    async function onInterfaceShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat || switching) return
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey || event.key !== "Tab") return
+      event.preventDefault()
+      event.stopPropagation()
+      switching = true
+      try {
+        await updatePreferences({
+          ...preferences,
+          interfaceMode: preferences.interfaceMode === "focused" ? "complete" : "focused",
+        })
+      } finally {
+        switching = false
+      }
+    }
+
+    window.addEventListener("keydown", onInterfaceShortcut, { capture: true })
+    return () => window.removeEventListener("keydown", onInterfaceShortcut, { capture: true })
+  }, [hydrated, preferences, updatePreferences])
 
   React.useEffect(() => {
     if (!hydrated || currentUserRole !== "developer") return

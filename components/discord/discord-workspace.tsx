@@ -850,7 +850,7 @@ export function DiscordWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background">
-      <div className={cn("relative w-[64px] shrink-0", serverRailExpanded ? "md:w-[220px]" : "md:w-[64px]")}>
+      <div className={cn("relative h-full min-h-0 w-[64px] shrink-0", serverRailExpanded ? "md:w-[220px]" : "md:w-[64px]")}>
         {serverRailExpanded && (
           <button
             type="button"
@@ -859,7 +859,7 @@ export function DiscordWorkspace() {
             aria-label="Fechar navegação expandida"
           />
         )}
-        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex min-h-0 flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
+        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex h-full min-h-0 max-h-full flex-col overflow-hidden border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
         <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
           <div className={cn("mb-1 flex shrink-0", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
             <button

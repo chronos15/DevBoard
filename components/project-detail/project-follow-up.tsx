@@ -23,6 +23,8 @@ import {
   GripVertical,
   Hash,
   LoaderCircle,
+  ListChecks,
+  Check,
   Menu,
   Mic,
   Paperclip,
@@ -243,6 +245,30 @@ type FollowUpReaction = {
   userId: string
   emoji: string
   createdAt: string
+}
+
+type SubactivityChecklistItem = {
+  id: string
+  subactivityId: string
+  content: string
+  createdBy: string
+  completedBy?: string
+  createdAt: string
+  completedAt?: string
+  updatedAt: string
+}
+
+function mapChecklistItem(row: Record<string, unknown>): SubactivityChecklistItem {
+  return {
+    id: String(row.id ?? ""),
+    subactivityId: String(row.subactivity_id ?? ""),
+    content: String(row.content ?? ""),
+    createdBy: String(row.created_by ?? ""),
+    completedBy: row.completed_by ? String(row.completed_by) : undefined,
+    createdAt: String(row.created_at ?? ""),
+    completedAt: row.completed_at ? String(row.completed_at) : undefined,
+    updatedAt: String(row.updated_at ?? row.created_at ?? ""),
+  }
 }
 
 type PendingDeliveryStatus = "sending" | "failed"
@@ -711,7 +737,7 @@ function MobilePanel({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[60] xl:hidden">
+    <div className="fixed inset-0 z-[110] xl:hidden">
       <button type="button" aria-label="Fechar painel" className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
       <section className="absolute inset-y-0 left-0 flex w-[min(88vw,340px)] flex-col border-r border-border bg-card shadow-2xl">
         <header className="flex h-14 items-center justify-between border-b border-border px-4">
@@ -839,6 +865,12 @@ export function ProjectFollowUp({
   const [memberRemovalTargetId, setMemberRemovalTargetId] = React.useState<string | null>(null)
   const [logDetailItem, setLogDetailItem] = React.useState<Extract<TimelineItem, { kind: "log" }> | null>(null)
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
+  const [checklistOpen, setChecklistOpen] = React.useState(false)
+  const [checklistItems, setChecklistItems] = React.useState<SubactivityChecklistItem[]>([])
+  const [checklistDraft, setChecklistDraft] = React.useState("")
+  const [checklistLoading, setChecklistLoading] = React.useState(false)
+  const [checklistSavingId, setChecklistSavingId] = React.useState<string | null>(null)
+  const [checklistError, setChecklistError] = React.useState("")
 
   React.useEffect(() => {
     if (discordEmbedded) {
@@ -1013,6 +1045,110 @@ export function ProjectFollowUp({
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
+
+  const loadChecklist = React.useCallback(async (subactivityId: string, quiet = false) => {
+    if (!quiet) setChecklistLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("subactivity_checklist_items")
+        .select("id,subactivity_id,content,created_by,completed_by,created_at,completed_at,updated_at")
+        .eq("subactivity_id", subactivityId)
+        .order("created_at", { ascending: true })
+      if (error) throw error
+      setChecklistItems((data ?? []).map((row) => mapChecklistItem(row as Record<string, unknown>)))
+      setChecklistError("")
+    } catch (error) {
+      console.error("[TaskBoard/Checklist] Falha ao carregar checklist:", error)
+      if (!quiet) setChecklistError(toUserFacingError(error, "Não foi possível carregar as anotações desta subatividade."))
+    } finally {
+      if (!quiet) setChecklistLoading(false)
+    }
+  }, [supabase])
+
+  React.useEffect(() => {
+    if (!selectedSub?.id) {
+      setChecklistItems([])
+      setChecklistDraft("")
+      setChecklistError("")
+      return
+    }
+    const subactivityId = selectedSub.id
+    void loadChecklist(subactivityId)
+    const channel = supabase
+      .channel(`taskboard-checklist-${subactivityId}-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "subactivity_checklist_items", filter: `subactivity_id=eq.${subactivityId}` },
+        () => { void loadChecklist(subactivityId, true) },
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [loadChecklist, selectedSub?.id, supabase])
+
+  const checklistCompletedCount = React.useMemo(() => checklistItems.filter((item) => Boolean(item.completedAt)).length, [checklistItems])
+  const checklistPendingCount = checklistItems.length - checklistCompletedCount
+  const checklistAllDone = checklistItems.length > 0 && checklistPendingCount === 0
+  const checklistLocked = Boolean(selectedSub && (selectedSub.status === "waiting-aqs" || statusIsTerminal(selectedSub.status)))
+
+  async function addChecklistItem() {
+    if (!selectedSub || checklistLocked || checklistSavingId) return
+    const content = checklistDraft.trim()
+    if (!content) return
+    setChecklistSavingId("new")
+    setChecklistError("")
+    try {
+      const { error } = await supabase.rpc("add_subactivity_checklist_item", { p_subactivity_id: selectedSub.id, p_content: content })
+      if (error) throw error
+      setChecklistDraft("")
+      await loadChecklist(selectedSub.id, true)
+    } catch (error) {
+      console.error("[TaskBoard/Checklist] Falha ao adicionar item:", error)
+      setChecklistError(toUserFacingError(error, "Não foi possível adicionar esta anotação."))
+    } finally {
+      setChecklistSavingId(null)
+    }
+  }
+
+  async function setChecklistItemCompleted(item: SubactivityChecklistItem, completed: boolean) {
+    if (!selectedSub || checklistLocked || checklistSavingId) return
+    setChecklistSavingId(item.id)
+    setChecklistError("")
+    const previous = checklistItems
+    setChecklistItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, completedAt: completed ? new Date().toISOString() : undefined, completedBy: completed ? currentUserId : undefined } : entry))
+    try {
+      const { error } = await supabase.rpc("set_subactivity_checklist_item_completed", { p_item_id: item.id, p_completed: completed })
+      if (error) throw error
+      await loadChecklist(selectedSub.id, true)
+    } catch (error) {
+      setChecklistItems(previous)
+      console.error("[TaskBoard/Checklist] Falha ao atualizar item:", error)
+      setChecklistError(toUserFacingError(error, "Não foi possível atualizar esta anotação."))
+    } finally {
+      setChecklistSavingId(null)
+    }
+  }
+
+  async function removeChecklistItem(item: SubactivityChecklistItem) {
+    if (!selectedSub || checklistLocked || checklistSavingId) return
+    setChecklistSavingId(item.id)
+    setChecklistError("")
+    try {
+      const { error } = await supabase.rpc("delete_subactivity_checklist_item", { p_item_id: item.id })
+      if (error) throw error
+      setChecklistItems((items) => items.filter((entry) => entry.id !== item.id))
+    } catch (error) {
+      console.error("[TaskBoard/Checklist] Falha ao excluir item:", error)
+      setChecklistError(toUserFacingError(error, "Não foi possível excluir esta anotação."))
+    } finally {
+      setChecklistSavingId(null)
+    }
+  }
+
+  function finishFromChecklist(status: "done" | "waiting-aqs") {
+    if (!selectedSub || !checklistAllDone || statusSaving) return
+    setChecklistOpen(false)
+    window.requestAnimationFrame(() => requestSelectedStatus(status))
+  }
   const canManageFollowUpMembers = Boolean(
     selectedSub && selectedActivity && (
       currentUserRole === "admin"
@@ -2104,6 +2240,11 @@ export function ProjectFollowUp({
       void requestPause(selectedSub.id)
       return
     }
+    if ((nextStatus === "waiting-aqs" || nextStatus === "done") && checklistPendingCount > 0) {
+      setChecklistError(`Finalize ${checklistPendingCount === 1 ? "o item pendente" : `os ${checklistPendingCount} itens pendentes`} antes de avançar a subatividade.`)
+      setChecklistOpen(true)
+      return
+    }
     const currentTerminal = selectedSub.status === "done" || selectedSub.status === "cancelled"
     if (linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
@@ -2508,6 +2649,22 @@ export function ProjectFollowUp({
                   aria-label="Pesquisar nesta subatividade"
                 >
                   <Search className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={checklistOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  className="relative"
+                  onClick={() => setChecklistOpen(true)}
+                  title="Anotações e checklist"
+                  aria-label="Abrir anotações e checklist"
+                >
+                  <ListChecks className="size-4" />
+                  {checklistPendingCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-warning px-0.5 font-mono text-[0.48rem] font-bold leading-3.5 text-warning-foreground">
+                      {checklistPendingCount > 9 ? "9+" : checklistPendingCount}
+                    </span>
+                  )}
                 </Button>
                 {markedCommentIds.size > 0 && (
                   <div ref={pinnedPickerRef} className="relative">
@@ -3324,6 +3481,132 @@ export function ProjectFollowUp({
         currentProjectId={project.id}
         onOpenResult={openGlobalSearchResult}
       />
+
+      <Dialog open={checklistOpen} onOpenChange={setChecklistOpen}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-2xl overflow-hidden p-0 sm:w-[calc(100vw-40px)] sm:max-w-2xl">
+          <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left sm:px-6 sm:pb-5 sm:pt-6">
+            <div className="flex min-w-0 items-start gap-3 pr-8">
+              <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ListChecks className="size-5" /></span>
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="text-base leading-snug sm:text-lg">Anotações e checklist</DialogTitle>
+                <DialogDescription className="mt-1.5 line-clamp-2 text-xs sm:text-sm">{selectedSub?.title ?? "Subatividade"}</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="max-h-[min(68vh,620px)] min-h-[280px] overflow-y-auto px-5 py-5 sm:px-6">
+            <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold">Progresso</p>
+                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">{checklistItems.length ? `${checklistCompletedCount} de ${checklistItems.length} finalizadas` : "Nenhuma anotação adicionada"}</p>
+                </div>
+                {checklistItems.length > 0 && (
+                  <span className={cn("rounded-full px-2 py-1 text-[0.62rem] font-semibold", checklistAllDone ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
+                    {checklistAllDone ? "Tudo pronto" : `${checklistPendingCount} pendente${checklistPendingCount === 1 ? "" : "s"}`}
+                  </span>
+                )}
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: checklistItems.length ? `${Math.round((checklistCompletedCount / checklistItems.length) * 100)}%` : "0%" }} />
+              </div>
+            </div>
+
+            {!checklistLocked && (
+              <div className="mb-5 flex items-start gap-2">
+                <textarea
+                  value={checklistDraft}
+                  onChange={(event) => setChecklistDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault()
+                      void addChecklistItem()
+                    }
+                  }}
+                  rows={2}
+                  maxLength={2000}
+                  placeholder="Adicionar anotação ou item a fazer..."
+                  className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                />
+                <Button type="button" size="icon" className="mt-0.5 shrink-0" disabled={!checklistDraft.trim() || checklistSavingId === "new"} onClick={() => void addChecklistItem()} title="Adicionar item" aria-label="Adicionar item">
+                  {checklistSavingId === "new" ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                </Button>
+              </div>
+            )}
+
+            {checklistLocked && (
+              <div className="mb-5 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                O checklist está em modo somente leitura enquanto a subatividade está em análise ou finalizada.
+              </div>
+            )}
+
+            {checklistError && <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs font-medium text-destructive">{checklistError}</div>}
+
+            {checklistLoading ? (
+              <div className="flex min-h-40 items-center justify-center text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
+            ) : checklistItems.length === 0 ? (
+              <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 text-center">
+                <ListChecks className="size-7 text-muted-foreground/45" />
+                <p className="mt-3 text-sm font-medium">Nenhuma anotação ainda</p>
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">Crie pequenos itens de verificação para acompanhar o que falta antes de concluir ou enviar a subatividade para a AQS.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {checklistItems.map((item) => {
+                  const creator = members.find((member) => member.id === item.createdBy)
+                  const completed = Boolean(item.completedAt)
+                  const canDelete = !checklistLocked && (currentUserRole === "admin" || item.createdBy === currentUserId || selectedSub?.assigneeId === currentUserId)
+                  return (
+                    <div key={item.id} className={cn("group/check flex min-w-0 items-start gap-3 rounded-xl border border-border px-3 py-3 transition-colors", completed ? "bg-muted/25" : "bg-card")}>
+                      <button
+                        type="button"
+                        disabled={checklistLocked || Boolean(checklistSavingId)}
+                        onClick={() => void setChecklistItemCompleted(item, !completed)}
+                        className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-60", completed ? "border-success bg-success text-success-foreground" : "border-border bg-background hover:border-primary/60 hover:text-primary")}
+                        aria-label={completed ? "Marcar como pendente" : "Marcar como concluída"}
+                      >
+                        {checklistSavingId === item.id ? <LoaderCircle className="size-3 animate-spin" /> : completed ? <Check className="size-3.5" /> : null}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn("whitespace-pre-wrap break-words text-sm leading-relaxed", completed && "text-muted-foreground line-through decoration-2")}>{item.content}</p>
+                        <p className="mt-1 text-[0.6rem] text-muted-foreground">
+                          {creator?.name ?? "Usuário"} · {formatDate(item.createdAt)}{completed && item.completedAt ? ` · finalizada ${formatDate(item.completedAt)}` : ""}
+                        </p>
+                      </div>
+                      {canDelete && (
+                        <button type="button" disabled={Boolean(checklistSavingId)} onClick={() => void removeChecklistItem(item)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-70 transition hover:bg-destructive/10 hover:text-destructive sm:opacity-0 sm:group-hover/check:opacity-100" title="Excluir anotação" aria-label="Excluir anotação">
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border bg-muted/[0.08] px-5 py-4 sm:px-6 sm:py-5">
+            {checklistItems.length > 0 && !checklistLocked && selectedCanManage && (
+              <div className="mb-3">
+                {checklistAllDone ? (
+                  <div className="flex items-center gap-2 rounded-xl bg-success/8 px-3 py-2 text-xs font-medium text-success"><Check className="size-4" /> Todos os itens foram finalizados. A subatividade já pode avançar.</div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Finalize os {checklistPendingCount} item{checklistPendingCount === 1 ? "" : "s"} pendente{checklistPendingCount === 1 ? "" : "s"} para liberar a conclusão.</p>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setChecklistOpen(false)} className="h-10 w-full sm:w-auto">Fechar</Button>
+              {selectedCanManage && checklistItems.length > 0 && !statusIsTerminal(selectedSub?.status ?? "backlog") && selectedSub?.status !== "waiting-aqs" && (
+                <>
+                  {!linkedRequest && <Button type="button" variant="outline" disabled={!checklistAllDone || statusSaving} onClick={() => finishFromChecklist("done")} className="h-10 w-full sm:w-auto">Concluir</Button>}
+                  <Button type="button" disabled={!checklistAllDone || statusSaving} onClick={() => finishFromChecklist("waiting-aqs")} className="h-10 w-full sm:w-auto">Enviar para AQS</Button>
+                </>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(logDetailItem)} onOpenChange={(open) => { if (!open) setLogDetailItem(null) }}>
         <DialogContent className="w-[calc(100vw-24px)] max-w-xl overflow-hidden p-0 sm:w-[calc(100vw-40px)]">

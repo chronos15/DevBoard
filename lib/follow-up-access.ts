@@ -18,21 +18,11 @@ export function scopeFollowUpProjects(
   if (role === "admin") return projects
   if (!userId) return []
 
-  // Desenvolvedores precisam enxergar a estrutura completa de atividades para
-  // poder criar uma subatividade em qualquer atividade. Os canais/subatividades
-  // continuam respeitando a participação no acompanhamento, preservando a regra
-  // de privacidade do conteúdo já existente.
-  if (role === "developer") {
-    return projects.map((project) => ({
-      ...project,
-      activities: project.activities.map((activity) => ({
-        ...activity,
-        subactivities: activity.subactivities.filter((subactivity) =>
-          canAccessFollowUpSubactivity(subactivity, userId, role),
-        ),
-      })),
-    }))
-  }
+  // No Acompanhamento/Modo Resumido, desenvolvedores enxergam toda a estrutura do workspace.
+  // A permissão de interação continua sendo decidida no detalhe da subatividade:
+  // fora de uma subatividade o DEV entra como observador (somente leitura, com
+  // direito a responder/comentar e reagir).
+  if (role === "developer") return projects
 
   return projects.flatMap((project) => {
     const activities = project.activities.flatMap((activity) => {

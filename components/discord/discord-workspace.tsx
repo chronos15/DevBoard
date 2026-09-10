@@ -7,6 +7,8 @@ import {
   Archive,
   ArchiveRestore,
   Code2,
+  Eye,
+  FolderOpen,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -728,20 +730,83 @@ export function DiscordWorkspace() {
       const projectReviews = visibleReviews.filter((review) => review.projectId === selectedProject.id && (review.status === "awaiting" || review.status === "evaluating"))
       return (
         <>
-          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 shadow-sm">
-            <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{selectedProject.name}</p><p className="truncate text-[0.58rem] text-muted-foreground">{selectedProject.client || "Projeto"}</p></div>
-            <UsersRound className="size-4 text-muted-foreground" />
+          <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 py-2 shadow-sm">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{selectedProject.name}</p>
+              <p className="truncate text-[0.6rem] text-muted-foreground">{selectedProject.client || "Projeto"}</p>
+            </div>
+            <UsersRound className="size-4 shrink-0 text-muted-foreground" />
             {canManageSelectedProject && <FollowUpAddActivityDialog projectId={selectedProject.id} />}
           </div>
-          <div className="p-2"><div className="relative"><Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /><input value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder="Buscar canais" className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-8 text-xs outline-none focus:border-ring" />{channelSearch && <button type="button" onClick={() => setChannelSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="size-3.5" /></button>}</div></div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
-            {selectedProject.activities.map((activity) => {
-              const subs = activity.subactivities.filter((sub) => !q || normalize(`${sub.title} ${activity.title}`).includes(q))
-              if (q && !subs.length) return null
-              const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
-              return <div key={activity.id} className="mt-1"><CategoryHeader label={activity.title} open={isOpen} count={subs.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })} actions={<><ActivityInfoDialog activity={activity} project={selectedProject} compact />{canCreateSubactivityInSelectedProject && <FollowUpAddSubactivityDialog projectId={selectedProject.id} activityId={activity.id} />}{canManageSelectedProject && activity.subactivities.length === 0 && <Button type="button" variant="ghost" size="icon-xs" disabled={deletingActivityId === activity.id} onClick={() => void (async () => { if (!window.confirm(`Excluir a atividade “${activity.title}”?`)) return; setDeletingActivityId(activity.id); try { await deleteActivity(selectedProject.id, activity.id) } finally { setDeletingActivityId(null) } })()} title="Excluir atividade vazia" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive">{deletingActivityId === activity.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</Button>}</>} />{isOpen && <div className="space-y-0.5">{subs.map((sub) => <ChannelButton key={sub.id} active={!requestedRequestId && !requestedReviewId && projectSelection?.subactivityId === sub.id} label={sub.title} statusClass={statusMeta[sub.status].columnClassName} onClick={() => { setLocation({ space: "project", project: selectedProject.id, activity: activity.id, sub: sub.id }); setMobileChannelsOpen(false) }} />)}</div>}</div>
-            })}
-            {projectRequests.length > 0 && <div className="mt-3"><CategoryHeader label="Solicitações" open={!collapsed.has("project:requests")} count={projectRequests.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:requests") ? next.delete("project:requests") : next.add("project:requests"); return next })} />{!collapsed.has("project:requests") && <div className="space-y-0.5">{projectRequests.filter((request) => !q || normalize(`${request.title} ${request.orderNumber}`).includes(q)).map((request) => <ChannelButton key={request.id} active={requestedRequestId === request.id} label={`${serviceRequestReference(request)} · ${request.title}`} muted={SERVICE_REQUEST_STATUS_LABELS[request.status]} onClick={() => { setLocation({ space: "project", project: selectedProject.id, request: request.id }); setMobileChannelsOpen(false) }} />)}</div>}</div>}
+          <div className="px-2.5 pb-2 pt-2.5">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder="Buscar atividades ou subatividades" className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-9 text-xs outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/15" />
+              {channelSearch && <button type="button" onClick={() => setChannelSearch("")} className="absolute right-2.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3 [scrollbar-width:thin]">
+            <div className="space-y-2">
+              {selectedProject.activities.map((activity) => {
+                const activityMatches = !q || normalize(activity.title).includes(q)
+                const subs = activity.subactivities.filter((sub) => !q || activityMatches || normalize(sub.title).includes(q))
+                if (q && !activityMatches && !subs.length) return null
+                const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
+                const toggleActivity = () => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })
+                return (
+                  <section key={activity.id} className="overflow-hidden rounded-xl border border-border/80 bg-card/55 shadow-sm">
+                    <div className="group/activity flex min-w-0 items-center gap-1 px-1.5 py-1.5">
+                      <button type="button" onClick={toggleActivity} className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left transition-colors hover:bg-muted/55">
+                        {isOpen ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/65 text-muted-foreground ring-1 ring-border/60"><FolderOpen className="size-3.5" /></span>
+                        <span className="min-w-0 flex-1 truncate text-[0.68rem] font-semibold uppercase tracking-[0.045em] text-foreground/90">{activity.title}</span>
+                        <span className="flex min-w-5 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 font-mono text-[0.56rem] font-semibold leading-5 text-muted-foreground" title={`${activity.subactivities.length} ${activity.subactivities.length === 1 ? "subatividade" : "subatividades"}`}>{activity.subactivities.length}</span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-0.5 border-l border-border/70 pl-1">
+                        <ActivityInfoDialog activity={activity} project={selectedProject} compact />
+                        {canCreateSubactivityInSelectedProject && <FollowUpAddSubactivityDialog projectId={selectedProject.id} activityId={activity.id} />}
+                        {canManageSelectedProject && activity.subactivities.length === 0 && (
+                          <Button type="button" variant="ghost" size="icon-xs" disabled={deletingActivityId === activity.id} onClick={() => void (async () => { if (!window.confirm(`Excluir a atividade “${activity.title}”?`)) return; setDeletingActivityId(activity.id); try { await deleteActivity(selectedProject.id, activity.id) } finally { setDeletingActivityId(null) } })()} title="Excluir atividade vazia" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                            {deletingActivityId === activity.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div className="relative px-2 pb-2 pl-11">
+                        <span className="pointer-events-none absolute bottom-4 left-[1.68rem] top-0 border-l border-dashed border-border/90" />
+                        <div className="space-y-1">
+                          {subs.length > 0 ? subs.map((sub) => {
+                            const active = !requestedRequestId && !requestedReviewId && projectSelection?.subactivityId === sub.id
+                            const observer = currentUserRole === "developer" && sub.assigneeId !== currentUserId && !sub.memberIds?.includes(currentUserId)
+                            return (
+                              <button
+                                key={sub.id}
+                                type="button"
+                                onClick={() => { setLocation({ space: "project", project: selectedProject.id, activity: activity.id, sub: sub.id }); setMobileChannelsOpen(false) }}
+                                className={cn(
+                                  "group/sub relative flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 text-left transition-all",
+                                  active ? "border-primary/25 bg-primary/10 text-foreground" : "border-transparent bg-muted/25 text-muted-foreground hover:border-border/70 hover:bg-muted/55 hover:text-foreground",
+                                )}
+                              >
+                                <span className="absolute -left-[1.28rem] top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-border ring-2 ring-card" />
+                                <Hash className={cn("size-4 shrink-0", active ? "text-primary" : "opacity-65")} />
+                                <span className={cn("min-w-0 flex-1 truncate text-[0.76rem]", active ? "font-semibold" : "font-medium")}>{sub.title}</span>
+                                {observer && <span className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/80" title="Somente leitura: você pode visualizar, responder e reagir"><Eye className="size-3.5" aria-hidden="true" /></span>}
+                                <span className={cn("size-2 shrink-0 rounded-full", statusMeta[sub.status].columnClassName)} />
+                              </button>
+                            )
+                          }) : (
+                            <div className="rounded-lg border border-dashed border-border/70 px-2.5 py-2 text-[0.62rem] text-muted-foreground">Nenhuma subatividade nesta atividade.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )
+              })}
+            </div>
+            {projectRequests.length > 0 && <div className="mt-4 border-t border-border/70 pt-2"><CategoryHeader label="Solicitações" open={!collapsed.has("project:requests")} count={projectRequests.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:requests") ? next.delete("project:requests") : next.add("project:requests"); return next })} />{!collapsed.has("project:requests") && <div className="space-y-0.5">{projectRequests.filter((request) => !q || normalize(`${request.title} ${request.orderNumber}`).includes(q)).map((request) => <ChannelButton key={request.id} active={requestedRequestId === request.id} label={`${serviceRequestReference(request)} · ${request.title}`} muted={SERVICE_REQUEST_STATUS_LABELS[request.status]} onClick={() => { setLocation({ space: "project", project: selectedProject.id, request: request.id }); setMobileChannelsOpen(false) }} />)}</div>}</div>}
             {projectReviews.length > 0 && <div className="mt-3"><CategoryHeader label="Análise AQS" open={!collapsed.has("project:aqs")} count={projectReviews.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:aqs") ? next.delete("project:aqs") : next.add("project:aqs"); return next })} />{!collapsed.has("project:aqs") && <div className="space-y-0.5">{projectReviews.filter((review) => { const activity = selectedProject.activities.find((a) => a.id === review.activityId); const sub = activity?.subactivities.find((s) => s.id === review.subactivityId); return !q || normalize(`${sub?.title ?? ""} ${activity?.title ?? ""}`).includes(q) }).map((review) => { const activity = selectedProject.activities.find((a) => a.id === review.activityId); const sub = activity?.subactivities.find((s) => s.id === review.subactivityId); return <ChannelButton key={review.id} active={requestedReviewId === review.id} label={sub?.title ?? "Análise AQS"} muted={review.status === "awaiting" ? "Aguardando" : review.status === "evaluating" ? "Em análise" : review.status === "completed" ? "Concluída" : "Revogada"} onClick={() => { setLocation({ space: "project", project: selectedProject.id, review: review.id, activity: review.activityId, sub: review.subactivityId }); setMobileChannelsOpen(false) }} /> })}</div>}</div>}
           </div>
         </>
@@ -787,7 +852,7 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, deleteActivity, deletingActivityId, isAdmin, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
+  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {

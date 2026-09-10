@@ -818,3 +818,17 @@ supabase/migrations/066_taskboard_project_image_removal_fix.sql
 ```
 
 A 066 corrige a exclusão de imagens de projeto enviadas originalmente por outro usuário e torna o estado "Remover imagem" persistente durante a edição.
+
+## Migration 067 — DEV observador no Acompanhamento / Modo Resumido
+
+Depois da 066, execute:
+
+```text
+supabase/migrations/067_taskboard_simplified_observer_access.sql
+```
+
+A 067 **não cria nem altera tabelas**. Ela separa a permissão de **visualizar** da permissão de **alterar** uma subatividade. Administradores continuam com acesso total. Desenvolvedores do workspace passam a enxergar todas as subatividades no Acompanhamento; quando não são responsáveis nem participantes, entram como **observadores**.
+
+O observador pode consultar a conversa e o checklist, reagir aos itens do histórico e adicionar um comentário somente pelo comando **Responder**. Ele não pode enviar uma mensagem nova, anexar arquivos, usar menções, alterar checklist, membros, status, cronômetro ou iniciar reunião daquela subatividade. Essas limitações são aplicadas na interface e, nos pontos de escrita do Acompanhamento, também no backend.
+
+A migration mantém `can_access_followup_subactivity()` intacta para não ampliar por acidente as permissões de edição existentes. O novo helper `can_view_followup_subactivity()` é usado apenas onde a leitura/reação do observador precisa ser permitida.

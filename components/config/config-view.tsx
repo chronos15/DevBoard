@@ -1230,6 +1230,81 @@ function AppearanceSection() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-2xl border border-border bg-card/55 p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Pencil className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Leitura e tipografia</p>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              Ajuste a fonte, o tamanho e o espaçamento da leitura. As opções valem para Chat, Acompanhamento, logs, respostas, anexos e cartões de comandos.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium">Tipo de letra</span>
+            <select
+              value={draft.fontFamily}
+              disabled={saving}
+              onChange={(event) => void patch({ fontFamily: event.target.value as UserPreferences["fontFamily"] })}
+              className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring disabled:opacity-60"
+            >
+              <option value="jakarta">Plus Jakarta Sans · padrão</option>
+              <option value="system">Sistema · Segoe UI / San Francisco</option>
+              <option value="arial">Arial · neutra e familiar</option>
+              <option value="verdana">Verdana · leitura ampla</option>
+              <option value="tahoma">Tahoma · compacta e nítida</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium">Tamanho das conversas</span>
+            <select
+              value={draft.chatTextSize}
+              disabled={saving}
+              onChange={(event) => void patch({ chatTextSize: event.target.value as UserPreferences["chatTextSize"] })}
+              className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring disabled:opacity-60"
+            >
+              <option value="small">Pequeno</option>
+              <option value="medium">Padrão</option>
+              <option value="large">Grande</option>
+              <option value="xlarge">Extra grande</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium">Espaçamento das mensagens</span>
+            <select
+              value={draft.chatLineSpacing}
+              disabled={saving}
+              onChange={(event) => void patch({ chatLineSpacing: event.target.value as UserPreferences["chatLineSpacing"] })}
+              className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-ring disabled:opacity-60"
+            >
+              <option value="compact">Compacto</option>
+              <option value="comfortable">Confortável</option>
+              <option value="relaxed">Relaxado</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-border bg-background px-4 py-3">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <strong className="tb-chat-title truncate">Mauricio Costa</strong>
+            <span className="tb-chat-meta shrink-0 text-muted-foreground">agora</span>
+          </div>
+          <p className="tb-chat-text mt-1 text-foreground/90">
+            Prévia de uma mensagem do TaskBoard. Use este exemplo para escolher uma leitura confortável para longos períodos de trabalho.
+          </p>
+          <div className="mt-2 rounded-lg bg-muted/45 px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2"><span className="tb-chat-title truncate font-medium">Subatividade pausada</span><span className="tb-chat-meta shrink-0 text-muted-foreground">09:42</span></div>
+            <p className="tb-chat-meta mt-0.5 truncate text-muted-foreground">Motivo: Transição de atividade</p>
+          </div>
+        </div>
+      </div>
+
       <PreferenceToggle label="Timer sempre visível" description="Mantém o cronômetro em execução destacado no topo." checked={draft.timerSticky} disabled={saving} onChange={(value) => void patch({ timerSticky: value })} />
       <PreferenceToggle label="Animações reduzidas" description="Reduz transições e movimentos na interface." checked={draft.reducedMotion} disabled={saving} onChange={(value) => void patch({ reducedMotion: value })} />
       <div className="mt-6">

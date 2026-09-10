@@ -129,6 +129,15 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   }
 
   function usePresetIcon() {
+    // Descarta somente a prévia temporária escolhida nesta edição. A imagem
+    // já salva no projeto continua disponível caso o usuário volte para
+    // “Imagem” antes de confirmar as alterações.
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+    setIconImageFile(null)
+    setIconImagePreview(project?.iconImageUrl ?? null)
     setUseCustomImage(false)
     setIconImageError("")
   }

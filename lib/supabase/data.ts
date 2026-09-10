@@ -43,6 +43,9 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   density: "comfortable",
   primaryColor: null,
   interfaceMode: "complete",
+  fontFamily: "jakarta",
+  chatTextSize: "medium",
+  chatLineSpacing: "comfortable",
 }
 
 function assertNoError(error: any, fallback: string) {
@@ -541,7 +544,7 @@ export async function loadWorkSessions(supabase: SupabaseClient): Promise<WorkSe
 export async function loadPreferences(supabase: SupabaseClient, userId: string): Promise<UserPreferences> {
   const { data, error } = await supabase
     .from('user_preferences')
-    .select('notify_assignments,notify_comments,notify_team_activity,notify_deadlines,timer_sticky,reduced_motion,density,primary_color,interface_mode')
+    .select('notify_assignments,notify_comments,notify_team_activity,notify_deadlines,timer_sticky,reduced_motion,density,primary_color,interface_mode,font_family,chat_text_size,chat_line_spacing')
     .eq('user_id', userId)
     .maybeSingle()
   assertNoError(error, 'Não foi possível carregar suas preferências')
@@ -556,6 +559,9 @@ export async function loadPreferences(supabase: SupabaseClient, userId: string):
     density: data.density === 'compact' ? 'compact' : 'comfortable',
     primaryColor: /^#[0-9a-f]{6}$/i.test(data.primary_color ?? '') ? String(data.primary_color).toUpperCase() : null,
     interfaceMode: data.interface_mode === 'focused' ? 'focused' : 'complete',
+    fontFamily: ['system','arial','verdana','tahoma'].includes(String(data.font_family)) ? data.font_family : 'jakarta',
+    chatTextSize: ['small','large','xlarge'].includes(String(data.chat_text_size)) ? data.chat_text_size : 'medium',
+    chatLineSpacing: ['compact','relaxed'].includes(String(data.chat_line_spacing)) ? data.chat_line_spacing : 'comfortable',
   }
 }
 

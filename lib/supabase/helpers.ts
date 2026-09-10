@@ -7,6 +7,7 @@ export const TOPIC_MEDIA_BUCKET = 'devboard-topic-media'
 export const PROJECT_ICONS_BUCKET = 'devboard-project-icons'
 export const SERVICE_REQUEST_MEDIA_BUCKET = 'devboard-request-media'
 export const SERVICE_REQUEST_UNIT_ICONS_BUCKET = 'devboard-request-unit-icons'
+export const WORKSPACE_COMMAND_FILES_BUCKET = 'taskboard-command-files'
 
 export function colorForUser(id: string) {
   const palette = [
@@ -151,4 +152,16 @@ export function serviceRequestMediaStoragePath(
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `${workspaceId}/${requestId}/${uploaderId}/${random}-${safeFileName(fileName)}`
+}
+
+export function workspaceCommandFileStoragePath(
+  workspaceId: string,
+  channelId: string,
+  uploaderId: string,
+  fileName: string,
+) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${workspaceId}/${channelId}/${uploaderId}/${random}-${safeFileName(fileName)}`
 }

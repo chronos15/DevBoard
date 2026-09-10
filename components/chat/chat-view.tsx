@@ -8,6 +8,7 @@ import {
   CircleAlert,
   Clock3,
   Code2,
+  Download,
   ExternalLink,
   FolderKanban,
   Headphones,
@@ -44,6 +45,7 @@ import { cn } from "@/lib/utils"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { createClient } from "@/lib/supabase/client"
+import { WORKSPACE_COMMAND_FILES_BUCKET } from "@/lib/supabase/helpers"
 
 type ChatTab = "conversations" | "groups" | "users" | "meetings"
 
@@ -153,7 +155,7 @@ function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
   }, [message.mentions])
 
   if (!mentions.length) {
-    return <p className="whitespace-pre-wrap break-words">{message.content}</p>
+    return <p className="tb-chat-text whitespace-pre-wrap break-words">{message.content}</p>
   }
 
   const parts: React.ReactNode[] = []
@@ -201,7 +203,7 @@ function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
     cursor = nextIndex + token.length
   }
 
-  return <p className="whitespace-pre-wrap break-words">{parts}</p>
+  return <p className="tb-chat-text whitespace-pre-wrap break-words">{parts}</p>
 }
 
 function replySummary(reply: ChatReplyReference) {
@@ -237,6 +239,47 @@ function safeHttpUrl(value: string | undefined) {
   }
 }
 
+function commandFileSize(size?: number) {
+  const value = Number(size || 0)
+  if (!Number.isFinite(value) || value <= 0) return "Arquivo"
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function CommandFileBlock({ block }: { block: Extract<ChatCommandSnapshot["body"][number], { type: "file" }> }) {
+  const supabase = React.useMemo(() => createClient(), [])
+  const [href, setHref] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let active = true
+    setHref(null)
+    if (!block.storagePath) return
+    void supabase.storage.from(WORKSPACE_COMMAND_FILES_BUCKET).createSignedUrl(block.storagePath, 60 * 60 * 6).then(({ data }) => {
+      if (active) setHref(data?.signedUrl ?? null)
+    })
+    return () => { active = false }
+  }, [block.storagePath, supabase])
+
+  const content = (
+    <>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Paperclip className="size-4" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="tb-chat-title block truncate font-semibold text-foreground">{block.name || "Arquivo"}</span>
+        <span className="tb-chat-meta mt-0.5 block truncate text-muted-foreground">{block.mimeType || "Arquivo"} · {commandFileSize(block.size)}</span>
+        {block.caption && <span className="tb-chat-meta mt-1 block break-words text-muted-foreground">{block.caption}</span>}
+      </span>
+      {href && <Download className="size-4 shrink-0 text-muted-foreground" />}
+    </>
+  )
+
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" download={block.name || undefined} className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-muted/25 px-3 py-2.5 transition-colors hover:bg-muted/50">{content}</a>
+  ) : (
+    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2.5 opacity-75">{content}</div>
+  )
+}
+
 function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; executor?: Member }) {
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -247,11 +290,11 @@ function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; 
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <p className="min-w-0 truncate text-sm font-semibold text-foreground">{command.title}</p>
+              <p className="tb-chat-title min-w-0 truncate font-semibold text-foreground">{command.title}</p>
               <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[0.58rem] font-medium text-primary">/{command.command}</span>
             </div>
-            {command.description && <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">{command.description}</p>}
-            {executor && <p className="mt-1.5 text-[0.58rem] text-muted-foreground">Executado por {executor.name}</p>}
+            {command.description && <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-muted-foreground">{command.description}</p>}
+            {executor && <p className="tb-chat-meta mt-1.5 text-muted-foreground">Executado por {executor.name}</p>}
           </div>
         </div>
 
@@ -259,7 +302,7 @@ function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; 
           <div className="mt-3 space-y-3">
             {command.body.map((block, index) => {
               if (block.type === "text") {
-                return <p key={index} className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{block.content}</p>
+                return <p key={index} className="tb-chat-text whitespace-pre-wrap break-words text-foreground/90">{block.content}</p>
               }
               if (block.type === "code") {
                 return (
@@ -305,6 +348,9 @@ function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; 
                     {block.caption && <figcaption className="border-t border-border bg-card px-3 py-2 text-xs text-muted-foreground">{block.caption}</figcaption>}
                   </figure>
                 )
+              }
+              if (block.type === "file") {
+                return <CommandFileBlock key={index} block={block} />
               }
               const url = safeHttpUrl(block.url)
               if (!url) return null
@@ -1408,9 +1454,9 @@ export function ChatView({
                                 </button>
                               )}
                               {commandMessage ? (
-                                <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground">TaskBoard · /{item.command?.command}</p>
+                                <p className="tb-chat-meta mb-1 px-1 font-medium text-muted-foreground">TaskBoard · /{item.command?.command}</p>
                               ) : !own && selected.kind === "group" ? (
-                                <p className="mb-1 px-1 text-[0.6rem] font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>
+                                <p className="tb-chat-meta mb-1 px-1 font-medium text-muted-foreground"><MemberName member={sender} fallback="Usuário" /></p>
                               ) : null}
                               <div
                                 className={cn(
@@ -1434,11 +1480,11 @@ export function ChatView({
                                     )}
                                     title={item.replyTo.unavailable ? "Mensagem original indisponível" : "Ir para a mensagem respondida"}
                                   >
-                                    <span className={cn("flex items-center gap-1.5 text-[0.62rem] font-semibold", own ? "text-primary-foreground/85" : "text-primary")}>
+                                    <span className={cn("tb-chat-meta flex items-center gap-1.5 font-semibold", own ? "text-primary-foreground/85" : "text-primary")}>
                                       <Reply className="size-3 shrink-0" />
                                       <span className="truncate">{replySenderLabel(item.replyTo, currentUserId, members)}</span>
                                     </span>
-                                    <span className={cn("mt-0.5 block truncate text-[0.68rem]", own ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                    <span className={cn("tb-chat-meta mt-0.5 block truncate", own ? "text-primary-foreground/70" : "text-muted-foreground")}>
                                       {replySummary(item.replyTo)}
                                     </span>
                                   </button>
@@ -1460,7 +1506,7 @@ export function ChatView({
                                   <MessageText message={item} own={own} />
                                 )}
                               </div>
-                              <time className="mt-1 block px-1 font-mono text-[0.55rem] text-muted-foreground">
+                              <time className="tb-chat-meta mt-1 block px-1 font-mono text-muted-foreground">
                                 {new Date(item.createdAt).toLocaleString("pt-BR", {
                                   day: "2-digit",
                                   month: "2-digit",
@@ -1501,10 +1547,10 @@ export function ChatView({
                           <Reply className="size-3.5" />
                         </span>
                         <span className="min-w-0 flex-1 text-left">
-                          <span className="block truncate text-[0.64rem] font-semibold text-primary">
+                          <span className="tb-chat-meta block truncate font-semibold text-primary">
                             Respondendo a {replySenderLabel(replyingTo, currentUserId, members)}
                           </span>
-                          <span className="mt-0.5 block truncate text-[0.65rem] text-muted-foreground">{replySummary(replyingTo)}</span>
+                          <span className="tb-chat-meta mt-0.5 block truncate text-muted-foreground">{replySummary(replyingTo)}</span>
                         </span>
                         <button
                           type="button"
@@ -1648,7 +1694,7 @@ export function ChatView({
                           rows={2}
                           maxLength={2500}
                           placeholder={slashCommands.length ? `Mensagem para ${selectedTitle}... Use / para comandos${selected.kind === "group" ? " ou @ para mencionar" : ""}` : selected.kind === "group" ? `Mensagem para ${selectedTitle}... Use @ para mencionar` : `Mensagem para ${selectedTitle}...`}
-                          className="min-h-14 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-5 outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                          className="tb-chat-text min-h-14 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                         />
                         <input
                           ref={attachmentInputRef}

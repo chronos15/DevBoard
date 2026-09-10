@@ -24,6 +24,8 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   LogOut,
+  Paperclip,
+  Upload,
   ShieldCheck,
   Sun,
   Trash2,
@@ -51,6 +53,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
 import type { AqsReview, ChatCommandBlock, Project } from "@/lib/types"
+import { WORKSPACE_COMMAND_FILES_BUCKET, workspaceCommandFileStoragePath } from "@/lib/supabase/helpers"
 
 type DiscordSpace = "project" | "channels" | "requests" | "aqs" | "chat"
 
@@ -86,6 +89,7 @@ const COMMAND_BLOCK_OPTIONS: Array<{ type: CommandBlockType; label: string; icon
   { type: "html", label: "HTML", icon: Code2 },
   { type: "image", label: "Imagem", icon: ImageIcon },
   { type: "video", label: "Vídeo", icon: Video },
+  { type: "file", label: "Arquivo", icon: Paperclip },
   { type: "link", label: "Link", icon: LinkIcon },
 ]
 
@@ -95,6 +99,7 @@ function blankCommandBlock(type: CommandBlockType): ChatCommandBlock {
   if (type === "html") return { type, content: "" }
   if (type === "image") return { type, url: "", caption: "" }
   if (type === "video") return { type, url: "", caption: "" }
+  if (type === "file") return { type, storagePath: "", name: "", mimeType: "", size: 0, caption: "" }
   return { type: "link", url: "", label: "" }
 }
 
@@ -273,6 +278,8 @@ export function DiscordWorkspace() {
   const [channelCommandTitle, setChannelCommandTitle] = React.useState("")
   const [channelCommandDescription, setChannelCommandDescription] = React.useState("")
   const [channelCommandBlocks, setChannelCommandBlocks] = React.useState<ChatCommandBlock[]>([])
+  const [uploadingCommandBlockIndex, setUploadingCommandBlockIndex] = React.useState<number | null>(null)
+  const temporaryCommandFilesRef = React.useRef<Set<string>>(new Set())
   const [commandOpen, setCommandOpen] = React.useState(false)
   const [commandQuery, setCommandQuery] = React.useState("")
   const [commandIndex, setCommandIndex] = React.useState(0)
@@ -498,7 +505,21 @@ export function DiscordWorkspace() {
     }
   }
 
+  async function removeCommandFiles(paths: Iterable<string>) {
+    const list = Array.from(new Set(Array.from(paths).filter(Boolean)))
+    if (!list.length) return
+    const { error } = await supabase.storage.from(WORKSPACE_COMMAND_FILES_BUCKET).remove(list)
+    if (error) console.warn("[TaskBoard/Commands] Não foi possível limpar um arquivo de comando.", error)
+  }
+
+  async function cleanupTemporaryCommandFiles() {
+    const pending = Array.from(temporaryCommandFilesRef.current)
+    temporaryCommandFilesRef.current.clear()
+    await removeCommandFiles(pending)
+  }
+
   function resetChannelCommandEditor(command?: WorkspaceChannelCommand) {
+    if (temporaryCommandFilesRef.current.size) void cleanupTemporaryCommandFiles()
     setEditingChannelCommandId(command?.id ?? null)
     setChannelCommandName(command?.command ?? "")
     setChannelCommandTitle(command?.title ?? "")
@@ -507,12 +528,52 @@ export function DiscordWorkspace() {
     setChannelCommandError(null)
   }
 
+  async function uploadChannelCommandFile(index: number, file?: File | null) {
+    if (!file || !workspaceId || !selectedWorkspaceChannel || !currentUserId) return
+    if (file.size <= 0) { setChannelCommandError("O arquivo selecionado está vazio."); return }
+    if (file.size > 50 * 1024 * 1024) { setChannelCommandError(`O arquivo “${file.name}” excede o limite de 50 MB.`); return }
+    setUploadingCommandBlockIndex(index)
+    setChannelCommandError(null)
+    try {
+      const path = workspaceCommandFileStoragePath(workspaceId, selectedWorkspaceChannel.id, currentUserId, file.name)
+      const { error } = await supabase.storage.from(WORKSPACE_COMMAND_FILES_BUCKET).upload(path, file, {
+        contentType: file.type || "application/octet-stream",
+        cacheControl: "3600",
+        upsert: false,
+      })
+      if (error) throw error
+
+      let replacedTemporaryPath: string | null = null
+      setChannelCommandBlocks((current) => current.map((block, currentIndex) => {
+        if (currentIndex !== index || block.type !== "file") return block
+        if (block.storagePath && temporaryCommandFilesRef.current.has(block.storagePath)) replacedTemporaryPath = block.storagePath
+        return { ...block, storagePath: path, name: file.name, mimeType: file.type || "application/octet-stream", size: file.size }
+      }))
+      temporaryCommandFilesRef.current.add(path)
+      if (replacedTemporaryPath) {
+        temporaryCommandFilesRef.current.delete(replacedTemporaryPath)
+        await removeCommandFiles([replacedTemporaryPath])
+      }
+    } catch (error) {
+      setChannelCommandError(toUserFacingError(error, "Não foi possível enviar o arquivo do comando"))
+    } finally {
+      setUploadingCommandBlockIndex(null)
+    }
+  }
+
   function updateChannelCommandBlock(index: number, next: ChatCommandBlock) {
     setChannelCommandBlocks((current) => current.map((block, currentIndex) => currentIndex === index ? next : block))
   }
 
   function removeChannelCommandBlock(index: number) {
-    setChannelCommandBlocks((current) => current.filter((_, currentIndex) => currentIndex !== index))
+    setChannelCommandBlocks((current) => {
+      const target = current[index]
+      if (target?.type === "file" && target.storagePath && temporaryCommandFilesRef.current.has(target.storagePath)) {
+        temporaryCommandFilesRef.current.delete(target.storagePath)
+        void removeCommandFiles([target.storagePath])
+      }
+      return current.filter((_, currentIndex) => currentIndex !== index)
+    })
   }
 
   async function saveChannelCommand() {
@@ -521,6 +582,11 @@ export function DiscordWorkspace() {
     const title = channelCommandTitle.trim()
     if (!command || !title) {
       setChannelCommandError("Informe o comando e o título do retorno.")
+      return
+    }
+    const emptyFileBlock = channelCommandBlocks.find((block) => block.type === "file" && !block.storagePath)
+    if (emptyFileBlock) {
+      setChannelCommandError("Selecione um arquivo ou remova o bloco de Arquivo antes de salvar.")
       return
     }
     setChannelCommandBusy(true)
@@ -535,6 +601,10 @@ export function DiscordWorkspace() {
         p_command_id: editingChannelCommandId,
       })
       if (error) throw error
+      // Depois que um comando é salvo, seus arquivos podem estar referenciados
+      // por snapshots já publicados no histórico. Por isso, só limpamos uploads
+      // temporários nunca salvos; arquivos de versões anteriores são preservados.
+      temporaryCommandFilesRef.current.clear()
       await loadWorkspaceChannelCommands()
       resetChannelCommandEditor()
     } catch (error) {
@@ -551,6 +621,8 @@ export function DiscordWorkspace() {
     try {
       const { error } = await supabase.rpc("delete_workspace_channel_command", { p_command_id: command.id })
       if (error) throw error
+      // Mantém os arquivos do comando para que execuções antigas continuem
+      // reproduzíveis no histórico mesmo após a exclusão do cadastro.
       await loadWorkspaceChannelCommands()
       if (editingChannelCommandId === command.id) resetChannelCommandEditor()
     } catch (error) {
@@ -559,6 +631,11 @@ export function DiscordWorkspace() {
       setChannelCommandBusy(false)
     }
   }
+
+  React.useEffect(() => {
+    if (manageChannelCommandsOpen) return
+    if (temporaryCommandFilesRef.current.size) void cleanupTemporaryCommandFiles()
+  }, [manageChannelCommandsOpen])
 
   const executeSelectedChannelCommand = React.useCallback(async (command: ChatSlashCommand) => {
     if (!selectedWorkspaceChannel || selectedWorkspaceChannel.closedAt) return false
@@ -782,9 +859,9 @@ export function DiscordWorkspace() {
             aria-label="Fechar navegação expandida"
           />
         )}
-        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
-        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className={cn("mb-1 flex", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
+        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex min-h-0 flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
+        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+          <div className={cn("mb-1 flex shrink-0", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
             <button
               type="button"
               onClick={() => setServerRailExpanded((current) => !current)}
@@ -797,16 +874,28 @@ export function DiscordWorkspace() {
               {serverRailExpanded ? <PanelLeftClose className="size-4 shrink-0" /> : <PanelLeftOpen className="size-4" />}
             </button>
           </div>
-          <div className="flex flex-col items-stretch gap-1">
-            {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
+
+          {serverRailExpanded && <p className="shrink-0 px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
+          <div className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 [scrollbar-gutter:stable]",
+            serverRailExpanded
+              ? "max-h-[min(52dvh,480px)] [scrollbar-width:thin]"
+              : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          )}>
+            <div className="flex min-h-min flex-col items-stretch gap-1 pb-1">
+              {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
+            </div>
           </div>
-          <div className={cn("mx-auto my-2 h-px bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
-          <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />
-          <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />
-          {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}
-          <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }); collapseServerRailOnSmallScreen() }} />
+
+          <div className={cn("mx-auto my-2 h-px shrink-0 bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
+          <div className="shrink-0">
+            <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />
+            <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />
+            {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}
+            <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }); collapseServerRailOnSmallScreen() }} />
+          </div>
         </div>
-        <div className={cn("mt-2 flex flex-col gap-2 border-t border-border pt-2", serverRailExpanded ? "items-stretch px-2" : "items-center")}>
+        <div className={cn("mt-auto flex shrink-0 flex-col gap-2 border-t border-border bg-background pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-2", serverRailExpanded ? "items-stretch px-2" : "items-center")}>
           <div className={cn(serverRailExpanded && "flex items-center gap-2 rounded-lg px-1")}><NotificationCenter compact popoverSide="right" />{serverRailExpanded && <span className="truncate text-xs text-muted-foreground">Notificações</span>}</div>
           <div className={cn(serverRailExpanded && "flex items-center gap-2 rounded-lg px-1")}><RecentSubactivities compact popoverSide="right" />{serverRailExpanded && <span className="truncate text-xs text-muted-foreground">Subatividades recentes</span>}</div>
           <div className={cn("h-px bg-border", serverRailExpanded ? "w-full" : "w-8")} />
@@ -911,6 +1000,14 @@ export function DiscordWorkspace() {
                     {block.type === "code" && <div className="space-y-2"><input value={block.language ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, language: event.target.value })} placeholder="Linguagem: delphi, sql, json..." className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-ring" /><textarea value={block.content} onChange={(event) => updateChannelCommandBlock(index, { ...block, content: event.target.value })} rows={7} spellCheck={false} placeholder="Cole o código ou script..." className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-ring" /></div>}
                     {block.type === "html" && <textarea value={block.content} onChange={(event) => updateChannelCommandBlock(index, { ...block, content: event.target.value })} rows={8} spellCheck={false} placeholder={'<div>Conteúdo HTML...</div>'} className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-ring" />}
                     {(block.type === "image" || block.type === "video") && <div className="space-y-2"><input value={block.url} onChange={(event) => updateChannelCommandBlock(index, { ...block, url: event.target.value })} placeholder={block.type === "image" ? "https://.../imagem.png" : "https://.../video.mp4"} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /><input value={block.caption ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, caption: event.target.value })} placeholder="Legenda (opcional)" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /></div>}
+                    {block.type === "file" && <div className="space-y-2">
+                      <label className="flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-background px-3 py-3 transition-colors hover:border-primary/30 hover:bg-primary/[0.03]">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{uploadingCommandBlockIndex === index ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}</span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{block.name || "Selecionar arquivo"}</span><span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{block.storagePath ? `${block.mimeType || "Arquivo"} · ${block.size ? `${(block.size / 1024 / 1024).toFixed(block.size >= 1024 * 1024 ? 1 : 2)} MB` : "enviado"}` : "Qualquer tipo de arquivo · até 50 MB"}</span></span>
+                        <input type="file" className="hidden" disabled={uploadingCommandBlockIndex !== null} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; void uploadChannelCommandFile(index, file) }} />
+                      </label>
+                      <input value={block.caption ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, caption: event.target.value })} placeholder="Descrição do arquivo (opcional)" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" />
+                    </div>}
                     {block.type === "link" && <div className="space-y-2"><input value={block.url} onChange={(event) => updateChannelCommandBlock(index, { ...block, url: event.target.value })} placeholder="https://..." className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /><input value={block.label ?? ""} onChange={(event) => updateChannelCommandBlock(index, { ...block, label: event.target.value })} placeholder="Texto do link (opcional)" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-ring" /></div>}
                   </div>
                 ))}
@@ -922,7 +1019,7 @@ export function DiscordWorkspace() {
           <DialogFooter className={cn("m-0 shrink-0 rounded-none border-t border-border bg-muted/[0.08] px-4 py-3 [&>button]:w-full sm:px-6 sm:[&>button]:w-auto", !channelCommandMobileEditorOpen && "hidden md:flex")}>
             {editingChannelCommandId && <Button type="button" variant="destructive" disabled={channelCommandBusy} onClick={() => { const command = selectedChannelCommands.find((item) => item.id === editingChannelCommandId); if (command) void deleteChannelCommand(command) }} className="sm:mr-auto"><Trash2 className="size-3.5" /> Excluir</Button>}
             <Button type="button" variant="outline" disabled={channelCommandBusy} onClick={() => setManageChannelCommandsOpen(false)}>Fechar</Button>
-            <Button type="button" disabled={channelCommandBusy || !channelCommandName.trim() || !channelCommandTitle.trim()} onClick={() => void saveChannelCommand()}>{channelCommandBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Terminal className="size-3.5" />} {editingChannelCommandId ? "Salvar alterações" : "Cadastrar comando"}</Button>
+            <Button type="button" disabled={channelCommandBusy || uploadingCommandBlockIndex !== null || !channelCommandName.trim() || !channelCommandTitle.trim()} onClick={() => void saveChannelCommand()}>{channelCommandBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Terminal className="size-3.5" />} {editingChannelCommandId ? "Salvar alterações" : "Cadastrar comando"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

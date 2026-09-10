@@ -961,7 +961,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.density = preferences.density
     document.documentElement.dataset.reducedMotion = preferences.reducedMotion ? "true" : "false"
     document.documentElement.dataset.interfaceMode = preferences.interfaceMode
-  }, [preferences.density, preferences.interfaceMode, preferences.reducedMotion])
+    document.documentElement.dataset.fontFamily = preferences.fontFamily
+    document.documentElement.dataset.chatTextSize = preferences.chatTextSize
+    document.documentElement.dataset.chatLineSpacing = preferences.chatLineSpacing
+  }, [preferences.chatLineSpacing, preferences.chatTextSize, preferences.density, preferences.fontFamily, preferences.interfaceMode, preferences.reducedMotion])
 
   const runningSubIds = React.useMemo(
     () => projects.flatMap((project) => project.activities.flatMap((activity) => activity.subactivities.filter((sub) => sub.status === "in-progress").map((sub) => sub.id))),
@@ -2122,6 +2125,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_density: next.density,
       p_primary_color: next.primaryColor,
       p_interface_mode: next.interfaceMode,
+      p_font_family: next.fontFamily,
+      p_chat_text_size: next.chatTextSize,
+      p_chat_line_spacing: next.chatLineSpacing,
     }, "Não foi possível salvar suas preferências")
     if (result === undefined) {
       setPreferences(previous)

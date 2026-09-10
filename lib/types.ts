@@ -29,6 +29,9 @@ export type UserPreferences = {
   density: "comfortable" | "compact"
   primaryColor: string | null
   interfaceMode: "complete" | "focused"
+  fontFamily: "jakarta" | "system" | "arial" | "verdana" | "tahoma"
+  chatTextSize: "small" | "medium" | "large" | "xlarge"
+  chatLineSpacing: "compact" | "comfortable" | "relaxed"
 }
 export type ActivityFilter = "all" | "open" | "waiting" | "waiting-aqs" | "in-progress" | "done"
 
@@ -293,6 +296,7 @@ export type ChatCommandBlock =
   | { type: "html"; content: string }
   | { type: "image"; url: string; caption?: string }
   | { type: "video"; url: string; caption?: string }
+  | { type: "file"; storagePath: string; name: string; mimeType?: string; size?: number; caption?: string }
   | { type: "link"; url: string; label?: string }
 
 export type ChatCommandSnapshot = {

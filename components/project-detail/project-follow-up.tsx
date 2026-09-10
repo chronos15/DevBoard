@@ -666,7 +666,7 @@ function AttachmentCard({
   if (attachment.kind === "audio" && href) {
     return (
       <div className="mt-2 max-w-xl rounded-xl border border-border bg-muted/25 p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs font-medium">
+        <div className="tb-chat-title mb-2 flex items-center gap-2 font-medium">
           <FileAudio className="size-4 text-primary" />
           <span className="truncate">{attachment.name}</span>
         </div>
@@ -690,8 +690,8 @@ function AttachmentCard({
         <KindIcon kind={attachment.kind} className="size-4 text-primary" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium">{attachment.name}</span>
-        <span className="mt-0.5 block text-[0.65rem] text-muted-foreground">{formatBytes(attachment.size)}</span>
+        <span className="tb-chat-title block truncate font-medium">{attachment.name}</span>
+        <span className="tb-chat-meta mt-0.5 block text-muted-foreground">{formatBytes(attachment.size)}</span>
       </span>
       {href && <Download className="size-4 shrink-0 text-muted-foreground" />}
     </a>
@@ -2691,7 +2691,7 @@ export function ProjectFollowUp({
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                   <strong className="truncate text-xs"><MemberName member={author} fallback="Você" /></strong>
-                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                  <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                 </div>
                                 {item.pending.replyTo && (
                                   <div className="mt-1.5 block max-w-full overflow-hidden rounded-lg border border-border bg-muted/35 px-2.5 py-2 text-left text-[0.68rem]">
@@ -2701,7 +2701,7 @@ export function ProjectFollowUp({
                                     <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(item.pending.replyTo)}</span>
                                   </div>
                                 )}
-                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                                <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
                                   {renderMentionedText(item.pending.content, item.pending.mentions)}
                                 </p>
                                 {item.pending.status === "sending" ? (
@@ -2741,9 +2741,9 @@ export function ProjectFollowUp({
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-baseline gap-2">
                                   <strong className="truncate text-xs"><MemberName member={author} fallback="Você" /></strong>
-                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                  <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                 </div>
-                                <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
+                                <p className="tb-chat-text mt-1 text-foreground/90">enviou um arquivo</p>
                                 <PendingTimelineFile file={item.file} />
                                 {item.status === "sending" ? (
                                   <div className="mt-1.5 space-y-1.5">
@@ -2783,7 +2783,7 @@ export function ProjectFollowUp({
                           const member = members.find((entry) => entry.id === item.authorId)
                           return (
                             <MobileSwipeReply key={item.id} label="Responder registro" onReply={() => beginReplyToTimelineItem(item)}>
-                            <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg px-1 py-1 text-[0.68rem] text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                            <div id={`followup-timeline-${item.id}`} className={cn("tb-chat-meta group/reaction relative my-2 rounded-lg px-1 py-1 text-muted-foreground transition-colors", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-center gap-2 pr-9 min-[761px]:pr-20">
                                 <Clock3 className="size-3.5 shrink-0" />
                                 <span className="min-w-0 truncate"><MemberName member={member} fallback="Usuário" /> registrou {formatHMS(item.durationSeconds)} de trabalho</span>
@@ -2813,18 +2813,18 @@ export function ProjectFollowUp({
                           const logText = parseLogDescription(item.description)
                           return (
                             <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
-                            <div id={`followup-timeline-${item.id}`} className={cn("group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-[0.68rem] text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
+                            <div id={`followup-timeline-${item.id}`} className={cn("tb-chat-meta group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-start gap-2 pr-9 min-[761px]:pr-20">
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
                                   <div className="flex min-w-0 items-center gap-2">
-                                    <p className="min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
-                                    <time className="shrink-0 text-[0.58rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                    <p className="tb-chat-title min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
+                                    <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                   </div>
                                   {(logText.summary || logText.reason) && (
                                     <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                                      {logText.summary && <p className="min-w-0 flex-1 truncate leading-relaxed">{logText.summary}</p>}
-                                      {logText.reason && <span className="max-w-[46%] shrink-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[0.56rem] font-medium text-primary" title={`Motivo: ${logText.reason}`}>Motivo: {logText.reason}</span>}
+                                      {logText.summary && <p className="tb-chat-text min-w-0 flex-1 truncate">{logText.summary}</p>}
+                                      {logText.reason && <span className="tb-chat-meta max-w-[46%] shrink-0 truncate rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary" title={`Motivo: ${logText.reason}`}>Motivo: {logText.reason}</span>}
                                     </div>
                                   )}
                                 </button>
@@ -2880,8 +2880,8 @@ export function ProjectFollowUp({
                               <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-9 min-[761px]:pr-32">
-                                  <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
-                                  <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                  <strong className="tb-chat-title truncate"><MemberName member={author} fallback="Usuário" /></strong>
+                                  <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                   {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Pin className="size-3 fill-current" /> fixada</span>}
                                 </div>
                                 {comment.replyTo && (
@@ -2902,7 +2902,7 @@ export function ProjectFollowUp({
                                     {!comment.replyTo.unavailable && <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(comment.replyTo)}</span>}
                                   </button>
                                 )}
-                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+                                <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
                                   {renderMentionedText(comment.content, comment.mentions)}
                                 </p>
                                 {renderReactionSummary(item)}
@@ -2963,10 +2963,10 @@ export function ProjectFollowUp({
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                             <div className="min-w-0 flex-1 pr-9 min-[761px]:pr-32">
                               <div className="flex min-w-0 items-baseline gap-2">
-                                <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
-                                <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                <strong className="tb-chat-title truncate"><MemberName member={author} fallback="Usuário" /></strong>
+                                <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                               </div>
-                              <p className="mt-1 text-sm leading-relaxed text-foreground/90">enviou um arquivo</p>
+                              <p className="tb-chat-text mt-1 text-foreground/90">enviou um arquivo</p>
                               <AttachmentCard
                                 attachment={item.attachment}
                                 resolvedUrl={resolvedUrls[item.attachment.id]}

@@ -162,7 +162,7 @@ export function ChatMediaMessage({
                 </span>
               )}
             </span>
-            {caption && <span className="block px-1 pt-2 text-sm whitespace-pre-wrap break-words">{caption}</span>}
+            {caption && <span className="tb-chat-text block px-1 pt-2 whitespace-pre-wrap break-words">{caption}</span>}
           </button>
         </div>
 
@@ -205,7 +205,7 @@ export function ChatMediaMessage({
             </div>
           )}
         </div>
-        {caption && <p className="mt-2 whitespace-pre-wrap break-words">{caption}</p>}
+        {caption && <p className="tb-chat-text mt-2 whitespace-pre-wrap break-words">{caption}</p>}
       </div>
     )
   }
@@ -219,9 +219,9 @@ export function ChatMediaMessage({
       <button type="button" onClick={() => void openPreview()} className="flex w-72 min-w-0 max-w-full items-center gap-3 rounded-xl bg-background/15 p-2.5 text-left ring-1 ring-current/10">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/20"><KindIcon kind={kind} /></span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium">{fileName}</span>
-          <span className="mt-0.5 block truncate text-[0.6rem] opacity-70">{info || "Abrir arquivo"}</span>
-          {caption && <span className="mt-1 block line-clamp-2 text-xs">{caption}</span>}
+          <span className="tb-chat-title block truncate font-medium">{fileName}</span>
+          <span className="tb-chat-meta mt-0.5 block truncate opacity-70">{info || "Abrir arquivo"}</span>
+          {caption && <span className="tb-chat-meta mt-1 block line-clamp-2">{caption}</span>}
         </span>
         {loadingUrl && <Loader2 className="size-3.5 shrink-0 animate-spin opacity-50" />}
       </button>
@@ -241,12 +241,12 @@ export function ChatMediaMessage({
             ) : (
               <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">
                 <KindIcon kind={kind} />
-                <p className="max-w-md break-all text-sm">{fileName}</p>
-                <p className="text-xs text-muted-foreground">{info}</p>
+                <p className="tb-chat-title max-w-md break-all">{fileName}</p>
+                <p className="tb-chat-meta text-muted-foreground">{info}</p>
               </div>
             )}
           </div>
-          {caption && <p className="whitespace-pre-wrap break-words text-sm">{caption}</p>}
+          {caption && <p className="tb-chat-text whitespace-pre-wrap break-words">{caption}</p>}
           <div className="flex justify-end gap-2">
             {url && (
               <a href={url} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted">

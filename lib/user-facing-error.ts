@@ -96,6 +96,9 @@ export function toUserFacingError(error: unknown, fallback = "Não foi possível
   }
 
   // PostgreSQL / PostgREST / políticas.
+  if (/permission denied for function is_workspace_admin/i.test(full)) {
+    return "As permissões administrativas deste ambiente precisam ser atualizadas. Atualize o TaskBoard e tente novamente."
+  }
   if (code === "23505" || /duplicate key value|unique constraint|already exists/i.test(full)) {
     return "Já existe um registro com essas informações. Revise os dados e tente novamente."
   }

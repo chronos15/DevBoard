@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import type { LucideIcon } from "lucide-react"
 import {
   Boxes,
@@ -63,12 +64,19 @@ export function ProjectIcon({
   className?: string
   imageClassName?: string
 }) {
-  if (imageUrl) {
+  const [imageFailed, setImageFailed] = React.useState(false)
+
+  React.useEffect(() => {
+    setImageFailed(false)
+  }, [imageUrl])
+
+  if (imageUrl && !imageFailed) {
     return (
       <img
         src={imageUrl}
         alt=""
         aria-hidden
+        onError={() => setImageFailed(true)}
         className={cn("size-4 shrink-0 rounded-[0.3rem] object-cover", className, imageClassName)}
       />
     )

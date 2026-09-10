@@ -861,7 +861,7 @@ export function DiscordWorkspace() {
             aria-label="Fechar navegação expandida"
           />
         )}
-        <nav className={cn("absolute inset-y-0 left-0 z-[71] flex h-full min-h-0 max-h-full flex-col overflow-hidden border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
+        <nav data-floating-popover-boundary className={cn("absolute inset-y-0 left-0 z-[71] flex h-full min-h-0 max-h-full flex-col overflow-hidden border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
         <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
           <div className={cn("mb-1 flex shrink-0", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
             <button

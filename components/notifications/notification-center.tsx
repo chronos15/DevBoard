@@ -23,6 +23,7 @@ import type { NotificationEntry } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { MemberName } from "@/components/member-avatar"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
+import { AnchoredPopoverPortal } from "@/components/ui/anchored-popover-portal"
 
 const iconByType = {
   "project-assigned": FolderKanban,
@@ -69,6 +70,7 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
   const [open, setOpen] = React.useState(false)
   const [markingAll, setMarkingAll] = React.useState(false)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const closePopover = React.useCallback(() => setOpen(false), [])
 
   const myNotifications = React.useMemo(
     () =>
@@ -78,22 +80,6 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
     [notifications, currentUserId],
   )
   const unreadCount = myNotifications.filter((notification) => !notification.readAt).length
-
-  React.useEffect(() => {
-    if (!open) return
-    function onPointerDown(event: MouseEvent) {
-      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false)
-    }
-    document.addEventListener("mousedown", onPointerDown)
-    document.addEventListener("keydown", onKeyDown)
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown)
-      document.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open])
 
   function openNotification(notification: NotificationEntry) {
     setOpen(false)
@@ -158,20 +144,14 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
         )}
       </button>
 
-      {open && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-[149] bg-black/35 backdrop-blur-[1px] md:hidden"
-            onClick={() => setOpen(false)}
-            aria-label="Fechar notificações"
-          />
-          <div className={cn(
-            "fixed inset-3 z-[150] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:absolute md:inset-auto md:block md:shadow-xl",
-            popoverSide === "right"
-              ? "md:bottom-0 md:left-12 md:w-[min(380px,calc(100vw-84px))]"
-              : "md:right-0 md:top-12 md:w-[min(380px,calc(100vw-24px))]",
-          )}>
+      <AnchoredPopoverPortal
+        open={open}
+        anchorRef={wrapperRef}
+        onClose={closePopover}
+        side={popoverSide}
+        desktopWidth={380}
+        ariaLabel="Notificações"
+      >
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Notificações</p>
@@ -252,9 +232,7 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
               })
             )}
           </div>
-          </div>
-        </>
-      )}
+      </AnchoredPopoverPortal>
     </div>
   )
 }

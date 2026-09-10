@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store"
 import { statusMeta } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { AnchoredPopoverPortal } from "@/components/ui/anchored-popover-portal"
 
 type RecentItem = {
   projectId: string
@@ -47,6 +48,7 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
   const { projects, currentUserId, preferences } = useStore()
   const [open, setOpen] = React.useState(false)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const closePopover = React.useCallback(() => setOpen(false), [])
 
   const items = React.useMemo<RecentItem[]>(() => {
     const result: RecentItem[] = []
@@ -79,22 +81,6 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
   }, [currentUserId, projects])
 
   const recentItems = items.slice(0, 8)
-
-  React.useEffect(() => {
-    if (!open) return
-    function onPointerDown(event: MouseEvent) {
-      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false)
-    }
-    document.addEventListener("mousedown", onPointerDown)
-    document.addEventListener("keydown", onKeyDown)
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown)
-      document.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open])
 
   function openActivity(item: RecentItem) {
     setOpen(false)
@@ -133,20 +119,14 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
         )}
       </button>
 
-      {open && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-[149] bg-black/35 backdrop-blur-[1px] md:hidden"
-            onClick={() => setOpen(false)}
-            aria-label="Fechar subatividades recentes"
-          />
-          <div className={cn(
-            "fixed inset-3 z-[150] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:absolute md:inset-auto md:block md:shadow-xl",
-            popoverSide === "right"
-              ? "md:bottom-0 md:left-12 md:w-[min(430px,calc(100vw-84px))]"
-              : "md:right-0 md:top-12 md:w-[min(430px,calc(100vw-16px))]",
-          )}>
+      <AnchoredPopoverPortal
+        open={open}
+        anchorRef={wrapperRef}
+        onClose={closePopover}
+        side={popoverSide}
+        desktopWidth={430}
+        ariaLabel="Subatividades recentes"
+      >
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Subatividades recentes</p>
@@ -228,9 +208,7 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
               Exibindo as {recentItems.length} subatividades mais recentes.
             </div>
           )}
-          </div>
-        </>
-      )}
+      </AnchoredPopoverPortal>
     </div>
   )
 }

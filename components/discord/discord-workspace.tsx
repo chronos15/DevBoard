@@ -231,11 +231,16 @@ export function DiscordWorkspace() {
   const [serverRailExpanded, setServerRailExpanded] = React.useState(false)
 
   React.useEffect(() => {
-    try { setServerRailExpanded(window.localStorage.getItem("taskboard:resumido:server-rail-expanded") === "1") } catch {}
+    try {
+      if (window.innerWidth >= 768) setServerRailExpanded(window.localStorage.getItem("taskboard:resumido:server-rail-expanded") === "1")
+      else setServerRailExpanded(false)
+    } catch {}
   }, [])
 
   React.useEffect(() => {
-    try { window.localStorage.setItem("taskboard:resumido:server-rail-expanded", serverRailExpanded ? "1" : "0") } catch {}
+    try {
+      if (window.innerWidth >= 768) window.localStorage.setItem("taskboard:resumido:server-rail-expanded", serverRailExpanded ? "1" : "0")
+    } catch {}
   }, [serverRailExpanded])
 
   const collapseServerRailOnSmallScreen = React.useCallback(() => {
@@ -587,7 +592,16 @@ export function DiscordWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background">
-      <nav className={cn("flex shrink-0 flex-col border-r border-border bg-background/95 py-2 transition-[width] duration-200 ease-out", serverRailExpanded ? "w-[220px]" : "w-[64px]")} aria-label="Projetos e áreas">
+      <div className={cn("relative w-[64px] shrink-0", serverRailExpanded ? "md:w-[220px]" : "md:w-[64px]")}>
+        {serverRailExpanded && (
+          <button
+            type="button"
+            className="fixed inset-0 z-[128] bg-black/45 backdrop-blur-[1px] md:hidden"
+            onClick={() => setServerRailExpanded(false)}
+            aria-label="Fechar navegação expandida"
+          />
+        )}
+        <nav className={cn("absolute inset-y-0 left-0 z-[129] flex flex-col border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className={cn("mb-1 flex", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
             <button
@@ -637,7 +651,8 @@ export function DiscordWorkspace() {
             {serverRailExpanded && <span className="truncate text-xs">Sair da conta</span>}
           </button>
         </div>
-      </nav>
+        </nav>
+      </div>
 
       {space !== "chat" && <aside className="hidden w-[286px] shrink-0 flex-col border-r border-border bg-card/70 md:flex">{channelSidebar}<div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-background/45 px-2.5">{currentUser && <MemberAvatar member={currentUser} className="size-8" />}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{currentUser?.name ?? "Usuário"}</p><p className="truncate text-[0.56rem] text-muted-foreground">{currentUserRole === "admin" ? "Administrador" : currentUserRole === "developer" ? "Desenvolvedor" : currentUserRole === "aqs" ? "AQS" : currentUserRole === "support" ? "Suporte" : "Membro"}</p></div><button type="button" onClick={toggleTheme} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"} aria-label={isDarkTheme ? "Ativar tema claro" : "Ativar tema escuro"}>{themeMounted && !isDarkTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}</button><button type="button" onClick={() => router.push("/config")} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Configurações"><Settings className="size-4" /></button><button type="button" onClick={() => void signOut()} className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" title="Sair da conta" aria-label="Sair da conta"><LogOut className="size-4" /></button></div></aside>}
 
@@ -646,7 +661,7 @@ export function DiscordWorkspace() {
         {content}
       </main>
 
-      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside style={{ left: serverRailExpanded ? 220 : 64 }} className="absolute inset-y-0 flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
+      {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[120] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside style={{ left: 64 }} className="absolute inset-y-0 flex w-[min(82vw,300px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
 
       <NewServiceRequestDialog open={createRequestOpen} onOpenChange={setCreateRequestOpen} />
 

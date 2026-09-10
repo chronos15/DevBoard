@@ -2812,9 +2812,25 @@ export function ProjectFollowUp({
                                   </div>
                                   {logText.summary && <p className="mt-0.5 max-w-full truncate leading-relaxed">{logText.summary}</p>}
                                 </button>
-                                <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
-                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
-                                <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
+                                <time className="shrink-0 pt-0.5 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
+                                <div className="relative shrink-0" data-followup-compact-actions>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}
+                                    className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                    title="Ações do registro"
+                                    aria-label="Ações do registro"
+                                    aria-expanded={compactActionsItemId === item.id}
+                                  >
+                                    <Ellipsis className="size-4" />
+                                  </button>
+                                  {compactActionsItemId === item.id && (
+                                    <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
+                                      <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                      <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
                               {renderReactionPicker(item, "right-1 top-9")}
@@ -2926,7 +2942,7 @@ export function ProjectFollowUp({
                           <MobileSwipeReply key={item.id} label="Responder anexo" onReply={() => beginReplyToTimelineItem(item)}>
                           <article id={`followup-timeline-${item.id}`} className={cn("group/attachment relative flex min-w-0 gap-3 rounded-lg px-1 py-2.5 transition-all hover:bg-muted/25 sm:px-2", isLocalMatch && "bg-warning/[0.035]", isCurrentLocalMatch && "bg-warning/[0.07] ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/[0.07] ring-2 ring-primary/10")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
-                            <div className="min-w-0 flex-1 pr-9 min-[761px]:pr-16">
+                            <div className="min-w-0 flex-1 pr-9">
                               <div className="flex min-w-0 items-baseline gap-2">
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 text-[0.62rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
@@ -2939,32 +2955,11 @@ export function ProjectFollowUp({
                               />
                               {renderReactionSummary(item)}
                             </div>
-                            <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/attachment:opacity-100 min-[761px]:group-focus-within/attachment:opacity-100">
-                              <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
-                              <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
-                              <CopyEntityLinkButton
-                                href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
-                                label="Copiar link do anexo"
-                                className="size-7 rounded-md"
-                              />
-                              {canDeleteAttachment(item.attachment) && (
-                                <button
-                                  type="button"
-                                  disabled={deletingAttachmentId === item.attachment.id}
-                                  onClick={() => void deleteAttachment(item.attachment)}
-                                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                                  title={currentUserRole === "admin" ? "Excluir anexo" : "Excluir anexo (até 30 min)"}
-                                  aria-label="Excluir anexo"
-                                >
-                                  {deletingAttachmentId === item.attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                                </button>
-                              )}
-                            </div>
-                            <div className="absolute right-2 top-2 min-[761px]:hidden" data-followup-compact-actions>
+                            <div className="absolute right-2 top-2" data-followup-compact-actions>
                               <button
                                 type="button"
                                 onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)}
-                                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                                 title="Ações do anexo"
                                 aria-label="Ações do anexo"
                                 aria-expanded={compactActionsItemId === item.id}
@@ -3298,49 +3293,49 @@ export function ProjectFollowUp({
       />
 
       <Dialog open={Boolean(logDetailItem)} onOpenChange={(open) => { if (!open) setLogDetailItem(null) }}>
-        <DialogContent className="w-[calc(100vw-24px)] max-w-lg overflow-hidden p-0">
+        <DialogContent className="w-[calc(100vw-24px)] max-w-xl overflow-hidden p-0 sm:w-[calc(100vw-40px)]">
           {logDetailItem && (() => {
             const detail = parseLogDescription(logDetailItem.description)
             const actor = logDetailItem.authorId ? members.find((entry) => entry.id === logDetailItem.authorId) : undefined
             return (
               <>
-                <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left">
-                  <div className="flex items-start gap-3 pr-7">
-                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ActivityIcon className="size-4" /></span>
+                <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left sm:px-6 sm:pb-5 sm:pt-6">
+                  <div className="flex items-start gap-3 pr-8">
+                    <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ActivityIcon className="size-4.5" /></span>
                     <div className="min-w-0 flex-1">
-                      <DialogTitle className="break-words text-base leading-snug">{logDetailItem.title}</DialogTitle>
-                      <DialogDescription className="mt-1 text-xs">Detalhes completos do registro</DialogDescription>
+                      <DialogTitle className="break-words text-base leading-snug sm:text-lg">{logDetailItem.title}</DialogTitle>
+                      <DialogDescription className="mt-1.5 text-xs sm:text-sm">Detalhes completos do registro</DialogDescription>
                     </div>
                   </div>
                 </DialogHeader>
-                <div className="max-h-[min(64vh,520px)] space-y-4 overflow-y-auto px-5 py-4">
+                <div className="max-h-[min(66vh,560px)] space-y-5 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
                   {detail.reason && (
-                    <div className="rounded-xl border border-primary/15 bg-primary/[0.06] p-3">
+                    <div className="rounded-2xl border border-primary/15 bg-primary/[0.06] p-4">
                       <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-primary">Motivo</p>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-foreground">{detail.reason}</p>
+                      <p className="mt-1.5 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground sm:text-[0.95rem]">{detail.reason}</p>
                     </div>
                   )}
-                  {logDetailItem.description && (
+                  {detail.summary && (
                     <div>
                       <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted-foreground">Descrição</p>
-                      <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{logDetailItem.description}</p>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">{detail.summary}</p>
                     </div>
                   )}
-                  <div className="grid gap-3 rounded-xl border border-border bg-muted/20 p-3 sm:grid-cols-2">
+                  <div className="grid gap-4 rounded-2xl border border-border bg-muted/20 p-4 sm:grid-cols-2">
                     <div className="min-w-0">
                       <p className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Registrado por</p>
-                      <p className="mt-1 truncate text-xs font-medium text-foreground">{actor?.name ?? "Sistema"}</p>
+                      <p className="mt-1.5 truncate text-sm font-medium text-foreground">{actor?.name ?? "Sistema"}</p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Data e hora</p>
-                      <p className="mt-1 text-xs font-medium text-foreground">{new Date(logDetailItem.createdAt).toLocaleString("pt-BR")}</p>
+                      <p className="mt-1.5 text-sm font-medium text-foreground">{new Date(logDetailItem.createdAt).toLocaleString("pt-BR")}</p>
                     </div>
                   </div>
                 </div>
-                <DialogFooter className="border-t border-border px-5 py-4">
-                  <Button type="button" variant="outline" onClick={() => setLogDetailItem(null)}>Fechar</Button>
-                  <Button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(logDetailItem)); setLogDetailItem(null); window.requestAnimationFrame(() => messageRef.current?.focus()) }}><Reply className="size-4" /> Responder</Button>
-                </DialogFooter>
+                <div className="flex flex-col-reverse gap-2.5 border-t border-border bg-muted/[0.08] px-5 py-4 sm:flex-row sm:justify-end sm:px-6 sm:py-5">
+                  <Button type="button" variant="outline" onClick={() => setLogDetailItem(null)} className="h-10 w-full px-5 sm:w-auto sm:min-w-[112px]">Fechar</Button>
+                  <Button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(logDetailItem)); setLogDetailItem(null); window.requestAnimationFrame(() => messageRef.current?.focus()) }} className="h-10 w-full px-5 sm:w-auto sm:min-w-[132px]"><Reply className="size-4" /> Responder</Button>
+                </div>
               </>
             )
           })()}

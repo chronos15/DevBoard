@@ -927,8 +927,13 @@ export function DiscordWorkspace() {
           />
         )}
         <nav data-floating-popover-boundary className={cn("absolute inset-y-0 left-0 z-[71] flex h-full min-h-0 max-h-full flex-col overflow-hidden border-r border-border bg-background py-2 shadow-none transition-[width] duration-200 ease-out md:static md:z-auto md:bg-background/95", serverRailExpanded ? "w-[min(82vw,260px)] shadow-2xl md:w-[220px] md:shadow-none" : "w-[64px]")} aria-label="Projetos e áreas">
-        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <div className={cn("mb-1 flex shrink-0", serverRailExpanded ? "justify-end px-2" : "justify-center")}>
+        <div className={cn(
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 pb-1",
+          serverRailExpanded
+            ? "[scrollbar-width:thin] [scrollbar-gutter:stable]"
+            : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        )}>
+          <div className={cn("mb-1 flex", serverRailExpanded ? "justify-end px-1.5" : "justify-center")}>
             <button
               type="button"
               onClick={() => setServerRailExpanded((current) => !current)}
@@ -942,20 +947,13 @@ export function DiscordWorkspace() {
             </button>
           </div>
 
-          {serverRailExpanded && <p className="shrink-0 px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
-          <div className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 [scrollbar-gutter:stable]",
-            serverRailExpanded
-              ? "max-h-[min(52dvh,480px)] [scrollbar-width:thin]"
-              : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          )}>
-            <div className="flex min-h-min flex-col items-stretch gap-1 pb-1">
-              {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
-            </div>
+          {serverRailExpanded && <p className="px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
+          <div className="flex flex-col items-stretch gap-1">
+            {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
           </div>
 
-          <div className={cn("mx-auto my-2 h-px shrink-0 bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
-          <div className="shrink-0">
+          <div className={cn("mx-auto my-2 h-px bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
+          <div>
             <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />
             <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />
             {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}

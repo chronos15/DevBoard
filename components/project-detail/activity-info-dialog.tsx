@@ -29,14 +29,14 @@ export function ActivityInfoDialog({ activity, project, triggerClassName, compac
       <Button type="button" variant="ghost" size={compact ? "icon-xs" : "icon-sm"} onClick={() => setOpen(true)} className={triggerClassName} title="Informações da atividade" aria-label={`Informações da atividade ${activity.title}`}>
         <Info className="size-3.5" />
       </Button>
-      <DialogContent className="w-[calc(100vw-1rem)] max-h-[90dvh] overflow-hidden p-0 sm:max-w-3xl md:max-w-4xl" showCloseButton>
+      <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-0 sm:h-auto sm:max-h-[90dvh] sm:max-w-3xl md:max-w-4xl" showCloseButton>
         <DialogHeader className="border-b border-border px-5 py-5 pr-14 sm:px-6">
           <div className="flex min-w-0 items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ActivityIcon className="size-5" /></span>
             <div className="min-w-0 flex-1"><DialogTitle className="text-lg leading-snug sm:text-xl">{activity.title}</DialogTitle><p className="mt-1 text-xs text-muted-foreground">{project?.name ?? "Projeto"}{project?.client ? ` · ${project.client}` : ""}</p></div>
           </div>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch] sm:px-6 sm:py-5">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Metric icon={ListChecks} label="Subatividades" value={`${done}/${total}`} hint={`${completion}% concluído`} />
             <Metric icon={Timer} label="Tempo registrado" value={formatHours(tracked)} hint="tempo acumulado" />

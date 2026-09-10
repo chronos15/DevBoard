@@ -75,6 +75,7 @@ import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
+import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
@@ -2660,7 +2661,17 @@ export function ProjectFollowUp({
                 <Hash className="hidden size-4 shrink-0 text-muted-foreground min-[761px]:block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="hidden truncate text-[0.67rem] text-muted-foreground lg:inline">{selectedActivity.title}</span>
+                    <div className="hidden min-w-0 items-center gap-0.5 lg:flex">
+                      <span className="min-w-0 truncate text-[0.67rem] text-muted-foreground">{selectedActivity.title}</span>
+                      {!discordEmbedded && (
+                        <ActivityInfoDialog
+                          activity={selectedActivity}
+                          project={project}
+                          compact
+                          triggerClassName="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                        />
+                      )}
+                    </div>
                     <ChevronRight className="hidden size-3 shrink-0 text-muted-foreground/60 lg:block" />
                     <strong className="min-w-0 text-xs leading-tight sm:text-sm max-[760px]:line-clamp-2 min-[761px]:truncate">{selectedSub.title}</strong>
                   </div>
@@ -3016,12 +3027,19 @@ export function ProjectFollowUp({
 
                         if (item.kind === "log") {
                           const logText = parseLogDescription(item.description)
+                          const checklistLog = item.logType?.startsWith("checklist-") ?? false
                           return (
                             <MobileSwipeReply key={item.id} label="Responder log" onReply={() => beginReplyToTimelineItem(item)}>
                             <div id={`followup-timeline-${item.id}`} className={cn("tb-chat-meta group/reaction relative my-2 rounded-lg bg-muted/35 px-3 py-2 text-muted-foreground transition-all", isLocalMatch && "bg-warning/8", isCurrentLocalMatch && "bg-warning/15 ring-1 ring-warning/25", focusedTimelineId === item.id && "bg-primary/8 ring-2 ring-primary/15")}>
                               <div className="flex items-start gap-2 pr-9 min-[761px]:pr-20">
-                                {item.logType?.startsWith("checklist-") ? <ListTodo className="mt-0.5 size-3.5 shrink-0 text-chart-2" /> : <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />}
-                                <button type="button" onClick={() => setLogDetailItem(item)} className="min-w-0 flex-1 text-left" title="Ver detalhes do registro">
+                                {checklistLog ? <ListTodo className="mt-0.5 size-3.5 shrink-0 text-chart-2" /> : <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />}
+                                <button
+                                  type="button"
+                                  onClick={() => checklistLog ? setChecklistOpen(true) : setLogDetailItem(item)}
+                                  className="min-w-0 flex-1 text-left"
+                                  title={checklistLog ? "Abrir checklist da subatividade" : "Ver detalhes do registro"}
+                                  aria-label={checklistLog ? `Abrir checklist da subatividade: ${item.title}` : `Ver detalhes do registro: ${item.title}`}
+                                >
                                   <div className="flex min-w-0 items-center gap-2">
                                     <p className="tb-chat-title min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
                                     <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>

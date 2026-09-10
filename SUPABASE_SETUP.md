@@ -808,3 +808,13 @@ A 065 é intencionalmente **autocontida** para os pontos críticos. Ela recria a
 Ela também reafirma a policy de INSERT do bucket `cadence-attachments`, mantendo `is_workspace_admin(uuid,uuid)` fechado para chamadas diretas do cliente.
 
 > Se a troca de imagem continuar mostrando apenas `VM... reportAllChanges ... startTime` no Console, esse stack é de instrumentação de Web Vitals do navegador/ambiente e não identifica falha do Supabase. Para confirmar falha real de upload, procure no mesmo momento uma linha `[TaskBoard/Supabase] StorageApiError` ou uma requisição `storage/v1/object/...` com status 4xx.
+
+## V75 — remoção definitiva da imagem do projeto
+
+Depois da migration 065, execute também:
+
+```sql
+supabase/migrations/066_taskboard_project_image_removal_fix.sql
+```
+
+A 066 corrige a exclusão de imagens de projeto enviadas originalmente por outro usuário e torna o estado "Remover imagem" persistente durante a edição.

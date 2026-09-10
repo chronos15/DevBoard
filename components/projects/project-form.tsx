@@ -22,6 +22,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   const [iconImageFile, setIconImageFile] = React.useState<File | null>(null)
   const [iconImagePreview, setIconImagePreview] = React.useState<string | null>(project?.iconImageUrl ?? null)
   const [iconImageError, setIconImageError] = React.useState("")
+  const [removeExistingImage, setRemoveExistingImage] = React.useState(false)
   const imageInputRef = React.useRef<HTMLInputElement>(null)
   const objectUrlRef = React.useRef<string | null>(null)
   const [client, setClient] = React.useState(project?.client ?? "")
@@ -42,6 +43,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     setIconImageFile(null)
     setIconImagePreview(project.iconImageUrl ?? null)
     setIconImageError("")
+    setRemoveExistingImage(false)
     setClient(project.client)
     setDescription(project.description)
     setTag(project.tag)
@@ -125,21 +127,30 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
     setIconImageFile(file)
     setIconImagePreview(preview)
     setUseCustomImage(true)
+    setRemoveExistingImage(false)
     setIconImageError("")
   }
 
   function usePresetIcon() {
-    // Descarta somente a prévia temporária escolhida nesta edição. A imagem
-    // já salva no projeto continua disponível caso o usuário volte para
-    // “Imagem” antes de confirmar as alterações.
+    // "Remover imagem" precisa representar uma remoção real nesta edição.
+    // Não restauramos silenciosamente a imagem já salva ao alternar as abas.
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current)
       objectUrlRef.current = null
     }
     setIconImageFile(null)
-    setIconImagePreview(project?.iconImageUrl ?? null)
+    setIconImagePreview(null)
     setUseCustomImage(false)
+    setRemoveExistingImage(Boolean(project?.iconImagePath))
     setIconImageError("")
+  }
+
+  function useImageMode() {
+    setUseCustomImage(true)
+    setIconImageError("")
+    // Se a imagem original foi marcada para remoção, voltar para a aba Imagem
+    // deve abrir um estado vazio e exigir uma nova imagem, nunca reviver a antiga.
+    if (removeExistingImage && !iconImageFile) setIconImagePreview(null)
   }
 
   function toggleMember(id: string) {
@@ -151,8 +162,8 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !dueDate || saving) return
-    if (useCustomImage && !iconImageFile && !project?.iconImagePath) {
-      setIconImageError("Selecione uma imagem para usar como ícone do projeto.")
+    if (useCustomImage && !iconImageFile && (!project?.iconImagePath || removeExistingImage)) {
+      setIconImageError("Selecione uma nova imagem para usar como ícone do projeto.")
       return
     }
     setSaving(true)
@@ -177,7 +188,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
 
     try {
       if (projectId) {
-        const ok = await updateProject(projectId, data, { useCustomImage, imageFile: iconImageFile })
+        const ok = await updateProject(projectId, data, { useCustomImage, imageFile: iconImageFile, removeExistingImage })
         if (!ok) return
         router.push(`/projetos/${projectId}`)
         return
@@ -319,7 +330,7 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => { setUseCustomImage(true); setIconImageError("") }}
+                onClick={useImageMode}
                 className={cn(
                   "flex h-8 items-center justify-center gap-1.5 rounded-lg text-[0.7rem] font-medium transition-colors",
                   useCustomImage ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -330,13 +341,21 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
             </div>
 
             {!useCustomImage ? (
-              <ProjectIconPicker
-                value={icon}
-                onChange={(value) => {
-                  setIcon(value)
-                  setUseCustomImage(false)
-                }}
-              />
+              <div className="space-y-3">
+                <ProjectIconPicker
+                  value={icon}
+                  onChange={(value) => {
+                    setIcon(value)
+                    setUseCustomImage(false)
+                    if (project?.iconImagePath) setRemoveExistingImage(true)
+                  }}
+                />
+                {removeExistingImage && (
+                  <p className="rounded-lg bg-destructive/8 px-2.5 py-2 text-[0.68rem] font-medium text-destructive">
+                    A imagem atual será removida ao salvar o projeto.
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="space-y-3">
                 <input

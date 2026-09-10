@@ -181,7 +181,7 @@ export type StoreContextValue = {
   setActivityType: (activityId: string, typeId?: string | null) => Promise<boolean>
   setSubactivityType: (subactivityId: string, typeId?: string | null) => Promise<boolean>
   addProject: (data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<string | null>
-  updateProject: (projectId: string, data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean }) => Promise<boolean>
+  updateProject: (projectId: string, data: ProjectInput, visual?: { imageFile?: File | null; useCustomImage?: boolean; removeExistingImage?: boolean }) => Promise<boolean>
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string) => Promise<boolean>
@@ -1402,8 +1402,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       const useCustomImage = visual?.useCustomImage ?? Boolean(project?.iconImagePath)
+      const removeExistingImage = visual?.removeExistingImage ?? false
       const nextImagePath = useCustomImage
-        ? (uploadedPath ?? project?.iconImagePath ?? null)
+        ? (uploadedPath ?? (removeExistingImage ? null : project?.iconImagePath ?? null))
         : null
       const iconResult = await callRpc<unknown>("set_project_visual", {
         p_project_id: projectId,

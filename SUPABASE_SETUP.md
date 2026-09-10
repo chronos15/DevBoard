@@ -794,3 +794,17 @@ supabase/migrations/056_devboard_focused_interface_mode.sql
 A 056 adiciona `user_preferences.interface_mode`, com `complete` como padrão e `focused` como alternativa. A preferência pertence somente ao usuário autenticado e não modifica roles, permissões, projetos ou regras de negócio.
 
 No **Modo Focado**, o Devboard reutiliza os mesmos dados e componentes do modo completo, mas reduz a navegação, prioriza Acompanhamento/Minhas tarefas/Solicitações e apresenta uma Home orientada ao que exige atenção. O usuário pode alternar entre os modos em **Configurações → Aparência** ou pelo atalho de interface no topo da aplicação.
+
+## Migration 065 — Imagem de projeto / Storage / Admin
+
+Depois da 064, ou diretamente em ambientes que ainda não receberam a correção anterior, aplique:
+
+```text
+supabase/migrations/065_taskboard_project_images_storage_final_fix.sql
+```
+
+A 065 é intencionalmente **autocontida** para os pontos críticos. Ela recria as policies do bucket `devboard-project-icons`, valida o caminho do upload por um helper `SECURITY DEFINER` restrito ao usuário atual e reafirma `set_project_visual`/`update_project` sem exigir que um Admin esteja em `project_members`.
+
+Ela também reafirma a policy de INSERT do bucket `cadence-attachments`, mantendo `is_workspace_admin(uuid,uuid)` fechado para chamadas diretas do cliente.
+
+> Se a troca de imagem continuar mostrando apenas `VM... reportAllChanges ... startTime` no Console, esse stack é de instrumentação de Web Vitals do navegador/ambiente e não identifica falha do Supabase. Para confirmar falha real de upload, procure no mesmo momento uma linha `[TaskBoard/Supabase] StorageApiError` ou uma requisição `storage/v1/object/...` com status 4xx.

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
+import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, EllipsisVertical, Info, Link2, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
 import type { Activity, ServiceRequest, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -19,6 +19,13 @@ import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
@@ -366,6 +373,15 @@ export function ActivityItem({
   }, [focusedActivity, hasFocusedSubactivity])
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false)
+  const [infoOpen, setInfoOpen] = React.useState(false)
+  const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
+  const [linkCopied, setLinkCopied] = React.useState(false)
+  const copyFeedbackTimerRef = React.useRef<number | null>(null)
+
+  React.useEffect(() => () => {
+    if (copyFeedbackTimerRef.current) window.clearTimeout(copyFeedbackTimerRef.current)
+  }, [])
   const allSubs = activity.subactivities
   const visibleSubs = visibleSubactivities ?? allSubs
   const done = allSubs.filter((s) => s.status === "done").length
@@ -376,6 +392,30 @@ export function ActivityItem({
   const hasRunningSubactivity = allSubs.some((sub) => sub.status === "in-progress")
   const filtering = visibleSubactivities !== undefined
   const sourceTopic = supportTopics.find((topic) => topic.activityId === activity.id)
+
+  async function copyActivityLink() {
+    const href = new URL(`/projetos/${projectId}#activity-${activity.id}`, window.location.origin).toString()
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(href)
+      } else {
+        const area = document.createElement("textarea")
+        area.value = href
+        area.setAttribute("readonly", "")
+        area.style.position = "fixed"
+        area.style.opacity = "0"
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand("copy")
+        area.remove()
+      }
+      setLinkCopied(true)
+      if (copyFeedbackTimerRef.current) window.clearTimeout(copyFeedbackTimerRef.current)
+      copyFeedbackTimerRef.current = window.setTimeout(() => setLinkCopied(false), 1800)
+    } catch {
+      setLinkCopied(false)
+    }
+  }
 
   async function confirmDelete() {
     if (!canDelete || deleting) return
@@ -423,20 +463,29 @@ export function ActivityItem({
                 <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground sm:text-sm">
                   {activityNumber}-
                 </span>
-                <h3 className="min-w-0 truncate font-semibold" title={activity.title}>{activity.title}</h3>
-                <WorkItemTypeBadge typeId={activity.typeId} compact />
-                {linkedRequest && <span className="rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary">{serviceRequestReference(linkedRequest)}</span>}
+                <h3 className="min-w-0 flex-1 truncate font-semibold" title={activity.title}>{activity.title}</h3>
+                <div className="hidden shrink-0 sm:block"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
+                {linkedRequest && <span className="hidden rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary sm:inline-flex">{serviceRequestReference(linkedRequest)}</span>}
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
-                  <MemberStack ids={activity.assigneeIds ?? []} max={2} />
+                  <div className="hidden shrink-0 sm:block"><MemberStack ids={activity.assigneeIds ?? []} max={2} /></div>
                 )}
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.65rem] font-medium text-muted-foreground tabular-nums">
+                <span className="hidden rounded-full bg-muted px-1.5 py-0.5 text-[0.65rem] font-medium text-muted-foreground tabular-nums sm:inline-flex">
                   {done}/{allSubs.length}
                 </span>
                 {filtering && visibleSubs.length !== allSubs.length && (
-                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-primary">
+                  <span className="hidden rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-primary sm:inline-flex">
                     {visibleSubs.length} no filtro
                   </span>
                 )}
+              </div>
+
+              <div className="mt-1.5 flex min-w-0 items-center gap-2 overflow-hidden sm:hidden">
+                <div className="min-w-0 shrink"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
+                {linkedRequest && <span className="max-w-28 truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary">{serviceRequestReference(linkedRequest)}</span>}
+                {(activity.assigneeIds?.length ?? 0) > 0 && <MemberStack ids={activity.assigneeIds ?? []} max={1} />}
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums">{done}/{allSubs.length}</span>
+                {filtering && visibleSubs.length !== allSubs.length && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">{visibleSubs.length} filtro</span>}
+                <span className="ml-auto shrink-0 font-mono text-[0.62rem] tabular-nums text-muted-foreground">{formatHours(tracked)}</span>
               </div>
             </div>
 
@@ -452,16 +501,65 @@ export function ActivityItem({
               </span>
             </div>
 
-            <span className="ml-1 w-12 shrink-0 text-right font-mono text-[0.68rem] tabular-nums text-muted-foreground sm:w-14 sm:text-xs">
+            <span className="ml-1 hidden w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:block">
               {formatHours(tracked)}
             </span>
           </button>
 
-          <div className="flex shrink-0 items-stretch border-l border-border">
-            <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-10 rounded-none sm:size-11" />
+          <div className="flex shrink-0 items-center border-l border-border px-1 sm:hidden">
+            <DropdownMenu open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+              <DropdownMenuTrigger
+                className="flex size-10 items-center justify-center rounded-xl text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`Ações da atividade ${activity.title}`}
+                title="Ações"
+              >
+                <EllipsisVertical className="size-5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="w-52 p-1.5">
+                <DropdownMenuItem
+                  className="h-10 cursor-pointer gap-2 px-2.5"
+                  onClick={() => { setMobileActionsOpen(false); setInfoOpen(true) }}
+                >
+                  <Info className="size-4" />
+                  <span>Informações</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="h-10 cursor-pointer gap-2 px-2.5"
+                  onClick={() => { setMobileActionsOpen(false); setAttachmentsOpen(true) }}
+                >
+                  <Paperclip className="size-4" />
+                  <span className="min-w-0 flex-1">Anexos</span>
+                  {(activity.attachments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{activity.attachments?.length ?? 0}</span>}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="h-10 cursor-pointer gap-2 px-2.5"
+                  onClick={(event) => { event.preventDefault(); void copyActivityLink() }}
+                >
+                  {linkCopied ? <Check className="size-4 text-success" /> : <Link2 className="size-4" />}
+                  <span>{linkCopied ? "Link copiado" : "Copiar link"}</span>
+                </DropdownMenuItem>
+                {canDelete && canManageStructure && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      className="h-10 cursor-pointer gap-2 px-2.5"
+                      onClick={() => { setMobileActionsOpen(false); setDeleteOpen(true) }}
+                    >
+                      <Trash2 className="size-4" />
+                      <span>Excluir atividade</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <div className="flex shrink-0 items-stretch border-l border-border">
+          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+            <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-11 rounded-none" />
+          </div>
+
+          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
             <AttachmentDialog
               title={`Arquivos · ${activity.title}`}
               description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
@@ -472,15 +570,15 @@ export function ActivityItem({
               }
               compact
               buttonLabel="Arquivos"
-              className="m-auto h-full min-h-10 rounded-none px-2.5 sm:min-h-11"
+              className="m-auto h-full min-h-11 rounded-none px-2.5"
             />
           </div>
 
-          <div className="flex shrink-0 items-stretch border-l border-border">
+          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
             <CopyEntityLinkButton
               href={`/projetos/${projectId}#activity-${activity.id}`}
               label={`Copiar link da atividade ${activity.title}`}
-              className="m-auto size-10 rounded-none sm:size-11"
+              className="m-auto size-11 rounded-none"
             />
           </div>
 
@@ -488,7 +586,7 @@ export function ActivityItem({
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
-              className="flex w-12 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="hidden w-12 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive sm:flex"
               aria-label={`Excluir atividade ${activity.title}`}
               title="Excluir atividade"
             >
@@ -496,6 +594,29 @@ export function ActivityItem({
             </button>
           )}
         </div>
+
+        <ActivityInfoDialog
+          activity={activity}
+          project={currentProject}
+          open={infoOpen}
+          onOpenChange={setInfoOpen}
+          hideTrigger
+        />
+
+        <AttachmentDialog
+          title={`Arquivos · ${activity.title}`}
+          description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
+          attachments={activity.attachments ?? []}
+          onAdd={(files) => addActivityAttachments(activity.id, files)}
+          onSetActive={(attachmentId, active) =>
+            void setActivityAttachmentActive(activity.id, attachmentId, active)
+          }
+          compact
+          buttonLabel="Arquivos"
+          open={attachmentsOpen}
+          onOpenChange={setAttachmentsOpen}
+          hideTrigger
+        />
 
         {open && (
           <div className="border-t border-border px-2 pb-2">

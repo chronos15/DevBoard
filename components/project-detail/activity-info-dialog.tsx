@@ -12,9 +12,30 @@ import { cn } from "@/lib/utils"
 
 const visibleStatuses: Status[] = ["backlog", "waiting", "in-progress", "paused", "waiting-aqs", "done", "cancelled"]
 
-export function ActivityInfoDialog({ activity, project, triggerClassName, compact = false }: { activity: Activity; project?: Project; triggerClassName?: string; compact?: boolean }) {
+export function ActivityInfoDialog({
+  activity,
+  project,
+  triggerClassName,
+  compact = false,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: {
+  activity: Activity
+  project?: Project
+  triggerClassName?: string
+  compact?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
+}) {
   const { members, workItemTypes } = useStore()
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = React.useCallback((nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }, [controlledOpen, onOpenChange])
   const total = activity.subactivities.length
   const done = activity.subactivities.filter((sub) => sub.status === "done").length
   const completion = total ? Math.round((done / total) * 100) : 0
@@ -26,9 +47,11 @@ export function ActivityInfoDialog({ activity, project, triggerClassName, compac
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button type="button" variant="ghost" size={compact ? "icon-xs" : "icon-sm"} onClick={() => setOpen(true)} className={triggerClassName} title="Informações da atividade" aria-label={`Informações da atividade ${activity.title}`}>
-        <Info className="size-3.5" />
-      </Button>
+      {!hideTrigger && (
+        <Button type="button" variant="ghost" size={compact ? "icon-xs" : "icon-sm"} onClick={() => setOpen(true)} className={triggerClassName} title="Informações da atividade" aria-label={`Informações da atividade ${activity.title}`}>
+          <Info className="size-3.5" />
+        </Button>
+      )}
       <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-0 sm:h-auto sm:max-h-[90dvh] sm:max-w-3xl md:max-w-4xl" showCloseButton>
         <DialogHeader className="border-b border-border px-5 py-5 pr-14 sm:px-6">
           <div className="flex min-w-0 items-start gap-3">

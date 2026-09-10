@@ -254,6 +254,9 @@ export function AttachmentDialog({
   compact = false,
   buttonLabel = "Arquivos",
   className,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   title: string
   description: string
@@ -263,10 +266,18 @@ export function AttachmentDialog({
   compact?: boolean
   buttonLabel?: string
   className?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
   const { members } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = React.useCallback((nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }, [controlledOpen, onOpenChange])
   const [filter, setFilter] = React.useState<StatusFilter>("active")
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [error, setError] = React.useState("")
@@ -512,34 +523,36 @@ export function AttachmentDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          compact
-            ? "inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            : "flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted",
-          className,
-        )}
-        aria-label={`${buttonLabel} de ${title}`}
-        title={buttonLabel}
-      >
-        <Paperclip className="size-3.5" />
-        {compact ? (
-          attachments.length > 0 && (
-            <span className="font-mono text-[0.62rem] tabular-nums">{attachments.length}</span>
-          )
-        ) : (
-          <>
-            <span>{buttonLabel}</span>
-            {attachments.length > 0 && (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
-                {attachments.length}
-              </span>
-            )}
-          </>
-        )}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={cn(
+            compact
+              ? "inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              : "flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted",
+            className,
+          )}
+          aria-label={`${buttonLabel} de ${title}`}
+          title={buttonLabel}
+        >
+          <Paperclip className="size-3.5" />
+          {compact ? (
+            attachments.length > 0 && (
+              <span className="font-mono text-[0.62rem] tabular-nums">{attachments.length}</span>
+            )
+          ) : (
+            <>
+              <span>{buttonLabel}</span>
+              {attachments.length > 0 && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
+                  {attachments.length}
+                </span>
+              )}
+            </>
+          )}
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving || nextOpen) setOpen(nextOpen) }}>
         <DialogContent className="grid min-w-0 max-h-[92dvh] w-[calc(100dvw-1.5rem)] max-w-[calc(100dvw-1.5rem)] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-5xl">

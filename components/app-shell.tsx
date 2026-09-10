@@ -23,6 +23,7 @@ import { PrimaryColorSync } from "@/components/primary-color-sync"
 import { TimerIdleGuard } from "@/components/timer-idle-guard"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { FocusedRunningTimer } from "@/components/focused-running-timer"
+import { PauseSubactivityProvider } from "@/components/pause-subactivity-provider"
 
 
 function canAccessPath(role: AccessRole, pathname: string) {
@@ -273,12 +274,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <StoreProvider>
-      <MemberProfileProvider>
-        <PrimaryColorSync />
-        <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
-          {children}
-        </AppShellContent>
-      </MemberProfileProvider>
+      <PauseSubactivityProvider>
+        <MemberProfileProvider>
+          <PrimaryColorSync />
+          <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
+            {children}
+          </AppShellContent>
+        </MemberProfileProvider>
+      </PauseSubactivityProvider>
     </StoreProvider>
   )
 }

@@ -166,7 +166,7 @@ export type StoreContextValue = {
   updatePreferences: (preferences: UserPreferences) => Promise<boolean>
   canManageSubactivity: (sub: Subactivity) => boolean
   startTimer: (subId: string) => Promise<boolean>
-  stopTimer: (subId?: string) => Promise<boolean>
+  stopTimer: (subId?: string, reason?: string) => Promise<boolean>
   setSubStatus: (subId: string, status: Status) => Promise<boolean>
   addSubactivity: (
     projectId: string,
@@ -1108,7 +1108,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })
   }, [canManageSubactivity, projects, startTimerDirect])
 
-  const stopTimer = React.useCallback(async (subId?: string) => {
+  const stopTimer = React.useCallback(async (subId?: string, reason?: string) => {
     // Proteção contra handlers React passados diretamente (ex.: onClick={stopTimer}).
     // Somente strings são tratadas como IDs; qualquer outro valor cai no timer ativo.
     const targetId = typeof subId === "string" && subId.length > 0 ? subId : activeSubId
@@ -1116,7 +1116,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const rollback = captureOptimisticSubs(projects, targetId, "paused")
     setProjects((current) => optimisticSubStatus(current, targetId, "paused"))
-    const result = await callRpc<unknown>("pause_subactivity", { p_subactivity_id: targetId }, "Não foi possível pausar a subatividade")
+    const cleanReason = typeof reason === "string" ? reason.trim() : ""
+    const result = cleanReason
+      ? await callRpc<unknown>(
+          "pause_subactivity_with_reason",
+          { p_subactivity_id: targetId, p_reason: cleanReason },
+          "Não foi possível pausar a subatividade",
+        )
+      : await callRpc<unknown>("pause_subactivity", { p_subactivity_id: targetId }, "Não foi possível pausar a subatividade")
     if (result === undefined) {
       setProjects((current) => restoreOptimisticSubs(current, rollback))
       return false

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Check, Clock3, ExternalLink, Pause, TimerReset, X } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useStore } from "@/lib/store"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import {
   DEFAULT_DEVELOPER_SETTINGS,
   DEVELOPER_CONTEXTS_EVENT,
@@ -60,7 +61,8 @@ function dateKey(date = new Date()) {
 
 export function DeveloperAutomationAgent() {
   const supabase = React.useMemo(() => createClient(), [])
-  const { hydrated, currentUserId, currentUserRole, projects, activeSubId, stopTimer, refreshAll } = useStore()
+  const { hydrated, currentUserId, currentUserRole, projects, activeSubId, refreshAll } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const [settings, setSettings] = React.useState<DeveloperSettings>({ ...DEFAULT_DEVELOPER_SETTINGS })
   const [contexts, setContexts] = React.useState<DeveloperContextRecord[]>([])
   const [ides, setIdes] = React.useState<DeveloperIdeRecord[]>([])
@@ -403,7 +405,7 @@ export function DeveloperAutomationAgent() {
         ) : prompt.kind === "forgotten" ? (
           <>
             <button type="button" onClick={() => setPrompt(null)} className="h-9 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-muted"><Check className="mr-1.5 inline size-3.5" />Continuar</button>
-            <button type="button" onClick={() => { void stopTimer(prompt.subId); setPrompt(null) }} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"><Pause className="mr-1.5 inline size-3.5" />Pausar timer</button>
+            <button type="button" onClick={() => { void requestPause(prompt.subId).then((ok) => { if (ok) setPrompt(null) }) }} className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"><Pause className="mr-1.5 inline size-3.5" />Pausar timer</button>
           </>
         ) : (
           <>

@@ -5,6 +5,7 @@ import type { Project } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { formatHMS, projectSubactivities } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 export function ActiveTimerHero({
   project,
@@ -17,9 +18,9 @@ export function ActiveTimerHero({
     activeSubId,
     currentUserId,
     findSub,
-    stopTimer,
     startTimer,
   } = useStore()
+  const { requestPause } = usePauseSubactivity()
 
   const active = activeSubId ? findSub(activeSubId) : null
   const activeInProject = active && active.project.id === project.id ? active : null
@@ -66,7 +67,7 @@ export function ActiveTimerHero({
           disabled={!running && !suggestion}
           onClick={() =>
             running
-              ? stopTimer(activeInProject!.sub.id)
+              ? requestPause(activeInProject!.sub.id)
               : suggestion && startTimer(suggestion.id)
           }
           className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-35"
@@ -147,7 +148,7 @@ export function ActiveTimerHero({
       {running ? (
         <button
           type="button"
-          onClick={() => stopTimer(activeInProject!.sub.id)}
+          onClick={() => requestPause(activeInProject!.sub.id)}
           className="flex h-12 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           <Square className="size-4 fill-current" />

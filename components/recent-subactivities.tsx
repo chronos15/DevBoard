@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ChevronRight, Clock3, History, ListTodo } from "lucide-react"
+import { ChevronRight, Clock3, History, ListTodo, X } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { statusMeta } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
@@ -134,12 +134,19 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
       </button>
 
       {open && (
-        <div className={cn(
-          "absolute z-[150] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl",
-          popoverSide === "right"
-            ? "bottom-0 left-12 w-[min(430px,calc(100vw-84px))]"
-            : "right-0 top-12 w-[min(430px,calc(100vw-16px))]",
-        )}>
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[149] bg-black/35 backdrop-blur-[1px] md:hidden"
+            onClick={() => setOpen(false)}
+            aria-label="Fechar subatividades recentes"
+          />
+          <div className={cn(
+            "fixed inset-3 z-[150] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:absolute md:inset-auto md:block md:shadow-xl",
+            popoverSide === "right"
+              ? "md:bottom-0 md:left-12 md:w-[min(430px,calc(100vw-84px))]"
+              : "md:right-0 md:top-12 md:w-[min(430px,calc(100vw-16px))]",
+          )}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Subatividades recentes</p>
@@ -149,12 +156,20 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
                   : "Nenhuma subatividade pendente"}
               </p>
             </div>
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <span className="hidden size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground md:flex">
               <ListTodo className="size-4" />
             </span>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+              aria-label="Fechar subatividades recentes"
+            >
+              <X className="size-4" />
+            </button>
           </div>
 
-          <div className="max-h-[min(520px,70vh)] overflow-y-auto p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 md:max-h-[min(520px,70vh)] md:flex-none">
             {recentItems.length === 0 ? (
               <div className="px-5 py-10 text-center">
                 <History className="mx-auto size-6 text-muted-foreground/55" />
@@ -213,7 +228,8 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
               Exibindo as {recentItems.length} subatividades mais recentes.
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   )

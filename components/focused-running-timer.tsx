@@ -6,22 +6,14 @@ import { ChevronDown, ChevronUp, ExternalLink, Pause, TimerReset } from "lucide-
 import { useStore } from "@/lib/store"
 import { formatHMS, formatHours } from "@/lib/project-utils"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 export function FocusedRunningTimer() {
   const router = useRouter()
-  const { activeSubId, findSub, stopTimer, preferences, chatMeetings, currentUserId } = useStore()
+  const { activeSubId, findSub, preferences, chatMeetings, currentUserId } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const [expanded, setExpanded] = React.useState(true)
-  const [confirmOpen, setConfirmOpen] = React.useState(false)
-  const [pausing, setPausing] = React.useState(false)
 
   React.useEffect(() => {
     if (activeSubId) setExpanded(true)
@@ -52,16 +44,6 @@ export function FocusedRunningTimer() {
     router.push(`/?${params.toString()}`)
   }
 
-  const pauseTimer = async () => {
-    if (pausing) return
-    setPausing(true)
-    try {
-      const paused = await stopTimer(found.sub.id)
-      if (paused) setConfirmOpen(false)
-    } finally {
-      setPausing(false)
-    }
-  }
 
   return (
     <>
@@ -137,7 +119,7 @@ export function FocusedRunningTimer() {
                   <ExternalLink className="size-3.5" />
                   Abrir
                 </Button>
-                <Button type="button" size="sm" className="flex-1" onClick={() => setConfirmOpen(true)}>
+                <Button type="button" size="sm" className="flex-1" onClick={() => { void requestPause(found.sub.id) }}>
                   <Pause className="size-3.5" />
                   Pausar
                 </Button>
@@ -161,7 +143,7 @@ export function FocusedRunningTimer() {
             </button>
             <button
               type="button"
-              onClick={() => setConfirmOpen(true)}
+              onClick={() => { void requestPause(found.sub.id) }}
               className="flex size-11 items-center justify-center border-l border-border text-primary transition-colors hover:bg-primary/10"
               title="Pausar cronômetro"
               aria-label="Pausar cronômetro"
@@ -172,25 +154,6 @@ export function FocusedRunningTimer() {
         )}
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={(open) => { if (!pausing) setConfirmOpen(open) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Pausar atividade?</DialogTitle>
-            <DialogDescription>
-              Deseja pausar <strong className="font-medium text-foreground">“{found.sub.title}”</strong>? O tempo registrado até agora será mantido e a subatividade ficará como pausada.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={pausing}>
-              Cancelar
-            </Button>
-            <Button type="button" loading={pausing} loadingText="Pausando..." onClick={pauseTimer}>
-              <Pause className="size-3.5" />
-              Pausar atividade
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

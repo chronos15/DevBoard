@@ -4,6 +4,7 @@ import * as React from "react"
 import { LoaderCircle, LockKeyhole, Pause, Play } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 export function TimerButton({
   subId,
@@ -12,7 +13,8 @@ export function TimerButton({
   subId: string
   size?: "sm" | "md"
 }) {
-  const { runningSubIds, startTimer, stopTimer, findSub, canManageSubactivity } = useStore()
+  const { runningSubIds, startTimer, findSub, canManageSubactivity } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const [loading, setLoading] = React.useState(false)
   const found = findSub(subId)
   const canManage = found ? canManageSubactivity(found.sub) : false
@@ -22,7 +24,7 @@ export function TimerButton({
     if (!canManage || loading) return
     setLoading(true)
     try {
-      await (running ? stopTimer(subId) : startTimer(subId))
+      await (running ? requestPause(subId) : startTimer(subId))
     } finally {
       setLoading(false)
     }

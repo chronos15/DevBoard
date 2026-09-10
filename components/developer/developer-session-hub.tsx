@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowRight, CheckCircle2, Clock3, Pause, Play, RotateCcw, Zap } from "lucide-react"
 import { useStore } from "@/lib/store"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { cn } from "@/lib/utils"
 
 function formatDuration(seconds: number) {
@@ -24,7 +25,8 @@ function sameLocalDay(value: string, now: Date) {
 
 export function DeveloperSessionHub() {
   const router = useRouter()
-  const { currentUserId, projects, workSessions, activeSubId, startTimer, stopTimer, findSub } = useStore()
+  const { currentUserId, projects, workSessions, activeSubId, startTimer, findSub } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const [now, setNow] = React.useState(() => new Date())
   const [pending, setPending] = React.useState(false)
 
@@ -116,7 +118,7 @@ export function DeveloperSessionHub() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <Link href={`/projetos/${active.project.id}#sub-${active.sub.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[0.68rem] font-semibold hover:bg-muted">Abrir tarefa<ArrowRight className="size-3" /></Link>
-                <button type="button" onClick={() => void stopTimer(active.sub.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-2.5 text-[0.68rem] font-semibold text-background"><Pause className="size-3" />Pausar</button>
+                <button type="button" onClick={() => void requestPause(active.sub.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-2.5 text-[0.68rem] font-semibold text-background"><Pause className="size-3" />Pausar</button>
               </div>
             </div>
           </div>

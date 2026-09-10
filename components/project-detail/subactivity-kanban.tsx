@@ -17,6 +17,7 @@ import { SubactivityStatusConfirmDialog } from "@/components/project-detail/suba
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { cn } from "@/lib/utils"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { serviceRequestReference } from "@/lib/service-requests"
 
 type KanbanItem = {
@@ -195,7 +196,6 @@ export function SubactivityKanban({
     setSubStatus,
     runningSubIds,
     startTimer,
-    stopTimer,
     canManageSubactivity,
     addSubactivityComment,
     addSubactivityAttachments,
@@ -203,6 +203,7 @@ export function SubactivityKanban({
     currentUserRole,
     serviceRequests,
   } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const [draggingId, setDraggingId] = React.useState<string | null>(null)
   const [overStatus, setOverStatus] = React.useState<Status | null>(null)
   const [pendingTransition, setPendingTransition] = React.useState<PendingTransition | null>(null)
@@ -239,7 +240,7 @@ export function SubactivityKanban({
   async function toggleTimer(subId: string, running: boolean) {
     setPendingIds((current) => new Set(current).add(subId))
     try {
-      return await (running ? stopTimer(subId) : startTimer(subId))
+      return await (running ? requestPause(subId) : startTimer(subId))
     } finally {
       setPendingIds((current) => {
         const next = new Set(current)
@@ -251,6 +252,10 @@ export function SubactivityKanban({
 
   function requestStatus(item: KanbanItem, nextStatus: Status) {
     if (item.sub.status === nextStatus) return
+    if (item.sub.status === "in-progress" && nextStatus === "paused") {
+      void requestPause(item.sub.id)
+      return
+    }
     const currentTerminal = item.sub.status === "done" || item.sub.status === "cancelled"
     if (item.linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"

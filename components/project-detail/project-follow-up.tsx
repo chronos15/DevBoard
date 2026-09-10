@@ -65,6 +65,7 @@ import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
@@ -756,9 +757,9 @@ export function ProjectFollowUp({
     addSubactivityAttachments,
     deleteActivity,
     startTimer,
-    stopTimer,
     setSubStatus,
   } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const supabase = React.useMemo(() => createClient(), [])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const messageRef = React.useRef<HTMLTextAreaElement>(null)
@@ -2086,6 +2087,10 @@ export function ProjectFollowUp({
 
   function requestSelectedStatus(nextStatus: Status) {
     if (!selectedSub || !selectedCanManage || statusSaving || nextStatus === selectedSub.status) return
+    if (selectedSub.status === "in-progress" && nextStatus === "paused") {
+      void requestPause(selectedSub.id)
+      return
+    }
     const currentTerminal = selectedSub.status === "done" || selectedSub.status === "cancelled"
     if (linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
@@ -2559,7 +2564,7 @@ export function ProjectFollowUp({
                         type="button"
                         variant={selectedRunning ? "outline" : "default"}
                         size="icon-sm"
-                        onClick={() => void (selectedRunning ? stopTimer(selectedSub.id) : startTimer(selectedSub.id))}
+                        onClick={() => void (selectedRunning ? requestPause(selectedSub.id) : startTimer(selectedSub.id))}
                         title={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
                         aria-label={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
                       >
@@ -2788,7 +2793,7 @@ export function ProjectFollowUp({
                                 <ActivityIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <div className="min-w-0 flex-1">
                                   <p className="font-medium text-foreground/80">{item.title}</p>
-                                  {item.description && <p className="mt-0.5 break-words leading-relaxed">{item.description}</p>}
+                                  {item.description && <p className="mt-0.5 max-w-full truncate leading-relaxed" title={item.description}>{item.description}</p>}
                                 </div>
                                 <time className="shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                                 <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 hover:bg-muted hover:text-primary sm:opacity-0 sm:group-hover/reaction:opacity-100" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>

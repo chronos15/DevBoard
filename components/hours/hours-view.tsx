@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
 import type { Member, Status, Subactivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -137,9 +138,9 @@ export function HoursView() {
     currentUserRole,
     runningSubIds,
     startTimer,
-    stopTimer,
     canManageSubactivity,
   } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const supabase = React.useMemo(() => createClient(), [])
   const isAdmin = currentUserRole === "admin"
   const defaultRange = React.useMemo(initialRange, [])
@@ -357,7 +358,7 @@ export function HoursView() {
     const sub = subactivityMap.get(row.subactivityId)
     if (!sub) return
     const running = runningSubIds.includes(sub.id)
-    if (running) await stopTimer(sub.id)
+    if (running) await requestPause(sub.id)
     else await startTimer(sub.id)
     await load()
   }

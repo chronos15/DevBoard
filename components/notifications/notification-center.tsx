@@ -16,6 +16,7 @@ import {
   PhoneIncoming,
   UserPlus,
   TriangleAlert,
+  X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import type { NotificationEntry } from "@/lib/types"
@@ -158,12 +159,19 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
       </button>
 
       {open && (
-        <div className={cn(
-          "absolute z-[150] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl",
-          popoverSide === "right"
-            ? "bottom-0 left-12 w-[min(380px,calc(100vw-84px))]"
-            : "right-0 top-12 w-[min(380px,calc(100vw-24px))]",
-        )}>
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[149] bg-black/35 backdrop-blur-[1px] md:hidden"
+            onClick={() => setOpen(false)}
+            aria-label="Fechar notificações"
+          />
+          <div className={cn(
+            "fixed inset-3 z-[150] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:absolute md:inset-auto md:block md:shadow-xl",
+            popoverSide === "right"
+              ? "md:bottom-0 md:left-12 md:w-[min(380px,calc(100vw-84px))]"
+              : "md:right-0 md:top-12 md:w-[min(380px,calc(100vw-24px))]",
+          )}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Notificações</p>
@@ -171,23 +179,33 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
                 {unreadCount ? `${unreadCount} não ${unreadCount === 1 ? "lida" : "lidas"}` : "Tudo em dia"}
               </p>
             </div>
-            {unreadCount > 0 && (
+            <div className="flex shrink-0 items-center gap-1">
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (markingAll) return
+                    setMarkingAll(true)
+                    void markAllNotificationsRead().finally(() => setMarkingAll(false))
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.68rem] font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  {markingAll ? <LoaderCircle className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}
+                  <span className="hidden min-[380px]:inline">{markingAll ? "Marcando..." : "Marcar lidas"}</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  if (markingAll) return
-                  setMarkingAll(true)
-                  void markAllNotificationsRead().finally(() => setMarkingAll(false))
-                }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.68rem] font-medium text-primary transition-colors hover:bg-primary/10"
+                onClick={() => setOpen(false)}
+                className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+                aria-label="Fechar notificações"
               >
-                {markingAll ? <LoaderCircle className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}
-                {markingAll ? "Marcando..." : "Marcar lidas"}
+                <X className="size-4" />
               </button>
-            )}
+            </div>
           </div>
 
-          <div className="max-h-[min(430px,65vh)] overflow-y-auto p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 md:max-h-[min(430px,65vh)] md:flex-none">
             {myNotifications.length === 0 ? (
               <div className="px-4 py-10 text-center">
                 <Bell className="mx-auto size-5 text-muted-foreground/60" />
@@ -234,7 +252,8 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
               })
             )}
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )

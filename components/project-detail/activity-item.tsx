@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { sub: Subactivity; projectId: string; linkedRequest?: ServiceRequest; focused?: boolean }) {
   const {
@@ -45,6 +46,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     setSubactivityAttachmentActive,
     currentUserRole,
   } = useStore()
+  const { requestPause } = usePauseSubactivity()
   const rowRef = React.useRef<HTMLDivElement>(null)
   const assignee = members.find((m) => m.id === sub.assigneeId)
   const [pendingStatus, setPendingStatus] = React.useState<Subactivity["status"] | null>(null)
@@ -76,6 +78,10 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
 
   function requestStatus(nextStatus: Subactivity["status"]) {
     if (nextStatus === sub.status || statusSaving) return
+    if (sub.status === "in-progress" && nextStatus === "paused") {
+      void requestPause(sub.id)
+      return
+    }
     if (linkedRequest && !terminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = sub.status === "done" || sub.status === "cancelled"

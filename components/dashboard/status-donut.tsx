@@ -20,7 +20,7 @@ export function StatusDonut() {
   ]
 
   return (
-    <div className="flex flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
+    <div className="flex min-h-[360px] flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8 xl:h-[420px] xl:min-h-0">
       <h2 className="text-base font-semibold">Status das tarefas</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">Distribuição de subatividades</p>
 

@@ -10,6 +10,7 @@ import {
   History,
   MessageSquare,
   ListTodo,
+  NotebookPen,
   Paperclip,
   PackageCheck,
   Pencil,
@@ -55,6 +56,9 @@ const iconByType: Record<ProjectLogType, typeof History> = {
   "checklist-completed": ListTodo,
   "checklist-reopened": ListTodo,
   "checklist-removed": ListTodo,
+  "activity-note-added": NotebookPen,
+  "activity-note-removed": NotebookPen,
+  "activity-note-promoted": NotebookPen,
 }
 
 function escapeHtml(value: string) {

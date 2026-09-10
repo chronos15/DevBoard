@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, EllipsisVertical, Info, Link2, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
+import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, EllipsisVertical, Info, Link2, LoaderCircle, LockKeyhole, MessageSquareText, NotebookPen, Paperclip, Trash2, X } from "lucide-react"
 import type { Activity, ServiceRequest, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
+import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
@@ -398,6 +399,7 @@ export function ActivityItem({
   const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false)
   const [infoOpen, setInfoOpen] = React.useState(false)
   const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
+  const [notesOpen, setNotesOpen] = React.useState(false)
   const [linkCopied, setLinkCopied] = React.useState(false)
   const copyFeedbackTimerRef = React.useRef<number | null>(null)
 
@@ -545,6 +547,15 @@ export function ActivityItem({
                   <Info className="size-4" />
                   <span>Informações</span>
                 </DropdownMenuItem>
+                {currentProject && (
+                  <DropdownMenuItem
+                    className="h-10 cursor-pointer gap-2 px-2.5"
+                    onClick={() => { setMobileActionsOpen(false); setNotesOpen(true) }}
+                  >
+                    <NotebookPen className="size-4" />
+                    <span>Anotações</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   className="h-10 cursor-pointer gap-2 px-2.5"
                   onClick={() => { setMobileActionsOpen(false); setAttachmentsOpen(true) }}
@@ -580,6 +591,12 @@ export function ActivityItem({
           <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
             <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-11 rounded-none" />
           </div>
+
+          {currentProject && (
+            <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+              <ActivityNotesDialog activity={activity} project={currentProject} compact triggerClassName="m-auto size-11 rounded-none" />
+            </div>
+          )}
 
           <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
             <AttachmentDialog
@@ -624,6 +641,16 @@ export function ActivityItem({
           onOpenChange={setInfoOpen}
           hideTrigger
         />
+
+        {currentProject && (
+          <ActivityNotesDialog
+            activity={activity}
+            project={currentProject}
+            open={notesOpen}
+            onOpenChange={setNotesOpen}
+            hideTrigger
+          />
+        )}
 
         <AttachmentDialog
           title={`Arquivos · ${activity.title}`}

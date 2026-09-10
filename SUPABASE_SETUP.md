@@ -904,3 +904,17 @@ A 072 remove o `NOT NULL` de `projects.due_date` e atualiza as RPCs `create_proj
 O frontend envia `NULL` quando a data não é informada. Agenda, cards e detalhes passam a ignorar projetos sem prazo ou exibir **Sem prazo**, evitando `Invalid Date`.
 
 O novo quadro **Equipe agora** não usa tabela nova. Tela atual, presença e última interação são publicados de forma efêmera no Supabase Realtime Presence e não são persistidos no banco.
+
+## Migration 073 — Anotações por atividade + Presence resiliente
+
+Depois da 072, execute:
+
+```text
+supabase/migrations/073_taskboard_activity_notes_and_realtime_presence.sql
+```
+
+A 073 cria `activity_notes`, com leitura para membros do workspace e escrita por RPC. Administradores e Desenvolvedores podem anotar atividades; integrantes de projeto mantêm a permissão estrutural já existente. Cada anotação pode ser transformada em uma subatividade em **Backlog**, escolhendo responsável e estimativa. A anotação original permanece registrada e passa a apontar para a subatividade criada.
+
+A estrutura antiga `subactivity_checklist_items` é mantida para compatibilidade, mas a interface e os novos logs passam a usar o nome **Anotações**. Nenhum dado histórico é apagado.
+
+O conserto de **Equipe agora** é de frontend/Realtime: o cliente recria automaticamente o canal Presence após timeout, fechamento, suspensão do PWA ou troca de rede e não depende mais exclusivamente de um único evento `sync` para sair de “Atualizando status…”.

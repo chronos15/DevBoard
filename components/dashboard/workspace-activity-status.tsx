@@ -79,7 +79,7 @@ export function WorkspaceActivityStatus() {
   const runningCount = rows.filter((row) => row.running).length
 
   return (
-    <section className="flex min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:max-h-[430px]">
+    <section className="flex min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:h-[420px] xl:min-h-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -103,7 +103,7 @@ export function WorkspaceActivityStatus() {
       <div className="mt-4 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
         {rows.map(({ member, presence, work, running, idle }) => {
           const screen = presence?.screenLabel || "TaskBoard"
-          const online = presenceReady && Boolean(presence?.online)
+          const online = Boolean(presence?.online)
           const noTasks = work.length === 0
           const href = running
             ? followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })
@@ -142,7 +142,7 @@ export function WorkspaceActivityStatus() {
                       {presence?.lastActiveAt ? ` · interação há ${shortElapsed(presence.lastActiveAt, now)}` : ""}
                     </p>
                   </>
-                ) : !presenceReady ? (
+                ) : !presenceReady && !presence ? (
                   <>
                     <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Atualizando status…</p>
                     <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">Sincronizando Presence do workspace</p>

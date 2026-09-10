@@ -85,7 +85,7 @@ export function HoursAreaChart() {
   const total = React.useMemo(() => data.reduce((sum, item) => sum + item.horas, 0), [data])
 
   return (
-    <div className="flex flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8">
+    <div className="flex min-h-[360px] flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8 xl:h-[420px] xl:min-h-0">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">Horas registradas</h2>

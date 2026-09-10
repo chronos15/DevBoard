@@ -77,6 +77,7 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/project-detail/follow-up-search-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
+import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
@@ -2280,7 +2281,7 @@ export function ProjectFollowUp({
       return
     }
     if ((nextStatus === "waiting-aqs" || nextStatus === "done") && checklistPendingCount > 0) {
-      setChecklistError(`Finalize ${checklistPendingCount === 1 ? "o item pendente" : `os ${checklistPendingCount} itens pendentes`} antes de avançar a subatividade.`)
+      setChecklistError(`Finalize ${checklistPendingCount === 1 ? "a anotação pendente" : `as ${checklistPendingCount} anotações pendentes`} antes de avançar a subatividade.`)
       setChecklistOpen(true)
       return
     }
@@ -2377,7 +2378,7 @@ export function ProjectFollowUp({
                   onClick={() => toggleActivity(activity.id)}
                   className={cn(
                     "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-2 pl-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                    canManageStructure ? "pr-[5.75rem]" : "pr-9",
+                    canManageStructure ? "pr-[7.4rem]" : "pr-[4.8rem]",
                   )}
                 >
                   {expanded ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
@@ -2404,6 +2405,7 @@ export function ProjectFollowUp({
                     label={`Copiar link da atividade ${activity.title}`}
                     className="size-7"
                   />
+                  <ActivityNotesDialog activity={activity} project={project} compact />
                   {canManageStructure && (
                     <>
                       <FollowUpAddSubactivityDialog projectId={project.id} activityId={activity.id} />
@@ -2676,12 +2678,20 @@ export function ProjectFollowUp({
                     <div className="hidden min-w-0 items-center gap-0.5 lg:flex">
                       <span className="min-w-0 truncate text-[0.67rem] text-muted-foreground">{selectedActivity.title}</span>
                       {!discordEmbedded && (
-                        <ActivityInfoDialog
-                          activity={selectedActivity}
-                          project={project}
-                          compact
-                          triggerClassName="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-                        />
+                        <>
+                          <ActivityInfoDialog
+                            activity={selectedActivity}
+                            project={project}
+                            compact
+                            triggerClassName="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                          />
+                          <ActivityNotesDialog
+                            activity={selectedActivity}
+                            project={project}
+                            compact
+                            triggerClassName="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                          />
+                        </>
                       )}
                     </div>
                     <ChevronRight className="hidden size-3 shrink-0 text-muted-foreground/60 lg:block" />
@@ -2727,8 +2737,8 @@ export function ProjectFollowUp({
                   size="icon-sm"
                   className="relative"
                   onClick={() => setChecklistOpen(true)}
-                  title="Anotações e checklist"
-                  aria-label="Abrir anotações e checklist"
+                  title="Anotações"
+                  aria-label="Abrir anotações"
                 >
                   <ListChecks className="size-4" />
                   {checklistPendingCount > 0 && (
@@ -3065,8 +3075,8 @@ export function ProjectFollowUp({
                                   type="button"
                                   onClick={() => checklistLog ? setChecklistOpen(true) : setLogDetailItem(item)}
                                   className="min-w-0 flex-1 text-left"
-                                  title={checklistLog ? "Abrir checklist da subatividade" : "Ver detalhes do registro"}
-                                  aria-label={checklistLog ? `Abrir checklist da subatividade: ${item.title}` : `Ver detalhes do registro: ${item.title}`}
+                                  title={checklistLog ? "Abrir anotações da subatividade" : "Ver detalhes do registro"}
+                                  aria-label={checklistLog ? `Abrir anotações da subatividade: ${item.title}` : `Ver detalhes do registro: ${item.title}`}
                                 >
                                   <div className="flex min-w-0 items-center gap-2">
                                     <p className="tb-chat-title min-w-0 truncate font-medium text-foreground/80">{item.title}</p>
@@ -3622,7 +3632,7 @@ export function ProjectFollowUp({
             <div className="flex min-w-0 items-start gap-3 pr-8">
               <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ListChecks className="size-5" /></span>
               <div className="min-w-0 flex-1">
-                <DialogTitle className="text-base leading-snug sm:text-lg">Anotações e checklist</DialogTitle>
+                <DialogTitle className="text-base leading-snug sm:text-lg">Anotações</DialogTitle>
                 <DialogDescription className="mt-1.5 line-clamp-2 text-xs sm:text-sm">{selectedSub?.title ?? "Subatividade"}</DialogDescription>
               </div>
             </div>
@@ -3662,7 +3672,7 @@ export function ProjectFollowUp({
                   placeholder="Adicionar anotação ou item a fazer..."
                   className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
                 />
-                <Button type="button" size="icon" className="mt-0.5 shrink-0" disabled={!checklistDraft.trim() || checklistSavingId === "new"} onClick={() => void addChecklistItem()} title="Adicionar item" aria-label="Adicionar item">
+                <Button type="button" size="icon" className="mt-0.5 shrink-0" disabled={!checklistDraft.trim() || checklistSavingId === "new"} onClick={() => void addChecklistItem()} title="Adicionar anotação" aria-label="Adicionar anotação">
                   {checklistSavingId === "new" ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
                 </Button>
               </div>
@@ -3671,7 +3681,7 @@ export function ProjectFollowUp({
             {(checklistLocked || selectedDeveloperObserver) && (
               <div className="mb-5 flex items-start gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
                 {selectedDeveloperObserver && <Eye className="mt-0.5 size-3.5 shrink-0" />}
-                <span>{selectedDeveloperObserver ? "Você está visualizando esta subatividade como observador. O checklist pode ser consultado, mas não alterado." : "O checklist está em modo somente leitura enquanto a subatividade está em análise ou finalizada."}</span>
+                <span>{selectedDeveloperObserver ? "Você está visualizando esta subatividade como observador. As anotações podem ser consultadas, mas não alteradas." : "As anotações estão em modo somente leitura enquanto a subatividade está em análise ou finalizada."}</span>
               </div>
             )}
 
@@ -3683,7 +3693,7 @@ export function ProjectFollowUp({
               <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 text-center">
                 <ListChecks className="size-7 text-muted-foreground/45" />
                 <p className="mt-3 text-sm font-medium">Nenhuma anotação ainda</p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">Crie pequenos itens de verificação para acompanhar o que falta antes de concluir ou enviar a subatividade para a AQS.</p>
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">Registre ideias, lembretes e itens a fazer. As anotações pendentes continuam funcionando como uma proteção antes de concluir ou enviar a subatividade para AQS.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -3724,9 +3734,9 @@ export function ProjectFollowUp({
             {checklistItems.length > 0 && !checklistLocked && selectedCanManage && (
               <div className="mb-3">
                 {checklistAllDone ? (
-                  <div className="flex items-center gap-2 rounded-xl bg-success/8 px-3 py-2 text-xs font-medium text-success"><Check className="size-4" /> Todos os itens foram finalizados. A subatividade já pode avançar.</div>
+                  <div className="flex items-center gap-2 rounded-xl bg-success/8 px-3 py-2 text-xs font-medium text-success"><Check className="size-4" /> Todas as anotações pendentes foram finalizadas. A subatividade já pode avançar.</div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Finalize os {checklistPendingCount} item{checklistPendingCount === 1 ? "" : "s"} pendente{checklistPendingCount === 1 ? "" : "s"} para liberar a conclusão.</p>
+                  <p className="text-xs text-muted-foreground">{checklistPendingCount === 1 ? "Finalize a anotação pendente para liberar a conclusão." : `Finalize as ${checklistPendingCount} anotações pendentes para liberar a conclusão.`}</p>
                 )}
               </div>
             )}

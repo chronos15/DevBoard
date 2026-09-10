@@ -185,6 +185,9 @@ export type ProjectLogType =
   | "checklist-completed"
   | "checklist-reopened"
   | "checklist-removed"
+  | "activity-note-added"
+  | "activity-note-removed"
+  | "activity-note-promoted"
 
 export type ProjectLogEntry = {
   id: string

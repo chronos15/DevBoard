@@ -979,19 +979,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const sessionId = presenceSessionId()
     const topic = `devboard-presence:${workspaceId}`
-    const channel = supabase.channel(topic, {
-      config: {
-        private: true,
-        presence: { key: `${currentUserId}:${sessionId}` },
-      },
-    })
-
-    presenceChannelRef.current = channel
+    let channel: ReturnType<typeof supabase.channel> | null = null
     let disposed = false
     let subscribed = false
+    let reconnectTimer: number | null = null
+    let connectWatchdog: number | null = null
+    let reconnectAttempt = 0
     let onlineSince = new Date().toISOString()
-    let syncingOnlineSince = false
     let lastPublishAt = 0
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    const clearWatchdog = () => {
+      if (connectWatchdog !== null) window.clearTimeout(connectWatchdog)
+      connectWatchdog = null
+    }
 
     const currentPayload = (): PresencePayload => {
       const location = currentPresenceLocation()
@@ -1007,109 +1011,178 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const publishPresence = (force = false) => {
-      if (disposed || !subscribed) return
-      const now = Date.now()
-      if (!force && now - lastPublishAt < 5000) return
-      lastPublishAt = now
-      void channel.track(currentPayload()).then((tracked) => {
-        if (tracked !== "ok") console.warn("[TaskBoard/Presence] Não foi possível atualizar o contexto do usuário:", tracked)
-      })
-    }
-
-    const markActive = () => {
-      presenceLastActiveAtRef.current = new Date().toISOString()
-      publishPresence(false)
-    }
-
-    const syncPresence = () => {
-      if (disposed) return
-      const state = channel.presenceState() as unknown as Record<string, PresencePayload[]>
+    const syncPresence = (source = channel) => {
+      if (disposed || !source || source !== channel) return
+      const state = source.presenceState() as unknown as Record<string, PresencePayload[]>
       const next = mapPresenceState(state)
       setMemberPresence(next)
       setPresenceReady(true)
 
       // Mantém o início do período online estável entre várias abas/dispositivos.
-      // Uma nova conexão herda o menor online_since já publicado pelo mesmo usuário.
       const mine = next[currentUserId]
-      if (mine?.onlineSince && mine.onlineSince < onlineSince && !syncingOnlineSince) {
-        onlineSince = mine.onlineSince
-        syncingOnlineSince = true
-        void channel.track(currentPayload()).finally(() => {
-          syncingOnlineSince = false
+      if (mine?.onlineSince && mine.onlineSince < onlineSince) onlineSince = mine.onlineSince
+    }
+
+    const detachChannel = (target: ReturnType<typeof supabase.channel> | null) => {
+      if (!target) return
+      if (presenceChannelRef.current === target) presenceChannelRef.current = null
+      void target.untrack().catch(() => undefined).finally(() => {
+        void supabase.removeChannel(target)
+      })
+    }
+
+    const connect = () => {
+      if (disposed) return
+      clearWatchdog()
+
+      const previous = channel
+      if (previous) detachChannel(previous)
+
+      const next = supabase.channel(topic, {
+        config: {
+          private: true,
+          presence: { key: `${currentUserId}:${sessionId}` },
+        },
+      })
+      channel = next
+      presenceChannelRef.current = next
+      subscribed = false
+
+      const requestReconnect = () => {
+        if (disposed || next !== channel || reconnectTimer !== null) return
+        subscribed = false
+        setPresenceReady(false)
+        clearWatchdog()
+        const delay = Math.min(10000, 1000 * Math.max(1, 2 ** reconnectAttempt))
+        reconnectAttempt = Math.min(reconnectAttempt + 1, 4)
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null
+          if (!disposed && next === channel) connect()
+        }, delay)
+      }
+
+      next
+        .on("presence", { event: "sync" }, () => syncPresence(next))
+        .on("presence", { event: "join" }, () => syncPresence(next))
+        .on("presence", { event: "leave" }, () => syncPresence(next))
+        .subscribe(async (status) => {
+          if (disposed || next !== channel) return
+
+          if (status === "SUBSCRIBED") {
+            subscribed = true
+            reconnectAttempt = 0
+            clearReconnectTimer()
+            clearWatchdog()
+
+            const existing = mapPresenceState(
+              next.presenceState() as unknown as Record<string, PresencePayload[]>,
+            )[currentUserId]
+            if (existing?.onlineSince && existing.onlineSince < onlineSince) onlineSince = existing.onlineSince
+
+            try {
+              const tracked = await next.track(currentPayload())
+              lastPublishAt = Date.now()
+              if (tracked !== "ok") {
+                console.warn("[TaskBoard/Presence] Não foi possível publicar o status online:", tracked)
+                requestReconnect()
+                return
+              }
+              // Não dependemos exclusivamente de um evento `sync`. Em algumas
+              // reconexões o Presence já está disponível localmente e o evento
+              // pode chegar atrasado, deixando o painel preso em "Atualizando".
+              syncPresence(next)
+              window.setTimeout(() => syncPresence(next), 250)
+            } catch (error) {
+              console.warn("[TaskBoard/Presence] Falha ao publicar Presence; reconectando.", error)
+              requestReconnect()
+            }
+            return
+          }
+
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            requestReconnect()
+          }
         })
+
+      // Se a assinatura não concluir, recria o canal automaticamente. Antes a
+      // tela só se recuperava com F5 quando o canal ficava fechado/timeout.
+      connectWatchdog = window.setTimeout(() => {
+        if (!disposed && next === channel && !subscribed) requestReconnect()
+      }, 12000)
+    }
+
+    const publishPresence = async (force = false) => {
+      const activeChannel = channel
+      if (disposed || !subscribed || !activeChannel) return
+      const now = Date.now()
+      if (!force && now - lastPublishAt < 5000) return
+      lastPublishAt = now
+      try {
+        const tracked = await activeChannel.track(currentPayload())
+        if (tracked !== "ok") {
+          console.warn("[TaskBoard/Presence] Não foi possível atualizar o contexto do usuário:", tracked)
+          return
+        }
+        syncPresence(activeChannel)
+      } catch (error) {
+        console.warn("[TaskBoard/Presence] Falha temporária ao atualizar o contexto:", error)
       }
     }
 
+    const markActive = () => {
+      presenceLastActiveAtRef.current = new Date().toISOString()
+      void publishPresence(false)
+    }
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") presenceLastActiveAtRef.current = new Date().toISOString()
-      publishPresence(true)
+      void publishPresence(true)
     }
     const handleFocus = () => {
       presenceLastActiveAtRef.current = new Date().toISOString()
-      publishPresence(true)
+      void publishPresence(true)
     }
     const handleRouteRefresh = () => {
       presenceLastActiveAtRef.current = new Date().toISOString()
-      publishPresence(true)
+      void publishPresence(true)
     }
 
-    channel
-      .on("presence", { event: "sync" }, syncPresence)
-      .on("presence", { event: "join" }, syncPresence)
-      .on("presence", { event: "leave" }, syncPresence)
-      .subscribe(async (status) => {
-        if (disposed) return
+    connect()
+    const heartbeat = window.setInterval(() => {
+      if (!subscribed && reconnectTimer === null) {
+        // Fallback adicional para abas que permaneceram abertas após troca de
+        // rede/suspensão do PWA sem receber um status terminal do canal.
+        connect()
+        return
+      }
+      void publishPresence(true)
+    }, 15000)
 
-        if (status === "SUBSCRIBED") {
-          subscribed = true
-          const existing = mapPresenceState(
-            channel.presenceState() as unknown as Record<string, PresencePayload[]>,
-          )[currentUserId]
-          if (existing?.onlineSince && existing.onlineSince < onlineSince) onlineSince = existing.onlineSince
-
-          const tracked = await channel.track(currentPayload())
-          lastPublishAt = Date.now()
-          if (tracked !== "ok") {
-            console.warn("[TaskBoard/Presence] Não foi possível publicar o status online:", tracked)
-          }
-          return
-        }
-
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          subscribed = false
-          setPresenceReady(false)
-          setMemberPresence({})
-        }
-      })
-
-    // Publica a tela atual e a última interação sem gravar nada no banco. O
-    // heartbeat é deliberadamente espaçado para não transformar Presence em
-    // telemetria de alta frequência.
-    const heartbeat = window.setInterval(() => publishPresence(true), 20000)
     window.addEventListener("pointerdown", markActive, { passive: true })
     window.addEventListener("keydown", markActive)
     window.addEventListener("wheel", markActive, { passive: true })
     window.addEventListener("focus", handleFocus)
+    window.addEventListener("online", handleFocus)
+    window.addEventListener("pageshow", handleFocus)
     window.addEventListener("taskboard:presence-refresh", handleRouteRefresh)
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       disposed = true
       subscribed = false
+      clearReconnectTimer()
+      clearWatchdog()
       window.clearInterval(heartbeat)
       window.removeEventListener("pointerdown", markActive)
       window.removeEventListener("keydown", markActive)
       window.removeEventListener("wheel", markActive)
       window.removeEventListener("focus", handleFocus)
+      window.removeEventListener("online", handleFocus)
+      window.removeEventListener("pageshow", handleFocus)
       window.removeEventListener("taskboard:presence-refresh", handleRouteRefresh)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
-      setPresenceReady(false)
-      setMemberPresence({})
-      if (presenceChannelRef.current === channel) presenceChannelRef.current = null
-      void channel.untrack().finally(() => {
-        void supabase.removeChannel(channel)
-      })
+      const current = channel
+      channel = null
+      if (current) detachChannel(current)
     }
   }, [currentUserId, supabase, workspaceId])
 

@@ -49,6 +49,7 @@ import { RequestDetail } from "@/components/requests/request-detail"
 import { NewServiceRequestDialog } from "@/components/requests/request-create-dialog"
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
+import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { ChatView, type ChatSlashCommand } from "@/components/chat/chat-view"
 import { MemberAvatar } from "@/components/member-avatar"
 import { RecentSubactivities } from "@/components/recent-subactivities"
@@ -840,7 +841,7 @@ export function DiscordWorkspace() {
                         onClick={toggleActivity}
                         className={cn(
                           "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-2 pl-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                          canManageSelectedProject || canCreateSubactivityInSelectedProject ? "pr-[5.4rem]" : "pr-9",
+                          canManageSelectedProject || canCreateSubactivityInSelectedProject ? "pr-[7.2rem]" : "pr-[4.8rem]",
                         )}
                       >
                         {isOpen ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
@@ -851,6 +852,7 @@ export function DiscordWorkspace() {
                       </button>
                       <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center rounded-md bg-muted/90 opacity-100 shadow-sm ring-1 ring-border/60 backdrop-blur-sm transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-hover/activity:pointer-events-auto sm:group-hover/activity:opacity-100 sm:group-focus-within/activity:pointer-events-auto sm:group-focus-within/activity:opacity-100">
                         <ActivityInfoDialog activity={activity} project={selectedProject} compact />
+                        <ActivityNotesDialog activity={activity} project={selectedProject} compact />
                         {canCreateSubactivityInSelectedProject && <FollowUpAddSubactivityDialog projectId={selectedProject.id} activityId={activity.id} />}
                         {canManageSelectedProject && activity.subactivities.length === 0 && (
                           <Button type="button" variant="ghost" size="icon-xs" disabled={deletingActivityId === activity.id} onClick={() => void (async () => { if (!window.confirm(`Excluir a atividade “${activity.title}”?`)) return; setDeletingActivityId(activity.id); try { await deleteActivity(selectedProject.id, activity.id) } finally { setDeletingActivityId(null) } })()} title="Excluir atividade vazia" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive">

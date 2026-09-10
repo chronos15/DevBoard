@@ -233,7 +233,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </div>
         <div className="flex items-center justify-between">
           <dt className="text-muted-foreground">Entrega</dt>
-          <dd className="font-semibold">{new Date(project.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })}</dd>
+          <dd className="font-semibold">{project.dueDate ? new Date(project.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long" }) : "Sem prazo definido"}</dd>
         </div>
       </dl>
     </div>

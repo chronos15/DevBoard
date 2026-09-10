@@ -183,7 +183,9 @@ export const priorityMeta: Record<
   high: { label: "Alta", className: "bg-primary/12 text-primary" },
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso?: string | null): string {
+  if (!iso) return "Sem prazo"
   const d = new Date(iso + "T00:00:00")
+  if (!Number.isFinite(d.getTime())) return "Sem prazo"
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
 }

@@ -148,9 +148,69 @@ function CreateProjectServerButton({ expanded, onClick }: { expanded?: boolean; 
   )
 }
 
-function ProjectServerButton({ project, active, unread, expanded, onClick }: { project: Project; active: boolean; unread: "mention" | "unread" | null; expanded?: boolean; onClick: () => void }) {
+function ProjectServerButton({
+  project,
+  active,
+  unread,
+  expanded,
+  onClick,
+  onEdit,
+}: {
+  project: Project
+  active: boolean
+  unread: "mention" | "unread" | null
+  expanded?: boolean
+  onClick: () => void
+  onEdit?: () => void
+}) {
+  const holdTimerRef = React.useRef<number | null>(null)
+  const longPressedRef = React.useRef(false)
+
+  const clearHold = React.useCallback(() => {
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current)
+    holdTimerRef.current = null
+  }, [])
+
+  React.useEffect(() => clearHold, [clearHold])
+
+  function startHold(event: React.PointerEvent<HTMLButtonElement>) {
+    if (!onEdit || event.button !== 0) return
+    longPressedRef.current = false
+    clearHold()
+    holdTimerRef.current = window.setTimeout(() => {
+      longPressedRef.current = true
+      onEdit()
+      if (navigator.vibrate) navigator.vibrate(25)
+    }, 620)
+  }
+
+  function finishClick() {
+    clearHold()
+    if (longPressedRef.current) {
+      longPressedRef.current = false
+      return
+    }
+    onClick()
+  }
+
   return (
-    <button type="button" onClick={onClick} title={project.name} className={cn("group relative flex h-12 w-full items-center transition-colors", expanded ? "justify-start gap-2 px-2" : "justify-center")}>
+    <button
+      type="button"
+      onClick={finishClick}
+      onPointerDown={startHold}
+      onPointerUp={clearHold}
+      onPointerCancel={clearHold}
+      onPointerLeave={clearHold}
+      onContextMenu={(event) => {
+        if (!onEdit) return
+        event.preventDefault()
+        clearHold()
+        longPressedRef.current = true
+        onEdit()
+      }}
+      title={onEdit ? `${project.name} · segure para editar` : project.name}
+      className={cn("group relative flex h-12 w-full touch-manipulation items-center transition-colors", expanded ? "justify-start gap-2 px-2" : "justify-center")}
+    >
       <span className={cn("absolute left-0 w-1 rounded-r-full bg-foreground transition-all", active ? "h-10" : unread ? "h-2" : "h-0 group-hover:h-5")} />
       <span className={cn(
         "relative flex size-11 shrink-0 items-center justify-center overflow-visible rounded-[22px] bg-muted text-muted-foreground ring-1 ring-border transition-all duration-150 group-hover:rounded-[15px] group-hover:bg-primary/15 group-hover:text-primary",
@@ -271,6 +331,7 @@ export function DiscordWorkspace() {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set())
   const [createRequestOpen, setCreateRequestOpen] = React.useState(false)
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false)
+  const [editProjectId, setEditProjectId] = React.useState<string | null>(null)
   const [mobileChannelsOpen, setMobileChannelsOpen] = React.useState(false)
   const [deletingActivityId, setDeletingActivityId] = React.useState<string | null>(null)
   const [workspaceChannels, setWorkspaceChannels] = React.useState<WorkspaceChannel[]>([])
@@ -373,6 +434,10 @@ export function DiscordWorkspace() {
     const params = new URLSearchParams()
     Object.entries(next).forEach(([key, value]) => { if (value) params.set(key, value) })
     router.replace(`/?${params.toString()}`, { scroll: false })
+    // No Modo Resumido a navegação muda principalmente a query string.
+    // Publica a nova tela no Presence logo após o router aplicar a URL, sem
+    // esperar o heartbeat global do workspace.
+    window.setTimeout(() => window.dispatchEvent(new Event("taskboard:presence-refresh")), 80)
   }, [router])
 
   const loadWorkspaceChannels = React.useCallback(async () => {
@@ -983,7 +1048,10 @@ export function DiscordWorkspace() {
             {(currentUserRole === "admin" || currentUserRole === "developer") && (
               <CreateProjectServerButton expanded={serverRailExpanded} onClick={() => setCreateProjectOpen(true)} />
             )}
-            {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
+            {accessibleProjects.map((project) => {
+              const canEdit = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
+              return <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} onEdit={canEdit ? () => { setEditProjectId(project.id); collapseServerRailOnSmallScreen() } : undefined} />
+            })}
           </div>
 
           <div className={cn("mx-auto my-2 h-px bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
@@ -1033,7 +1101,7 @@ export function DiscordWorkspace() {
       {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[90] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside className="absolute inset-y-0 left-0 flex w-[min(88vw,320px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
 
       <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
-        <DialogContent className="max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[1120px] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-h-[calc(100dvh-16px)] w-[calc(100vw-16px)] max-w-[1180px] overflow-x-hidden overflow-y-auto p-4 sm:w-[calc(100vw-32px)] sm:max-w-[1180px] sm:p-6">
           <DialogHeader className="sr-only">
             <DialogTitle>Criar projeto</DialogTitle>
             <DialogDescription>Cadastre um novo projeto sem sair do Modo Resumido.</DialogDescription>
@@ -1048,6 +1116,28 @@ export function DiscordWorkspace() {
               collapseServerRailOnSmallScreen()
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editProjectId)} onOpenChange={(open) => { if (!open) setEditProjectId(null) }}>
+        <DialogContent className="max-h-[calc(100dvh-16px)] w-[calc(100vw-16px)] max-w-[1180px] overflow-x-hidden overflow-y-auto p-4 sm:w-[calc(100vw-32px)] sm:max-w-[1180px] sm:p-6">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Editar projeto</DialogTitle>
+            <DialogDescription>Edite o projeto sem sair do Modo Resumido.</DialogDescription>
+          </DialogHeader>
+          {editProjectId && (
+            <ProjectForm
+              embedded
+              projectId={editProjectId}
+              onCancel={() => setEditProjectId(null)}
+              onSaved={(projectId) => {
+                setEditProjectId(null)
+                setChannelSearch("")
+                const project = projects.find((item) => item.id === projectId)
+                if (project) selectProject(project)
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

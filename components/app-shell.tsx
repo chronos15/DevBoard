@@ -246,6 +246,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     && !pathname.startsWith("/config")
     && !pathname.startsWith("/compartilhar")
   const fullHeightWorkspace = focusedHome || followUpPage || myTasksPage || requestsPage || analysisPage
+  const dashboardPage = !focusedMode && pathname === "/"
 
   // A preferência de interface vem do banco. Enquanto o snapshot inicial ainda
   // não terminou, não renderizamos o chrome do modo Completo usando o valor
@@ -295,7 +296,9 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
           "min-w-0 max-w-full flex-1",
           fullHeightWorkspace
             ? "min-h-0 overflow-hidden p-0"
-            : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
+            : dashboardPage
+              ? "px-3 py-5 sm:py-6"
+              : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
           focusedMode && pathname.startsWith("/config") && "pt-16 sm:pt-16",
         )}>
           {hydrated ? (canAccessPath(currentUserRole, pathname) ? children : <AccessDenied role={currentUserRole} />) : <AppLoadingSkeleton />}

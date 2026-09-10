@@ -140,7 +140,7 @@ export function AgendaView() {
 
   const initialDate = React.useMemo(() => {
     const nextDeadline = [...projects]
-      .filter((project) => project.dueDate >= toKey(today))
+      .filter((project) => Boolean(project.dueDate) && project.dueDate >= toKey(today))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate
 
     return nextDeadline ? fromKey(nextDeadline) : today
@@ -152,6 +152,7 @@ export function AgendaView() {
   const byDate = React.useMemo(() => {
     const map = new Map<string, Project[]>()
     for (const project of projects) {
+      if (!project.dueDate) continue
       const list = map.get(project.dueDate) ?? []
       list.push(project)
       list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
@@ -163,7 +164,7 @@ export function AgendaView() {
   const upcoming = React.useMemo(
     () =>
       [...projects]
-        .filter((project) => project.dueDate >= toKey(today))
+        .filter((project) => Boolean(project.dueDate) && project.dueDate >= toKey(today))
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
         .slice(0, 8),
     [projects, today],
@@ -171,7 +172,7 @@ export function AgendaView() {
 
   const nextSevenDays = React.useMemo(() => {
     const end = toKey(addDays(today, 6))
-    return projects.filter((project) => project.dueDate >= toKey(today) && project.dueDate <= end).length
+    return projects.filter((project) => Boolean(project.dueDate) && project.dueDate >= toKey(today) && project.dueDate <= end).length
   }, [projects, today])
 
   const thisMonth = React.useMemo(() => {

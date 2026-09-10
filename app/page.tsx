@@ -19,6 +19,7 @@ import { StatusDonut } from "@/components/dashboard/status-donut"
 import { ProjectsProgress } from "@/components/dashboard/projects-progress"
 import { FocusPanel } from "@/components/dashboard/focus-panel"
 import { HoursByProject } from "@/components/dashboard/hours-by-project"
+import { WorkspaceActivityStatus } from "@/components/dashboard/workspace-activity-status"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
@@ -63,7 +64,7 @@ function AqsDashboard({ firstName }: { firstName: string }) {
   const active = visibleReviews.filter((item) => item.status === "awaiting" || item.status === "evaluating").slice(0, 6)
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <div className="flex w-full max-w-none flex-col gap-6">
       <PageHeading
         eyebrow="Qualidade"
         title={firstName ? `Olá, ${firstName}` : "Painel AQS"}
@@ -114,7 +115,7 @@ function RequestsDashboard({ firstName }: { firstName: string }) {
   const completed = visibleRequests.filter((request) => request.status === "completed").length
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <div className="flex w-full max-w-none flex-col gap-6">
       <PageHeading
         eyebrow={currentUserRole === "support" ? "Suporte" : "Workspace"}
         title={firstName ? `Olá, ${firstName}` : "Painel"}
@@ -158,7 +159,7 @@ export default function DashboardPage() {
   if (currentUserRole === "support" || currentUserRole === "member") return <RequestsDashboard firstName={firstName} />
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <div className="flex w-full max-w-none flex-col gap-6">
       <PageHeading
         eyebrow="Painel geral"
         title={firstName ? `Olá, ${firstName}` : "Painel"}
@@ -173,12 +174,13 @@ export default function DashboardPage() {
         }
       />
       <KpiCards />
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2"><HoursAreaChart /></div>
-        <StatusDonut />
-        <ProjectsProgress />
-        <FocusPanel />
-        <HoursByProject />
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-5"><HoursAreaChart /></div>
+        <div className="min-w-0 xl:col-span-4"><WorkspaceActivityStatus /></div>
+        <div className="min-w-0 xl:col-span-3"><StatusDonut /></div>
+        <div className="min-w-0 xl:col-span-4"><ProjectsProgress /></div>
+        <div className="min-w-0 xl:col-span-4"><FocusPanel /></div>
+        <div className="min-w-0 xl:col-span-4"><HoursByProject /></div>
       </div>
     </div>
   )

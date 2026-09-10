@@ -263,7 +263,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       description: row.description,
       tag: row.tag,
       priority: row.priority,
-      dueDate: row.due_date,
+      dueDate: row.due_date ?? "",
       memberIds: (row.project_members ?? []).map((item: any) => item.user_id),
       version: row.version ?? undefined,
       build: row.build ?? undefined,

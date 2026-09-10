@@ -454,6 +454,7 @@ export function DeveloperPanel() {
     const dueProjects = Array.from(new Map(assignedItems
       .filter((item) => !["done", "cancelled"].includes(item.sub.status))
       .map((item) => [item.project.id, item.project])).values())
+      .filter((project) => Boolean(project.dueDate))
       .map((project) => {
         const due = new Date(`${project.dueDate}T12:00:00`)
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12)

@@ -50,6 +50,16 @@ export type MemberPresence = {
   online: boolean
   onlineSince?: string
   connections: number
+  /** Última interação relevante publicada por alguma sessão/aba do usuário. */
+  lastActiveAt?: string
+  /** Última atualização do payload de Presence escolhido como sessão principal. */
+  updatedAt?: string
+  /** Caminho atual publicado pelo cliente (sem dados sensíveis do conteúdo). */
+  pagePath?: string
+  /** Nome amigável da tela atual para o painel do workspace. */
+  screenLabel?: string
+  /** Indica se a sessão escolhida estava visível no momento da publicação. */
+  visible?: boolean
 }
 
 export type FollowUpReplyTargetKind = "comment" | "attachment" | "log" | "session"

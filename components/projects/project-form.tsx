@@ -186,7 +186,7 @@ export function ProjectForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !dueDate || saving) return
+    if (!name.trim() || saving) return
     if (useCustomImage && !iconImageFile && (!project?.iconImagePath || removeExistingImage)) {
       setIconImageError("Selecione uma nova imagem para usar como ícone do projeto.")
       return
@@ -286,8 +286,9 @@ export function ProjectForm({
                   <option value="high">Alta</option>
                 </select>
               </Field>
-              <Field label="Data de entrega" required>
-                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} required />
+              <Field label="Data de entrega">
+                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
+                <span className="text-[0.65rem] leading-relaxed text-muted-foreground">Opcional. Você pode definir ou alterar o prazo depois.</span>
               </Field>
             </div>
           </section>

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { usePathname } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import {
   DEFAULT_PREFERENCES,
@@ -386,6 +387,11 @@ type PresencePayload = {
   user_id?: string
   online_since?: string
   session_id?: string
+  last_active_at?: string
+  updated_at?: string
+  page_path?: string
+  screen_label?: string
+  visible?: boolean
 }
 
 function presenceSessionId() {
@@ -401,16 +407,53 @@ function validPresenceDate(value: unknown) {
 }
 
 function mapPresenceState(state: Record<string, PresencePayload[]>): Record<string, MemberPresence> {
-  const grouped = new Map<string, { connections: number; onlineSince?: string }>()
+  type GroupedPresence = {
+    connections: number
+    onlineSince?: string
+    best?: {
+      lastActiveAt?: string
+      updatedAt?: string
+      pagePath?: string
+      screenLabel?: string
+      visible?: boolean
+    }
+  }
+
+  const grouped = new Map<string, GroupedPresence>()
 
   for (const presences of Object.values(state)) {
     for (const presence of presences ?? []) {
       const userId = typeof presence?.user_id === "string" ? presence.user_id : ""
       if (!userId) continue
+
       const current = grouped.get(userId) ?? { connections: 0 }
       current.connections += 1
+
       const onlineSince = validPresenceDate(presence.online_since)
       if (onlineSince && (!current.onlineSince || onlineSince < current.onlineSince)) current.onlineSince = onlineSince
+
+      const candidate = {
+        lastActiveAt: validPresenceDate(presence.last_active_at) ?? undefined,
+        updatedAt: validPresenceDate(presence.updated_at) ?? undefined,
+        pagePath: typeof presence.page_path === "string" ? presence.page_path : undefined,
+        screenLabel: typeof presence.screen_label === "string" ? presence.screen_label : undefined,
+        visible: presence.visible === true,
+      }
+
+      const candidateActivity = candidate.lastActiveAt ? new Date(candidate.lastActiveAt).getTime() : 0
+      const candidateUpdated = candidate.updatedAt ? new Date(candidate.updatedAt).getTime() : 0
+      const bestActivity = current.best?.lastActiveAt ? new Date(current.best.lastActiveAt).getTime() : 0
+      const bestUpdated = current.best?.updatedAt ? new Date(current.best.updatedAt).getTime() : 0
+
+      // Prefere a sessão visível e, entre sessões equivalentes, a que recebeu a
+      // interação/publicação mais recente. Assim uma aba antiga em background
+      // não mascara a tela que o usuário realmente está usando.
+      const shouldReplace = !current.best
+        || (candidate.visible && !current.best.visible)
+        || (candidate.visible === current.best.visible && candidateActivity > bestActivity)
+        || (candidate.visible === current.best.visible && candidateActivity === bestActivity && candidateUpdated > bestUpdated)
+
+      if (shouldReplace) current.best = candidate
       grouped.set(userId, current)
     }
   }
@@ -419,11 +462,57 @@ function mapPresenceState(state: Record<string, PresencePayload[]>): Record<stri
     online: value.connections > 0,
     onlineSince: value.onlineSince,
     connections: value.connections,
+    lastActiveAt: value.best?.lastActiveAt,
+    updatedAt: value.best?.updatedAt,
+    pagePath: value.best?.pagePath,
+    screenLabel: value.best?.screenLabel,
+    visible: value.best?.visible,
   }]))
 }
 
+function currentPresenceLocation() {
+  if (typeof window === "undefined") return { pagePath: "/", screenLabel: "TaskBoard" }
+
+  const pathname = window.location.pathname || "/"
+  const search = new URLSearchParams(window.location.search)
+  let screenLabel = "TaskBoard"
+
+  if (pathname === "/") {
+    const space = search.get("space")
+    screenLabel = space === "project" ? "Acompanhamento · Modo Resumido"
+      : space === "channels" ? "Canais · Modo Resumido"
+      : space === "requests" ? "Solicitações · Modo Resumido"
+      : space === "aqs" ? "Análise AQS · Modo Resumido"
+      : space === "chat" ? "Mensagens · Modo Resumido"
+      : "Painel"
+  } else if (pathname === "/projetos") screenLabel = "Projetos"
+  else if (pathname === "/projetos/novo") screenLabel = "Criando projeto"
+  else if (/^\/projetos\/[^/]+\/editar$/.test(pathname)) screenLabel = "Editando projeto"
+  else if (/^\/projetos\/[^/]+/.test(pathname)) screenLabel = "Projeto / atividades"
+  else if (pathname.startsWith("/acompanhamento")) screenLabel = "Acompanhamento"
+  else if (pathname.startsWith("/minhas-tarefas")) screenLabel = "Minhas tarefas"
+  else if (pathname.startsWith("/solicitacoes")) screenLabel = "Solicitações"
+  else if (pathname.startsWith("/analise")) screenLabel = "Análise AQS"
+  else if (pathname.startsWith("/chat")) screenLabel = "Mensagens"
+  else if (pathname.startsWith("/horas")) screenLabel = "Controle de horas"
+  else if (pathname.startsWith("/agenda")) screenLabel = "Agenda"
+  else if (pathname.startsWith("/relatorios")) screenLabel = "Relatórios"
+  else if (pathname.startsWith("/dev")) screenLabel = "Painel DEV"
+  else if (pathname.startsWith("/config")) screenLabel = "Configurações"
+  else if (pathname.startsWith("/topicos")) screenLabel = "Tópicos"
+
+  return {
+    pagePath: `${pathname}${window.location.search || ""}`,
+    screenLabel,
+  }
+}
+
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const supabase = React.useMemo(() => createClient(), [])
+  const pathname = usePathname()
+  const presenceChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const presenceLastActiveAtRef = React.useRef(new Date().toISOString())
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = React.useState("")
   const [currentUserRole, setCurrentUserRole] = React.useState<AccessRole>("member")
@@ -884,6 +973,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!workspaceId || !currentUserId) {
       setMemberPresence({})
       setPresenceReady(false)
+      presenceChannelRef.current = null
       return
     }
 
@@ -896,15 +986,41 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
     })
 
+    presenceChannelRef.current = channel
     let disposed = false
+    let subscribed = false
     let onlineSince = new Date().toISOString()
     let syncingOnlineSince = false
+    let lastPublishAt = 0
 
-    const currentPayload = (): PresencePayload => ({
-      user_id: currentUserId,
-      online_since: onlineSince,
-      session_id: sessionId,
-    })
+    const currentPayload = (): PresencePayload => {
+      const location = currentPresenceLocation()
+      return {
+        user_id: currentUserId,
+        online_since: onlineSince,
+        session_id: sessionId,
+        last_active_at: presenceLastActiveAtRef.current,
+        updated_at: new Date().toISOString(),
+        page_path: location.pagePath,
+        screen_label: location.screenLabel,
+        visible: typeof document === "undefined" ? true : document.visibilityState === "visible",
+      }
+    }
+
+    const publishPresence = (force = false) => {
+      if (disposed || !subscribed) return
+      const now = Date.now()
+      if (!force && now - lastPublishAt < 5000) return
+      lastPublishAt = now
+      void channel.track(currentPayload()).then((tracked) => {
+        if (tracked !== "ok") console.warn("[TaskBoard/Presence] Não foi possível atualizar o contexto do usuário:", tracked)
+      })
+    }
+
+    const markActive = () => {
+      presenceLastActiveAtRef.current = new Date().toISOString()
+      publishPresence(false)
+    }
 
     const syncPresence = () => {
       if (disposed) return
@@ -925,6 +1041,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") presenceLastActiveAtRef.current = new Date().toISOString()
+      publishPresence(true)
+    }
+    const handleFocus = () => {
+      presenceLastActiveAtRef.current = new Date().toISOString()
+      publishPresence(true)
+    }
+    const handleRouteRefresh = () => {
+      presenceLastActiveAtRef.current = new Date().toISOString()
+      publishPresence(true)
+    }
+
     channel
       .on("presence", { event: "sync" }, syncPresence)
       .on("presence", { event: "join" }, syncPresence)
@@ -933,12 +1062,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (disposed) return
 
         if (status === "SUBSCRIBED") {
+          subscribed = true
           const existing = mapPresenceState(
             channel.presenceState() as unknown as Record<string, PresencePayload[]>,
           )[currentUserId]
           if (existing?.onlineSince && existing.onlineSince < onlineSince) onlineSince = existing.onlineSince
 
           const tracked = await channel.track(currentPayload())
+          lastPublishAt = Date.now()
           if (tracked !== "ok") {
             console.warn("[TaskBoard/Presence] Não foi possível publicar o status online:", tracked)
           }
@@ -946,20 +1077,49 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          subscribed = false
           setPresenceReady(false)
           setMemberPresence({})
         }
       })
 
+    // Publica a tela atual e a última interação sem gravar nada no banco. O
+    // heartbeat é deliberadamente espaçado para não transformar Presence em
+    // telemetria de alta frequência.
+    const heartbeat = window.setInterval(() => publishPresence(true), 20000)
+    window.addEventListener("pointerdown", markActive, { passive: true })
+    window.addEventListener("keydown", markActive)
+    window.addEventListener("wheel", markActive, { passive: true })
+    window.addEventListener("focus", handleFocus)
+    window.addEventListener("taskboard:presence-refresh", handleRouteRefresh)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
     return () => {
       disposed = true
+      subscribed = false
+      window.clearInterval(heartbeat)
+      window.removeEventListener("pointerdown", markActive)
+      window.removeEventListener("keydown", markActive)
+      window.removeEventListener("wheel", markActive)
+      window.removeEventListener("focus", handleFocus)
+      window.removeEventListener("taskboard:presence-refresh", handleRouteRefresh)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       setPresenceReady(false)
       setMemberPresence({})
+      if (presenceChannelRef.current === channel) presenceChannelRef.current = null
       void channel.untrack().finally(() => {
         void supabase.removeChannel(channel)
       })
     }
   }, [currentUserId, supabase, workspaceId])
+
+  React.useEffect(() => {
+    if (!workspaceId || !currentUserId || typeof window === "undefined") return
+    // usePathname nos dá atualização imediata nas rotas do Modo Completo.
+    // Alterações apenas de query no Modo Resumido também serão capturadas pelo
+    // próximo clique/tecla e pelo heartbeat do Presence.
+    window.dispatchEvent(new Event("taskboard:presence-refresh"))
+  }, [currentUserId, pathname, workspaceId])
 
   React.useEffect(() => {
     if (typeof document === "undefined") return
@@ -1398,7 +1558,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_description: data.description,
       p_tag: data.tag,
       p_priority: data.priority,
-      p_due_date: data.dueDate,
+      p_due_date: data.dueDate || null,
       p_repository: data.repository ?? "",
       p_member_ids: data.memberIds,
     }, "Não foi possível criar o projeto")
@@ -1455,7 +1615,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         p_description: data.description,
         p_tag: data.tag,
         p_priority: data.priority,
-        p_due_date: data.dueDate,
+        p_due_date: data.dueDate || null,
         p_repository: data.repository ?? "",
         p_member_ids: data.memberIds,
       }, "Não foi possível atualizar o projeto")

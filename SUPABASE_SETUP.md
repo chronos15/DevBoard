@@ -890,3 +890,17 @@ Enquanto o Brainstorm estiver ativo, tanto a proteção de inatividade do navega
 A RPC `set_subactivity_brainstorm` mantém a permissão existente: Administrador pode operar qualquer subatividade; Desenvolvedor só pode alternar o Brainstorm da própria subatividade em execução. O atalho global é **Ctrl + Shift + B** e alterna o estado da subatividade atualmente em execução do usuário.
 
 A criação rápida de projeto no primeiro item da barra do **Modo Resumido** reutiliza a RPC `create_project` já existente. Portanto, não há uma nova estrutura para esse recurso: o botão aparece somente para **Administrador** e **Desenvolvedor**, que já são os perfis autorizados pelo backend a criar projetos.
+
+## Migration 072 — data de entrega opcional nos projetos
+
+Depois da 071, execute:
+
+```text
+supabase/migrations/072_taskboard_optional_project_due_date.sql
+```
+
+A 072 remove o `NOT NULL` de `projects.due_date` e atualiza as RPCs `create_project` e `update_project` para aceitar projeto sem prazo. A regra de permissão vigente é preservada: Administrador pode editar qualquer projeto do workspace e Desenvolvedor precisa estar integrado ao projeto para editar.
+
+O frontend envia `NULL` quando a data não é informada. Agenda, cards e detalhes passam a ignorar projetos sem prazo ou exibir **Sem prazo**, evitando `Invalid Date`.
+
+O novo quadro **Equipe agora** não usa tabela nova. Tela atual, presença e última interação são publicados de forma efêmera no Supabase Realtime Presence e não são persistidos no banco.

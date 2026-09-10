@@ -13,6 +13,7 @@ import {
 import { MemberAvatar } from "@/components/member-avatar"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
@@ -209,6 +210,19 @@ export function SubactivityKanban({
   const [overStatus, setOverStatus] = React.useState<Status | null>(null)
   const [pendingTransition, setPendingTransition] = React.useState<PendingTransition | null>(null)
   const [pendingIds, setPendingIds] = React.useState<Set<string>>(() => new Set())
+  const [attachmentDialogSubId, setAttachmentDialogSubId] = React.useState<string | null>(null)
+  const [droppedAttachmentFiles, setDroppedAttachmentFiles] = React.useState<File[]>([])
+  const [droppedAttachmentVersion, setDroppedAttachmentVersion] = React.useState(0)
+  const cardRefs = React.useRef(new Map<string, React.RefObject<HTMLElement | null>>())
+
+  function cardRefFor(subId: string) {
+    let ref = cardRefs.current.get(subId)
+    if (!ref) {
+      ref = React.createRef<HTMLElement>()
+      cardRefs.current.set(subId, ref)
+    }
+    return ref
+  }
 
   const items: KanbanItem[] = project.activities.flatMap((activity) =>
     activity.subactivities
@@ -351,10 +365,23 @@ export function SubactivityKanban({
                     const terminal = item.sub.status === "done" || item.sub.status === "cancelled"
                     const canManage = canManageSubactivity(item.sub)
                     const pending = pendingIds.has(item.sub.id)
+                    const cardRef = cardRefFor(item.sub.id)
 
                     return (
+                      <React.Fragment key={item.sub.id}>
+                      <FileDropOverlay
+                        enabled={canManage}
+                        scopeRef={cardRef}
+                        title={`Enviar para #${item.sub.title}`}
+                        description="Solte para adicionar aos anexos desta subatividade. Você poderá revisar o preview antes de salvar."
+                        onFiles={(files) => {
+                          setDroppedAttachmentFiles(files)
+                          setDroppedAttachmentVersion((current) => current + 1)
+                          setAttachmentDialogSubId(item.sub.id)
+                        }}
+                      />
                       <article
-                        key={item.sub.id}
+                        ref={cardRef}
                         draggable={canManage && !pending}
                         onDragStart={(event) => {
                           if (!canManage || pending) {
@@ -459,6 +486,13 @@ export function SubactivityKanban({
                               }
                               compact
                               buttonLabel="Arquivos"
+                              open={attachmentDialogSubId === item.sub.id}
+                              onOpenChange={(open) => {
+                                setAttachmentDialogSubId(open ? item.sub.id : null)
+                                if (open) setDroppedAttachmentFiles([])
+                              }}
+                              incomingFiles={attachmentDialogSubId === item.sub.id ? droppedAttachmentFiles : undefined}
+                              incomingVersion={attachmentDialogSubId === item.sub.id ? droppedAttachmentVersion : 0}
                             />
                           </div>
                           {!terminal && item.sub.status !== "waiting-aqs" && (
@@ -495,6 +529,7 @@ export function SubactivityKanban({
                           )}
                         </div>
                       </article>
+                      </React.Fragment>
                     )
                   })}
 

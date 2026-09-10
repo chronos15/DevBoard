@@ -257,6 +257,8 @@ export function AttachmentDialog({
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
+  incomingFiles,
+  incomingVersion = 0,
 }: {
   title: string
   description: string
@@ -269,6 +271,10 @@ export function AttachmentDialog({
   open?: boolean
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
+  /** Arquivos externos (ex.: drag and drop) que devem abrir o modal já em modo de preview. */
+  incomingFiles?: File[]
+  /** Incrementar a cada novo lote recebido para permitir o mesmo arquivo novamente. */
+  incomingVersion?: number
 }) {
   const { members } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
@@ -290,8 +296,9 @@ export function AttachmentDialog({
   const [previewLoadingId, setPreviewLoadingId] = React.useState<string | null>(null)
   const [pendingUploads, setPendingUploads] = React.useState<AttachmentUploadInput[]>([])
   const [pendingIndex, setPendingIndex] = React.useState(0)
-  const [pendingSource, setPendingSource] = React.useState<"selection" | "paste">("selection")
+  const [pendingSource, setPendingSource] = React.useState<"selection" | "paste" | "drop">("selection")
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const lastIncomingVersionRef = React.useRef(0)
 
   const sorted = React.useMemo(
     () => [...attachments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -385,7 +392,7 @@ export function AttachmentDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const stageFiles = React.useCallback(async (files: File[], source: "selection" | "paste") => {
+  const stageFiles = React.useCallback(async (files: File[], source: "selection" | "paste" | "drop") => {
     if (files.length === 0) return
 
     const singleVideo = isSingleVideoSelection(files)
@@ -431,6 +438,13 @@ export function AttachmentDialog({
       setReading(false)
     }
   }, [pendingUploads])
+
+  React.useEffect(() => {
+    if (!incomingFiles?.length || incomingVersion <= 0 || incomingVersion === lastIncomingVersionRef.current) return
+    lastIncomingVersionRef.current = incomingVersion
+    setOpen(true)
+    void stageFiles(incomingFiles, "drop")
+  }, [incomingFiles, incomingVersion, setOpen, stageFiles])
 
   async function handleFiles(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? [])
@@ -645,7 +659,7 @@ export function AttachmentDialog({
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">Pré-visualização antes de salvar</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {pendingSource === "paste" ? "Conteúdo recebido pelo Ctrl+V" : "Arquivos selecionados"} · {pendingUploads.length} {pendingUploads.length === 1 ? "item" : "itens"}
+                      {pendingSource === "paste" ? "Conteúdo recebido pelo Ctrl+V" : pendingSource === "drop" ? "Arquivos arrastados" : "Arquivos selecionados"} · {pendingUploads.length} {pendingUploads.length === 1 ? "item" : "itens"}
                     </p>
                   </div>
                   <div className="flex w-full gap-2 sm:w-auto">

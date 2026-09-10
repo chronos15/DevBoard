@@ -48,6 +48,7 @@ import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -290,6 +291,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   const [draft, setDraft] = React.useState("")
   const [mentions, setMentions] = React.useState<ChatMention[]>([])
   const [files, setFiles] = React.useState<ServiceRequestFileInput[]>([])
+  const [fileError, setFileError] = React.useState("")
   const [sending, setSending] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
@@ -311,6 +313,17 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
     return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, todosUserIds, userLimit: 6 })
   }, [currentUserId, memberPresence, members, mentionQuery, request])
 
+  function stageFiles(nextFiles: File[]) {
+    if (!nextFiles.length) return
+    const invalid = nextFiles.find((file) => file.size <= 0 || file.size > 200 * 1024 * 1024)
+    if (invalid) {
+      setFileError(`O arquivo “${invalid.name || "arquivo"}” deve ter até 200 MB.`)
+      return
+    }
+    setFileError("")
+    setFiles((current) => [...current, ...nextFiles.map((file) => ({ file, category: "other" as const }))])
+  }
+
   function chooseMention(candidate: MentionCandidate) {
     const token = mentionTokenForCandidate(candidate)
     setDraft((current) => current.replace(/(?:^|\s)@([^\s@]{0,40})$/u, (full) => `${full.startsWith(" ") ? " " : ""}${token} `))
@@ -325,24 +338,31 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       const content = draft.trim()
       const validMentions = mentions.filter((mention) => content.includes(`@${mention.label}`))
       const ok = await addServiceRequestMessage(request.id, content, validMentions, files)
-      if (ok) { stopTyping(); setDraft(""); setMentions([]); setFiles([]) }
+      if (ok) { stopTyping(); setDraft(""); setMentions([]); setFiles([]); setFileError("") }
     } finally { setSending(false) }
   }
 
   return (
-    <div className="relative border-t border-border bg-card p-3 sm:p-4">
+    <>
+      <FileDropOverlay
+        title={`Enviar para ${serviceRequestReference(request)}`}
+        onFiles={stageFiles}
+      />
+      <div className="relative border-t border-border bg-card p-3 sm:p-4">
       {files.length > 0 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1">{files.map((item, index) => <div key={`${item.file.name}-${index}`} className="relative flex w-52 shrink-0 items-center gap-2 rounded-xl border border-border bg-muted/30 p-2"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><Paperclip className="size-3.5" /></span><span className="min-w-0 flex-1"><span className="block truncate text-[0.68rem] font-semibold">{item.file.name}</span><span className="block text-[0.6rem] text-muted-foreground">{formatBytes(item.file.size)}</span></span><button type="button" onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"><X className="size-3.5" /></button></div>)}</div>}
       <div className="relative flex min-w-0 items-end gap-2 rounded-2xl border border-border bg-background p-2 focus-within:border-ring">
         <button type="button" onClick={() => inputRef.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Adicionar arquivo"><Paperclip className="size-4" /></button>
         <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-4" /></button>
         <textarea ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length > 0) { event.preventDefault(); chooseMention(mentionOptions[0]); return } if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
         <Button type="button" size="icon" className="size-9 shrink-0 rounded-xl" disabled={(!draft.trim() && files.length === 0) || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
-        <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { const picked = Array.from(event.target.files ?? []).filter((file) => file.size > 0 && file.size <= 200 * 1024 * 1024).map((file) => ({ file, category: "other" as const })); setFiles((current) => [...current, ...picked]); event.currentTarget.value = "" }} />
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = "" }} />
       </div>
       <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
       {mentionOptions.length > 0 && <div className="absolute bottom-[calc(100%-4px)] left-16 z-30 w-[min(360px,calc(100%-80px))] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-xl">{mentionOptions.map((candidate) => candidate.kind === "group" ? <button key={`group-${candidate.key}`} type="button" onClick={() => chooseMention(candidate)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-primary">{candidate.title}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{candidate.description}</span></span><span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{candidate.userIds.length}</span></button> : <button key={candidate.id} type="button" onClick={() => chooseMention(candidate)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-muted"><MemberAvatar member={candidate.member} className="size-6 text-[0.55rem]" /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{candidate.member.name}</span><span className="block truncate text-[0.62rem] text-muted-foreground">{candidate.member.email ?? candidate.member.role}</span></span></button>)}</div>}
-      <p className="mt-1.5 px-1 text-[0.62rem] text-muted-foreground">Enter envia · Shift+Enter quebra linha · @todos, @here, @desenvolvedores, @aqs e @admin são suportados.</p>
-    </div>
+      {fileError && <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{fileError}</p>}
+      <p className="mt-1.5 px-1 text-[0.62rem] text-muted-foreground">Enter envia · Shift+Enter quebra linha · arraste arquivos para esta tela · @todos, @here, @desenvolvedores, @aqs e @admin são suportados.</p>
+      </div>
+    </>
   )
 }
 

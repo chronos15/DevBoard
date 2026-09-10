@@ -83,6 +83,7 @@ import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
@@ -2588,6 +2589,11 @@ export function ProjectFollowUp({
 
   return (
     <>
+      <FileDropOverlay
+        enabled={Boolean(selectedSub) && !selectedDeveloperObserver && !recording}
+        title={selectedSub ? `Enviar para #${compactComposerTitle(selectedSub.title)}` : "Enviar anexo"}
+        onFiles={queueFilesForPreview}
+      />
       <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-card">
         {preferences.interfaceMode === "complete" && <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
           <div className="flex h-12 items-center justify-center border-b border-border">

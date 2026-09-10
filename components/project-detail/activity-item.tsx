@@ -17,6 +17,7 @@ import { MemberAvatar, MemberStack } from "@/components/member-avatar"
 import { AddSubactivityDialog } from "@/components/project-detail/add-subactivity-dialog"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -64,6 +65,9 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [inlineOpen, setInlineOpen] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
+  const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
+  const [droppedAttachmentFiles, setDroppedAttachmentFiles] = React.useState<File[]>([])
+  const [droppedAttachmentVersion, setDroppedAttachmentVersion] = React.useState(0)
 
   React.useEffect(() => {
     if (!focused) return
@@ -137,6 +141,17 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
 
   return (
     <div className={cn("min-w-0", inlineOpen && "pb-2")}>
+    <FileDropOverlay
+      enabled={canManage}
+      scopeRef={rowRef}
+      title={`Enviar para #${sub.title}`}
+      description="Solte para adicionar aos anexos desta subatividade. Você poderá revisar o preview antes de salvar."
+      onFiles={(files) => {
+        setDroppedAttachmentFiles(files)
+        setDroppedAttachmentVersion((current) => current + 1)
+        setAttachmentsOpen(true)
+      }}
+    />
     <div
       id={`sub-${sub.id}`}
       ref={rowRef}
@@ -263,6 +278,13 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           }
           compact
           buttonLabel="Arquivos"
+          open={attachmentsOpen}
+          onOpenChange={(open) => {
+            setAttachmentsOpen(open)
+            if (open) setDroppedAttachmentFiles([])
+          }}
+          incomingFiles={droppedAttachmentFiles}
+          incomingVersion={droppedAttachmentVersion}
         />
 
         <div className="flex items-center gap-1">

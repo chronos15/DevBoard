@@ -35,6 +35,7 @@ import { useStore } from "@/lib/store"
 import type { AqsReview, AqsReviewStatus, AttachmentEntry, ChatMention, CommentEntry, Project, Subactivity } from "@/lib/types"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -182,6 +183,9 @@ export function AnalysisView() {
   const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const [sendingComment, setSendingComment] = React.useState(false)
+  const [evidenceDialogOpen, setEvidenceDialogOpen] = React.useState(false)
+  const [droppedEvidenceFiles, setDroppedEvidenceFiles] = React.useState<File[]>([])
+  const [droppedEvidenceVersion, setDroppedEvidenceVersion] = React.useState(0)
   const commentRef = React.useRef<HTMLTextAreaElement>(null)
   const timelineRef = React.useRef<HTMLDivElement>(null)
   const [vcsChangesBySubactivity, setVcsChangesBySubactivity] = React.useState<Record<string, DeveloperTaskVcsChange[]>>({})
@@ -522,6 +526,13 @@ export function AnalysisView() {
     }
   }
 
+  function stageDroppedEvidence(files: File[]) {
+    if (!selected || !files.length) return
+    setDroppedEvidenceFiles(files)
+    setDroppedEvidenceVersion((current) => current + 1)
+    setEvidenceDialogOpen(true)
+  }
+
   const lockedByOther = selected?.review.status === "evaluating"
     && Boolean(selected.review.assignedAqsId && selected.review.assignedAqsId !== currentUserId && currentUserRole !== "admin")
   const selectedDeveloper = selected ? members.find((member) => member.id === selected.sub.assigneeId) : undefined
@@ -538,6 +549,11 @@ export function AnalysisView() {
     setSelectedProjectId(item.project.id)
     setMobileNavigatorOpen(false)
   }
+
+  React.useEffect(() => {
+    setEvidenceDialogOpen(false)
+    setDroppedEvidenceFiles([])
+  }, [selectedReviewId])
 
   function toggleActivity(activityId: string) {
     setCollapsedActivities((current) => {
@@ -752,6 +768,12 @@ export function AnalysisView() {
 
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-col bg-background" aria-label="Análise AQS">
+      <FileDropOverlay
+        enabled={Boolean(selected)}
+        title={selected ? `Enviar para AQS · #${selected.sub.title}` : "Enviar evidência"}
+        description="Solte para adicionar às evidências desta análise. Você poderá revisar o preview antes de salvar."
+        onFiles={stageDroppedEvidence}
+      />
       <header className="flex min-h-[58px] shrink-0 items-center gap-2.5 border-b border-border bg-card px-3 sm:px-4">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <ClipboardCheck className="size-4" />
@@ -999,6 +1021,13 @@ export function AnalysisView() {
                     compact
                     buttonLabel="Evidências"
                     className="mb-0.5 shrink-0"
+                    open={evidenceDialogOpen}
+                    onOpenChange={(open) => {
+                      setEvidenceDialogOpen(open)
+                      if (open) setDroppedEvidenceFiles([])
+                    }}
+                    incomingFiles={droppedEvidenceFiles}
+                    incomingVersion={droppedEvidenceVersion}
                   />
                   <button type="button" onClick={() => { const spacer = comment && !comment.endsWith(" ") ? " " : ""; const next = `${comment}${spacer}@`; setComment(next); detectMention(next, next.length); requestAnimationFrame(() => commentRef.current?.focus()) }} className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-3.5" /></button>
                   <textarea

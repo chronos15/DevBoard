@@ -33,10 +33,25 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
   const [repository, setRepository] = React.useState(project?.repository ?? "")
   const [memberIds, setMemberIds] = React.useState<string[]>(project?.memberIds ?? [])
   const initializedNewMembers = React.useRef(Boolean(projectId))
+  const initializedProjectDraftIdRef = React.useRef<string | null>(null)
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (!project) return
+
+    // Realtime/refreshProjects recria os objetos de `projects` com frequência.
+    // Antes, qualquer refresh durante a edição disparava este effect novamente e
+    // sobrescrevia TODO o rascunho local do formulário com o valor salvo no banco.
+    // Isso fazia a imagem removida/nova voltar para a imagem antiga em segundos.
+    // Inicializamos o rascunho apenas uma vez por projeto aberto.
+    if (initializedProjectDraftIdRef.current === project.id) return
+    initializedProjectDraftIdRef.current = project.id
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+
     setName(project.name)
     setIcon(normalizeProjectIcon(project.icon))
     setUseCustomImage(Boolean(project.iconImagePath))

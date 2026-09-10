@@ -31,15 +31,20 @@ export function buildMentionGroups({
   currentUserId,
   memberPresence,
   hereUserIds,
+  todosUserIds,
 }: {
   members: Member[]
   currentUserId: string
   memberPresence?: Record<string, MemberPresence>
   hereUserIds?: string[]
+  todosUserIds?: string[]
 }): MentionGroupCandidate[] {
   const onlineIds = members
     .filter((member) => memberPresence?.[member.id]?.online)
     .map((member) => member.id)
+  const contextualOnlineIds = todosUserIds
+    ? todosUserIds.filter((id) => memberPresence?.[id]?.online)
+    : onlineIds
 
   const groups: MentionGroupCandidate[] = [
     {
@@ -47,16 +52,16 @@ export function buildMentionGroups({
       key: "here",
       label: "here",
       title: "@here",
-      description: hereUserIds ? "Pessoas presentes neste contexto agora" : "Pessoas online agora",
-      userIds: uniqueActiveIds(hereUserIds ?? onlineIds, members, currentUserId),
+      description: hereUserIds || todosUserIds ? "Pessoas presentes/online neste contexto agora" : "Pessoas online agora",
+      userIds: uniqueActiveIds(hereUserIds ?? contextualOnlineIds, members, currentUserId),
     },
     {
       kind: "group",
       key: "todos",
       label: "todos",
       title: "@todos",
-      description: "Todos os usuários ativos do ambiente",
-      userIds: uniqueActiveIds(members.map((member) => member.id), members, currentUserId),
+      description: todosUserIds ? "Todos que já participam deste tópico" : "Todos os usuários ativos do ambiente",
+      userIds: uniqueActiveIds(todosUserIds ?? members.map((member) => member.id), members, currentUserId),
     },
     {
       kind: "group",
@@ -93,6 +98,7 @@ export function mentionCandidates({
   query,
   memberPresence,
   hereUserIds,
+  todosUserIds,
   userLimit = 8,
 }: {
   members: Member[]
@@ -100,10 +106,11 @@ export function mentionCandidates({
   query: string
   memberPresence?: Record<string, MemberPresence>
   hereUserIds?: string[]
+  todosUserIds?: string[]
   userLimit?: number
 }): MentionCandidate[] {
   const normalized = query.trim().toLocaleLowerCase("pt-BR")
-  const groups = buildMentionGroups({ members, currentUserId, memberPresence, hereUserIds })
+  const groups = buildMentionGroups({ members, currentUserId, memberPresence, hereUserIds, todosUserIds })
     .filter((group) => group.userIds.length > 0)
     .filter((group) => !normalized || group.label.includes(normalized) || group.title.toLocaleLowerCase("pt-BR").includes(normalized))
 
@@ -148,4 +155,10 @@ export function mentionTokenForCandidate(candidate: MentionCandidate) {
 
 export function isGroupCandidate(candidate: MentionCandidate): candidate is MentionGroupCandidate {
   return candidate.kind === "group"
+}
+
+
+export function isUserMentioned(mentions: ChatMention[] | undefined, userId: string) {
+  if (!userId) return false
+  return Boolean(mentions?.some((mention) => mention.kind === "user" && mention.id === userId))
 }

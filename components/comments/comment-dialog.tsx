@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 function formatCommentDate(value: string) {
   const date = new Date(value)
@@ -34,6 +34,7 @@ export function CommentDialog({
   compact = false,
   className,
   enableMentions = false,
+  mentionAudienceUserIds,
 }: {
   title: string
   description: string
@@ -42,6 +43,8 @@ export function CommentDialog({
   compact?: boolean
   className?: string
   enableMentions?: boolean
+  /** Destinatários já vinculados ao tópico usados exclusivamente pelo @todos. */
+  mentionAudienceUserIds?: string[]
 }) {
   const { members, memberPresence, currentUserId } = useStore()
   const [open, setOpen] = React.useState(false)
@@ -58,8 +61,8 @@ export function CommentDialog({
   )
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!enableMentions || !mentionRange) return []
-    return buildMentionCandidates({ members, currentUserId, query: mentionRange.query, memberPresence, userLimit: 7 })
-  }, [currentUserId, enableMentions, memberPresence, members, mentionRange])
+    return buildMentionCandidates({ members, currentUserId, query: mentionRange.query, memberPresence, todosUserIds: mentionAudienceUserIds, userLimit: 7 })
+  }, [currentUserId, enableMentions, memberPresence, members, mentionAudienceUserIds, mentionRange])
 
   function detectMention(value: string, caret: number | null) {
     if (!enableMentions) return
@@ -165,6 +168,7 @@ export function CommentDialog({
                 {sortedComments.map((comment) => {
                   const author = members.find((member) => member.id === comment.authorId)
                   const own = comment.authorId === currentUserId
+                  const mentionedCurrentUser = !own && isUserMentioned(comment.mentions, currentUserId)
                   return (
                     <article key={comment.id} className={cn("flex gap-2.5", own && "flex-row-reverse")}>
                       <MemberAvatar member={author} className="mt-0.5 size-8 ring-0" />
@@ -179,6 +183,7 @@ export function CommentDialog({
                           className={cn(
                             "whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
                             own ? "rounded-tr-md bg-primary text-primary-foreground" : "rounded-tl-md bg-card ring-1 ring-foreground/8",
+                            mentionedCurrentUser && "tb-mentioned-bubble rounded-tl-md",
                           )}
                         >
                           {comment.content}

@@ -218,3 +218,36 @@ html[data-chat-line-spacing="relaxed"] { --tb-chat-line-height: 1.72; }
 .tb-chat-title {
   font-size: var(--tb-chat-title-size) !important;
 }
+
+/* TaskBoard V81 · destaque no estilo Discord para mensagens que mencionam o usuário atual. */
+.tb-mentioned-message {
+  position: relative;
+  background: color-mix(in srgb, #f0a020 11%, transparent) !important;
+  border-color: color-mix(in srgb, #f0a020 28%, transparent) !important;
+}
+.tb-mentioned-message::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #f0a020;
+}
+.tb-mentioned-bubble {
+  position: relative;
+  background: color-mix(in srgb, #f0a020 14%, var(--card)) !important;
+  color: var(--foreground) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f0a020 30%, transparent) !important;
+}
+.tb-mentioned-bubble::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #f0a020;
+}

@@ -446,6 +446,7 @@ export function SubactivityKanban({
                               comments={item.sub.comments ?? []}
                               onAdd={(content, mentions) => addSubactivityComment(item.sub.id, content, mentions)}
                               enableMentions
+                              mentionAudienceUserIds={Array.from(new Set([item.sub.assigneeId, ...(item.sub.memberIds ?? [])].filter(Boolean)))}
                               compact
                             />
                             <AttachmentDialog

@@ -22,7 +22,7 @@ import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-p
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
-import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 type MentionRange = { start: number; end: number; query: string }
 type ReactionRow = { messageId: string; userId: string; emoji: string }
@@ -150,6 +150,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
       currentUserId,
       query: mentionRange.query,
       hereUserIds: joinedIds,
+      todosUserIds: meeting.memberIds,
       userLimit: 8,
     }).map((candidate) => {
       if (candidate.kind === "group") return candidate
@@ -253,11 +254,10 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     setSending(true)
     setLocalError("")
     try {
-      // Menção em reunião tem semântica de convite: usuário fora/que saiu passa a
-      // acompanhar o contexto e recebe a chamada antes da mensagem ser registrada.
+      // Menções individuais/de equipe continuam podendo convidar. @todos e @here
+      // são apenas broadcasts para quem já está no contexto e nunca vinculam pessoas.
       for (const mention of mentions.filter((item) => item.kind === "user")) {
-        // Sempre passa pela RPC: se o usuário já estiver na sala/pendente, ela
-        // apenas garante o vínculo com o contexto sem gerar um novo toque.
+        if (mention.label === "todos" || mention.label === "here") continue
         const invited = await inviteMeetingUser(meeting.id, mention.id, false)
         if (!invited) {
           setLocalError(`Não foi possível adicionar @${mention.label} à reunião.`)
@@ -385,6 +385,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           <div className="min-w-0 space-y-2.5">
             {conversation.messages.map((item) => {
               const own = item.senderId === currentUserId
+              const mentionedCurrentUser = !own && isUserMentioned(item.mentions, currentUserId)
               const sender = members.find((member) => member.id === item.senderId)
               const itemReactions = reactions.filter((reaction) => reaction.messageId === item.id)
               const grouped = new Map<string, ReactionRow[]>()
@@ -402,6 +403,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                     <div className={cn(
                       "relative min-w-0 max-w-full overflow-hidden rounded-2xl px-2.5 py-2 text-[0.72rem] leading-relaxed shadow-sm",
                       own ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground",
+                      mentionedCurrentUser && "tb-mentioned-bubble rounded-bl-md",
                       item.deliveryStatus === "failed" && "ring-1 ring-destructive/40",
                     )}>
                       {item.replyTo && (

@@ -224,6 +224,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           comments={sub.comments ?? []}
           onAdd={(content, mentions) => addSubactivityComment(sub.id, content, mentions)}
           enableMentions
+          mentionAudienceUserIds={Array.from(new Set([sub.assigneeId, ...(sub.memberIds ?? [])].filter(Boolean)))}
           compact
         />
         <AttachmentDialog

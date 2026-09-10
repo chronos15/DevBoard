@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
-import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -301,8 +301,15 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   }, [draft])
   const mentionOptions = React.useMemo<MentionCandidate[]>(() => {
     if (mentionQuery === null) return []
-    return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, userLimit: 6 })
-  }, [currentUserId, memberPresence, members, mentionQuery])
+    const todosUserIds = Array.from(new Set([
+      ...request.participantIds,
+      request.createdBy,
+      request.assignedAqsId,
+      request.responsibleDevId,
+      request.executorId,
+    ].filter((id): id is string => Boolean(id))))
+    return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, todosUserIds, userLimit: 6 })
+  }, [currentUserId, memberPresence, members, mentionQuery, request])
 
   function chooseMention(candidate: MentionCandidate) {
     const token = mentionTokenForCandidate(candidate)
@@ -452,12 +459,15 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
                 <span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full", item.event.type.startsWith("technical-") ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}><RequestEventIcon type={item.event.type} /></span>
                 <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold">{item.event.title}</p><span className="font-mono text-[0.6rem] text-muted-foreground">{formatDateTime(item.event.createdAt)}</span></div>{item.event.description && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{item.event.description}</p>}{item.event.actorId && <p className="mt-1.5 text-[0.62rem] text-muted-foreground"><MemberName member={members.find((member) => member.id === item.event.actorId)} fallback="Sistema" /></p>}</div>
               </div>
-            ) : (
-              <div key={`message-${item.message.id}`} className="flex gap-3 rounded-xl px-2 py-3 hover:bg-muted/25">
+            ) : (() => {
+              const mentionedCurrentUser = item.message.authorId !== currentUserId && isUserMentioned(item.message.mentions, currentUserId)
+              return (
+              <div key={`message-${item.message.id}`} className={cn("relative flex gap-3 rounded-xl border border-transparent px-2 py-3 hover:bg-muted/25", mentionedCurrentUser && "tb-mentioned-message")}>
                 <MemberAvatar member={members.find((member) => member.id === item.message.authorId)} className="mt-0.5 size-8 shrink-0 text-[0.65rem]" />
                 <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><MemberName member={members.find((member) => member.id === item.message.authorId)} className="text-xs font-semibold" fallback="Usuário" /><span className="font-mono text-[0.6rem] text-muted-foreground">{formatDateTime(item.message.createdAt)}</span></div>{item.message.content && <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.message.content}</p>}{item.message.attachments.length > 0 && <div className="mt-2 grid gap-2 sm:grid-cols-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact />)}</div>}</div>
               </div>
-            ))}
+              )
+            })())}
           </div>
           <RequestComposer request={request} />
         </section>

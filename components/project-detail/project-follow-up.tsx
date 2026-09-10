@@ -84,7 +84,7 @@ import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/fo
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
-import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, type MentionCandidate } from "@/lib/mention-groups"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -1227,9 +1227,10 @@ export function ProjectFollowUp({
       query: mentionRange.query,
       memberPresence,
       hereUserIds: watchingIds,
+      todosUserIds: selectedSubMemberIds,
       userLimit: 8,
     })
-  }, [currentUserId, memberPresence, members, mentionRange, watchingIds])
+  }, [currentUserId, memberPresence, members, mentionRange, selectedSubMemberIds, watchingIds])
 
   const onlineMemberIds = selectedSubMemberIds.filter((id) => memberPresence[id]?.online)
   const offlineMemberIds = selectedSubMemberIds.filter((id) => !memberPresence[id]?.online)
@@ -3087,6 +3088,7 @@ export function ProjectFollowUp({
                         if (item.kind === "comment") {
                           const comment = item.comment
                           const marked = markedCommentIds.has(comment.id)
+                          const mentionedCurrentUser = comment.authorId !== currentUserId && isUserMentioned(comment.mentions, currentUserId)
                           const replyAuthor = comment.replyTo?.authorId ? members.find((entry) => entry.id === comment.replyTo?.authorId) : undefined
                           return (
                             <MobileSwipeReply key={item.id} label="Responder mensagem" onReply={() => beginReplyToTimelineItem(item)}>
@@ -3095,7 +3097,8 @@ export function ProjectFollowUp({
                               onContextMenu={(event) => { event.preventDefault(); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }}
                               className={cn(
                                 "group/message relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all hover:bg-muted/25 sm:px-3",
-                                marked && "border-primary/15 bg-primary/[0.035]",
+                                mentionedCurrentUser && "tb-mentioned-message",
+                                marked && !mentionedCurrentUser && "border-primary/15 bg-primary/[0.035]",
                                 focusedCommentId === comment.id && "border-primary/30 bg-primary/[0.07] ring-2 ring-primary/10",
                                 isLocalMatch && "border-warning/20 bg-warning/[0.035]",
                                 isCurrentLocalMatch && "border-warning/35 bg-warning/[0.07] ring-2 ring-warning/10",

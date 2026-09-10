@@ -860,3 +860,17 @@ A 069 corrige o escopo dos logs de reunião. Reuniões iniciadas em uma subativi
 Também amplia as menções para `@here`, `@todos`, `@desenvolvedores`, `@aqs` e `@admin`. O front-end resolve cada alias em usuários ativos do workspace e o backend preserva as regras existentes: menções em Acompanhamento/Subatividade associam o usuário ao projeto/subatividade; se houver análise AQS ativa, ele também entra como participante da análise; em Solicitações entra como participante do protocolo; e, no chat da reunião, a menção chama o usuário e o associa ao contexto da reunião. `@here` usa as pessoas presentes/online no contexto quando essa informação está disponível.
 
 A migration eleva o limite técnico de metadados de menção do Chat para 250 destinatários para que `@todos` funcione em workspaces maiores. Nenhuma role é alterada e uma menção coletiva não transforma automaticamente ninguém em responsável principal da atividade/subatividade.
+
+## Migration 070 — @todos somente para participantes existentes
+
+Depois da 069, execute:
+
+```text
+supabase/migrations/070_taskboard_todos_scope_existing_participants.sql
+```
+
+A 070 corrige a semântica de `@todos`: ele passa a notificar **somente usuários que já pertencem ao tópico/contexto aberto**. `@todos` e `@here` são tratados como broadcasts e não criam novos vínculos em projeto, subatividade, análise AQS ou solicitação. O `@here` continua sendo resolvido pelo Presence para quem está presente/online no contexto.
+
+Menções individuais e os grupos `@desenvolvedores`, `@aqs` e `@admin` continuam com a regra da V80 e podem associar os usuários ao contexto quando permitido. Se uma mesma pessoa estiver no `@todos` e também for mencionada diretamente/por equipe na mesma mensagem, prevalece a menção explícita e a associação continua sendo permitida.
+
+A migration não cria nem altera tabelas/colunas. Participantes que tenham sido adicionados indevidamente por um `@todos` enviado **antes** desta correção não são removidos automaticamente, porque o histórico atual não permite distinguir com segurança esse vínculo de uma associação legítima feita por menção individual ou ação manual.

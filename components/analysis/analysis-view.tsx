@@ -52,7 +52,7 @@ import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
-import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, type MentionCandidate } from "@/lib/mention-groups"
+import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
   awaiting: {
@@ -256,14 +256,23 @@ export function AnalysisView() {
   )
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
+    const todosUserIds = selected
+      ? Array.from(new Set([
+          selected.sub.assigneeId,
+          ...(selected.sub.memberIds ?? []),
+          selected.review.assignedAqsId,
+          selected.review.createdBy,
+        ].filter((id): id is string => Boolean(id))))
+      : []
     return buildMentionCandidates({
       members,
       currentUserId,
       query: mentionRange.query,
       memberPresence,
+      todosUserIds,
       userLimit: 8,
     })
-  }, [currentUserId, memberPresence, members, mentionRange])
+  }, [currentUserId, memberPresence, members, mentionRange, selected])
 
   function detectMention(value: string, caret: number | null) {
     const position = caret ?? value.length
@@ -920,8 +929,9 @@ export function AnalysisView() {
 
                       if (item.kind === "comment") {
                         const author = members.find((member) => member.id === item.comment.authorId)
+                        const mentionedCurrentUser = item.comment.authorId !== currentUserId && isUserMentioned(item.comment.mentions, currentUserId)
                         return (
-                          <article key={item.id} className="group flex min-w-0 gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-muted/35 sm:px-3">
+                          <article key={item.id} className={cn("group relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-colors hover:bg-muted/35 sm:px-3", mentionedCurrentUser && "tb-mentioned-message")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">

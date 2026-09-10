@@ -47,6 +47,7 @@ import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { createClient } from "@/lib/supabase/client"
 import { WORKSPACE_COMMAND_FILES_BUCKET } from "@/lib/supabase/helpers"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
+import { buildMentionGroups, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionGroupCandidate } from "@/lib/mention-groups"
 
 type ChatTab = "conversations" | "groups" | "users" | "meetings"
 
@@ -123,9 +124,11 @@ function conversationTitle(
   return members.find((member) => member.id === otherId)?.name ?? "Conversa"
 }
 
-type MentionCandidate = ChatMention & {
+type ChatMentionCandidate = ChatMention & {
   subtitle: string
 }
+
+type MentionCandidate = ChatMentionCandidate | MentionGroupCandidate
 
 type MentionRange = {
   start: number
@@ -594,19 +597,32 @@ export function ChatView({
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!selected || selected.kind !== "group" || !mentionRange) return []
     const queryText = mentionRange.query.trim().toLocaleLowerCase("pt-BR")
-    const userCandidates = selected.memberIds
+    const conversationMembers = selected.memberIds
+      .map((id) => members.find((member) => member.id === id))
+      .filter((member): member is Member => Boolean(member))
+    const hereUserIds = selected.memberIds.filter((id) => memberPresence[id]?.online)
+    const groupCandidates = buildMentionGroups({
+      members: conversationMembers,
+      currentUserId,
+      memberPresence,
+      hereUserIds,
+      todosUserIds: selected.memberIds,
+    }).filter((candidate) => candidate.userIds.length > 0)
+      .filter((candidate) => !queryText || candidate.label.includes(queryText) || candidate.title.toLocaleLowerCase("pt-BR").includes(queryText))
+
+    const userCandidates: ChatMentionCandidate[] = selected.memberIds
       .filter((id) => id !== currentUserId)
       .map((id) => members.find((member) => member.id === id))
       .filter((member): member is Member => Boolean(member))
       .map((member) => ({ kind: "user" as const, id: member.id, label: member.name, subtitle: "Usuário do grupo" }))
-    const projectCandidates = projects.map((project) => ({
+    const projectCandidates: ChatMentionCandidate[] = projects.map((project) => ({
       kind: "project" as const,
       id: project.id,
       label: project.name,
       subtitle: "Projeto",
     }))
 
-    return [...userCandidates, ...projectCandidates]
+    const regularCandidates = [...userCandidates, ...projectCandidates]
       .filter((candidate) => !queryText || candidate.label.toLocaleLowerCase("pt-BR").includes(queryText))
       .sort((a, b) => {
         const aStarts = a.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
@@ -616,7 +632,9 @@ export function ChatView({
         return aStarts - bStarts || aKind - bKind || a.label.localeCompare(b.label, "pt-BR")
       })
       .slice(0, 8)
-  }, [currentUserId, members, mentionRange, projects, selected])
+
+    return [...groupCandidates, ...regularCandidates].slice(0, 12)
+  }, [currentUserId, memberPresence, members, mentionRange, projects, selected])
   const slashCommandQuery = React.useMemo(() => {
     const match = message.match(/^\/([^\s/]*)$/)
     return match ? match[1].toLocaleLowerCase("pt-BR") : null
@@ -878,11 +896,12 @@ export function ChatView({
 
   function selectMention(candidate: MentionCandidate) {
     if (!mentionRange) return
-    const token = mentionToken(candidate)
+    const token = `@${candidate.label}`
     const next = `${message.slice(0, mentionRange.start)}${token} ${message.slice(mentionRange.end)}`
     const caret = mentionRange.start + token.length + 1
     setMessage(next)
     setDraftMentions((current) => {
+      if (candidate.kind === "group") return mergeMentions(current, mentionsForCandidate(candidate))
       const exists = current.some((mention) => mention.kind === candidate.kind && mention.id === candidate.id)
       return exists ? current : [...current, { kind: candidate.kind, id: candidate.id, label: candidate.label }]
     })
@@ -1416,6 +1435,7 @@ export function ChatView({
                       {selected.messages.map((item) => {
                         const sender = members.find((member) => member.id === item.senderId)
                         const own = item.senderId === currentUserId
+                        const mentionedCurrentUser = !own && isUserMentioned(item.mentions, currentUserId)
                         const commandMessage = Boolean(item.command)
                         const alignOwn = own && !commandMessage
                         return (
@@ -1472,6 +1492,7 @@ export function ChatView({
                                   !commandMessage && (own
                                     ? "rounded-br-md bg-primary text-primary-foreground"
                                     : "rounded-bl-md bg-card ring-1 ring-foreground/8"),
+                                  !commandMessage && mentionedCurrentUser && "tb-mentioned-bubble rounded-bl-md",
                                 )}
                               >
                                 {item.replyTo && (
@@ -1603,14 +1624,16 @@ export function ChatView({
                           <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-full max-w-md overflow-hidden rounded-2xl border border-border bg-popover p-1.5 shadow-xl">
                             <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[0.68rem] font-medium text-muted-foreground">
                               <AtSign className="size-3.5" />
-                              Mencionar usuário ou projeto
+                              Mencionar usuário, equipe ou projeto
                             </div>
                             <div className="max-h-64 overflow-y-auto py-1">
                               {mentionCandidates.map((candidate, index) => {
                                 const member = candidate.kind === "user" ? members.find((item) => item.id === candidate.id) : undefined
+                                const key = candidate.kind === "group" ? `group-${candidate.key}` : `${candidate.kind}-${candidate.id}`
+                                const subtitle = candidate.kind === "group" ? candidate.description : candidate.subtitle
                                 return (
                                   <button
-                                    key={`${candidate.kind}-${candidate.id}`}
+                                    key={key}
                                     type="button"
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => selectMention(candidate)}
@@ -1621,13 +1644,16 @@ export function ChatView({
                                   >
                                     {candidate.kind === "user" ? (
                                       <MemberAvatar member={member} className="size-8 ring-0" />
-                                    ) : (
+                                    ) : candidate.kind === "project" ? (
                                       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-3.5" /></span>
+                                    ) : (
+                                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><AtSign className="size-3.5" /></span>
                                     )}
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-xs font-semibold">@{candidate.label}</span>
-                                      <span className="mt-0.5 block text-[0.62rem] text-muted-foreground">{candidate.subtitle}</span>
+                                      <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{subtitle}</span>
                                     </span>
+                                    {candidate.kind === "group" && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.55rem] text-muted-foreground">{candidate.userIds.length}</span>}
                                     <span className="text-[0.6rem] text-muted-foreground">{index === mentionIndex ? "Enter" : ""}</span>
                                   </button>
                                 )

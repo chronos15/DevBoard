@@ -159,7 +159,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
         subactivities(
-          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,created_at,
+          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,
           subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
@@ -195,6 +195,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             memberIds: Array.from(new Set([sub.assignee_id, ...(sub.subactivity_members ?? []).map((item: any) => item.user_id)].filter(Boolean))),
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,
+            brainstormMode: sub.brainstorm_mode === true,
             comments: (() => {
               const rows = [...(sub.subactivity_comments ?? [])]
                 .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))

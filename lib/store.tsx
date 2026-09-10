@@ -169,6 +169,7 @@ export type StoreContextValue = {
   startTimer: (subId: string) => Promise<boolean>
   stopTimer: (subId?: string, reason?: string) => Promise<boolean>
   setSubStatus: (subId: string, status: Status, releaseInfo?: SubactivityReleaseInfo) => Promise<boolean>
+  setSubactivityBrainstorm: (subId: string, enabled: boolean) => Promise<boolean>
   addSubactivity: (
     projectId: string,
     activityId: string,
@@ -259,20 +260,21 @@ function optimisticSubStatus(projects: Project[], subId: string, status: Status)
       ...activity,
       subactivities: activity.subactivities.map((sub) => {
         if (status === "in-progress" && sub.id !== subId && sub.assigneeId === assigneeId && sub.status === "in-progress") {
-          return { ...sub, status: "paused" as Status, timerStartedAt: undefined }
+          return { ...sub, status: "paused" as Status, timerStartedAt: undefined, brainstormMode: false }
         }
         if (sub.id !== subId) return sub
         return {
           ...sub,
           status,
           timerStartedAt: status === "in-progress" ? now : undefined,
+          brainstormMode: status === "in-progress" ? sub.brainstormMode : false,
         }
       }),
     })),
   }))
 }
 
-type OptimisticSubSnapshot = Pick<Subactivity, "id" | "status" | "trackedSeconds" | "timerStartedAt" | "assigneeId">
+type OptimisticSubSnapshot = Pick<Subactivity, "id" | "status" | "trackedSeconds" | "timerStartedAt" | "assigneeId" | "brainstormMode">
 
 function captureOptimisticSubs(projects: Project[], subId: string, nextStatus: Status): OptimisticSubSnapshot[] {
   const found = findSubInProjects(projects, subId)
@@ -289,6 +291,7 @@ function captureOptimisticSubs(projects: Project[], subId: string, nextStatus: S
             trackedSeconds: sub.trackedSeconds,
             timerStartedAt: sub.timerStartedAt,
             assigneeId: sub.assigneeId,
+            brainstormMode: sub.brainstormMode,
           })
         }
       }
@@ -334,6 +337,7 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         typeId: row.type_id !== undefined ? (row.type_id ?? undefined) : sub.typeId,
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,
+        brainstormMode: row.brainstorm_mode !== undefined ? row.brainstorm_mode === true : sub.brainstormMode,
       } : sub),
     })),
   }))
@@ -1172,6 +1176,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     schedule("requests-after-status", refreshServiceRequests)
     return true
   }, [callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule, startTimer])
+
+  const setSubactivityBrainstorm = React.useCallback(async (subId: string, enabled: boolean) => {
+    const found = findSubInProjects(projects, subId)
+    const target = found?.sub
+    if (!target || !found || !canManageSubactivity(target)) return false
+    if (enabled && target.status !== "in-progress") {
+      fail(new Error("O modo brainstorm só pode ser ativado enquanto a subatividade está em execução."), "Não foi possível ativar o brainstorm")
+      return false
+    }
+
+    const previous = Boolean(target.brainstormMode)
+    if (previous === enabled) return true
+
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subId ? { ...sub, brainstormMode: enabled } : sub),
+      })),
+    })))
+
+    const result = await callRpc<unknown>(
+      "set_subactivity_brainstorm",
+      { p_subactivity_id: subId, p_enabled: enabled },
+      enabled ? "Não foi possível ativar o brainstorm" : "Não foi possível encerrar o brainstorm",
+    )
+    if (result === undefined) {
+      setProjects((current) => current.map((project) => ({
+        ...project,
+        activities: project.activities.map((activity) => ({
+          ...activity,
+          subactivities: activity.subactivities.map((sub) => sub.id === subId ? { ...sub, brainstormMode: previous } : sub),
+        })),
+      })))
+      return false
+    }
+
+    schedule("projects-after-brainstorm", refreshProjects)
+    return true
+  }, [callRpc, canManageSubactivity, fail, projects, refreshProjects, schedule])
 
   const cancelTimerConflict = React.useCallback(() => {
     if (timerConflictLoading) return
@@ -2585,6 +2629,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     startTimer,
     stopTimer,
     setSubStatus,
+    setSubactivityBrainstorm,
     addSubactivity,
     addActivity,
     deleteActivity,
@@ -2641,7 +2686,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
-    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
+    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityBrainstorm, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])

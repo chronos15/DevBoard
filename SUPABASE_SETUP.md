@@ -874,3 +874,19 @@ A 070 corrige a semântica de `@todos`: ele passa a notificar **somente usuário
 Menções individuais e os grupos `@desenvolvedores`, `@aqs` e `@admin` continuam com a regra da V80 e podem associar os usuários ao contexto quando permitido. Se uma mesma pessoa estiver no `@todos` e também for mencionada diretamente/por equipe na mesma mensagem, prevalece a menção explícita e a associação continua sendo permitida.
 
 A migration não cria nem altera tabelas/colunas. Participantes que tenham sido adicionados indevidamente por um `@todos` enviado **antes** desta correção não são removidos automaticamente, porque o histórico atual não permite distinguir com segurança esse vínculo de uma associação legítima feita por menção individual ou ação manual.
+
+## Migration 071 — Brainstorm por subatividade + criação rápida de projeto
+
+Depois da 070, execute:
+
+```text
+supabase/migrations/071_taskboard_brainstorm_mode_and_quick_project.sql
+```
+
+A 071 adiciona o estado persistente `brainstorm_mode` às subatividades. O modo só pode permanecer ativo enquanto a subatividade estiver **Em execução**; ao pausar, concluir, cancelar ou enviar para AQS, o banco o desativa automaticamente.
+
+Enquanto o Brainstorm estiver ativo, tanto a proteção de inatividade do navegador/PWA quanto o **TaskBoard Agent para Windows** ignoram a pausa automática de 5 minutos. O cronômetro continua contando normalmente. Ativar e encerrar o Brainstorm gera registros no histórico do projeto e o encerramento por mudança de status também é registrado.
+
+A RPC `set_subactivity_brainstorm` mantém a permissão existente: Administrador pode operar qualquer subatividade; Desenvolvedor só pode alternar o Brainstorm da própria subatividade em execução. O atalho global é **Ctrl + Shift + B** e alterna o estado da subatividade atualmente em execução do usuário.
+
+A criação rápida de projeto no primeiro item da barra do **Modo Resumido** reutiliza a RPC `create_project` já existente. Portanto, não há uma nova estrutura para esse recurso: o botão aparece somente para **Administrador** e **Desenvolvedor**, que já são os perfis autorizados pelo backend a criar projetos.

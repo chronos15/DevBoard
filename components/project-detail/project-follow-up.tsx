@@ -6,6 +6,7 @@ import {
   Activity as ActivityIcon,
   ArrowRightLeft,
   AtSign,
+  BrainCircuit,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -803,6 +804,7 @@ export function ProjectFollowUp({
     deleteActivity,
     startTimer,
     setSubStatus,
+    setSubactivityBrainstorm,
     refreshAll,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
@@ -860,6 +862,7 @@ export function ProjectFollowUp({
   const [pendingStatus, setPendingStatus] = React.useState<Status | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
+  const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
   const [statusMenuPosition, setStatusMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [composerMultiline, setComposerMultiline] = React.useState(false)
@@ -2727,6 +2730,22 @@ export function ProjectFollowUp({
                       {checklistPendingCount > 9 ? "9+" : checklistPendingCount}
                     </span>
                   )}
+                </Button>
+                <Button
+                  type="button"
+                  variant={selectedSub.brainstormMode ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  disabled={!selectedCanManage || brainstormSaving || (selectedSub.status !== "in-progress" && !selectedSub.brainstormMode)}
+                  onClick={() => {
+                    if (brainstormSaving) return
+                    setBrainstormSaving(true)
+                    void setSubactivityBrainstorm(selectedSub.id, !Boolean(selectedSub.brainstormMode)).finally(() => setBrainstormSaving(false))
+                  }}
+                  className={cn(selectedSub.brainstormMode && "text-primary")}
+                  title={selectedSub.brainstormMode ? "Encerrar brainstorm (Ctrl + Shift + B)" : selectedSub.status === "in-progress" ? "Ativar brainstorm: não pausar por inatividade (Ctrl + Shift + B)" : "Inicie a subatividade para ativar o brainstorm"}
+                  aria-label={selectedSub.brainstormMode ? "Encerrar modo brainstorm" : "Ativar modo brainstorm"}
+                >
+                  {brainstormSaving ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}
                 </Button>
                 {!selectedDeveloperObserver && markedCommentIds.size > 0 && (
                   <div ref={pinnedPickerRef} className="relative">

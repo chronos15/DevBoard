@@ -139,6 +139,7 @@ export type Subactivity = {
   memberIds?: string[]
   needsAttention?: boolean
   attentionMessage?: string
+  brainstormMode?: boolean
   comments?: CommentEntry[]
   attachments?: AttachmentEntry[]
 }

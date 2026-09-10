@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
+import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, LoaderCircle, LockKeyhole, MessageSquareText, Paperclip, Trash2, X } from "lucide-react"
 import type { Activity, ServiceRequest, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -46,6 +46,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     addSubactivityComment,
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
+    setSubactivityBrainstorm,
     currentUserRole,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
@@ -55,6 +56,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Subactivity["status"] | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [inlineOpen, setInlineOpen] = React.useState(false)
+  const [brainstormSaving, setBrainstormSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (!focused) return
@@ -184,6 +186,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
             {sub.title}
           </button>
           <WorkItemTypeBadge typeId={sub.typeId} compact />
+          {sub.brainstormMode && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary"><BrainCircuit className="size-3" /> Brainstorm</span>}
           <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
         </div>
         {sub.needsAttention && (
@@ -218,6 +221,22 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           href={`/projetos/${projectId}#sub-${sub.id}`}
           label={`Copiar link da subatividade ${sub.title}`}
         />
+        <Button
+          type="button"
+          variant={sub.brainstormMode ? "secondary" : "ghost"}
+          size="icon-sm"
+          disabled={!canManage || brainstormSaving || (sub.status !== "in-progress" && !sub.brainstormMode)}
+          onClick={() => {
+            if (brainstormSaving) return
+            setBrainstormSaving(true)
+            void setSubactivityBrainstorm(sub.id, !Boolean(sub.brainstormMode)).finally(() => setBrainstormSaving(false))
+          }}
+          className={cn(sub.brainstormMode && "text-primary")}
+          title={sub.brainstormMode ? "Encerrar brainstorm (Ctrl + Shift + B)" : sub.status === "in-progress" ? "Ativar brainstorm: não pausar por inatividade (Ctrl + Shift + B)" : "Inicie a subatividade para ativar o brainstorm"}
+          aria-label={sub.brainstormMode ? "Encerrar modo brainstorm" : "Ativar modo brainstorm"}
+        >
+          {brainstormSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <BrainCircuit className="size-3.5" />}
+        </Button>
         <CommentDialog
           title={`Comentários · ${sub.title}`}
           description="Discussão da subatividade. Todos os usuários podem comentar, mesmo quando a tarefa pertence a outro responsável."

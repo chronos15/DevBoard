@@ -74,7 +74,7 @@ function AccessDenied({ role }: { role: AccessRole }) {
 const BARE_ROUTES = ["/login"]
 
 function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.ReactNode; menuOpen: boolean; setMenuOpen: React.Dispatch<React.SetStateAction<boolean>> }) {
-  const { hydrated, currentUserRole, preferences, aqsReviews, updatePreferences } = useStore()
+  const { hydrated, currentUserRole, preferences, aqsReviews, updatePreferences, activeSubId, projects, setSubactivityBrainstorm } = useStore()
   const pathname = usePathname()
   const router = useRouter()
 
@@ -184,6 +184,32 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
     window.addEventListener("keydown", onInterfaceShortcut, { capture: true })
     return () => window.removeEventListener("keydown", onInterfaceShortcut, { capture: true })
   }, [hydrated, preferences, updatePreferences])
+
+  React.useEffect(() => {
+    if (!hydrated) return
+
+    let switchingBrainstorm = false
+    async function onBrainstormShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat || switchingBrainstorm) return
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey || event.code !== "KeyB") return
+      if (!activeSubId) return
+
+      const activeSub = projects.flatMap((project) => project.activities.flatMap((activity) => activity.subactivities)).find((sub) => sub.id === activeSubId)
+      if (!activeSub || activeSub.status !== "in-progress") return
+
+      event.preventDefault()
+      event.stopPropagation()
+      switchingBrainstorm = true
+      try {
+        await setSubactivityBrainstorm(activeSub.id, !Boolean(activeSub.brainstormMode))
+      } finally {
+        switchingBrainstorm = false
+      }
+    }
+
+    window.addEventListener("keydown", onBrainstormShortcut, { capture: true })
+    return () => window.removeEventListener("keydown", onBrainstormShortcut, { capture: true })
+  }, [activeSubId, hydrated, projects, setSubactivityBrainstorm])
 
   React.useEffect(() => {
     if (!hydrated || currentUserRole !== "developer") return

@@ -234,7 +234,12 @@ export function DeveloperAutomationAgent() {
   }, [activeSessionKey, currentUserId, currentUserRole, hydrated])
 
   React.useEffect(() => {
-    if (!hydrated || currentUserRole !== "developer" || !currentUserId || !activeSession || !settings.idleDetectionEnabled) return
+    if (!activeSession?.sub.brainstormMode) return
+    setPrompt((current) => current?.kind === "idle" ? null : current)
+  }, [activeSession?.sub.brainstormMode])
+
+  React.useEffect(() => {
+    if (!hydrated || currentUserRole !== "developer" || !currentUserId || !activeSession || !settings.idleDetectionEnabled || activeSession.sub.brainstormMode) return
     const timerStartedAt = activeSession.sub.timerStartedAt ? new Date(activeSession.sub.timerStartedAt).getTime() : 0
     if (!timerStartedAt) return
 
@@ -269,7 +274,7 @@ export function DeveloperAutomationAgent() {
       window.removeEventListener("focus", onFocus)
       document.removeEventListener("visibilitychange", onFocus)
     }
-  }, [activeSessionKey, currentUserId, currentUserRole, hydrated, settings.idleDetectionEnabled, settings.idleThresholdMinutes])
+  }, [activeSessionKey, currentUserId, currentUserRole, hydrated, settings.idleDetectionEnabled, settings.idleThresholdMinutes, activeSession?.sub.brainstormMode])
 
   async function adjustIdle(promptValue: Extract<AgentPrompt, { kind: "idle" }>, pause: boolean) {
     const { error } = await supabase.rpc("developer_adjust_active_session", {

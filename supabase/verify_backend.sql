@@ -713,3 +713,47 @@ begin
   end if;
   raise notice 'Migrations 023/024 OK: apuração por período/projeto/responsável e RLS de work_sessions disponíveis.';
 end $$;
+
+-- 071 · Brainstorm por subatividade / proteção contra auto-pausa
+select
+  exists(
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='subactivities' and column_name='brainstorm_mode'
+  ) as subactivity_brainstorm_column_ok,
+  to_regprocedure('public.set_subactivity_brainstorm(uuid,boolean)') is not null as subactivity_brainstorm_rpc_ok,
+  has_function_privilege('authenticated','public.set_subactivity_brainstorm(uuid,boolean)','EXECUTE') as subactivity_brainstorm_execute_ok,
+  exists(
+    select 1 from pg_constraint
+    where conname='subactivities_brainstorm_requires_running' and conrelid='public.subactivities'::regclass
+  ) as brainstorm_running_constraint_ok,
+  exists(
+    select 1 from pg_trigger
+    where tgname='taskboard_subactivity_clear_brainstorm' and not tgisinternal
+  ) as brainstorm_status_guard_trigger_ok,
+  exists(
+    select 1 from pg_trigger
+    where tgname='taskboard_subactivity_log_brainstorm_auto_end' and not tgisinternal
+  ) as brainstorm_auto_log_trigger_ok;
+
+do $$
+begin
+  if not exists(
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='subactivities' and column_name='brainstorm_mode'
+  ) then
+    raise exception 'Backend TaskBoard incompleto: subactivities.brainstorm_mode ausente (migration 071)';
+  end if;
+  if to_regprocedure('public.set_subactivity_brainstorm(uuid,boolean)') is null then
+    raise exception 'Backend TaskBoard incompleto: set_subactivity_brainstorm(...) ausente (migration 071)';
+  end if;
+  if not has_function_privilege('authenticated','public.set_subactivity_brainstorm(uuid,boolean)','EXECUTE') then
+    raise exception 'Backend TaskBoard incompleto: authenticated sem EXECUTE em set_subactivity_brainstorm(...) (migration 071)';
+  end if;
+  if not exists(select 1 from pg_constraint where conname='subactivities_brainstorm_requires_running' and conrelid='public.subactivities'::regclass) then
+    raise exception 'Backend TaskBoard incompleto: constraint do Brainstorm em execução ausente (migration 071)';
+  end if;
+  if not exists(select 1 from pg_trigger where tgname='taskboard_subactivity_clear_brainstorm' and not tgisinternal) then
+    raise exception 'Backend TaskBoard incompleto: trigger de encerramento do Brainstorm ausente (migration 071)';
+  end if;
+  raise notice 'Migration 071 OK: Brainstorm por subatividade e proteção contra auto-pausa disponíveis.';
+end $$;

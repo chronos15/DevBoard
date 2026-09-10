@@ -6,6 +6,7 @@ import { useTheme } from "next-themes"
 import {
   Archive,
   ArchiveRestore,
+  BrainCircuit,
   Code2,
   Eye,
   ChevronDown,
@@ -42,6 +43,7 @@ import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { ProjectForm } from "@/components/projects/project-form"
 import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { RequestDetail } from "@/components/requests/request-detail"
 import { NewServiceRequestDialog } from "@/components/requests/request-create-dialog"
@@ -133,6 +135,17 @@ function projectFirstSub(project?: Project | null) {
   const activity = project.activities[0]
   const sub = activity?.subactivities[0]
   return activity && sub ? { activityId: activity.id, subactivityId: sub.id } : null
+}
+
+function CreateProjectServerButton({ expanded, onClick }: { expanded?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} title="Criar projeto" className={cn("group relative flex h-12 w-full items-center transition-colors", expanded ? "justify-start gap-2 px-2" : "justify-center")}>
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-[22px] border border-dashed border-border bg-muted/45 text-muted-foreground transition-all duration-150 group-hover:rounded-[15px] group-hover:border-primary/45 group-hover:bg-primary/10 group-hover:text-primary">
+        <Plus className="size-5" />
+      </span>
+      {expanded && <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-muted-foreground transition-colors group-hover:text-foreground">Criar projeto</span>}
+    </button>
+  )
 }
 
 function ProjectServerButton({ project, active, unread, expanded, onClick }: { project: Project; active: boolean; unread: "mention" | "unread" | null; expanded?: boolean; onClick: () => void }) {
@@ -257,6 +270,7 @@ export function DiscordWorkspace() {
   const [channelSearch, setChannelSearch] = React.useState("")
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set())
   const [createRequestOpen, setCreateRequestOpen] = React.useState(false)
+  const [createProjectOpen, setCreateProjectOpen] = React.useState(false)
   const [mobileChannelsOpen, setMobileChannelsOpen] = React.useState(false)
   const [deletingActivityId, setDeletingActivityId] = React.useState<string | null>(null)
   const [workspaceChannels, setWorkspaceChannels] = React.useState<WorkspaceChannel[]>([])
@@ -800,7 +814,10 @@ export function DiscordWorkspace() {
                             >
                               <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-success" : meta.columnClassName)} />
                               <div className="min-w-0 flex-1">
-                                <p className={cn("truncate text-[0.72rem]", active && "font-semibold")}>{sub.title}</p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <p className={cn("min-w-0 flex-1 truncate text-[0.72rem]", active && "font-semibold")}>{sub.title}</p>
+                                  {sub.brainstormMode && <BrainCircuit className="size-3.5 shrink-0 text-primary" aria-label="Brainstorm ativo" />}
+                                </div>
                                 <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                                   <span className="truncate">{meta.label}</span>
                                   <span>·</span>
@@ -963,6 +980,9 @@ export function DiscordWorkspace() {
 
           {serverRailExpanded && <p className="px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
           <div className="flex flex-col items-stretch gap-1">
+            {(currentUserRole === "admin" || currentUserRole === "developer") && (
+              <CreateProjectServerButton expanded={serverRailExpanded} onClick={() => setCreateProjectOpen(true)} />
+            )}
             {accessibleProjects.map((project) => <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} />)}
           </div>
 
@@ -1011,6 +1031,25 @@ export function DiscordWorkspace() {
       </main>
 
       {space !== "chat" && mobileChannelsOpen && <div className="fixed inset-0 z-[90] md:hidden"><button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setMobileChannelsOpen(false)} aria-label="Fechar canais" /><aside className="absolute inset-y-0 left-0 flex w-[min(88vw,320px)] flex-col border-r border-border bg-card shadow-2xl">{channelSidebar}</aside></div>}
+
+      <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+        <DialogContent className="max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[1120px] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Criar projeto</DialogTitle>
+            <DialogDescription>Cadastre um novo projeto sem sair do Modo Resumido.</DialogDescription>
+          </DialogHeader>
+          <ProjectForm
+            embedded
+            onCancel={() => setCreateProjectOpen(false)}
+            onSaved={(projectId) => {
+              setCreateProjectOpen(false)
+              setChannelSearch("")
+              setLocation({ space: "project", project: projectId })
+              collapseServerRailOnSmallScreen()
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <NewServiceRequestDialog open={createRequestOpen} onOpenChange={setCreateRequestOpen} />
 

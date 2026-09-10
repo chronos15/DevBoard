@@ -10,7 +10,17 @@ import { cn } from "@/lib/utils"
 import { MemberName } from "@/components/member-avatar"
 import { ProjectIcon, ProjectIconPicker, normalizeProjectIcon } from "@/components/projects/project-icon"
 
-export function ProjectForm({ projectId }: { projectId?: string }) {
+export function ProjectForm({
+  projectId,
+  embedded = false,
+  onCancel,
+  onSaved,
+}: {
+  projectId?: string
+  embedded?: boolean
+  onCancel?: () => void
+  onSaved?: (projectId: string) => void
+}) {
   const router = useRouter()
   const { projects, members, addProject, updateProject, currentUserId, currentUserRole, hydrated } = useStore()
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined
@@ -205,27 +215,29 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
       if (projectId) {
         const ok = await updateProject(projectId, data, { useCustomImage, imageFile: iconImageFile, removeExistingImage })
         if (!ok) return
-        router.push(`/projetos/${projectId}`)
+        if (onSaved) onSaved(projectId)
+        else router.push(`/projetos/${projectId}`)
         return
       }
 
       const id = await addProject(data, { useCustomImage, imageFile: iconImageFile })
       if (!id) return
-      router.push(`/projetos/${id}`)
+      if (onSaved) onSaved(id)
+      else router.push(`/projetos/${id}`)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <Link
+    <div className={cn("mx-auto max-w-5xl space-y-5", embedded && "max-w-none")}>
+      {!embedded && <Link
         href={projectId ? `/projetos/${projectId}` : "/projetos"}
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         {projectId ? "Voltar ao projeto" : "Projetos"}
-      </Link>
+      </Link>}
 
       <div>
         <p className="font-mono text-[0.68rem] tracking-[0.16em] text-primary uppercase">
@@ -464,13 +476,24 @@ export function ProjectForm({ projectId }: { projectId?: string }) {
               {saving && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
               {saving ? (editing ? "Salvando..." : "Criando projeto...") : editing ? "Salvar alterações" : "Criar projeto"}
             </button>
-            <Link
-              href={projectId ? `/projetos/${projectId}` : "/projetos"}
-              style={{ height: 56, minHeight: 56 }}
-              className="flex w-full flex-none items-center justify-center rounded-xl border border-border bg-card px-4 py-0 text-sm font-medium leading-none transition-colors hover:bg-muted"
-            >
-              Cancelar
-            </Link>
+            {embedded ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                style={{ height: 56, minHeight: 56 }}
+                className="flex w-full flex-none items-center justify-center rounded-xl border border-border bg-card px-4 py-0 text-sm font-medium leading-none transition-colors hover:bg-muted"
+              >
+                Cancelar
+              </button>
+            ) : (
+              <Link
+                href={projectId ? `/projetos/${projectId}` : "/projetos"}
+                style={{ height: 56, minHeight: 56 }}
+                className="flex w-full flex-none items-center justify-center rounded-xl border border-border bg-card px-4 py-0 text-sm font-medium leading-none transition-colors hover:bg-muted"
+              >
+                Cancelar
+              </Link>
+            )}
           </div>
         </aside>
       </form>

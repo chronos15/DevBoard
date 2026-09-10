@@ -60,6 +60,7 @@ export function TimerIdleGuard() {
             projectName: project.name,
             subTypeId: sub.typeId ?? null,
             activityTypeId: activity.typeId ?? null,
+            brainstormMode: sub.brainstormMode === true,
           }
         }
       }
@@ -71,12 +72,13 @@ export function TimerIdleGuard() {
   const activeProjectName = activeMeta?.projectName ?? ""
   const activeSubTypeId = activeMeta?.subTypeId ?? null
   const activeActivityTypeId = activeMeta?.activityTypeId ?? null
+  const activeBrainstormMode = activeMeta?.brainstormMode === true
 
-  const intermittent = React.useMemo(() => {
+  const idleExempt = React.useMemo(() => {
     const subType = activeSubTypeId ? workItemTypes.find((type) => type.id === activeSubTypeId) : undefined
     const activityType = activeActivityTypeId ? workItemTypes.find((type) => type.id === activeActivityTypeId) : undefined
-    return Boolean(subType?.intermittent || activityType?.intermittent)
-  }, [activeActivityTypeId, activeSubTypeId, workItemTypes])
+    return Boolean(activeBrainstormMode || subType?.intermittent || activityType?.intermittent)
+  }, [activeActivityTypeId, activeBrainstormMode, activeSubTypeId, workItemTypes])
 
   const clearWarning = React.useCallback(() => {
     warningNotifiedRef.current = null
@@ -90,7 +92,7 @@ export function TimerIdleGuard() {
   }, [clearWarning])
 
   const pauseForIdle = React.useCallback(async () => {
-    if (!activeSubId || !activeSubTitle || intermittent || pauseInFlightRef.current) return
+    if (!activeSubId || !activeSubTitle || idleExempt || pauseInFlightRef.current) return
     pauseInFlightRef.current = true
     try {
       const ok = await stopTimer(activeSubId)
@@ -113,10 +115,10 @@ export function TimerIdleGuard() {
     } finally {
       pauseInFlightRef.current = false
     }
-  }, [activeProjectName, activeSubId, activeSubTitle, intermittent, stopTimer])
+  }, [activeProjectName, activeSubId, activeSubTitle, idleExempt, stopTimer])
 
   const showWarning = React.useCallback((deadline: number) => {
-    if (!activeSubId || !activeSubTitle || intermittent) return
+    if (!activeSubId || !activeSubTitle || idleExempt) return
     const next: WarningState = {
       kind: "warning",
       subId: activeSubId,
@@ -133,7 +135,7 @@ export function TimerIdleGuard() {
         `devboard-idle-warning-${activeSubId}`,
       )
     }
-  }, [activeProjectName, activeSubId, activeSubTitle, intermittent])
+  }, [activeProjectName, activeSubId, activeSubTitle, idleExempt])
 
   React.useEffect(() => {
     const onPermissionChanged = () => setPermissionVersion((value) => value + 1)
@@ -145,10 +147,10 @@ export function TimerIdleGuard() {
     lastActivityRef.current = Date.now()
     pauseInFlightRef.current = false
     clearWarning()
-  }, [activeSubId, clearWarning, intermittent])
+  }, [activeSubId, clearWarning, idleExempt])
 
   React.useEffect(() => {
-    if (!activeSubId || !activeSubTitle || intermittent || typeof window === "undefined") return
+    if (!activeSubId || !activeSubTitle || idleExempt || typeof window === "undefined") return
 
     let disposed = false
     let fallbackInterval: number | null = null
@@ -235,7 +237,7 @@ export function TimerIdleGuard() {
       cleanupFallbackRef.current?.()
       if (countdownInterval !== null) window.clearInterval(countdownInterval)
     }
-  }, [activeSubId, activeSubTitle, clearWarning, intermittent, markActive, pauseForIdle, permissionVersion, showWarning])
+  }, [activeSubId, activeSubTitle, clearWarning, idleExempt, markActive, pauseForIdle, permissionVersion, showWarning])
 
   if (!warning) return null
 

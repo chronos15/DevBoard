@@ -28,34 +28,34 @@ import { useStore } from "@/lib/store"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
+import { canAccessScreen } from "@/lib/access-control"
+import type { ScreenAccessKey } from "@/lib/types"
 
 const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
 
 const nav = [
-  { href: "/", label: "Painel", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"] },
-  { href: "/dev", label: "Painel Dev", icon: Code2, roles: ["developer"] },
-  { href: "/projetos", label: "Projetos", icon: FolderKanban, roles: ["admin","developer"] },
-  { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, roles: ["admin","developer","aqs","support","member"] },
+  { href: "/", label: "Painel", icon: LayoutDashboard, roles: ["admin","developer","aqs","support","member"], screen: "dashboard" },
+  { href: "/dev", label: "Painel Dev", icon: Code2, roles: ["developer"], screen: "developer" },
+  { href: "/projetos", label: "Projetos", icon: FolderKanban, roles: ["admin","developer"], screen: "projects" },
+  { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, roles: ["admin","developer","aqs","support","member"], screen: "followup" },
   {
-    href: "/solicitacoes",
-    label: "Solicitações",
-    icon: Inbox,
-    roles: ["admin","developer","aqs","support","member"],
+    href: "/solicitacoes", label: "Solicitações", icon: Inbox, roles: ["admin","developer","aqs","support","member"], screen: "requests",
     children: [
-      { href: "/solicitacoes", label: "Caixa de entrada", roles: ["admin","developer","aqs","support","member"] },
-      { href: "/solicitacoes/minhas", label: "Minhas solicitações", roles: ["admin","developer","aqs","support","member"] },
-      { href: "/solicitacoes/aqs", label: "AQS", roles: ["admin","aqs"] },
-      { href: "/solicitacoes/dev", label: "DEV", roles: ["admin","developer"] },
-      { href: "/solicitacoes/concluidas", label: "Concluídas", roles: ["admin","developer","aqs","support","member"] },
+      { href: "/solicitacoes", label: "Caixa de entrada", roles: ["admin","developer","aqs","support","member"], screen: "requests" },
+      { href: "/solicitacoes/minhas", label: "Minhas solicitações", roles: ["admin","developer","aqs","support","member"], screen: "requests" },
+      { href: "/solicitacoes/aqs", label: "AQS", roles: ["admin","aqs"], screen: "requestsAqs" },
+      { href: "/solicitacoes/dev", label: "DEV", roles: ["admin","developer"], screen: "requestsDev" },
+      { href: "/solicitacoes/concluidas", label: "Concluídas", roles: ["admin","developer","aqs","support","member"], screen: "requests" },
     ],
   },
-  { href: "/analise", label: "Análise AQS", icon: ClipboardCheck, roles: ["admin","developer","aqs"] },
-  { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"] },
-  { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"] },
-  { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"] },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin"] },
+  { href: "/analise", label: "Análise AQS", icon: ClipboardCheck, roles: ["admin","developer","aqs"], screen: "analysis" },
+  { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"], screen: "hours" },
+  { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"], screen: "agenda" },
+  { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"], screen: "chat" },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin"], screen: "reports" },
 ] as const
+
 
 const secondary = [
   { href: "/config", label: "Configurações", icon: Settings },
@@ -73,6 +73,7 @@ export function Sidebar({
   const {
     signOut,
     currentUserRole,
+    currentAccessPolicy,
     currentUserId,
     preferences,
     projects,
@@ -149,15 +150,13 @@ export function Sidebar({
   }
 
   const focusedNav = [
-    { href: "/", label: "Início", icon: LayoutDashboard, active: pathname === "/" },
-    { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, active: pathname.startsWith("/acompanhamento") && !mineOnly },
-    { href: "/minhas-tarefas", label: "Minhas tarefas", icon: ClipboardCheck, active: mineOnly },
-    { href: "/solicitacoes", label: "Solicitações", icon: Inbox, active: pathname.startsWith("/solicitacoes") },
-    { href: "/chat", label: "Chat", icon: MessagesSquare, active: pathname.startsWith("/chat") },
-    ...(currentUserRole === "aqs"
-      ? [{ href: "/analise", label: "Análise AQS", icon: ClipboardCheck, active: pathname.startsWith("/analise") }]
-      : []),
-  ]
+    canAccessScreen(currentUserRole, currentAccessPolicy, "dashboard") ? { href: "/", label: "Início", icon: LayoutDashboard, active: pathname === "/" } : null,
+    canAccessScreen(currentUserRole, currentAccessPolicy, "followup") ? { href: "/acompanhamento", label: "Acompanhamento", icon: MessageSquareText, active: pathname.startsWith("/acompanhamento") && !mineOnly } : null,
+    canAccessScreen(currentUserRole, currentAccessPolicy, "followup") ? { href: "/minhas-tarefas", label: "Minhas tarefas", icon: ClipboardCheck, active: mineOnly } : null,
+    canAccessScreen(currentUserRole, currentAccessPolicy, "requests") ? { href: "/solicitacoes", label: "Solicitações", icon: Inbox, active: pathname.startsWith("/solicitacoes") } : null,
+    canAccessScreen(currentUserRole, currentAccessPolicy, "chat") ? { href: "/chat", label: "Chat", icon: MessagesSquare, active: pathname.startsWith("/chat") } : null,
+    canAccessScreen(currentUserRole, currentAccessPolicy, "analysis") ? { href: "/analise", label: "Análise AQS", icon: ClipboardCheck, active: pathname.startsWith("/analise") } : null,
+  ].filter(Boolean) as Array<{ href: string; label: string; icon: typeof LayoutDashboard; active: boolean }>
 
   return (
     <>
@@ -241,7 +240,7 @@ export function Sidebar({
               </Link>
             ))
           ) : (
-            nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole)).map((item) => {
+            nav.filter((item) => (item.roles as readonly string[]).includes(currentUserRole) && canAccessScreen(currentUserRole, currentAccessPolicy, item.screen as ScreenAccessKey)).map((item) => {
               const active = isActive(item.href)
               const hasChildren = "children" in item && Array.isArray(item.children)
               if (!hasChildren) {
@@ -260,7 +259,7 @@ export function Sidebar({
                 )
               }
 
-              const visibleChildren = item.children.filter((child) => (child.roles as readonly string[]).includes(currentUserRole))
+              const visibleChildren = item.children.filter((child) => (child.roles as readonly string[]).includes(currentUserRole) && canAccessScreen(currentUserRole, currentAccessPolicy, child.screen as ScreenAccessKey))
               const expanded = requestsOpen || active
               return (
                 <div key={item.href} className="min-w-0">

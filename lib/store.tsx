@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client"
 import {
   DEFAULT_PREFERENCES,
   loadIdentity,
+  loadMyWorkspaceAccess,
   loadAqsReviews,
   loadChatConversations,
   loadChatMessagesPage,
@@ -46,6 +47,7 @@ import { toUserFacingError } from "@/lib/user-facing-error"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
+  MemberAccessPolicy,
   ActivityMeetingLaunch,
   AqsReview,
   AttachmentUploadInput,
@@ -89,7 +91,7 @@ const PROJECT_TABLES = new Set([
   "project_logs",
   "project_versions",
 ])
-const MEMBER_TABLES = new Set(["profiles", "workspace_members"])
+const MEMBER_TABLES = new Set(["profiles", "workspace_members", "workspace_member_work_schedule", "workspace_member_access_profiles"])
 const PREFERENCE_TABLES = new Set(["user_preferences"])
 const TIME_TABLES = new Set(["work_sessions"])
 const CHAT_TABLES = new Set(["chat_conversations", "chat_members", "chat_messages"])
@@ -129,6 +131,7 @@ export type StoreContextValue = {
   workspaceId: string | null
   currentUserId: string
   currentUserRole: AccessRole
+  currentAccessPolicy: MemberAccessPolicy
   runningSubIds: string[]
   activeSubId: string | null
   hydrated: boolean
@@ -520,6 +523,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = React.useState("")
   const [currentUserRole, setCurrentUserRole] = React.useState<AccessRole>("member")
+  const [currentAccessPolicy, setCurrentAccessPolicy] = React.useState<MemberAccessPolicy>({
+    enabled: false,
+    screenPermissions: { dashboard: true, developer: false, projects: false, followup: true, requests: true, requestsAqs: false, requestsDev: false, analysis: false, hours: false, agenda: false, chat: true, reports: false },
+    restrictProjects: false, restrictActivities: false, restrictSubactivities: false,
+  })
   const [members, setMembers] = React.useState<Member[]>([])
   const [memberPresence, setMemberPresence] = React.useState<Record<string, MemberPresence>>({})
   const [presenceReady, setPresenceReady] = React.useState(false)
@@ -576,7 +584,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const next = await loadMembers(supabase, workspaceId)
       setMembers(next)
       const me = next.find((member) => member.id === currentUserId)
-      if (me?.role) setCurrentUserRole(me.role)
+      if (me?.role) {
+        setCurrentUserRole(me.role)
+        setCurrentAccessPolicy(await loadMyWorkspaceAccess(supabase, me.role))
+      }
     } catch (error) {
       fail(error, "Não foi possível atualizar a equipe")
     }
@@ -690,7 +701,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Carrega primeiro apenas o que é necessário para Dashboard, Projetos,
       // Horas, Agenda e Configurações. Chat/reuniões não bloqueiam mais a
       // abertura do restante do sistema.
-      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextServiceRequests, nextServiceRequestUnits, nextWorkItemTypes] = await Promise.all([
+      const [nextMembers, nextProjects, nextNotifications, nextPreferences, nextWorkSessions, nextAqsReviews, nextSupportTopics, nextServiceRequests, nextServiceRequestUnits, nextWorkItemTypes, nextAccessPolicy] = await Promise.all([
         loadMembers(supabase, identity.workspaceId),
         loadProjects(supabase, identity.workspaceId),
         loadNotifications(supabase, identity.user.id),
@@ -701,6 +712,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadServiceRequests(supabase, identity.workspaceId),
         loadServiceRequestUnits(supabase, identity.workspaceId),
         loadWorkItemTypes(supabase, identity.workspaceId),
+        loadMyWorkspaceAccess(supabase, identity.role),
       ])
 
       setMembers(nextMembers)
@@ -713,6 +725,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setServiceRequests(nextServiceRequests)
       setServiceRequestUnits(nextServiceRequestUnits)
       setWorkItemTypes(nextWorkItemTypes)
+      setCurrentAccessPolicy(nextAccessPolicy)
       setLastError(null)
       setHydrated(true)
       setRefreshing(false)
@@ -850,6 +863,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               schedule("projects", refreshProjects)
             }
             if (MEMBER_TABLES.has(table)) schedule("members", refreshMembers)
+            if (table === "workspace_member_access_profiles") schedule("projects-access", refreshProjects)
             if (CHAT_TABLES.has(table)) schedule("chat", refreshChat)
             if (MEETING_TABLES.has(table)) schedule("meetings", refreshMeetings)
             if (table === "notifications") schedule("notifications", refreshNotifications)
@@ -2858,6 +2872,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     workspaceId,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     runningSubIds,
     activeSubId,
     hydrated,
@@ -2953,7 +2968,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
-    answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,
+    answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, currentAccessPolicy, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,

@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference, serviceRequestStatusTone } from "@/lib/service-requests"
 import { DiscordWorkspace } from "@/components/discord/discord-workspace"
+import { canAccessScreen } from "@/lib/access-control"
 
 
 function FollowUpQuickButton() {
@@ -149,7 +150,7 @@ function RequestsDashboard({ firstName }: { firstName: string }) {
 }
 
 export default function DashboardPage() {
-  const { currentUserId, currentUserRole, members, preferences } = useStore()
+  const { currentUserId, currentUserRole, currentAccessPolicy, members, preferences } = useStore()
   const currentUser = members.find((member) => member.id === currentUserId)
   const firstName = currentUser?.name?.trim().split(/\s+/)[0] || ""
 
@@ -166,10 +167,10 @@ export default function DashboardPage() {
         subtitle="Aqui está o panorama dos seus projetos e do tempo investido."
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <FollowUpQuickButton />
-            <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            {canAccessScreen(currentUserRole, currentAccessPolicy, "followup") && <FollowUpQuickButton />}
+            {canAccessScreen(currentUserRole, currentAccessPolicy, "projects") && <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
               <Plus className="size-4" /> Novo projeto
-            </Link>
+            </Link>}
           </div>
         }
       />

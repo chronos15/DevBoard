@@ -9,7 +9,8 @@ import { BackendErrorBanner } from "@/components/backend-error-banner"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
 import { useStore } from "@/lib/store"
 import { ArrowLeft, ShieldAlert } from "lucide-react"
-import { ACCESS_ROLE_LABELS, type AccessRole } from "@/lib/types"
+import { ACCESS_ROLE_LABELS, type AccessRole, type MemberAccessPolicy } from "@/lib/types"
+import { canAccessScreen, screenAccessForPath } from "@/lib/access-control"
 import { IncomingCallCenter } from "@/components/chat/incoming-call-center"
 import { MeetingSessionHost } from "@/components/chat/meeting-session-host"
 import { BrowserNotifications } from "@/components/notifications/browser-notifications"
@@ -26,20 +27,9 @@ import { FocusedRunningTimer } from "@/components/focused-running-timer"
 import { PauseSubactivityProvider } from "@/components/pause-subactivity-provider"
 
 
-function canAccessPath(role: AccessRole, pathname: string) {
-  // O Painel Dev é pessoal e exclusivo da role developer. Nem admin herda acesso.
-  if (pathname.startsWith("/dev")) return role === "developer"
-  // Relatórios gerenciais são uma área administrativa: não basta esconder o item do menu.
-  // A rota também precisa ser bloqueada para acesso direto por URL.
-  if (pathname.startsWith("/relatorios")) return role === "admin"
-  if (role === "admin") return true
-  if (pathname.startsWith("/solicitacoes/aqs")) return role === "aqs"
-  if (pathname.startsWith("/solicitacoes/dev")) return role === "developer"
-  if (pathname.startsWith("/analise")) return role === "aqs" || role === "developer"
-  if (pathname.startsWith("/projetos") || pathname.startsWith("/horas") || pathname.startsWith("/agenda")) {
-    return role === "developer"
-  }
-  return true
+function canAccessPath(role: AccessRole, policy: MemberAccessPolicy, pathname: string) {
+  const screen = screenAccessForPath(pathname)
+  return screen ? canAccessScreen(role, policy, screen) : true
 }
 
 function AppBootstrapScreen({ label = "Carregando TaskBoard" }: { label?: string }) {
@@ -56,7 +46,7 @@ function AppBootstrapScreen({ label = "Carregando TaskBoard" }: { label?: string
   )
 }
 
-function AccessDenied({ role }: { role: AccessRole }) {
+function AccessDenied({ role, customized }: { role: AccessRole; customized?: boolean }) {
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center rounded-2xl border border-border bg-card px-6 py-14 text-center">
       <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
@@ -64,7 +54,7 @@ function AccessDenied({ role }: { role: AccessRole }) {
       </span>
       <h1 className="mt-4 text-lg font-semibold">Acesso restrito para esta função</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-        Seu perfil está como <strong className="font-medium text-foreground">{ACCESS_ROLE_LABELS[role]}</strong>. O TaskBoard mantém esta área protegida conforme as permissões do workspace.
+        Seu perfil está como <strong className="font-medium text-foreground">{ACCESS_ROLE_LABELS[role]}</strong>. {customized ? "Seu acesso personalizado não inclui esta tela." : "O TaskBoard mantém esta área protegida conforme as permissões do workspace."}
       </p>
     </div>
   )
@@ -74,9 +64,13 @@ function AccessDenied({ role }: { role: AccessRole }) {
 const BARE_ROUTES = ["/login"]
 
 function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.ReactNode; menuOpen: boolean; setMenuOpen: React.Dispatch<React.SetStateAction<boolean>> }) {
-  const { hydrated, currentUserRole, preferences, aqsReviews, updatePreferences, activeSubId, projects, setSubactivityBrainstorm } = useStore()
+  const { hydrated, currentUserRole, currentAccessPolicy, preferences, aqsReviews, updatePreferences, activeSubId, projects, setSubactivityBrainstorm } = useStore()
   const pathname = usePathname()
   const router = useRouter()
+  const focusedWorkspaceAllowed = canAccessScreen(currentUserRole, currentAccessPolicy, "followup")
+    || canAccessScreen(currentUserRole, currentAccessPolicy, "requests")
+    || canAccessScreen(currentUserRole, currentAccessPolicy, "analysis")
+    || canAccessScreen(currentUserRole, currentAccessPolicy, "chat")
 
   React.useEffect(() => {
     function navigateToFollowUp(detail: FollowUpOpenDetail = {}) {
@@ -301,7 +295,7 @@ function AppShellContent({ children, menuOpen, setMenuOpen }: { children: React.
               : "px-3 py-5 sm:px-4 sm:py-6 md:px-6 lg:px-8",
           focusedMode && pathname.startsWith("/config") && "pt-16 sm:pt-16",
         )}>
-          {hydrated ? (canAccessPath(currentUserRole, pathname) ? children : <AccessDenied role={currentUserRole} />) : <AppLoadingSkeleton />}
+          {hydrated ? ((preferences.interfaceMode === "focused" && pathname === "/" && focusedWorkspaceAllowed) || canAccessPath(currentUserRole, currentAccessPolicy, pathname) ? children : <AccessDenied role={currentUserRole} customized={currentAccessPolicy.enabled} />) : <AppLoadingSkeleton />}
         </main>
         <BackendErrorBanner />
         <BrowserNotifications />

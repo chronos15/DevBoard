@@ -8,7 +8,8 @@ import { createClient } from "@/lib/supabase/client"
 import { AVATARS_BUCKET } from "@/lib/supabase/helpers"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
-import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
+import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type MemberAccessPolicy, type ScreenAccessKey, type UserPreferences } from "@/lib/types"
+import { defaultScreenPermissions, SCREEN_ACCESS_DEFINITIONS } from "@/lib/access-control"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
 import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
@@ -401,6 +402,8 @@ type ManagedTeamMember = Member & {
   active: boolean
   workDays: number[]
   dailyHours: number
+  workSchedule: Record<number, number>
+  accessPolicy: MemberAccessPolicy
 }
 
 function sanitizeTeamDays(days: unknown): number[] {
@@ -408,56 +411,179 @@ function sanitizeTeamDays(days: unknown): number[] {
   return Array.from(new Set(days.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))).sort((a, b) => a - b)
 }
 
-function TeamSchedulePicker({ days, hours, disabled, onDaysChange, onHoursChange }: {
-  days: number[]
-  hours: number
+function fallbackWorkSchedule(days: number[], dailyHours: number) {
+  const minutes = Math.max(1, Math.min(1440, Math.round((Number.isFinite(dailyHours) && dailyHours > 0 ? dailyHours : 8) * 60)))
+  return Object.fromEntries(days.map((day) => [day, minutes])) as Record<number, number>
+}
+
+function normalizeWorkSchedule(value: unknown, fallbackDays: number[] = [1, 2, 3, 4, 5], fallbackHours = 8) {
+  if (!value || typeof value !== "object") return fallbackWorkSchedule(fallbackDays, fallbackHours)
+  const output: Record<number, number> = {}
+  for (const [rawDay, rawMinutes] of Object.entries(value as Record<string, unknown>)) {
+    const day = Number(rawDay)
+    const minutes = Math.round(Number(rawMinutes))
+    if (Number.isInteger(day) && day >= 0 && day <= 6 && Number.isFinite(minutes) && minutes > 0 && minutes <= 1440) output[day] = minutes
+  }
+  return Object.keys(output).length ? output : fallbackWorkSchedule(fallbackDays, fallbackHours)
+}
+
+function minutesToTime(minutes: number) {
+  const safe = Math.max(0, Math.min(1440, Math.round(minutes || 0)))
+  const hours = Math.floor(safe / 60)
+  const mins = safe % 60
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
+}
+
+function timeToMinutes(value: string) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || (hours === 24 && minutes !== 0)) return null
+  return hours * 60 + minutes
+}
+
+function TeamSchedulePicker({ schedule, disabled, onChange }: {
+  schedule: Record<number, number>
   disabled?: boolean
-  onDaysChange: (days: number[]) => void
-  onHoursChange: (hours: number) => void
+  onChange: (schedule: Record<number, number>) => void
 }) {
   function toggle(day: number) {
-    onDaysChange(days.includes(day) ? days.filter((item) => item !== day) : [...days, day].sort((a, b) => a - b))
+    const next = { ...schedule }
+    if (next[day] > 0) delete next[day]
+    else next[day] = 8 * 60
+    onChange(next)
+  }
+
+  function setTime(day: number, value: string) {
+    const minutes = timeToMinutes(value)
+    if (minutes === null) return
+    const next = { ...schedule }
+    if (minutes <= 0) delete next[day]
+    else next[day] = minutes
+    onChange(next)
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-muted/20 p-4">
+    <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3 sm:p-4">
       <div>
-        <div className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="size-4 text-primary" /> Dias de trabalho</div>
-        <p className="mt-1 text-xs text-muted-foreground">Selecione os dias considerados na meta diária de horas efetivadas.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {TEAM_WORK_DAYS.map((day) => (
-            <button
-              key={day.value}
-              type="button"
-              disabled={disabled}
-              onClick={() => toggle(day.value)}
-              className={cn(
-                "min-w-12 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50",
-                days.includes(day.value) ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {day.label}
-            </button>
-          ))}
-        </div>
+        <div className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="size-4 text-primary" /> Jornada semanal</div>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Defina uma carga diferente para cada dia. Use o formato HH:mm; dias desmarcados são tratados como folga.</p>
       </div>
-      <label className="block">
-        <span className="text-sm font-semibold">Horas por dia</span>
-        <span className="mt-1 block text-xs text-muted-foreground">Esta carga substitui a referência fixa de 08:00 no quadro de horas efetivadas.</span>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="number"
-            min="0.25"
-            max="24"
-            step="0.25"
-            disabled={disabled}
-            value={Number.isFinite(hours) ? hours : 8}
-            onChange={(event) => onHoursChange(Number(event.target.value))}
-            className="h-10 w-32 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50"
-          />
-          <span className="text-xs text-muted-foreground">horas/dia</span>
-        </div>
-      </label>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {TEAM_WORK_DAYS.map((day) => {
+          const active = Number(schedule[day.value] ?? 0) > 0
+          return (
+            <div key={day.value} className={cn("grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl border p-2.5 transition-colors", active ? "border-primary/25 bg-primary/[0.04]" : "border-border bg-card/70")}> 
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => toggle(day.value)}
+                className={cn("flex h-9 min-w-12 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-colors disabled:opacity-50", active ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted/40 text-muted-foreground")}
+              >
+                {day.label}
+              </button>
+              {active ? (
+                <label className="min-w-0">
+                  <span className="sr-only">Carga de {day.label}</span>
+                  <input
+                    type="time"
+                    step={60}
+                    disabled={disabled}
+                    value={minutesToTime(schedule[day.value])}
+                    onChange={(event) => setTime(day.value, event.target.value)}
+                    className="h-9 w-full min-w-0 rounded-lg border border-border bg-card px-2 text-sm font-medium tabular-nums outline-none focus:border-ring disabled:opacity-50"
+                  />
+                </label>
+              ) : (
+                <span className="px-1 text-xs text-muted-foreground">Folga</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function AccessProfileEditor({ role, policy, disabled, onChange }: {
+  role: AccessRole
+  policy: MemberAccessPolicy
+  disabled?: boolean
+  onChange: (policy: MemberAccessPolicy) => void
+}) {
+  const isAdmin = role === "admin"
+  const effectiveEnabled = !isAdmin && policy.enabled
+
+  function setEnabled(enabled: boolean) {
+    onChange({
+      ...policy,
+      enabled: isAdmin ? false : enabled,
+      screenPermissions: enabled ? { ...defaultScreenPermissions(role), ...policy.screenPermissions } : policy.screenPermissions,
+    })
+  }
+
+  function toggleScreen(key: ScreenAccessKey) {
+    onChange({ ...policy, screenPermissions: { ...policy.screenPermissions, [key]: !policy.screenPermissions[key] } })
+  }
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        disabled={disabled || isAdmin}
+        onClick={() => setEnabled(!effectiveEnabled)}
+        className={cn("flex w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-65", effectiveEnabled ? "border-primary/25 bg-primary/[0.04]" : "border-border bg-muted/20")}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4 text-primary" /> Acesso personalizado</span>
+          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{isAdmin ? "Administradores mantêm acesso integral para evitar bloqueio administrativo." : "Desativado mantém 100% das regras atuais do perfil. Ative somente para este colaborador."}</span>
+        </span>
+        <span className={cn("relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors", effectiveEnabled ? "bg-primary" : "bg-muted-foreground/25")}><span className={cn("absolute top-1 size-4 rounded-full bg-white transition-transform", effectiveEnabled ? "translate-x-6" : "translate-x-1")} /></span>
+      </button>
+
+      {effectiveEnabled && (
+        <>
+          <div className="rounded-2xl border border-border p-3 sm:p-4">
+            <div className="mb-3">
+              <p className="text-sm font-semibold">Telas disponíveis</p>
+              <p className="mt-1 text-xs text-muted-foreground">Escolha exatamente quais áreas aparecem e podem ser abertas por este usuário.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {SCREEN_ACCESS_DEFINITIONS.filter((screen) => defaultScreenPermissions(role)[screen.key]).map((screen) => {
+                const allowed = policy.screenPermissions[screen.key] !== false
+                return (
+                  <button key={screen.key} type="button" disabled={disabled} onClick={() => toggleScreen(screen.key)} className={cn("flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:opacity-50", allowed ? "border-primary/20 bg-primary/[0.035]" : "border-border bg-muted/15")}> 
+                    <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border", allowed ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-transparent")}><Check className="size-3" /></span>
+                    <span className="min-w-0"><span className="block text-xs font-semibold">{screen.label}</span><span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{screen.description}</span></span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border p-3 sm:p-4">
+            <p className="text-sm font-semibold">Escopo dos projetos</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">As restrições abaixo são cumulativas e também são aplicadas pela RLS no Supabase. Elas não alteram os vínculos existentes.</p>
+            <div className="mt-3 space-y-2">
+              {[
+                ["restrictProjects", "Somente projetos integrados", "Exibe o projeto apenas quando o usuário participa do projeto, de uma atividade ou de uma subatividade dele."],
+                ["restrictActivities", "Somente atividades integradas", "Dentro dos projetos visíveis, mostra apenas atividades em que o usuário participa diretamente ou por alguma subatividade."],
+                ["restrictSubactivities", "Somente subatividades integradas", "Mostra somente subatividades em que é responsável ou participante."],
+              ].map(([key, label, description]) => {
+                const typedKey = key as "restrictProjects" | "restrictActivities" | "restrictSubactivities"
+                const checked = policy[typedKey]
+                return (
+                  <button key={key} type="button" disabled={disabled} onClick={() => onChange({ ...policy, [typedKey]: !checked })} className="flex w-full items-start gap-3 rounded-xl border border-border bg-card/60 p-3 text-left hover:bg-muted/40 disabled:opacity-50">
+                    <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border", checked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent")}><Check className="size-3" /></span>
+                    <span><span className="block text-xs font-semibold">{label}</span><span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{description}</span></span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -471,8 +597,9 @@ function TeamSection() {
   const [editing, setEditing] = React.useState<ManagedTeamMember | null>(null)
   const [editRole, setEditRole] = React.useState<AccessRole>("member")
   const [editActive, setEditActive] = React.useState(true)
-  const [editDays, setEditDays] = React.useState<number[]>([1, 2, 3, 4, 5])
-  const [editHours, setEditHours] = React.useState(8)
+  const [editSchedule, setEditSchedule] = React.useState<Record<number, number>>(fallbackWorkSchedule([1, 2, 3, 4, 5], 8))
+  const [editAccess, setEditAccess] = React.useState<MemberAccessPolicy>({ enabled: false, screenPermissions: defaultScreenPermissions("member"), restrictProjects: false, restrictActivities: false, restrictSubactivities: false })
+  const [editTab, setEditTab] = React.useState<"schedule" | "access">("schedule")
   const [editSaving, setEditSaving] = React.useState(false)
   const [editError, setEditError] = React.useState("")
   const [addOpen, setAddOpen] = React.useState(false)
@@ -480,10 +607,17 @@ function TeamSection() {
   const [addEmail, setAddEmail] = React.useState("")
   const [addPassword, setAddPassword] = React.useState("")
   const [addRole, setAddRole] = React.useState<AccessRole>("member")
-  const [addDays, setAddDays] = React.useState<number[]>([1, 2, 3, 4, 5])
-  const [addHours, setAddHours] = React.useState(8)
+  const [addSchedule, setAddSchedule] = React.useState<Record<number, number>>(fallbackWorkSchedule([1, 2, 3, 4, 5], 8))
   const [adding, setAdding] = React.useState(false)
   const [addError, setAddError] = React.useState("")
+
+  const makePolicy = React.useCallback((role: AccessRole, row?: any): MemberAccessPolicy => ({
+    enabled: role === "admin" ? false : row?.access_enabled === true,
+    screenPermissions: { ...defaultScreenPermissions(role), ...(row?.access_screens && typeof row.access_screens === "object" ? row.access_screens : {}) },
+    restrictProjects: row?.restrict_projects === true,
+    restrictActivities: row?.restrict_activities === true,
+    restrictSubactivities: row?.restrict_subactivities === true,
+  }), [])
 
   const loadAdminTeam = React.useCallback(async () => {
     if (currentUserRole !== "admin") return
@@ -494,6 +628,10 @@ function TeamSection() {
       const rows = (data ?? []).map((row: any): ManagedTeamMember => {
         const avatarPath = row.avatar_path || undefined
         const avatarUrl = avatarPath ? supabase.storage.from(AVATARS_BUCKET).getPublicUrl(avatarPath).data.publicUrl : undefined
+        const role = (["admin", "developer", "aqs", "support", "member"].includes(String(row.role)) ? row.role : "member") as AccessRole
+        const workDays = sanitizeTeamDays(row.work_days)
+        const dailyHours = Number(row.daily_hours || 8)
+        const workSchedule = normalizeWorkSchedule(row.work_schedule, workDays, dailyHours)
         return {
           id: row.user_id,
           name: row.name || row.email || "Usuário",
@@ -502,10 +640,12 @@ function TeamSection() {
           email: row.email || undefined,
           avatarPath,
           avatarUrl,
-          role: (["admin", "developer", "aqs", "support", "member"].includes(String(row.role)) ? row.role : "member") as AccessRole,
+          role,
           active: row.active !== false,
-          workDays: sanitizeTeamDays(row.work_days),
-          dailyHours: Number(row.daily_hours || 8),
+          workDays: Object.keys(workSchedule).map(Number).sort((a, b) => a - b),
+          dailyHours,
+          workSchedule,
+          accessPolicy: makePolicy(role, row),
         }
       })
       setTeamMembers(rows)
@@ -514,19 +654,27 @@ function TeamSection() {
     } finally {
       setLoadingTeam(false)
     }
-  }, [currentUserRole, supabase])
+  }, [currentUserRole, makePolicy, supabase])
 
   React.useEffect(() => {
     if (currentUserRole === "admin") {
       void loadAdminTeam()
       return
     }
-    setTeamMembers(members.map((member) => ({
-      ...member,
-      active: true,
-      workDays: sanitizeTeamDays(member.workDays),
-      dailyHours: Number(member.dailyHours || 8),
-    })))
+    setTeamMembers(members.map((member) => {
+      const role = member.role ?? "member"
+      const workDays = sanitizeTeamDays(member.workDays)
+      const dailyHours = Number(member.dailyHours || 8)
+      const workSchedule = normalizeWorkSchedule(member.workSchedule, workDays, dailyHours)
+      return {
+        ...member,
+        active: true,
+        workDays,
+        dailyHours,
+        workSchedule,
+        accessPolicy: member.accessPolicy ?? { enabled: false, screenPermissions: defaultScreenPermissions(role), restrictProjects: false, restrictActivities: false, restrictSubactivities: false },
+      }
+    }))
   }, [currentUserRole, loadAdminTeam, members])
 
   async function changeRole(memberId: string, role: AccessRole) {
@@ -539,17 +687,19 @@ function TeamSection() {
 
   function openEdit(member: ManagedTeamMember) {
     setEditing(member)
-    setEditRole(member.role ?? "member")
+    const role = member.role ?? "member"
+    setEditRole(role)
     setEditActive(member.active)
-    setEditDays([...member.workDays])
-    setEditHours(member.dailyHours)
+    setEditSchedule({ ...member.workSchedule })
+    setEditAccess({ ...member.accessPolicy, screenPermissions: { ...member.accessPolicy.screenPermissions } })
+    setEditTab("schedule")
     setEditError("")
   }
 
   async function saveEdit() {
     if (!editing || editSaving) return
-    if (!Number.isFinite(editHours) || editHours <= 0 || editHours > 24) {
-      setEditError("Informe uma carga diária maior que 0 e de no máximo 24 horas.")
+    if (Object.values(editSchedule).some((minutes) => !Number.isFinite(minutes) || minutes < 0 || minutes > 1440)) {
+      setEditError("Revise a jornada. Cada dia deve estar entre 00:00 e 24:00.")
       return
     }
     setEditSaving(true)
@@ -559,17 +709,25 @@ function TeamSection() {
         const ok = await setMemberRole(editing.id, editRole)
         if (!ok) throw new Error("Não foi possível alterar a permissão.")
       }
-      const { error: scheduleError } = await supabase.rpc("set_workspace_member_schedule", {
+      const { error: scheduleError } = await supabase.rpc("set_workspace_member_weekly_schedule", {
         p_user_id: editing.id,
-        p_work_days: editDays,
-        p_daily_hours: editHours,
+        p_schedule: Object.fromEntries(Object.entries(editSchedule).map(([day, minutes]) => [day, Math.round(Number(minutes) || 0)])),
       })
       if (scheduleError) throw scheduleError
+
+      const accessPayload = editRole === "admin" ? { ...editAccess, enabled: false } : editAccess
+      const { error: accessError } = await supabase.rpc("set_workspace_member_access_profile", {
+        p_user_id: editing.id,
+        p_enabled: accessPayload.enabled,
+        p_screen_permissions: accessPayload.screenPermissions,
+        p_restrict_projects: accessPayload.restrictProjects,
+        p_restrict_activities: accessPayload.restrictActivities,
+        p_restrict_subactivities: accessPayload.restrictSubactivities,
+      })
+      if (accessError) throw accessError
+
       if (editing.active !== editActive) {
-        const { error: activeError } = await supabase.rpc("set_workspace_member_active", {
-          p_user_id: editing.id,
-          p_active: editActive,
-        })
+        const { error: activeError } = await supabase.rpc("set_workspace_member_active", { p_user_id: editing.id, p_active: editActive })
         if (activeError) throw activeError
       }
       await Promise.all([refreshAll(), loadAdminTeam()])
@@ -586,8 +744,7 @@ function TeamSection() {
     setAddEmail("")
     setAddPassword("")
     setAddRole("member")
-    setAddDays([1, 2, 3, 4, 5])
-    setAddHours(8)
+    setAddSchedule(fallbackWorkSchedule([1, 2, 3, 4, 5], 8))
     setAddError("")
   }
 
@@ -597,16 +754,14 @@ function TeamSection() {
     setAdding(true)
     setAddError("")
     try {
+      const activeEntries = Object.entries(addSchedule).filter(([, minutes]) => Number(minutes) > 0)
+      const averageMinutes = activeEntries.length ? activeEntries.reduce((sum, [, minutes]) => sum + Number(minutes), 0) / activeEntries.length : 8 * 60
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: addName.trim(),
-          email: addEmail.trim(),
-          password: addPassword,
-          role: addRole,
-          workDays: addDays,
-          dailyHours: addHours,
+          name: addName.trim(), email: addEmail.trim(), password: addPassword, role: addRole,
+          workDays: activeEntries.map(([day]) => Number(day)), dailyHours: averageMinutes / 60, workSchedule: addSchedule,
         }),
       })
       const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -621,15 +776,23 @@ function TeamSection() {
     }
   }
 
+  function scheduleSummary(member: ManagedTeamMember) {
+    const pieces = TEAM_WORK_DAYS.flatMap((day) => {
+      const minutes = Number(member.workSchedule[day.value] ?? 0)
+      return minutes > 0 ? [`${day.label} ${minutesToTime(minutes)}`] : []
+    })
+    return pieces.length ? pieces.join(" · ") : "Sem jornada definida"
+  }
+
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="min-w-0">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold tracking-tight">Equipe</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{currentUserRole === "admin" ? "Gerencie usuários, acesso e jornada usada nas métricas de horas efetivadas." : "Usuários confirmados da equipe e seus níveis de acesso."}</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{currentUserRole === "admin" ? "Gerencie usuários, jornada por dia e acessos personalizados sem alterar o comportamento padrão das roles." : "Usuários confirmados da equipe e seus níveis de acesso."}</p>
         </div>
         {currentUserRole === "admin" && (
-          <button type="button" onClick={() => { resetAddForm(); setAddOpen(true) }} className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+          <button type="button" onClick={() => { resetAddForm(); setAddOpen(true) }} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90 sm:w-auto">
             <UserPlus className="size-4" /> Adicionar usuário
           </button>
         )}
@@ -638,76 +801,55 @@ function TeamSection() {
       {loadingTeam && currentUserRole === "admin" && teamMembers.length === 0 ? (
         <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" /> Carregando equipe...</div>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="space-y-3">
           {teamMembers.map((member) => (
-            <li key={member.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap", !member.active && "bg-muted/25 opacity-70")}>
-              <MemberAvatar member={member} className="size-10 text-xs ring-0" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
-                  <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold", member.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{member.active ? "Ativo" : "Inativo"}</span>
+            <li key={member.id} className={cn("rounded-2xl border border-border p-3.5 sm:p-4", !member.active && "bg-muted/25 opacity-70")}>
+              <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+                <MemberAvatar member={member} className="size-10 text-xs ring-0 sm:size-11" />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 truncate text-sm font-semibold"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
+                    <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold", member.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{member.active ? "Ativo" : "Inativo"}</span>
+                    {member.accessPolicy.enabled && member.role !== "admin" && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.58rem] font-semibold text-primary">Acesso personalizado</span>}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
+                  {currentUserRole === "admin" && <p className="mt-1.5 whitespace-normal text-[0.64rem] leading-relaxed text-muted-foreground">{scheduleSummary(member)}</p>}
                 </div>
-                <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
-                {currentUserRole === "admin" && (
-                  <p className="mt-1 truncate text-[0.62rem] text-muted-foreground">
-                    {member.workDays.length ? TEAM_WORK_DAYS.filter((day) => member.workDays.includes(day.value)).map((day) => day.label).join(" · ") : "Sem dias definidos"} · {member.dailyHours.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}h/dia
-                  </p>
+                {currentUserRole === "admin" ? (
+                  <div className="col-span-2 mt-1 flex w-full items-center gap-2 border-t border-border/60 pt-3 sm:col-span-1 sm:mt-0 sm:w-auto sm:border-0 sm:pt-0">
+                    <div className="relative min-w-0 flex-1 sm:w-36 sm:flex-none">
+                      <select aria-label={`Permissão de ${member.name}`} disabled={changing === member.id || !member.active} value={member.role ?? "member"} onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)} className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60">
+                        <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
+                      </select>
+                      {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
+                    </div>
+                    <button type="button" onClick={() => openEdit(member)} className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Gerenciar usuário" aria-label={`Gerenciar ${member.name}`}><Pencil className="size-4" /></button>
+                  </div>
+                ) : (
+                  <span className="col-span-2 mt-1 w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground sm:col-span-1 sm:mt-0">{ACCESS_ROLE_LABELS[member.role ?? "member"]}</span>
                 )}
               </div>
-              {currentUserRole === "admin" ? (
-                <>
-                  <div className="relative min-w-32">
-                    <select
-                      aria-label={`Permissão de ${member.name}`}
-                      disabled={changing === member.id || !member.active}
-                      value={member.role ?? "member"}
-                      onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)}
-                      className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60"
-                    >
-                      <option value="admin">Administrador</option>
-                      <option value="developer">Desenvolvedor</option>
-                      <option value="aqs">AQS</option>
-                      <option value="support">Suporte</option>
-                      <option value="member">Membro</option>
-                    </select>
-                    {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
-                  </div>
-                  <button type="button" onClick={() => openEdit(member)} className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Gerenciar usuário" aria-label={`Gerenciar ${member.name}`}>
-                    <Pencil className="size-4" />
-                  </button>
-                </>
-              ) : (
-                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{ACCESS_ROLE_LABELS[member.role ?? "member"]}</span>
-              )}
             </li>
           ))}
         </ul>
       )}
 
-      <div className="mt-5">
-        <p className="mb-2 text-xs font-semibold">Perfis de acesso</p>
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-6">
+        <p className="mb-2 text-xs font-semibold">Perfis de acesso padrão</p>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {(Object.keys(ACCESS_ROLE_LABELS) as AccessRole[]).map((role) => (
-            <div key={role} className="rounded-xl bg-muted/35 p-3 ring-1 ring-foreground/6">
-              <p className="text-xs font-semibold">{ACCESS_ROLE_LABELS[role]}</p>
-              <p className="mt-1.5 text-[0.68rem] leading-relaxed text-muted-foreground">{roleDescriptions[role]}</p>
-            </div>
+            <div key={role} className="rounded-xl bg-muted/35 p-3 ring-1 ring-foreground/6"><p className="text-xs font-semibold">{ACCESS_ROLE_LABELS[role]}</p><p className="mt-1.5 text-[0.68rem] leading-relaxed text-muted-foreground">{roleDescriptions[role]}</p></div>
           ))}
         </div>
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        {currentUserRole === "admin"
-          ? "Usuários adicionados por esta tela já entram com o e-mail confirmado e não recebem mensagem de confirmação. Inativar bloqueia o acesso ao workspace sem apagar o histórico do colaborador."
-          : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
+        {currentUserRole === "admin" ? "Acesso personalizado é opt-in: usuários atuais continuam com as regras de sua role até você ativar a personalização individual. Administradores mantêm acesso integral." : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
       </p>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !editSaving) setEditing(null) }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Gerenciar colaborador</DialogTitle>
-            <DialogDescription>Defina acesso, status e jornada usada nas métricas do painel.</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader><DialogTitle>Gerenciar colaborador</DialogTitle><DialogDescription>Configure a jornada semanal e, opcionalmente, um nível de acesso individual.</DialogDescription></DialogHeader>
           {editing && (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-2xl border border-border p-3">
@@ -716,12 +858,19 @@ function TeamSection() {
                 <span className={cn("rounded-full px-2 py-1 text-[0.6rem] font-semibold", editActive ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{editActive ? "Ativo" : "Inativo"}</span>
               </div>
               <label className="block">
-                <span className="mb-1.5 block text-sm font-semibold">Perfil de acesso</span>
-                <select value={editRole} disabled={editSaving} onChange={(event) => setEditRole(event.target.value as AccessRole)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
+                <span className="mb-1.5 block text-sm font-semibold">Perfil base</span>
+                <select value={editRole} disabled={editSaving} onChange={(event) => { const role = event.target.value as AccessRole; setEditRole(role); if (!editAccess.enabled) setEditAccess((current) => ({ ...current, screenPermissions: defaultScreenPermissions(role) })) }} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
                   <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
                 </select>
               </label>
-              <TeamSchedulePicker days={editDays} hours={editHours} disabled={editSaving} onDaysChange={setEditDays} onHoursChange={setEditHours} />
+
+              <div className="grid grid-cols-2 rounded-xl bg-muted p-1">
+                <button type="button" onClick={() => setEditTab("schedule")} className={cn("rounded-lg px-3 py-2 text-xs font-semibold transition-colors", editTab === "schedule" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Jornada</button>
+                <button type="button" onClick={() => setEditTab("access")} className={cn("rounded-lg px-3 py-2 text-xs font-semibold transition-colors", editTab === "access" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Acesso</button>
+              </div>
+
+              {editTab === "schedule" ? <TeamSchedulePicker schedule={editSchedule} disabled={editSaving} onChange={setEditSchedule} /> : <AccessProfileEditor role={editRole} policy={editAccess} disabled={editSaving} onChange={setEditAccess} />}
+
               <button type="button" disabled={editSaving || editing.id === currentUserId} onClick={() => setEditActive((value) => !value)} className={cn("flex w-full items-center justify-between gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50", editActive ? "border-destructive/20 bg-destructive/[0.04]" : "border-success/20 bg-success/[0.04]")}>
                 <span><span className="block text-sm font-semibold">{editActive ? "Inativar usuário" : "Reativar usuário"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{editActive ? "O usuário perde o acesso ao workspace, mas seu histórico é preservado." : "O usuário volta a poder acessar o workspace imediatamente."}</span></span>
                 <Power className={cn("size-4 shrink-0", editActive ? "text-destructive" : "text-success")} />
@@ -730,202 +879,26 @@ function TeamSection() {
               {editError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{editError}</p>}
             </div>
           )}
-          <DialogFooter>
-            <button type="button" disabled={editSaving} onClick={() => setEditing(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button>
-            <button type="button" disabled={editSaving} onClick={() => void saveEdit()} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editSaving && <Loader2 className="size-4 animate-spin" />} Salvar</button>
-          </DialogFooter>
+          <DialogFooter><button type="button" disabled={editSaving} onClick={() => setEditing(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="button" disabled={editSaving} onClick={() => void saveEdit()} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editSaving && <Loader2 className="size-4 animate-spin" />} Salvar</button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addOpen} onOpenChange={(open) => { if (!adding) setAddOpen(open) }}>
-        <DialogContent className="sm:max-w-lg">
-          <form onSubmit={addUser}>
-            <DialogHeader>
-              <DialogTitle>Adicionar usuário</DialogTitle>
-              <DialogDescription>A conta será criada já confirmada, sem envio de e-mail de confirmação.</DialogDescription>
-            </DialogHeader>
-            <div className="mt-4 space-y-4">
-              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Nome</span><input autoFocus required minLength={2} value={addName} onChange={(event) => setAddName(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="Nome do colaborador" /></label>
-              <label className="block"><span className="mb-1.5 block text-sm font-semibold">E-mail</span><input required type="email" value={addEmail} onChange={(event) => setAddEmail(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="usuario@empresa.com" /></label>
-              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Senha inicial</span><input required minLength={6} type="password" value={addPassword} onChange={(event) => setAddPassword(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="Mínimo de 6 caracteres" /></label>
-              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Perfil de acesso</span><select value={addRole} onChange={(event) => setAddRole(event.target.value as AccessRole)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="member">Membro</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="admin">Administrador</option></select></label>
-              <TeamSchedulePicker days={addDays} hours={addHours} disabled={adding} onDaysChange={setAddDays} onHoursChange={setAddHours} />
-              {addError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{addError}</p>}
+      <Dialog open={addOpen} onOpenChange={(open) => { if (!open && !adding) { setAddOpen(false); resetAddForm() } }}>
+        <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
+          <form onSubmit={addUser} className="space-y-4">
+            <DialogHeader><DialogTitle>Adicionar usuário</DialogTitle><DialogDescription>A conta será criada com o e-mail confirmado e já vinculada ao workspace.</DialogDescription></DialogHeader>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold">Nome</span><input required minLength={2} value={addName} onChange={(event) => setAddName(event.target.value)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50" placeholder="Nome do colaborador" /></label>
+              <label><span className="mb-1.5 block text-sm font-semibold">E-mail</span><input required type="email" value={addEmail} onChange={(event) => setAddEmail(event.target.value)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50" placeholder="usuario@empresa.com" /></label>
+              <label><span className="mb-1.5 block text-sm font-semibold">Senha inicial</span><input required minLength={6} type="password" value={addPassword} onChange={(event) => setAddPassword(event.target.value)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50" placeholder="Mínimo 6 caracteres" /></label>
+              <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold">Perfil base</span><select value={addRole} onChange={(event) => setAddRole(event.target.value as AccessRole)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50"><option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option></select></label>
             </div>
-            <DialogFooter className="mt-5">
-              <button type="button" disabled={adding} onClick={() => setAddOpen(false)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button>
-              <button type="submit" disabled={adding} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{adding && <Loader2 className="size-4 animate-spin" />} Criar usuário</button>
-            </DialogFooter>
+            <TeamSchedulePicker schedule={addSchedule} disabled={adding} onChange={setAddSchedule} />
+            {addError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{addError}</p>}
+            <DialogFooter><button type="button" disabled={adding} onClick={() => { setAddOpen(false); resetAddForm() }} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="submit" disabled={adding} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{adding && <Loader2 className="size-4 animate-spin" />} Criar usuário</button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function PreferenceToggle({
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string
-  description: string
-  checked: boolean
-  disabled?: boolean
-  onChange: (checked: boolean) => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-border py-4 last:border-0">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-60",
-          checked ? "bg-primary" : "bg-muted",
-        )}
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-5 shrink-0 rounded-full bg-background shadow-sm ring-1 ring-foreground/10 transition-transform duration-200 ease-out",
-            checked ? "translate-x-5" : "translate-x-0",
-          )}
-        />
-      </button>
-    </div>
-  )
-}
-
-function usePreferenceEditor() {
-  const { preferences, updatePreferences } = useStore()
-  const [draft, setDraft] = React.useState<UserPreferences>(preferences)
-  const [saving, setSaving] = React.useState(false)
-
-  React.useEffect(() => setDraft(preferences), [preferences])
-
-  async function patch(next: Partial<UserPreferences>) {
-    const value = { ...draft, ...next }
-    setDraft(value)
-    setSaving(true)
-    const ok = await updatePreferences(value)
-    if (!ok) setDraft(preferences)
-    setSaving(false)
-  }
-
-  return { draft, saving, patch }
-}
-
-function BrowserNotificationSettings() {
-  const { currentUserId } = useStore()
-  const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("unsupported")
-  const [dismissed, setDismissed] = React.useState(false)
-  const [requesting, setRequesting] = React.useState(false)
-  const [showHelp, setShowHelp] = React.useState(false)
-
-  const refresh = React.useCallback(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      setPermission("unsupported")
-      return
-    }
-    setPermission(Notification.permission)
-    setDismissed(isBrowserNotificationPromptDismissed(currentUserId))
-  }, [currentUserId])
-
-  React.useEffect(() => {
-    refresh()
-    if (typeof window === "undefined") return
-    const onPreference = (event: Event) => {
-      const detail = (event as CustomEvent<{ userId?: string; dismissed?: boolean }>).detail
-      if (!detail || detail.userId !== currentUserId) return
-      setDismissed(Boolean(detail.dismissed))
-    }
-    const onVisibility = () => { if (document.visibilityState === "visible") refresh() }
-    window.addEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
-    window.addEventListener("focus", refresh)
-    document.addEventListener("visibilitychange", onVisibility)
-    return () => {
-      window.removeEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
-      window.removeEventListener("focus", refresh)
-      document.removeEventListener("visibilitychange", onVisibility)
-    }
-  }, [currentUserId, refresh])
-
-  async function activate() {
-    if (typeof window === "undefined" || !("Notification" in window)) return
-    if (Notification.permission === "denied") {
-      setPermission("denied")
-      setShowHelp(true)
-      return
-    }
-    setRequesting(true)
-    try {
-      const next = await Notification.requestPermission()
-      setPermission(next)
-      if (next === "granted") {
-        resetBrowserNotificationPrompt(currentUserId)
-        setDismissed(false)
-        setShowHelp(false)
-        try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/devboard-sw.js") } catch {}
-      } else {
-        dismissBrowserNotificationPrompt(currentUserId)
-        setDismissed(true)
-        setShowHelp(next === "denied")
-      }
-    } finally {
-      setRequesting(false)
-    }
-  }
-
-  const status = permission === "granted"
-    ? { label: "Ativadas", className: "bg-success/10 text-success", description: "O Chrome pode exibir chamadas, mensagens, menções e atualizações do TaskBoard." }
-    : permission === "denied"
-      ? { label: "Bloqueadas", className: "bg-destructive/10 text-destructive", description: "O Chrome bloqueou as notificações para este site. A liberação precisa ser feita nas permissões do navegador." }
-      : permission === "unsupported"
-        ? { label: "Indisponíveis", className: "bg-muted text-muted-foreground", description: "Este navegador não oferece suporte às notificações utilizadas pelo TaskBoard." }
-        : dismissed
-          ? { label: "Ignoradas", className: "bg-warning/10 text-warning", description: "Você escolheu não ativar agora. O aviso automático não será exibido novamente neste dispositivo." }
-          : { label: "Não configuradas", className: "bg-muted text-muted-foreground", description: "Ative se quiser receber avisos do TaskBoard mesmo quando estiver em outra tela." }
-
-  return (
-    <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Bell className="size-4.5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold">Notificações do navegador</p>
-            <span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", status.className)}>{status.label}</span>
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{status.description}</p>
-        </div>
-        {permission !== "granted" && permission !== "unsupported" && (
-          <button
-            type="button"
-            disabled={requesting}
-            onClick={() => void activate()}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-          >
-            {requesting && <Loader2 className="size-3.5 animate-spin" />}
-            {permission === "denied" ? "Como ativar" : "Ativar notificações"}
-          </button>
-        )}
-      </div>
-
-      {(showHelp || permission === "denied") && (
-        <div className="mt-4 rounded-xl border border-warning/20 bg-warning/[0.05] px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-semibold text-foreground">Permissão bloqueada no Chrome.</strong> Abra as informações do site (ícone ao lado do endereço), entre em <strong className="font-medium text-foreground">Permissões / Configurações do site → Notificações</strong> e selecione <strong className="font-medium text-foreground">Permitir</strong>. Depois volte ao TaskBoard; o status será atualizado automaticamente.
-        </div>
-      )}
     </div>
   )
 }

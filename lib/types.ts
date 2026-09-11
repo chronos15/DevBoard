@@ -9,6 +9,15 @@ export type Status =
 
 export type Priority = "low" | "medium" | "high"
 export type AccessRole = "admin" | "developer" | "aqs" | "support" | "member"
+export type ScreenAccessKey = "dashboard" | "developer" | "projects" | "followup" | "requests" | "requestsAqs" | "requestsDev" | "analysis" | "hours" | "agenda" | "chat" | "reports"
+
+export type MemberAccessPolicy = {
+  enabled: boolean
+  screenPermissions: Record<ScreenAccessKey, boolean>
+  restrictProjects: boolean
+  restrictActivities: boolean
+  restrictSubactivities: boolean
+}
 
 export type WorkItemType = {
   id: string
@@ -46,8 +55,12 @@ export type Member = {
   role?: AccessRole
   /** Dias de trabalho configurados no workspace. 0=domingo ... 6=sábado. */
   workDays?: number[]
-  /** Carga horária diária usada nas métricas de horas efetivadas. */
+  /** Carga horária diária legada usada como fallback. */
   dailyHours?: number
+  /** Jornada semanal em minutos por dia. 0=domingo ... 6=sábado. */
+  workSchedule?: Partial<Record<number, number>>
+  /** Perfil opcional e desacoplado de acesso. Desabilitado mantém exatamente as regras da role. */
+  accessPolicy?: MemberAccessPolicy
 }
 
 export type MemberPresence = {

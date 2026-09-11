@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import type {
   AccessRole,
+  MemberAccessPolicy,
   AqsReview,
   AttachmentEntry,
   ChatConversation,
@@ -108,14 +109,74 @@ export async function loadIdentity(supabase: SupabaseClient) {
   }
 }
 
+
+export async function loadMyWorkspaceAccess(supabase: SupabaseClient, role: AccessRole): Promise<MemberAccessPolicy> {
+  const { data, error } = await supabase.rpc('get_my_workspace_access_profile')
+  if (error) {
+    // A migration 077 adiciona esta RPC. Até ela ser aplicada, o comportamento
+    // permanece exatamente o padrão da role atual.
+    return {
+      enabled: false,
+      screenPermissions: {
+        dashboard: true,
+        developer: role === 'developer',
+        projects: role === 'admin' || role === 'developer',
+        followup: true,
+        requests: true,
+        requestsAqs: role === 'admin' || role === 'aqs',
+        requestsDev: role === 'admin' || role === 'developer',
+        analysis: role === 'admin' || role === 'aqs' || role === 'developer',
+        hours: role === 'admin' || role === 'developer',
+        agenda: role === 'admin' || role === 'developer',
+        chat: true,
+        reports: role === 'admin',
+      },
+      restrictProjects: false,
+      restrictActivities: false,
+      restrictSubactivities: false,
+    }
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  const raw = row?.screen_permissions && typeof row.screen_permissions === 'object' ? row.screen_permissions : {}
+  const defaults = {
+    dashboard: true, developer: role === 'developer', projects: role === 'admin' || role === 'developer',
+    followup: true, requests: true, requestsAqs: role === 'admin' || role === 'aqs', requestsDev: role === 'admin' || role === 'developer',
+    analysis: role === 'admin' || role === 'aqs' || role === 'developer', hours: role === 'admin' || role === 'developer',
+    agenda: role === 'admin' || role === 'developer', chat: true, reports: role === 'admin',
+  }
+  return {
+    enabled: role === 'admin' ? false : row?.enabled === true,
+    screenPermissions: { ...defaults, ...raw },
+    restrictProjects: row?.restrict_projects === true,
+    restrictActivities: row?.restrict_activities === true,
+    restrictSubactivities: row?.restrict_subactivities === true,
+  }
+}
+
 export async function loadMembers(supabase: SupabaseClient, workspaceId: string) {
-  const { data, error } = await supabase
-    .from('workspace_members')
-    .select('user_id, role, active, work_days, daily_hours, profiles!workspace_members_user_id_fkey(id,email,name,initials,color,avatar_path)')
-    .eq('workspace_id', workspaceId)
-    .eq('active', true)
-    .order('joined_at', { ascending: true })
+  const [{ data, error }, scheduleResult] = await Promise.all([
+    supabase
+      .from('workspace_members')
+      .select('user_id, role, active, work_days, daily_hours, profiles!workspace_members_user_id_fkey(id,email,name,initials,color,avatar_path)')
+      .eq('workspace_id', workspaceId)
+      .eq('active', true)
+      .order('joined_at', { ascending: true }),
+    supabase
+      .from('workspace_member_work_schedule')
+      .select('user_id,weekday,target_minutes')
+      .eq('workspace_id', workspaceId),
+  ])
   assertNoError(error, 'Não foi possível carregar a equipe')
+
+  const scheduleByUser = new Map<string, Record<number, number>>()
+  if (!scheduleResult.error) {
+    for (const row of scheduleResult.data ?? []) {
+      const userId = String((row as any).user_id)
+      const schedule = scheduleByUser.get(userId) ?? {}
+      schedule[Number((row as any).weekday)] = Number((row as any).target_minutes || 0)
+      scheduleByUser.set(userId, schedule)
+    }
+  }
 
   return (data ?? []).map((entry: any) => {
     const profile = Array.isArray(entry.profiles) ? entry.profiles[0] : entry.profiles
@@ -123,10 +184,14 @@ export async function loadMembers(supabase: SupabaseClient, workspaceId: string)
       const { data: publicData } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(profile.avatar_path)
       profile.avatar_url = publicData.publicUrl
     }
+    const legacyDays = Array.isArray(entry.work_days) ? entry.work_days.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value) && value >= 0 && value <= 6) : [1, 2, 3, 4, 5]
+    const legacyHours = Number(entry.daily_hours || 8)
+    const schedule = scheduleByUser.get(String(entry.user_id)) ?? Object.fromEntries(legacyDays.map((day: number) => [day, Math.round(legacyHours * 60)]))
     return {
       ...mapMember(profile ?? { id: entry.user_id, name: 'Usuário' }, entry.role),
-      workDays: Array.isArray(entry.work_days) ? entry.work_days.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value) && value >= 0 && value <= 6) : [1, 2, 3, 4, 5],
-      dailyHours: Number(entry.daily_hours || 8),
+      workDays: Object.entries(schedule).filter(([, minutes]) => Number(minutes) > 0).map(([day]) => Number(day)),
+      dailyHours: legacyHours,
+      workSchedule: schedule,
     }
   })
 }

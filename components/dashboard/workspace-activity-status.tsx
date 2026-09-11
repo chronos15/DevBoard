@@ -119,10 +119,14 @@ export function WorkspaceActivityStatus() {
     const seconds = effectiveSecondsToday(workSessions, member.id, now)
     const work = workForMember(projects, member.id)
     const running = work.find((item) => item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id)
+    const weekday = new Date(now).getDay()
+    const configuredMinutes = Number(member.workSchedule?.[weekday] ?? 0)
     const workDays = Array.isArray(member.workDays) ? member.workDays : [1, 2, 3, 4, 5]
-    const scheduledToday = workDays.includes(new Date(now).getDay())
-    const dailyHours = Number.isFinite(member.dailyHours) && Number(member.dailyHours) > 0 ? Number(member.dailyHours) : 8
-    const targetSeconds = scheduledToday ? Math.round(dailyHours * 3600) : 0
+    const legacyScheduledToday = workDays.includes(weekday)
+    const legacyDailyHours = Number.isFinite(member.dailyHours) && Number(member.dailyHours) > 0 ? Number(member.dailyHours) : 8
+    const targetMinutes = configuredMinutes > 0 ? configuredMinutes : legacyScheduledToday ? Math.round(legacyDailyHours * 60) : 0
+    const scheduledToday = targetMinutes > 0
+    const targetSeconds = targetMinutes * 60
     return { member, seconds, running, scheduledToday, targetSeconds }
   }).sort((a, b) => b.seconds - a.seconds || a.member.name.localeCompare(b.member.name, "pt-BR")), [members, now, projects, workSessions])
 

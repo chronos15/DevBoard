@@ -971,3 +971,17 @@ Essa chave é **privada** e nunca deve usar o prefixo `NEXT_PUBLIC_`. O usuário
 Inativar um colaborador não apaga a conta nem o histórico: apenas define `workspace_members.active = false`, bloqueando o acesso ao workspace pelas regras já existentes. A própria conta do Administrador logado não pode ser inativada por essa tela e o último Admin ativo do workspace é protegido.
 
 A migration também adiciona as RPCs de moderação da reunião. Administradores, o criador da reunião e os responsáveis pela subatividade/atividade de origem podem remover outro participante da call. O encerramento da reunião foi desacoplado do upload da gravação: a chamada é finalizada imediatamente e o navegador responsável continua preparando e enviando o arquivo em segundo plano enquanto a aplicação permanecer aberta.
+
+## Migration 077 — jornada semanal HH:mm + acesso personalizado opt-in
+
+Depois da 076, execute:
+
+```text
+supabase/migrations/077_taskboard_weekly_schedule_and_access_profiles.sql
+```
+
+A 077 cria `workspace_member_work_schedule`, permitindo uma meta diferente para cada dia da semana em minutos. A interface usa `HH:mm`, então uma jornada como **Seg–Sex 08:00 / Sáb 04:00** é suportada sem cálculo decimal. Os dados antigos de `work_days` e `daily_hours` são migrados automaticamente para a nova tabela e continuam sincronizados como fallback para clientes antigos.
+
+Também é criada `workspace_member_access_profiles`, uma camada de acesso individual **opt-in**. Nenhum usuário existente é restringido após executar a migration: sem um perfil personalizado ativo, o TaskBoard continua usando exatamente as regras da role atual. A personalização é restritiva (não promove permissões acima da role) e permite limitar telas e aplicar escopo integrado em projetos, atividades e subatividades. Administradores permanecem com acesso integral.
+
+As restrições de projeto/atividade/subatividade são aplicadas nas policies SELECT da RLS por helpers `taskboard_can_view_project`, `taskboard_can_view_activity` e `taskboard_can_view_subactivity`, evitando que itens ocultos sejam recuperados apenas manipulando a URL ou consultando diretamente as tabelas pelo cliente autenticado.

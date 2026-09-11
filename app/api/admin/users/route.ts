@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       role?: string
       workDays?: number[]
       dailyHours?: number
+      workSchedule?: Record<string, number>
     }
     const name = String(body.name ?? "").trim()
     const email = String(body.email ?? "").trim().toLowerCase()
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
     const role = VALID_ROLES.has(String(body.role)) ? String(body.role) : "member"
     const workDays = normalizeWorkDays(body.workDays)
     const dailyHours = Number(body.dailyHours ?? 8)
+    const workSchedule = body.workSchedule && typeof body.workSchedule === "object"
+      ? Object.fromEntries(Object.entries(body.workSchedule).map(([day, minutes]) => [day, Math.max(0, Math.min(1440, Math.round(Number(minutes) || 0)))]))
+      : Object.fromEntries(workDays.map((day) => [String(day), Math.round(dailyHours * 60)]))
 
     if (name.length < 2) return NextResponse.json({ error: "Informe o nome do usuário." }, { status: 400 })
     if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Informe um e-mail válido." }, { status: 400 })
@@ -81,16 +85,37 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     }).eq("id", userId)
 
+    const normalizedScheduleEntries = Object.entries(workSchedule)
+      .map(([day, minutes]) => ({ day: Number(day), minutes: Number(minutes) }))
+      .filter((item) => Number.isInteger(item.day) && item.day >= 0 && item.day <= 6 && item.minutes > 0 && item.minutes <= 1440)
+    const scheduledDays = normalizedScheduleEntries.map((item) => item.day).sort((a, b) => a - b)
+    const averageMinutes = normalizedScheduleEntries.length
+      ? normalizedScheduleEntries.reduce((sum, item) => sum + item.minutes, 0) / normalizedScheduleEntries.length
+      : 8 * 60
+
     const { error: memberError } = await admin.from("workspace_members").upsert({
       workspace_id: membership.workspace_id,
       user_id: userId,
       role,
       active: true,
-      work_days: workDays,
-      daily_hours: Math.round(dailyHours * 100) / 100,
+      work_days: scheduledDays,
+      daily_hours: Math.round((averageMinutes / 60) * 100) / 100,
     }, { onConflict: "workspace_id,user_id" })
 
-    if (profileError || memberError) {
+    let scheduleError: unknown = null
+    if (!memberError && normalizedScheduleEntries.length) {
+      const result = await admin.from("workspace_member_work_schedule").insert(
+        normalizedScheduleEntries.map((item) => ({
+          workspace_id: membership.workspace_id,
+          user_id: userId,
+          weekday: item.day,
+          target_minutes: item.minutes,
+        })),
+      )
+      scheduleError = result.error
+    }
+
+    if (profileError || memberError || scheduleError) {
       await admin.auth.admin.deleteUser(userId).catch(() => undefined)
       return NextResponse.json({ error: "O usuário foi criado, mas não foi possível vinculá-lo à equipe. A operação foi desfeita." }, { status: 500 })
     }

@@ -38,6 +38,7 @@ import {
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
+import { canAccessScreen } from "@/lib/access-control"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -319,6 +320,7 @@ export function DiscordWorkspace() {
     members,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     workspaceId,
     refreshAll,
     deleteActivity,
@@ -380,7 +382,12 @@ export function DiscordWorkspace() {
     if (typeof window !== "undefined" && window.innerWidth < 768) setServerRailExpanded(false)
   }, [])
 
-  const accessibleProjects = React.useMemo(() => scopeFollowUpProjects(projects, currentUserId, currentUserRole), [projects, currentUserId, currentUserRole])
+  const allowFollowup = canAccessScreen(currentUserRole, currentAccessPolicy, "followup")
+  const allowProjects = canAccessScreen(currentUserRole, currentAccessPolicy, "projects")
+  const allowRequests = canAccessScreen(currentUserRole, currentAccessPolicy, "requests")
+  const allowAnalysis = canAccessScreen(currentUserRole, currentAccessPolicy, "analysis")
+  const allowChat = canAccessScreen(currentUserRole, currentAccessPolicy, "chat")
+  const accessibleProjects = React.useMemo(() => allowFollowup ? scopeFollowUpProjects(projects, currentUserId, currentUserRole) : [], [allowFollowup, projects, currentUserId, currentUserRole])
   const visibleRequests = React.useMemo(() => serviceRequests, [serviceRequests])
   const visibleReviews = React.useMemo(() => aqsReviews, [aqsReviews])
   const openWorkspaceChannels = React.useMemo(() => workspaceChannels.filter((channel) => !channel.closedAt), [workspaceChannels])
@@ -394,9 +401,12 @@ export function DiscordWorkspace() {
   const requestedSubId = searchParams.get("sub")
   const requestedActivityId = searchParams.get("activity")
 
-  const space: DiscordSpace = requestedSpace && ["project", "channels", "requests", "aqs", "chat"].includes(requestedSpace)
+  const requestedResolvedSpace: DiscordSpace = requestedSpace && ["project", "channels", "requests", "aqs", "chat"].includes(requestedSpace)
     ? requestedSpace
     : requestedChannelId ? "channels" : requestedRequestId ? "requests" : requestedReviewId ? "aqs" : "project"
+  const isSpaceAllowed = (candidate: DiscordSpace) => candidate === "project" ? allowFollowup : candidate === "requests" ? allowRequests : candidate === "aqs" ? allowAnalysis : allowChat
+  const fallbackSpace: DiscordSpace = allowFollowup ? "project" : allowRequests ? "requests" : allowAnalysis ? "aqs" : "chat"
+  const space: DiscordSpace = isSpaceAllowed(requestedResolvedSpace) ? requestedResolvedSpace : fallbackSpace
 
   const selectedProject = accessibleProjects.find((project) => project.id === requestedProjectId) ?? accessibleProjects[0] ?? null
   const selectedRequest = visibleRequests.find((request) => request.id === requestedRequestId) ?? null
@@ -741,7 +751,7 @@ export function DiscordWorkspace() {
     const results: SearchResult[] = []
     const matches = (value: string) => !q || normalize(value).includes(q)
 
-    for (const channel of workspaceChannels) {
+    if (allowChat) for (const channel of workspaceChannels) {
       // Fechados ficam realmente fora da navegação e só aparecem quando o usuário pesquisa algo.
       if (channel.closedAt && !q) continue
       if (!matches(`${channel.name} ${channel.description ?? ""}`)) continue
@@ -770,12 +780,12 @@ export function DiscordWorkspace() {
       }
     }
 
-    if (q) for (const request of visibleRequests) {
+    if (allowRequests && q) for (const request of visibleRequests) {
       if (!matches(`${request.title} ${request.orderNumber} ${request.unit} ${request.module}`)) continue
       results.push({ key: `request:${request.id}`, kind: "Solicitação", title: `${serviceRequestReference(request)} · ${request.title}`, subtitle: SERVICE_REQUEST_STATUS_LABELS[request.status], target: { space: "requests", request: request.id } })
     }
 
-    if (q) for (const review of visibleReviews) {
+    if (allowAnalysis && q) for (const review of visibleReviews) {
       const project = projects.find((item) => item.id === review.projectId)
       const activity = project?.activities.find((item) => item.id === review.activityId)
       const sub = activity?.subactivities.find((item) => item.id === review.subactivityId)
@@ -783,12 +793,12 @@ export function DiscordWorkspace() {
       results.push({ key: `aqs:${review.id}`, kind: "Análise AQS", title: sub?.title ?? "Análise AQS", subtitle: project?.name, target: { space: "aqs", review: review.id, project: review.projectId, activity: review.activityId, sub: review.subactivityId } })
     }
 
-    if (matches("canais tópicos workspace")) results.push({ key: "area:channels", kind: "Área", title: "Canais", subtitle: "Canais gerais do workspace", target: { space: "channels", channel: openWorkspaceChannels[0]?.id } })
-    if (matches("solicitações protocolos atendimento")) results.push({ key: "area:requests", kind: "Área", title: "Solicitações", subtitle: "Protocolos e atendimento", target: { space: "requests", request: visibleRequests.find((item) => !CLOSED_REQUEST_STATUSES.has(item.status))?.id ?? visibleRequests[0]?.id } })
-    if (matches("mensagens chat grupos reuniões")) results.push({ key: "area:chat", kind: "Área", title: "Mensagens", subtitle: "Chats, grupos e reuniões", target: { space: "chat" } })
+    if (allowChat && matches("canais tópicos workspace")) results.push({ key: "area:channels", kind: "Área", title: "Canais", subtitle: "Canais gerais do workspace", target: { space: "channels", channel: openWorkspaceChannels[0]?.id } })
+    if (allowRequests && matches("solicitações protocolos atendimento")) results.push({ key: "area:requests", kind: "Área", title: "Solicitações", subtitle: "Protocolos e atendimento", target: { space: "requests", request: visibleRequests.find((item) => !CLOSED_REQUEST_STATUSES.has(item.status))?.id ?? visibleRequests[0]?.id } })
+    if (allowChat && matches("mensagens chat grupos reuniões")) results.push({ key: "area:chat", kind: "Área", title: "Mensagens", subtitle: "Chats, grupos e reuniões", target: { space: "chat" } })
 
     return results.slice(0, 60)
-  }, [accessibleProjects, commandQuery, openWorkspaceChannels, projects, visibleRequests, visibleReviews, workspaceChannels])
+  }, [accessibleProjects, allowAnalysis, allowChat, allowRequests, commandQuery, openWorkspaceChannels, projects, visibleRequests, visibleReviews, workspaceChannels])
 
   React.useEffect(() => {
     setCommandIndex((current) => Math.min(current, Math.max(0, commandResults.length - 1)))
@@ -1047,7 +1057,7 @@ export function DiscordWorkspace() {
 
           {serverRailExpanded && <p className="px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
           <div className="flex flex-col items-stretch gap-1">
-            {(currentUserRole === "admin" || currentUserRole === "developer") && (
+            {allowProjects && (currentUserRole === "admin" || currentUserRole === "developer") && (
               <CreateProjectServerButton expanded={serverRailExpanded} onClick={() => setCreateProjectOpen(true)} />
             )}
             {accessibleProjects.map((project) => {
@@ -1058,10 +1068,10 @@ export function DiscordWorkspace() {
 
           <div className={cn("mx-auto my-2 h-px bg-border", serverRailExpanded ? "w-[calc(100%-16px)]" : "w-8")} />
           <div>
-            <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />
-            <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />
-            {(currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}
-            <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }); collapseServerRailOnSmallScreen() }} />
+            {allowChat && <SpecialServerButton title="Canais" active={space === "channels"} icon={Hash} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "channels", channel: openWorkspaceChannels[0]?.id }); collapseServerRailOnSmallScreen() }} />}
+            {allowRequests && <SpecialServerButton title="Solicitações" active={space === "requests"} icon={Inbox} badge={openRequestsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleRequests.find((r) => !CLOSED_REQUEST_STATUSES.has(r.status)) ?? visibleRequests[0]; setLocation({ space: "requests", request: first?.id }); collapseServerRailOnSmallScreen() }} />}
+            {allowAnalysis && (currentUserRole === "admin" || currentUserRole === "aqs" || currentUserRole === "developer") && <SpecialServerButton title="Análise AQS" active={space === "aqs"} icon={ClipboardCheck} badge={activeAqsCount} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); const first = visibleReviews.find((r) => r.status === "awaiting" || r.status === "evaluating") ?? visibleReviews[0]; setLocation({ space: "aqs", review: first?.id, project: first?.projectId, activity: first?.activityId, sub: first?.subactivityId }); collapseServerRailOnSmallScreen() }} />}
+            {allowChat && <SpecialServerButton title="Mensagens" active={space === "chat"} icon={MessageCircleMore} expanded={serverRailExpanded} onClick={() => { setChannelSearch(""); setLocation({ space: "chat" }); collapseServerRailOnSmallScreen() }} />}
           </div>
         </div>
         <div className={cn("mt-auto flex shrink-0 flex-col gap-2 border-t border-border bg-background pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-2", serverRailExpanded ? "items-stretch px-2" : "items-center")}>

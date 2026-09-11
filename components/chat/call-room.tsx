@@ -17,6 +17,7 @@ import {
   PhoneCall,
   PhoneOff,
   Search,
+  UserMinus,
   UserPlus,
   Settings2,
   ShieldCheck,
@@ -91,6 +92,13 @@ type RecordingStateSignal = {
   meetingId: string
   recorderId: string
   status: "recording" | "finalizing" | "published" | "failed"
+  sentAt: string
+}
+
+type MeetingMemberRemovedSignal = {
+  meetingId: string
+  userId: string
+  removedBy: string
   sentAt: string
 }
 
@@ -563,6 +571,8 @@ export function CallRoom({
   const [memberPickerOpen, setMemberPickerOpen] = React.useState(false)
   const [memberQuery, setMemberQuery] = React.useState("")
   const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null)
+  const [removingUserId, setRemovingUserId] = React.useState<string | null>(null)
+  const [canManageMeetingMembers, setCanManageMeetingMembers] = React.useState(false)
   const [focusedMemberId, setFocusedMemberId] = React.useState<string | null>(null)
   const [mediaError, setMediaError] = React.useState("")
   const [mediaReadyMeetingId, setMediaReadyMeetingId] = React.useState<string | null>(null)
@@ -635,6 +645,28 @@ export function CallRoom({
   const canEndMeeting = Boolean(
     meeting && (currentUserRole === "admin" || meeting.createdBy === currentUserId),
   )
+  React.useEffect(() => {
+    if (!open || !meeting) {
+      setCanManageMeetingMembers(false)
+      return
+    }
+    if (currentUserRole === "admin" || meeting.createdBy === currentUserId) {
+      setCanManageMeetingMembers(true)
+      return
+    }
+    let cancelled = false
+    void supabase.rpc("can_manage_meeting_members", { p_meeting_id: meeting.id }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error) {
+        console.warn("TaskBoard: não foi possível validar a moderação da reunião", error)
+        setCanManageMeetingMembers(false)
+        return
+      }
+      setCanManageMeetingMembers(data === true)
+    })
+    return () => { cancelled = true }
+  }, [currentUserId, currentUserRole, meeting?.createdBy, meeting?.id, open, supabase])
+
   const inviteCandidates = members
     .filter((member) => member.id !== currentUserId)
     .filter((member) => !memberQuery.trim() || member.name.toLocaleLowerCase("pt-BR").includes(memberQuery.trim().toLocaleLowerCase("pt-BR")))
@@ -1352,6 +1384,16 @@ export function CallRoom({
     if (localVideoRef.current) localVideoRef.current.srcObject = null
   }, [])
 
+  const handleMemberRemoved = React.useCallback(({ payload }: { payload: unknown }) => {
+    const signal = payload as MeetingMemberRemovedSignal
+    if (!meeting || signal?.meetingId !== meeting.id || signal.userId !== currentUserId) return
+    // Se este dispositivo era o gravador, inicia a publicação antes de fechar a sala.
+    // O upload continua mesmo após o componente da chamada sair da tela.
+    if (meetingRecorderRef.current) void finalizeRecordingRef.current?.()
+    stopAllMedia()
+    onOpenChange(false)
+  }, [currentUserId, meeting?.id, onOpenChange, stopAllMedia])
+
   const setupMedia = React.useCallback(async () => {
     if (!meeting) return
     setMediaReadyMeetingId(null)
@@ -1581,8 +1623,12 @@ export function CallRoom({
         recordingClaimTimerRef.current = null
       }
       const recorder = meetingRecorderRef.current
+      if (recorder && recordingContextRef.current?.hasContext) {
+        void finalizeRecordingRef.current?.()
+      } else if (recorder) {
+        void recorder.stop()
+      }
       meetingRecorderRef.current = null
-      if (recorder) void recorder.stop()
       recordingContextRef.current = null
       recordingFinalizePromiseRef.current = null
     }
@@ -1798,6 +1844,7 @@ export function CallRoom({
           .on("broadcast", { event: "media-state" }, ({ payload }) => handleMediaState(payload as MediaStateSignal))
           .on("broadcast", { event: "recording-state" }, ({ payload }) => handleRecordingState(payload as RecordingStateSignal))
           .on("broadcast", { event: "recording-stop-request" }, handleRecordingStopRequest)
+          .on("broadcast", { event: "member-removed" }, handleMemberRemoved)
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
@@ -1849,6 +1896,7 @@ export function CallRoom({
     flushPendingIce,
     getPeerRole,
     handleNativeScreenSignal,
+    handleMemberRemoved,
     bindPeerSenders,
     postSignal,
     sendOffer,
@@ -2240,14 +2288,19 @@ export function CallRoom({
       try {
         setRecordingState("finalizing")
         setRecordingMessage("Finalizando a gravação da reunião…")
-        await supabase.rpc("meeting_recording_mark_finalizing", { p_meeting_id: meeting.id })
-        void broadcastRecordingState("finalizing")
 
-        const segmentCount = await recorder.stop()
+        // Dispara o stop do MediaRecorder antes de qualquer chamada de rede. Assim,
+        // encerrar a sala pode desligar câmera/microfone imediatamente sem perder o
+        // último trecho; compressão, upload e publicação seguem desacoplados da call.
+        const segmentPromise = recorder.stop()
         if (recordingHeartbeatRef.current !== null) {
           window.clearInterval(recordingHeartbeatRef.current)
           recordingHeartbeatRef.current = null
         }
+        void supabase.rpc("meeting_recording_mark_finalizing", { p_meeting_id: meeting.id })
+        void broadcastRecordingState("finalizing")
+
+        const segmentCount = await segmentPromise
         if (segmentCount <= 0) throw new Error("A reunião terminou antes que o navegador conseguisse gerar a gravação.")
         if (!context.workspaceId || !context.projectId) throw new Error("O tópico de origem da reunião não pôde ser identificado.")
 
@@ -2419,6 +2472,38 @@ export function CallRoom({
     }
   }
 
+  async function removeUserFromMeeting(userId: string) {
+    if (!meeting || !canManageMeetingMembers || removingUserId || userId === currentUserId) return
+    const target = members.find((member) => member.id === userId)
+    if (!window.confirm(`Remover ${target?.name ?? "este usuário"} desta reunião?`)) return
+    setRemovingUserId(userId)
+    try {
+      const { data, error } = await supabase.rpc("meeting_remove_user", {
+        p_meeting_id: meeting.id,
+        p_user_id: userId,
+      })
+      if (error) throw error
+      if (data !== true) return
+      try {
+        await channelRef.current?.send({
+          type: "broadcast",
+          event: "member-removed",
+          payload: {
+            meetingId: meeting.id,
+            userId,
+            removedBy: currentUserId,
+            sentAt: new Date().toISOString(),
+          } satisfies MeetingMemberRemovedSignal,
+        })
+      } catch {}
+      await refreshAll()
+    } catch (error) {
+      setMediaError(toUserFacingError(error, "Não foi possível remover o participante da reunião"))
+    } finally {
+      setRemovingUserId(null)
+    }
+  }
+
   async function leaveRoom() {
     if (!meeting || leavingMeeting) return
     setLeavingMeeting(true)
@@ -2441,15 +2526,31 @@ export function CallRoom({
 
   async function finishMeeting() {
     if (!meeting || !canEndMeeting || endingMeeting) return
-    if (!window.confirm(`Encerrar a reunião “${meeting.title}” para todos os participantes? A gravação será salva automaticamente no tópico de origem.`)) return
+    if (!window.confirm(`Encerrar a reunião “${meeting.title}” para todos os participantes? A chamada será encerrada agora e a gravação continuará sendo enviada em segundo plano.`)) return
     setEndingMeeting(true)
     try {
-      const recordingSaved = await ensureRecordingPublishedBeforeEnd()
-      if (!recordingSaved) {
-        setMediaError("A reunião não foi encerrada porque a gravação ainda não pôde ser salva. Tente novamente após corrigir o problema indicado.")
-        return
+      // O encerramento da sala não depende mais do upload. O dispositivo gravador
+      // recebe o pedido de finalização e continua preparando/enviando os trechos
+      // mesmo depois que a UI da chamada já foi fechada.
+      if (meetingRecorderRef.current) {
+        void finalizeAndPublishRecording()
+      } else {
+        try {
+          const send = channelRef.current?.send({
+            type: "broadcast",
+            event: "recording-stop-request",
+            payload: { meetingId: meeting.id, requestedBy: currentUserId, sentAt: new Date().toISOString() },
+          })
+          // Dá uma janela curta para o broadcast sair antes de desmontar o canal.
+          // Não aguardamos o upload: no máximo alguns ms de sinalização da gravação.
+          if (send) await Promise.race([send, sleep(350)])
+        } catch {}
       }
-      if (await endMeeting(meeting.id)) onOpenChange(false)
+
+      if (await endMeeting(meeting.id)) {
+        stopAllMedia()
+        onOpenChange(false)
+      }
     } finally {
       setEndingMeeting(false)
     }
@@ -2529,26 +2630,43 @@ export function CallRoom({
                         : "Convidado · aguardando"}
                 </span>
               </span>
-              {connected ? (
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-destructive" />}
-                  {camera && <Camera className="size-3" />}
-                </span>
-              ) : !own ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  className="size-7 shrink-0 opacity-100 sm:opacity-0 sm:group-hover/member:opacity-100"
-                  loading={invitingUserId === member.id}
-                  disabled={Boolean(invitingUserId)}
-                  onClick={() => void callUser(member.id)}
-                  title="Chamar novamente"
-                  aria-label={`Chamar ${member.name}`}
-                >
-                  <PhoneCall className="size-3.5" />
-                </Button>
-              ) : null}
+              <span className="flex shrink-0 items-center gap-1">
+                {connected ? (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-destructive" />}
+                    {camera && <Camera className="size-3" />}
+                  </span>
+                ) : !own ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="size-7"
+                    loading={invitingUserId === member.id}
+                    disabled={Boolean(invitingUserId) || Boolean(removingUserId)}
+                    onClick={() => void callUser(member.id)}
+                    title="Chamar novamente"
+                    aria-label={`Chamar ${member.name}`}
+                  >
+                    <PhoneCall className="size-3.5" />
+                  </Button>
+                ) : null}
+                {canManageMeetingMembers && !own && (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    loading={removingUserId === member.id}
+                    disabled={Boolean(removingUserId) || Boolean(invitingUserId)}
+                    onClick={() => void removeUserFromMeeting(member.id)}
+                    title="Remover da reunião"
+                    aria-label={`Remover ${member.name} da reunião`}
+                  >
+                    <UserMinus className="size-3.5" />
+                  </Button>
+                )}
+              </span>
             </div>
           )
         })}
@@ -2556,7 +2674,7 @@ export function CallRoom({
 
       {canEndMeeting && (
         <div className="shrink-0 border-t border-border p-2.5">
-          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText={recordingFinalizing ? "Salvando gravação…" : "Encerrando…"}>
+          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando…">
             <PhoneOff className="size-3.5" />
             Encerrar reunião para todos
           </Button>

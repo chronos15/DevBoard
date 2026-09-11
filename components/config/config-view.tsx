@@ -2,14 +2,24 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { Bell, Building2, Camera, Check, ImageIcon, LayoutDashboard, Loader2, Palette, Pencil, Pipette, Plus, RotateCcw, ShieldCheck, Sparkles, Tags, TimerOff, Trash2, Upload, User, Users, X } from "lucide-react"
+import { Bell, Building2, CalendarDays, Camera, Check, ImageIcon, LayoutDashboard, Loader2, Palette, Pencil, Pipette, Plus, Power, RotateCcw, ShieldCheck, Sparkles, Tags, TimerOff, Trash2, Upload, User, UserPlus, Users, X } from "lucide-react"
 import { useStore } from "@/lib/store"
+import { createClient } from "@/lib/supabase/client"
+import { AVATARS_BUCKET } from "@/lib/supabase/helpers"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type UserPreferences } from "@/lib/types"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
 import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 const sections = [
   { id: "perfil", label: "Perfil", icon: User, adminOnly: false },
@@ -377,53 +387,302 @@ function ProfileSection({ me }: { me?: Member }) {
   )
 }
 
+const TEAM_WORK_DAYS = [
+  { value: 1, label: "Seg" },
+  { value: 2, label: "Ter" },
+  { value: 3, label: "Qua" },
+  { value: 4, label: "Qui" },
+  { value: 5, label: "Sex" },
+  { value: 6, label: "Sáb" },
+  { value: 0, label: "Dom" },
+] as const
+
+type ManagedTeamMember = Member & {
+  active: boolean
+  workDays: number[]
+  dailyHours: number
+}
+
+function sanitizeTeamDays(days: unknown): number[] {
+  if (!Array.isArray(days)) return [1, 2, 3, 4, 5]
+  return Array.from(new Set(days.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))).sort((a, b) => a - b)
+}
+
+function TeamSchedulePicker({ days, hours, disabled, onDaysChange, onHoursChange }: {
+  days: number[]
+  hours: number
+  disabled?: boolean
+  onDaysChange: (days: number[]) => void
+  onHoursChange: (hours: number) => void
+}) {
+  function toggle(day: number) {
+    onDaysChange(days.includes(day) ? days.filter((item) => item !== day) : [...days, day].sort((a, b) => a - b))
+  }
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-border bg-muted/20 p-4">
+      <div>
+        <div className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="size-4 text-primary" /> Dias de trabalho</div>
+        <p className="mt-1 text-xs text-muted-foreground">Selecione os dias considerados na meta diária de horas efetivadas.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {TEAM_WORK_DAYS.map((day) => (
+            <button
+              key={day.value}
+              type="button"
+              disabled={disabled}
+              onClick={() => toggle(day.value)}
+              className={cn(
+                "min-w-12 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50",
+                days.includes(day.value) ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {day.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="block">
+        <span className="text-sm font-semibold">Horas por dia</span>
+        <span className="mt-1 block text-xs text-muted-foreground">Esta carga substitui a referência fixa de 08:00 no quadro de horas efetivadas.</span>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="number"
+            min="0.25"
+            max="24"
+            step="0.25"
+            disabled={disabled}
+            value={Number.isFinite(hours) ? hours : 8}
+            onChange={(event) => onHoursChange(Number(event.target.value))}
+            className="h-10 w-32 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50"
+          />
+          <span className="text-xs text-muted-foreground">horas/dia</span>
+        </div>
+      </label>
+    </div>
+  )
+}
+
 function TeamSection() {
-  const { members, currentUserId, currentUserRole, setMemberRole } = useStore()
+  const { members, currentUserId, currentUserRole, setMemberRole, refreshAll } = useStore()
+  const supabase = React.useMemo(() => createClient(), [])
+  const [teamMembers, setTeamMembers] = React.useState<ManagedTeamMember[]>([])
+  const [loadingTeam, setLoadingTeam] = React.useState(false)
   const [changing, setChanging] = React.useState<string | null>(null)
+  const [editing, setEditing] = React.useState<ManagedTeamMember | null>(null)
+  const [editRole, setEditRole] = React.useState<AccessRole>("member")
+  const [editActive, setEditActive] = React.useState(true)
+  const [editDays, setEditDays] = React.useState<number[]>([1, 2, 3, 4, 5])
+  const [editHours, setEditHours] = React.useState(8)
+  const [editSaving, setEditSaving] = React.useState(false)
+  const [editError, setEditError] = React.useState("")
+  const [addOpen, setAddOpen] = React.useState(false)
+  const [addName, setAddName] = React.useState("")
+  const [addEmail, setAddEmail] = React.useState("")
+  const [addPassword, setAddPassword] = React.useState("")
+  const [addRole, setAddRole] = React.useState<AccessRole>("member")
+  const [addDays, setAddDays] = React.useState<number[]>([1, 2, 3, 4, 5])
+  const [addHours, setAddHours] = React.useState(8)
+  const [adding, setAdding] = React.useState(false)
+  const [addError, setAddError] = React.useState("")
+
+  const loadAdminTeam = React.useCallback(async () => {
+    if (currentUserRole !== "admin") return
+    setLoadingTeam(true)
+    try {
+      const { data, error } = await supabase.rpc("list_workspace_team_members")
+      if (error) throw error
+      const rows = (data ?? []).map((row: any): ManagedTeamMember => {
+        const avatarPath = row.avatar_path || undefined
+        const avatarUrl = avatarPath ? supabase.storage.from(AVATARS_BUCKET).getPublicUrl(avatarPath).data.publicUrl : undefined
+        return {
+          id: row.user_id,
+          name: row.name || row.email || "Usuário",
+          initials: row.initials || "US",
+          color: row.color || "#64748B",
+          email: row.email || undefined,
+          avatarPath,
+          avatarUrl,
+          role: (["admin", "developer", "aqs", "support", "member"].includes(String(row.role)) ? row.role : "member") as AccessRole,
+          active: row.active !== false,
+          workDays: sanitizeTeamDays(row.work_days),
+          dailyHours: Number(row.daily_hours || 8),
+        }
+      })
+      setTeamMembers(rows)
+    } catch (error) {
+      console.error("[TaskBoard/Equipe] Falha ao carregar equipe administrativa", error)
+    } finally {
+      setLoadingTeam(false)
+    }
+  }, [currentUserRole, supabase])
+
+  React.useEffect(() => {
+    if (currentUserRole === "admin") {
+      void loadAdminTeam()
+      return
+    }
+    setTeamMembers(members.map((member) => ({
+      ...member,
+      active: true,
+      workDays: sanitizeTeamDays(member.workDays),
+      dailyHours: Number(member.dailyHours || 8),
+    })))
+  }, [currentUserRole, loadAdminTeam, members])
 
   async function changeRole(memberId: string, role: AccessRole) {
     if (memberId === currentUserId && currentUserRole !== "admin") return
     setChanging(memberId)
-    await setMemberRole(memberId, role)
+    const ok = await setMemberRole(memberId, role)
+    if (ok) await loadAdminTeam()
     setChanging(null)
+  }
+
+  function openEdit(member: ManagedTeamMember) {
+    setEditing(member)
+    setEditRole(member.role ?? "member")
+    setEditActive(member.active)
+    setEditDays([...member.workDays])
+    setEditHours(member.dailyHours)
+    setEditError("")
+  }
+
+  async function saveEdit() {
+    if (!editing || editSaving) return
+    if (!Number.isFinite(editHours) || editHours <= 0 || editHours > 24) {
+      setEditError("Informe uma carga diária maior que 0 e de no máximo 24 horas.")
+      return
+    }
+    setEditSaving(true)
+    setEditError("")
+    try {
+      if ((editing.role ?? "member") !== editRole) {
+        const ok = await setMemberRole(editing.id, editRole)
+        if (!ok) throw new Error("Não foi possível alterar a permissão.")
+      }
+      const { error: scheduleError } = await supabase.rpc("set_workspace_member_schedule", {
+        p_user_id: editing.id,
+        p_work_days: editDays,
+        p_daily_hours: editHours,
+      })
+      if (scheduleError) throw scheduleError
+      if (editing.active !== editActive) {
+        const { error: activeError } = await supabase.rpc("set_workspace_member_active", {
+          p_user_id: editing.id,
+          p_active: editActive,
+        })
+        if (activeError) throw activeError
+      }
+      await Promise.all([refreshAll(), loadAdminTeam()])
+      setEditing(null)
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Não foi possível salvar os dados do usuário.")
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  function resetAddForm() {
+    setAddName("")
+    setAddEmail("")
+    setAddPassword("")
+    setAddRole("member")
+    setAddDays([1, 2, 3, 4, 5])
+    setAddHours(8)
+    setAddError("")
+  }
+
+  async function addUser(event: React.FormEvent) {
+    event.preventDefault()
+    if (adding) return
+    setAdding(true)
+    setAddError("")
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addName.trim(),
+          email: addEmail.trim(),
+          password: addPassword,
+          role: addRole,
+          workDays: addDays,
+          dailyHours: addHours,
+        }),
+      })
+      const payload = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(payload.error || "Não foi possível adicionar o usuário.")
+      await Promise.all([refreshAll(), loadAdminTeam()])
+      setAddOpen(false)
+      resetAddForm()
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Não foi possível adicionar o usuário.")
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (
     <div>
-      <SectionTitle title="Equipe" subtitle="Usuários confirmados da equipe e seus níveis de acesso." />
-      <ul className="flex flex-col gap-2">
-        {members.map((member) => (
-          <li key={member.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap">
-            <MemberAvatar member={member} className="size-10 text-xs ring-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
-              <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
-            </div>
-            {currentUserRole === "admin" ? (
-              <div className="relative min-w-32">
-                <select
-                  aria-label={`Permissão de ${member.name}`}
-                  disabled={changing === member.id}
-                  value={member.role ?? "member"}
-                  onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)}
-                  className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60"
-                >
-                  <option value="admin">Administrador</option>
-                  <option value="developer">Desenvolvedor</option>
-                  <option value="aqs">AQS</option>
-                  <option value="support">Suporte</option>
-                  <option value="member">Membro</option>
-                </select>
-                {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-tight">Equipe</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{currentUserRole === "admin" ? "Gerencie usuários, acesso e jornada usada nas métricas de horas efetivadas." : "Usuários confirmados da equipe e seus níveis de acesso."}</p>
+        </div>
+        {currentUserRole === "admin" && (
+          <button type="button" onClick={() => { resetAddForm(); setAddOpen(true) }} className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+            <UserPlus className="size-4" /> Adicionar usuário
+          </button>
+        )}
+      </div>
+
+      {loadingTeam && currentUserRole === "admin" && teamMembers.length === 0 ? (
+        <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" /> Carregando equipe...</div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {teamMembers.map((member) => (
+            <li key={member.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap", !member.active && "bg-muted/25 opacity-70")}>
+              <MemberAvatar member={member} className="size-10 text-xs ring-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-sm font-medium"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold", member.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{member.active ? "Ativo" : "Inativo"}</span>
+                </div>
+                <p className="truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
+                {currentUserRole === "admin" && (
+                  <p className="mt-1 truncate text-[0.62rem] text-muted-foreground">
+                    {member.workDays.length ? TEAM_WORK_DAYS.filter((day) => member.workDays.includes(day.value)).map((day) => day.label).join(" · ") : "Sem dias definidos"} · {member.dailyHours.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}h/dia
+                  </p>
+                )}
               </div>
-            ) : (
-              <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                {ACCESS_ROLE_LABELS[member.role ?? "member"]}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
+              {currentUserRole === "admin" ? (
+                <>
+                  <div className="relative min-w-32">
+                    <select
+                      aria-label={`Permissão de ${member.name}`}
+                      disabled={changing === member.id || !member.active}
+                      value={member.role ?? "member"}
+                      onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)}
+                      className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60"
+                    >
+                      <option value="admin">Administrador</option>
+                      <option value="developer">Desenvolvedor</option>
+                      <option value="aqs">AQS</option>
+                      <option value="support">Suporte</option>
+                      <option value="member">Membro</option>
+                    </select>
+                    {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
+                  </div>
+                  <button type="button" onClick={() => openEdit(member)} className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Gerenciar usuário" aria-label={`Gerenciar ${member.name}`}>
+                    <Pencil className="size-4" />
+                  </button>
+                </>
+              ) : (
+                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{ACCESS_ROLE_LABELS[member.role ?? "member"]}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="mt-5">
         <p className="mb-2 text-xs font-semibold">Perfis de acesso</p>
@@ -438,8 +697,68 @@ function TeamSection() {
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        Novos usuários passam a fazer parte da equipe somente após confirmar o e-mail e entram inicialmente como Membro. Apenas Administradores podem alterar o nível de acesso.
+        {currentUserRole === "admin"
+          ? "Usuários adicionados por esta tela já entram com o e-mail confirmado e não recebem mensagem de confirmação. Inativar bloqueia o acesso ao workspace sem apagar o histórico do colaborador."
+          : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
       </p>
+
+      <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !editSaving) setEditing(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Gerenciar colaborador</DialogTitle>
+            <DialogDescription>Defina acesso, status e jornada usada nas métricas do painel.</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl border border-border p-3">
+                <MemberAvatar member={editing} className="size-10" />
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{editing.name}</p><p className="truncate text-xs text-muted-foreground">{editing.email}</p></div>
+                <span className={cn("rounded-full px-2 py-1 text-[0.6rem] font-semibold", editActive ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{editActive ? "Ativo" : "Inativo"}</span>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold">Perfil de acesso</span>
+                <select value={editRole} disabled={editSaving} onChange={(event) => setEditRole(event.target.value as AccessRole)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
+                  <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
+                </select>
+              </label>
+              <TeamSchedulePicker days={editDays} hours={editHours} disabled={editSaving} onDaysChange={setEditDays} onHoursChange={setEditHours} />
+              <button type="button" disabled={editSaving || editing.id === currentUserId} onClick={() => setEditActive((value) => !value)} className={cn("flex w-full items-center justify-between gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50", editActive ? "border-destructive/20 bg-destructive/[0.04]" : "border-success/20 bg-success/[0.04]")}>
+                <span><span className="block text-sm font-semibold">{editActive ? "Inativar usuário" : "Reativar usuário"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{editActive ? "O usuário perde o acesso ao workspace, mas seu histórico é preservado." : "O usuário volta a poder acessar o workspace imediatamente."}</span></span>
+                <Power className={cn("size-4 shrink-0", editActive ? "text-destructive" : "text-success")} />
+              </button>
+              {editing.id === currentUserId && <p className="text-[0.65rem] text-muted-foreground">Sua própria conta não pode ser inativada por esta tela.</p>}
+              {editError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{editError}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <button type="button" disabled={editSaving} onClick={() => setEditing(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button>
+            <button type="button" disabled={editSaving} onClick={() => void saveEdit()} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editSaving && <Loader2 className="size-4 animate-spin" />} Salvar</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addOpen} onOpenChange={(open) => { if (!adding) setAddOpen(open) }}>
+        <DialogContent className="sm:max-w-lg">
+          <form onSubmit={addUser}>
+            <DialogHeader>
+              <DialogTitle>Adicionar usuário</DialogTitle>
+              <DialogDescription>A conta será criada já confirmada, sem envio de e-mail de confirmação.</DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-4">
+              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Nome</span><input autoFocus required minLength={2} value={addName} onChange={(event) => setAddName(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="Nome do colaborador" /></label>
+              <label className="block"><span className="mb-1.5 block text-sm font-semibold">E-mail</span><input required type="email" value={addEmail} onChange={(event) => setAddEmail(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="usuario@empresa.com" /></label>
+              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Senha inicial</span><input required minLength={6} type="password" value={addPassword} onChange={(event) => setAddPassword(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" placeholder="Mínimo de 6 caracteres" /></label>
+              <label className="block"><span className="mb-1.5 block text-sm font-semibold">Perfil de acesso</span><select value={addRole} onChange={(event) => setAddRole(event.target.value as AccessRole)} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"><option value="member">Membro</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="admin">Administrador</option></select></label>
+              <TeamSchedulePicker days={addDays} hours={addHours} disabled={adding} onDaysChange={setAddDays} onHoursChange={setAddHours} />
+              {addError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{addError}</p>}
+            </div>
+            <DialogFooter className="mt-5">
+              <button type="button" disabled={adding} onClick={() => setAddOpen(false)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button>
+              <button type="submit" disabled={adding} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{adding && <Loader2 className="size-4 animate-spin" />} Criar usuário</button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -44,6 +44,10 @@ export type Member = {
   avatarUrl?: string
   avatarPath?: string
   role?: AccessRole
+  /** Dias de trabalho configurados no workspace. 0=domingo ... 6=sábado. */
+  workDays?: number[]
+  /** Carga horária diária usada nas métricas de horas efetivadas. */
+  dailyHours?: number
 }
 
 export type MemberPresence = {

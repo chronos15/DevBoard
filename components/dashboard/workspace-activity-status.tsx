@@ -65,8 +65,6 @@ function roleLabel(member: Member) {
   return member.role ? ACCESS_ROLE_LABELS[member.role] : "Membro"
 }
 
-const DAILY_EFFECTIVE_TARGET_SECONDS = 8 * 60 * 60
-
 function formatHM(totalSeconds: number) {
   const seconds = Math.max(0, Math.floor(totalSeconds))
   const hours = Math.floor(seconds / 3600)
@@ -121,7 +119,11 @@ export function WorkspaceActivityStatus() {
     const seconds = effectiveSecondsToday(workSessions, member.id, now)
     const work = workForMember(projects, member.id)
     const running = work.find((item) => item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id)
-    return { member, seconds, running }
+    const workDays = Array.isArray(member.workDays) ? member.workDays : [1, 2, 3, 4, 5]
+    const scheduledToday = workDays.includes(new Date(now).getDay())
+    const dailyHours = Number.isFinite(member.dailyHours) && Number(member.dailyHours) > 0 ? Number(member.dailyHours) : 8
+    const targetSeconds = scheduledToday ? Math.round(dailyHours * 3600) : 0
+    return { member, seconds, running, scheduledToday, targetSeconds }
   }).sort((a, b) => b.seconds - a.seconds || a.member.name.localeCompare(b.member.name, "pt-BR")), [members, now, projects, workSessions])
 
   return (
@@ -298,15 +300,16 @@ export function WorkspaceActivityStatus() {
       ) : (
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {effectiveRows.map(({ member, seconds, running }) => {
-              const percent = Math.min(100, Math.round((seconds / DAILY_EFFECTIVE_TARGET_SECONDS) * 100))
+            {effectiveRows.map(({ member, seconds, running, scheduledToday, targetSeconds }) => {
+              const percent = targetSeconds > 0 ? Math.round((seconds / targetSeconds) * 100) : null
+              const gaugePercent = percent === null ? 0 : Math.min(100, percent)
               return (
                 <div key={member.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-background/35 p-3">
-                  <div className="relative size-16 shrink-0 rounded-full p-[5px]" style={{ background: `conic-gradient(var(--primary) ${percent}%, var(--muted) ${percent}% 100%)` }}>
+                  <div className="relative size-16 shrink-0 rounded-full p-[5px]" style={{ background: `conic-gradient(var(--primary) ${gaugePercent}%, var(--muted) ${gaugePercent}% 100%)` }}>
                     <div className="flex size-full items-center justify-center rounded-full bg-card">
                       <div className="text-center">
                         <div className="font-mono text-[0.7rem] font-semibold tabular-nums">{formatHM(seconds)}</div>
-                        <div className="text-[0.5rem] text-muted-foreground">{percent}%</div>
+                        <div className="text-[0.5rem] text-muted-foreground">{percent === null ? "folga" : `${percent}%`}</div>
                       </div>
                     </div>
                   </div>
@@ -323,8 +326,8 @@ export function WorkspaceActivityStatus() {
                       <strong className="font-mono text-xs tabular-nums">{formatHM(seconds)}</strong>
                     </div>
                     <div className="mt-0.5 flex items-baseline justify-between gap-2">
-                      <span className="text-[0.58rem] text-muted-foreground">Referência visual</span>
-                      <span className="font-mono text-[0.58rem] text-muted-foreground">08:00</span>
+                      <span className="text-[0.58rem] text-muted-foreground">Meta configurada</span>
+                      <span className="font-mono text-[0.58rem] text-muted-foreground">{scheduledToday ? formatHM(targetSeconds) : "Folga"}</span>
                     </div>
                     {running ? (
                       <Link href={followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })} className="mt-2 block truncate text-[0.6rem] font-medium text-primary hover:underline">

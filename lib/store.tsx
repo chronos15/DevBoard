@@ -2295,7 +2295,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const endMeeting = React.useCallback(async (meetingId: string) => {
     const result = await callRpc<unknown>("end_meeting", { p_meeting_id: meetingId }, "Não foi possível encerrar a reunião")
     if (result === undefined) return false
-    await Promise.all([refreshMeetings(), refreshProjects(), refreshServiceRequests()])
+    // A sala deve desaparecer assim que o backend confirmar o encerramento.
+    // Atualizações de histórico/listas continuam em paralelo e não seguram a UI da chamada.
+    void Promise.all([refreshMeetings(), refreshProjects(), refreshServiceRequests()])
     return true
   }, [callRpc, refreshMeetings, refreshProjects, refreshServiceRequests])
 

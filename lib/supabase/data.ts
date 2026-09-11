@@ -111,7 +111,7 @@ export async function loadIdentity(supabase: SupabaseClient) {
 export async function loadMembers(supabase: SupabaseClient, workspaceId: string) {
   const { data, error } = await supabase
     .from('workspace_members')
-    .select('user_id, role, profiles!workspace_members_user_id_fkey(id,email,name,initials,color,avatar_path)')
+    .select('user_id, role, active, work_days, daily_hours, profiles!workspace_members_user_id_fkey(id,email,name,initials,color,avatar_path)')
     .eq('workspace_id', workspaceId)
     .eq('active', true)
     .order('joined_at', { ascending: true })
@@ -123,7 +123,11 @@ export async function loadMembers(supabase: SupabaseClient, workspaceId: string)
       const { data: publicData } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(profile.avatar_path)
       profile.avatar_url = publicData.publicUrl
     }
-    return mapMember(profile ?? { id: entry.user_id, name: 'Usuário' }, entry.role)
+    return {
+      ...mapMember(profile ?? { id: entry.user_id, name: 'Usuário' }, entry.role),
+      workDays: Array.isArray(entry.work_days) ? entry.work_days.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value) && value >= 0 && value <= 6) : [1, 2, 3, 4, 5],
+      dailyHours: Number(entry.daily_hours || 8),
+    }
   })
 }
 

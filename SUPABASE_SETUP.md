@@ -77,11 +77,14 @@ Copie `.env.example` para `.env.local`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://SEU-PROJETO.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_SEU_TOKEN
+SUPABASE_SERVICE_ROLE_KEY=SEU_SERVICE_ROLE_SECRET
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=false
 ```
 
 Em produção, `NEXT_PUBLIC_APP_URL` deve ser o domínio HTTPS real.
+
+> `SUPABASE_SERVICE_ROLE_KEY` é usada **somente no servidor** pela tela **Configurações > Equipe** para criar usuários já confirmados. Configure-a também nas variáveis privadas da Vercel/servidor e **nunca** use o prefixo `NEXT_PUBLIC_` nessa chave.
 
 ## 4. Auth / URLs
 
@@ -946,3 +949,25 @@ A 075 adiciona o campo opcional `message_group_id` em `subactivity_comments` e `
 As RPCs antigas não têm a assinatura alterada. A migration adiciona apenas `set_followup_comment_message_group` e `set_followup_attachment_message_group`, preservando compatibilidade com clientes/PWA ainda em cache durante o deploy.
 
 O novo modo **Horas efetivadas** do quadro `Equipe` é exibido para Administradores e não cria tabela: ele usa `work_sessions` já existente (cuja RLS já permite ao Admin consultar a equipe) e calcula as sessões do dia atual no frontend, incluindo a sessão em andamento.
+
+## Migration 076 — gestão de equipe, jornada diária e moderação de reunião
+
+Depois da 075, execute:
+
+```text
+supabase/migrations/076_taskboard_team_schedule_and_meeting_controls.sql
+```
+
+A 076 adiciona em `workspace_members` os campos `work_days` e `daily_hours`, usados como a jornada configurada de cada colaborador. Em **Configurações > Equipe**, Administradores podem definir os dias trabalhados, a quantidade de horas por dia, inativar/reativar usuários e consultar também contas inativas. A meta do quadro **Equipe > Horas efetivadas** deixa de usar 08:00 fixas e passa a respeitar essa jornada; em dias não selecionados o colaborador aparece como **Folga**.
+
+A criação direta de usuários pela tela de Equipe usa a rota server-side `/api/admin/users` e a Supabase Admin API. Para isso, configure no ambiente de produção:
+
+```text
+SUPABASE_SERVICE_ROLE_KEY=seu_service_role_secret
+```
+
+Essa chave é **privada** e nunca deve usar o prefixo `NEXT_PUBLIC_`. O usuário criado por um Admin entra com e-mail já confirmado (`email_confirm: true`), portanto não recebe e-mail de confirmação. Nome, perfil de acesso e jornada são vinculados ao workspace na mesma operação.
+
+Inativar um colaborador não apaga a conta nem o histórico: apenas define `workspace_members.active = false`, bloqueando o acesso ao workspace pelas regras já existentes. A própria conta do Administrador logado não pode ser inativada por essa tela e o último Admin ativo do workspace é protegido.
+
+A migration também adiciona as RPCs de moderação da reunião. Administradores, o criador da reunião e os responsáveis pela subatividade/atividade de origem podem remover outro participante da call. O encerramento da reunião foi desacoplado do upload da gravação: a chamada é finalizada imediatamente e o navegador responsável continua preparando e enviando o arquivo em segundo plano enquanto a aplicação permanecer aberta.

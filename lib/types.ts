@@ -182,8 +182,23 @@ export type Activity = {
   title: string
   typeId?: string
   assigneeIds?: string[]
+  build?: string
+  linkedOs?: string
+  priority?: Priority
+  relatedModule?: string
+  subject?: string
+  responsibleDepartment?: string
   attachments?: AttachmentEntry[]
   subactivities: Subactivity[]
+}
+
+export type ActivityContextInput = {
+  build?: string
+  linkedOs?: string
+  priority?: Priority | null
+  relatedModule?: string
+  subject?: string
+  responsibleDepartment?: string
 }
 
 export type ProjectLogType =

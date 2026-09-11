@@ -14,7 +14,7 @@ import {
 import { useStore } from "@/lib/store"
 import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
-import type { Status } from "@/lib/types"
+import type { Priority, Status } from "@/lib/types"
 
 function executionMembersOnly<T extends { role?: string }>(members: T[]) {
   return members.filter((member) => member.role === "developer" || member.role === "admin")
@@ -29,6 +29,12 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
   const [title, setTitle] = React.useState("")
   const [assigneeId, setAssigneeId] = React.useState("")
   const [typeId, setTypeId] = React.useState("")
+  const [build, setBuild] = React.useState(project?.build ?? "")
+  const [linkedOs, setLinkedOs] = React.useState("")
+  const [priority, setPriority] = React.useState<Priority>("medium")
+  const [relatedModule, setRelatedModule] = React.useState("")
+  const [subject, setSubject] = React.useState("")
+  const [responsibleDepartment, setResponsibleDepartment] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   if (!canManageStructure) return null
@@ -38,10 +44,23 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
     if (!title.trim() || saving) return
     setSaving(true)
     try {
-      const ok = await addActivity(projectId, title.trim(), assigneeId ? [assigneeId] : [], typeId || null)
+      const ok = await addActivity(projectId, title.trim(), assigneeId ? [assigneeId] : [], typeId || null, {
+        build,
+        linkedOs,
+        priority,
+        relatedModule,
+        subject,
+        responsibleDepartment,
+      })
       if (!ok) return
       setTitle("")
       setTypeId("")
+      setBuild(project?.build ?? "")
+      setLinkedOs("")
+      setPriority("medium")
+      setRelatedModule("")
+      setSubject("")
+      setResponsibleDepartment("")
       setOpen(false)
     } finally {
       setSaving(false)
@@ -54,7 +73,15 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) setAssigneeId("")
+        if (next) {
+          setAssigneeId("")
+          setBuild(project?.build ?? "")
+          setLinkedOs("")
+          setPriority("medium")
+          setRelatedModule("")
+          setSubject("")
+          setResponsibleDepartment("")
+        }
       }}
     >
       <Button
@@ -68,15 +95,15 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
         <Plus className="size-3.5" />
       </Button>
 
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-xl sm:max-w-xl">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] flex-col overflow-hidden sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Nova atividade</DialogTitle>
           <DialogDescription>
-            Crie uma atividade usando as mesmas regras do modo Lista e Kanban.
+            Crie a atividade e relacione os dados operacionais do projeto.
           </DialogDescription>
         </DialogHeader>
 
-        <form id="followup-add-activity" onSubmit={submit} className="space-y-4">
+        <form id="followup-add-activity" onSubmit={submit} className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Título</label>
             <textarea
@@ -90,6 +117,92 @@ export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) 
             />
             <p className="text-[0.65rem] text-muted-foreground">Pode usar múltiplas linhas. O texto completo fica disponível no painel de informações da atividade.</p>
           </div>
+
+          <section className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3.5 sm:p-4">
+            <div>
+              <h3 className="text-xs font-semibold text-foreground">Dados da atividade</h3>
+              <p className="mt-0.5 text-[0.65rem] text-muted-foreground">Informações específicas desta abertura.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Build</label>
+                <input
+                  value={build}
+                  onChange={(event) => setBuild(event.target.value)}
+                  placeholder="Ex: 2026.09.11.1"
+                  maxLength={120}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/65 focus:border-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">O.S. vinculada</label>
+                <input
+                  value={linkedOs}
+                  onChange={(event) => setLinkedOs(event.target.value)}
+                  placeholder="Ex: 15482"
+                  maxLength={120}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/65 focus:border-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Prioridade</label>
+                <select
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value as Priority)}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                >
+                  <option value="low">Baixa</option>
+                  <option value="medium">Média</option>
+                  <option value="high">Alta</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3.5 sm:p-4">
+            <div>
+              <h3 className="text-xs font-semibold text-foreground">Contexto do projeto</h3>
+              <p className="mt-0.5 text-[0.65rem] text-muted-foreground">As opções abaixo vêm do “Contexto do sistema” deste projeto.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Módulo relacionado</label>
+                <select
+                  value={relatedModule}
+                  onChange={(event) => setRelatedModule(event.target.value)}
+                  disabled={!project?.modules?.length}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-55 focus:border-ring"
+                >
+                  <option value="">{project?.modules?.length ? "Sem módulo relacionado" : "Nenhum módulo configurado"}</option>
+                  {(project?.modules ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Assunto</label>
+                <select
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  disabled={!project?.subjects?.length}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-55 focus:border-ring"
+                >
+                  <option value="">{project?.subjects?.length ? "Sem assunto relacionado" : "Nenhum assunto configurado"}</option>
+                  {(project?.subjects ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Departamento responsável</label>
+                <select
+                  value={responsibleDepartment}
+                  onChange={(event) => setResponsibleDepartment(event.target.value)}
+                  disabled={!project?.responsibleDepartments?.length}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-55 focus:border-ring"
+                >
+                  <option value="">{project?.responsibleDepartments?.length ? "Sem departamento relacionado" : "Nenhum departamento configurado"}</option>
+                  {(project?.responsibleDepartments ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </div>
+            </div>
+          </section>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">

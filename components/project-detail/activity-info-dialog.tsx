@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Activity as ActivityIcon, CheckCircle2, Clock3, Gauge, Info, ListChecks, Timer, UsersRound } from "lucide-react"
+import { Activity as ActivityIcon, Boxes, Building2, CheckCircle2, ClipboardList, Clock3, Flag, Gauge, GitBranch, Info, ListChecks, Tags, Timer, UsersRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MemberAvatar } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
-import { activityEstimated, activityTracked, formatHours, statusMeta } from "@/lib/project-utils"
+import { activityEstimated, activityTracked, formatHours, priorityMeta, statusMeta } from "@/lib/project-utils"
 import type { Activity, Project, Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -44,6 +44,8 @@ export function ActivityInfoDialog({
   const type = workItemTypes.find((item) => item.id === activity.typeId)
   const assignees = (activity.assigneeIds ?? []).map((id) => members.find((member) => member.id === id)).filter(Boolean)
   const statusCounts = visibleStatuses.map((status) => ({ status, count: activity.subactivities.filter((sub) => sub.status === status).length })).filter((entry) => entry.count > 0)
+  const activityPriority = activity.priority ? priorityMeta[activity.priority] : undefined
+  const hasContext = Boolean(activity.build || activity.linkedOs || activityPriority || activity.relatedModule || activity.subject || activity.responsibleDepartment)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -70,6 +72,22 @@ export function ActivityInfoDialog({
             <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Descrição da atividade</h3>{type && <span className="rounded-full bg-primary/10 px-2 py-1 text-[0.64rem] font-semibold text-primary">{type.name}</span>}</div>
             <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/85">{activity.title}</p>
           </section>
+          {hasContext && (
+            <section className="mt-5 rounded-2xl border border-border bg-card/50 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">Dados da abertura</h3>
+                {activityPriority && <span className={cn("rounded-full px-2.5 py-1 text-[0.64rem] font-semibold", activityPriority.className)}>Prioridade {activityPriority.label.toLowerCase()}</span>}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {activity.build && <ContextItem icon={GitBranch} label="Build" value={activity.build} />}
+                {activity.linkedOs && <ContextItem icon={ClipboardList} label="O.S. vinculada" value={activity.linkedOs} />}
+                {activityPriority && <ContextItem icon={Flag} label="Prioridade" value={activityPriority.label} />}
+                {activity.relatedModule && <ContextItem icon={Boxes} label="Módulo relacionado" value={activity.relatedModule} />}
+                {activity.subject && <ContextItem icon={Tags} label="Assunto" value={activity.subject} />}
+                {activity.responsibleDepartment && <ContextItem icon={Building2} label="Departamento responsável" value={activity.responsibleDepartment} />}
+              </div>
+            </section>
+          )}
           <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.42fr)]">
             <section className="min-w-0 rounded-2xl border border-border bg-card/50 p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Subatividades e status</h3><span className="text-[0.68rem] text-muted-foreground">{total} item{total === 1 ? "" : "s"}</span></div>
@@ -94,4 +112,8 @@ export function ActivityInfoDialog({
 
 function Metric({ icon: Icon, label, value, hint }: { icon: typeof ActivityIcon; label: string; value: string; hint: string }) {
   return <div className="rounded-2xl border border-border bg-card/60 p-4"><div className="flex items-center gap-2 text-muted-foreground"><Icon className="size-4" /><span className="text-[0.68rem] font-medium">{label}</span></div><p className="mt-2 text-xl font-semibold tracking-tight">{value}</p><p className="mt-0.5 text-[0.62rem] text-muted-foreground">{hint}</p></div>
+}
+
+function ContextItem({ icon: Icon, label, value }: { icon: typeof ActivityIcon; label: string; value: string }) {
+  return <div className="min-w-0 rounded-xl bg-background/60 px-3 py-2.5"><div className="flex items-center gap-1.5 text-muted-foreground"><Icon className="size-3.5 shrink-0" /><span className="text-[0.62rem] font-medium">{label}</span></div><p className="mt-1 truncate text-xs font-semibold text-foreground" title={value}>{value}</p></div>
 }

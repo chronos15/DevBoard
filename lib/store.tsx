@@ -48,6 +48,7 @@ import { canPerformAction } from "@/lib/access-control"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
+  ActivityContextInput,
   MemberAccessPolicy,
   ActivityMeetingLaunch,
   AqsReview,
@@ -184,7 +185,7 @@ export type StoreContextValue = {
     subactivityId: string,
     data: { title: string; estimatedHours: number; assigneeId: string; typeId?: string | null },
   ) => Promise<boolean>
-  addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null) => Promise<boolean>
+  addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null, context?: ActivityContextInput) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
   createWorkItemType: (data: { name: string; color: string; intermittent?: boolean }) => Promise<boolean>
   updateWorkItemType: (typeId: string, data: { name?: string; color?: string; active?: boolean; intermittent?: boolean }) => Promise<boolean>
@@ -1610,7 +1611,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
 
-  const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null) => {
+  const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null, context?: ActivityContextInput) => {
     if (!canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")) {
       fail(new Error("Seu nível de acesso não permite adicionar atividades."), "Sem permissão para criar atividades")
       return false
@@ -1623,6 +1624,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await callRpc<string>("add_activity", { p_project_id: projectId, p_title: title, p_assignee_ids: assigneeIds }, "Não foi possível adicionar a atividade")
     if (!result) return false
+    if (context) {
+      const contextResult = await callRpc<unknown>("set_activity_context", {
+        p_activity_id: result,
+        p_build: context.build?.trim() || null,
+        p_linked_os: context.linkedOs?.trim() || null,
+        p_priority: context.priority || null,
+        p_related_module: context.relatedModule?.trim() || null,
+        p_subject: context.subject?.trim() || null,
+        p_responsible_department: context.responsibleDepartment?.trim() || null,
+      }, "Atividade criada, mas não foi possível salvar os dados adicionais")
+      if (contextResult === undefined) {
+        await refreshProjects()
+      }
+    }
     if (typeId) {
       const typeResult = await callRpc<unknown>("set_activity_type", {
         p_activity_id: result,

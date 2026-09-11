@@ -243,7 +243,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       project_logs(id,actor_id,type,title,description,created_at),
       project_versions(id,version,build,created_at),
       activities(
-        id,title,type_id,created_at,
+        id,title,type_id,build,linked_os,priority,related_module,subject,responsible_department,created_at,
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
@@ -266,6 +266,12 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         id: activity.id,
         title: activity.title,
         typeId: activity.type_id ?? undefined,
+        build: activity.build ?? undefined,
+        linkedOs: activity.linked_os ?? undefined,
+        priority: activity.priority ?? undefined,
+        relatedModule: activity.related_module ?? undefined,
+        subject: activity.subject ?? undefined,
+        responsibleDepartment: activity.responsible_department ?? undefined,
         assigneeIds: (activity.activity_assignees ?? []).map((item: any) => item.user_id),
         attachments: await Promise.all((activity.attachments ?? []).map((item: any) => mapAttachment(supabase, item))),
         subactivities: await Promise.all((activity.subactivities ?? [])

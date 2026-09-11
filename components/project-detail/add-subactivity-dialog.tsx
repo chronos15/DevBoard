@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
+import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
 
@@ -25,8 +26,9 @@ export function AddSubactivityDialog({
   activityId: string
   aqsRequired?: boolean
 }) {
-  const { members, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
+  const { members, addSubactivity, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
+  const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("4")
@@ -78,6 +80,8 @@ export function AddSubactivityDialog({
     }
     await saveSubactivity()
   }
+
+  if (!canCreateSubactivity) return null
 
   return (
     <>

@@ -900,6 +900,7 @@ export function ProjectFollowUp({
   const [membersCollapsed, setMembersCollapsed] = React.useState(false)
   const [reactions, setReactions] = React.useState<FollowUpReaction[]>([])
   const [reactionPickerItemId, setReactionPickerItemId] = React.useState<string | null>(null)
+  const [reactionPickerPosition, setReactionPickerPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [compactActionsItemId, setCompactActionsItemId] = React.useState<string | null>(null)
   const [reactionSavingItemId, setReactionSavingItemId] = React.useState<string | null>(null)
   const [memberRemovalTargetId, setMemberRemovalTargetId] = React.useState<string | null>(null)
@@ -1303,6 +1304,10 @@ export function ProjectFollowUp({
     return ids
   }, [pendingComments, selectedSub?.comments, selectedSub?.id])
 
+  const savedMessageGroupIds = React.useMemo(() => new Set(
+    (selectedSub?.comments ?? []).flatMap((comment) => comment.messageGroupId ? [comment.messageGroupId] : []),
+  ), [selectedSub?.comments])
+
   const groupedAttachments = React.useMemo(() => {
     const map = new Map<string, AttachmentEntry[]>()
     for (const attachment of (selectedSub?.attachments ?? []).filter((item) => item.active && item.messageGroupId)) {
@@ -1317,14 +1322,24 @@ export function ProjectFollowUp({
 
   const groupedPendingUploads = React.useMemo(() => {
     const map = new Map<string, Array<{ batch: PendingFollowUpUpload; file: File; index: number }>>()
+    const savedCounts = new Map<string, number>()
+    for (const [groupId, attachments] of groupedAttachments) savedCounts.set(groupId, attachments.length)
+    const consumed = new Map<string, number>()
     for (const batch of pendingUploads.filter((item) => item.subactivityId === selectedSub?.id && item.messageGroupId)) {
       const key = batch.messageGroupId!
-      const list = map.get(key) ?? []
-      batch.files.forEach((file, index) => list.push({ batch, file, index }))
-      map.set(key, list)
+      for (const [index, file] of batch.files.entries()) {
+        const used = consumed.get(key) ?? 0
+        if (used < (savedCounts.get(key) ?? 0)) {
+          consumed.set(key, used + 1)
+          continue
+        }
+        const list = map.get(key) ?? []
+        list.push({ batch, file, index })
+        map.set(key, list)
+      }
     }
     return map
-  }, [pendingUploads, selectedSub?.id])
+  }, [groupedAttachments, pendingUploads, selectedSub?.id])
 
   const timeline = React.useMemo<TimelineItem[]>(() => {
     if (!selectedSub) return []
@@ -1339,6 +1354,7 @@ export function ProjectFollowUp({
     }
 
     for (const pending of pendingComments.filter((item) => item.subactivityId === selectedSub.id)) {
+      if (pending.messageGroupId && savedMessageGroupIds.has(pending.messageGroupId)) continue
       items.push({
         kind: "pending-comment",
         id: pending.id,
@@ -1400,7 +1416,7 @@ export function ProjectFollowUp({
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  }, [currentUserId, groupedMessageIds, pendingComments, pendingUploads, project.logs, selectedActivity, selectedSub, workSessions])
+  }, [currentUserId, groupedMessageIds, pendingComments, pendingUploads, project.logs, savedMessageGroupIds, selectedActivity, selectedSub, workSessions])
 
   const reactionsByTimelineItem = React.useMemo(() => {
     const map = new Map<string, FollowUpReaction[]>()
@@ -1480,6 +1496,7 @@ export function ProjectFollowUp({
 
   React.useEffect(() => {
     setReactionPickerItemId(null)
+    setReactionPickerPosition(null)
     void loadFollowUpReactions()
     if (!selectedSubId) return
 
@@ -1500,10 +1517,10 @@ export function ProjectFollowUp({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
       if (target?.closest?.("[data-followup-reaction-trigger]")) return
-      if (!reactionPickerRef.current?.contains(event.target as Node)) setReactionPickerItemId(null)
+      if (!reactionPickerRef.current?.contains(event.target as Node)) { setReactionPickerItemId(null); setReactionPickerPosition(null) }
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setReactionPickerItemId(null)
+      if (event.key === "Escape") { setReactionPickerItemId(null); setReactionPickerPosition(null) }
     }
     document.addEventListener("pointerdown", onPointerDown)
     window.addEventListener("keydown", onKeyDown)
@@ -2043,14 +2060,32 @@ export function ProjectFollowUp({
     )
   }
 
+  function toggleReactionPicker(itemId: string, trigger: HTMLElement) {
+    if (reactionPickerItemId === itemId) {
+      setReactionPickerItemId(null)
+      setReactionPickerPosition(null)
+      return
+    }
+    const rect = trigger.getBoundingClientRect()
+    const width = 236
+    const estimatedHeight = 214
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width))
+    const top = rect.bottom + 6 + estimatedHeight > window.innerHeight
+      ? Math.max(8, rect.top - estimatedHeight - 6)
+      : rect.bottom + 6
+    setReactionPickerPosition({ top, left })
+    setReactionPickerItemId(itemId)
+  }
+
   function renderReactionPicker(item: TimelineItem, className?: string) {
-    if (reactionPickerItemId !== item.id) return null
+    if (reactionPickerItemId !== item.id || !reactionPickerPosition || typeof document === "undefined") return null
     const mine = itemReactions(item).find((row) => row.userId === currentUserId)
-    return (
+    return createPortal(
       <div
         ref={reactionPickerRef}
+        style={{ top: reactionPickerPosition.top, left: reactionPickerPosition.left }}
         className={cn(
-          "absolute right-1 top-9 z-40 w-[236px] rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl",
+          "fixed z-[10040] w-[236px] rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-2xl ring-1 ring-black/5",
           className,
         )}
       >
@@ -2076,7 +2111,8 @@ export function ProjectFollowUp({
             </button>
           ))}
         </div>
-      </div>
+      </div>,
+      document.body,
     )
   }
 
@@ -2089,6 +2125,7 @@ export function ProjectFollowUp({
     if (emoji) next.push({ targetKind: item.kind, targetId: item.targetId, userId: currentUserId, emoji, createdAt: new Date().toISOString() })
     setReactions(next)
     setReactionPickerItemId(null)
+    setReactionPickerPosition(null)
     const { error } = await supabase.rpc("set_followup_reaction", {
       p_subactivity_id: selectedSubId,
       p_target_kind: item.kind,
@@ -3085,20 +3122,20 @@ export function ProjectFollowUp({
                                 <time className="ml-auto shrink-0 font-mono text-[0.6rem]">{formatShortTime(item.createdAt)}</time>
                               </div>
                               <div className="absolute right-1 top-0 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/reaction:opacity-100 min-[761px]:group-focus-within/reaction:opacity-100">
-                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
                               </div>
                               <div className="absolute right-1 top-0 min-[761px]:hidden" data-followup-compact-actions>
                                 <button type="button" onClick={() => setCompactActionsItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Ações do registro" aria-label="Ações do registro" aria-expanded={compactActionsItemId === item.id}><Ellipsis className="size-4" /></button>
                                 {compactActionsItemId === item.id && (
                                   <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
-                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                    <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder registro" aria-label="Responder registro"><Reply className="size-3.5" /></button>
                                   </div>
                                 )}
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
-                              {renderReactionPicker(item, "right-0 top-8")}
+                              {renderReactionPicker(item)}
                             </div>
                             </MobileSwipeReply>
                           )
@@ -3131,7 +3168,7 @@ export function ProjectFollowUp({
                                   )}
                                 </button>
                                 <div className="absolute right-2 top-1 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/reaction:opacity-100 min-[761px]:group-focus-within/reaction:opacity-100">
-                                  <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                  <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                   <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
                                 </div>
                                 <div className="absolute right-2 top-1 min-[761px]:hidden" data-followup-compact-actions>
@@ -3147,14 +3184,14 @@ export function ProjectFollowUp({
                                   </button>
                                   {compactActionsItemId === item.id && (
                                     <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
-                                      <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                      <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                       <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder log" aria-label="Responder log"><Reply className="size-3.5" /></button>
                                     </div>
                                   )}
                                 </div>
                               </div>
                               <div className="pl-5">{renderReactionSummary(item)}</div>
-                              {renderReactionPicker(item, "right-1 top-9")}
+                              {renderReactionPicker(item)}
                             </div>
                             </MobileSwipeReply>
                           )
@@ -3249,7 +3286,7 @@ export function ProjectFollowUp({
                                 {renderReactionSummary(item)}
                               </div>
                               <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">
-                                <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(replyReferenceFromTimelineItem(item))} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 {!selectedDeveloperObserver && <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
                                 <CopyEntityLinkButton
@@ -3276,7 +3313,7 @@ export function ProjectFollowUp({
                                 </button>
                                 {compactActionsItemId === item.id && (
                                   <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
-                                    <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                    <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                     {!selectedDeveloperObserver && <button type="button" onClick={() => { setCompactActionsItemId(null); void toggleCommentMark(comment.id) }} className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
                                     <CopyEntityLinkButton
@@ -3316,7 +3353,7 @@ export function ProjectFollowUp({
                               {renderReactionSummary(item)}
                             </div>
                             <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/attachment:opacity-100 min-[761px]:group-focus-within/attachment:opacity-100">
-                              <button type="button" onClick={() => setReactionPickerItemId((current) => current === item.id ? null : item.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                              <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                               <button type="button" onClick={() => { setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
                               <CopyEntityLinkButton
                                 href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}
@@ -3342,7 +3379,7 @@ export function ProjectFollowUp({
                               </button>
                               {compactActionsItemId === item.id && (
                                 <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
-                                  <button type="button" onClick={() => { setCompactActionsItemId(null); setReactionPickerItemId((current) => current === item.id ? null : item.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
+                                  <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                   <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder anexo" aria-label="Responder anexo"><Reply className="size-3.5" /></button>
                                   <CopyEntityLinkButton
                                     href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${item.attachment.id}` })}

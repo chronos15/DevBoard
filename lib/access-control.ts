@@ -1,4 +1,4 @@
-import type { AccessRole, MemberAccessPolicy, ScreenAccessKey } from "@/lib/types"
+import type { AccessRole, ActionAccessKey, MemberAccessPolicy, ScreenAccessKey } from "@/lib/types"
 
 export const SCREEN_ACCESS_DEFINITIONS: Array<{ key: ScreenAccessKey; label: string; description: string }> = [
   { key: "dashboard", label: "Painel", description: "Resumo geral e indicadores do workspace." },
@@ -14,6 +14,23 @@ export const SCREEN_ACCESS_DEFINITIONS: Array<{ key: ScreenAccessKey; label: str
   { key: "chat", label: "Chat", description: "Canais, conversas e mensagens." },
   { key: "reports", label: "Relatórios", description: "Central administrativa de relatórios." },
 ]
+
+
+export const ACTION_ACCESS_DEFINITIONS: Array<{ key: ActionAccessKey; label: string; description: string }> = [
+  { key: "createProjects", label: "Adicionar projetos", description: "Permite criar novos projetos no workspace." },
+  { key: "editProjects", label: "Editar projetos", description: "Permite alterar projetos quando a regra base da role também permitir." },
+  { key: "createActivities", label: "Adicionar atividades", description: "Permite criar atividades dentro dos projetos acessíveis." },
+  { key: "createSubactivities", label: "Adicionar subatividades", description: "Permite criar subatividades dentro das atividades acessíveis." },
+]
+
+export function defaultActionPermissions(role: AccessRole): Record<ActionAccessKey, boolean> {
+  return {
+    createProjects: role === "admin" || role === "developer",
+    editProjects: role === "admin" || role === "developer",
+    createActivities: role === "admin" || role === "developer",
+    createSubactivities: role === "admin" || role === "developer",
+  }
+}
 
 export function defaultScreenPermissions(role: AccessRole): Record<ScreenAccessKey, boolean> {
   return {
@@ -36,6 +53,7 @@ export function defaultMemberAccessPolicy(role: AccessRole = "member"): MemberAc
   return {
     enabled: false,
     screenPermissions: defaultScreenPermissions(role),
+    actionPermissions: defaultActionPermissions(role),
     restrictProjects: false,
     restrictActivities: false,
     restrictSubactivities: false,
@@ -55,9 +73,19 @@ export function normalizeMemberAccessPolicy(value: unknown, role: AccessRole = "
   for (const definition of SCREEN_ACCESS_DEFINITIONS) {
     if (typeof rawScreens[definition.key] === "boolean") screenPermissions[definition.key] = Boolean(rawScreens[definition.key])
   }
+  const rawActions = row.actionPermissions && typeof row.actionPermissions === "object"
+    ? row.actionPermissions as Record<string, unknown>
+    : row.action_permissions && typeof row.action_permissions === "object"
+      ? row.action_permissions as Record<string, unknown>
+      : {}
+  const actionPermissions = { ...defaults.actionPermissions }
+  for (const definition of ACTION_ACCESS_DEFINITIONS) {
+    if (typeof rawActions[definition.key] === "boolean") actionPermissions[definition.key] = Boolean(rawActions[definition.key])
+  }
   return {
     enabled: row.enabled === true,
     screenPermissions,
+    actionPermissions,
     restrictProjects: row.restrictProjects === true || row.restrict_projects === true,
     restrictActivities: row.restrictActivities === true || row.restrict_activities === true,
     restrictSubactivities: row.restrictSubactivities === true || row.restrict_subactivities === true,
@@ -89,4 +117,13 @@ export function screenAccessForPath(pathname: string): ScreenAccessKey | null {
   if (pathname === "/") return "dashboard"
   // Configurações, ajuda, compartilhar e rotas auxiliares permanecem disponíveis.
   return null
+}
+
+
+export function canPerformAction(role: AccessRole, policy: MemberAccessPolicy | undefined, action: ActionAccessKey) {
+  if (role === "admin") return true
+  const roleAllows = defaultActionPermissions(role)[action]
+  if (!roleAllows) return false
+  if (!policy?.enabled) return true
+  return policy.actionPermissions[action] !== false
 }

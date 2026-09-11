@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
+import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
 
@@ -20,10 +21,10 @@ function executionMembersOnly<T extends { role?: string }>(members: T[]) {
 }
 
 export function FollowUpAddActivityDialog({ projectId }: { projectId: string }) {
-  const { members, projects, currentUserId, currentUserRole, addActivity, workItemTypes } = useStore()
+  const { members, projects, currentUserId, currentUserRole, currentAccessPolicy, addActivity, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
-  const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
+  const canManageStructure = canPerformAction(currentUserRole, currentAccessPolicy, "createActivities") && (currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId)))
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [assigneeId, setAssigneeId] = React.useState("")
@@ -138,10 +139,10 @@ export function FollowUpAddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, workItemTypes } = useStore()
+  const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
-  const canManageStructure = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId))
+  const canManageStructure = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities") && (currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId)))
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")

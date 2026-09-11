@@ -38,7 +38,7 @@ import {
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
-import { canAccessScreen } from "@/lib/access-control"
+import { canAccessScreen, canPerformAction } from "@/lib/access-control"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -387,6 +387,8 @@ export function DiscordWorkspace() {
   const allowRequests = canAccessScreen(currentUserRole, currentAccessPolicy, "requests")
   const allowAnalysis = canAccessScreen(currentUserRole, currentAccessPolicy, "analysis")
   const allowChat = canAccessScreen(currentUserRole, currentAccessPolicy, "chat")
+  const allowCreateProjects = canPerformAction(currentUserRole, currentAccessPolicy, "createProjects")
+  const allowEditProjects = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")
   const accessibleProjects = React.useMemo(() => allowFollowup ? scopeFollowUpProjects(projects, currentUserId, currentUserRole) : [], [allowFollowup, projects, currentUserId, currentUserRole])
   const visibleRequests = React.useMemo(() => serviceRequests, [serviceRequests])
   const visibleReviews = React.useMemo(() => aqsReviews, [aqsReviews])
@@ -1057,11 +1059,11 @@ export function DiscordWorkspace() {
 
           {serverRailExpanded && <p className="px-3 pb-1 pt-1 text-[0.56rem] font-semibold uppercase tracking-wide text-muted-foreground">Projetos</p>}
           <div className="flex flex-col items-stretch gap-1">
-            {allowProjects && (currentUserRole === "admin" || currentUserRole === "developer") && (
+            {allowProjects && allowCreateProjects && (
               <CreateProjectServerButton expanded={serverRailExpanded} onClick={() => setCreateProjectOpen(true)} />
             )}
             {accessibleProjects.map((project) => {
-              const canEdit = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
+              const canEdit = allowEditProjects && (currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId)))
               return <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} onEdit={canEdit ? () => { setEditProjectId(project.id); collapseServerRailOnSmallScreen() } : undefined} />
             })}
           </div>

@@ -18,11 +18,12 @@ import { MemberStack } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { canPerformAction } from "@/lib/access-control"
 
 export function ProjectCard({ project }: { project: Project }) {
   const router = useRouter()
-  const { currentUserId, currentUserRole } = useStore()
-  const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
+  const { currentUserId, currentUserRole, currentAccessPolicy } = useStore()
+  const canEditProject = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects") && (currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId)))
   const progress = projectProgress(project)
   const prio = priorityMeta[project.priority]
   const subs = projectSubactivities(project)

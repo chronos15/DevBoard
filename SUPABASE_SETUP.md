@@ -985,3 +985,17 @@ A 077 cria `workspace_member_work_schedule`, permitindo uma meta diferente para 
 Também é criada `workspace_member_access_profiles`, uma camada de acesso individual **opt-in**. Nenhum usuário existente é restringido após executar a migration: sem um perfil personalizado ativo, o TaskBoard continua usando exatamente as regras da role atual. A personalização é restritiva (não promove permissões acima da role) e permite limitar telas e aplicar escopo integrado em projetos, atividades e subatividades. Administradores permanecem com acesso integral.
 
 As restrições de projeto/atividade/subatividade são aplicadas nas policies SELECT da RLS por helpers `taskboard_can_view_project`, `taskboard_can_view_activity` e `taskboard_can_view_subactivity`, evitando que itens ocultos sejam recuperados apenas manipulando a URL ou consultando diretamente as tabelas pelo cliente autenticado.
+
+## Migration 078 — permissões de ações + contexto organizacional do projeto
+
+Depois da 077, execute:
+
+```text
+supabase/migrations/078_taskboard_action_permissions_project_context.sql
+```
+
+A 078 amplia `workspace_member_access_profiles` com `action_permissions`, mantendo a mesma filosofia opt-in da V93: se o acesso personalizado estiver desligado, as RPCs continuam obedecendo exatamente às regras legadas. Quando ativo, o Admin pode restringir individualmente **Adicionar projetos**, **Editar projetos**, **Adicionar atividades** e **Adicionar subatividades**. Administradores permanecem irrestritos e as regras antigas de role, integração e responsabilidade continuam sendo o teto da permissão.
+
+A migration cria versões V2 das RPCs administrativas de perfil (`get_my_workspace_access_profile_v2`, `set_workspace_member_access_profile_v2` e `list_workspace_team_members_v2`) para não quebrar clientes antigos. As operações estruturais são protegidas também no servidor, portanto esconder um botão no frontend não é a única barreira.
+
+Também são adicionadas a `projects` as listas `modules`, `subjects` e `responsible_departments`, gravadas pela RPC `set_project_context`. A identidade visual e o versionamento do projeto passam a respeitar `editProjects` quando o perfil personalizado estiver ativo.

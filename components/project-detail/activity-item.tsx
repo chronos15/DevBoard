@@ -358,6 +358,7 @@ export function ActivityItem({
   visibleSubactivities,
   focusActivityId,
   focusSubactivityId,
+  canCreateSubactivity: canCreateSubactivityOverride,
 }: {
   activity: Activity
   projectId: string
@@ -365,6 +366,7 @@ export function ActivityItem({
   visibleSubactivities?: Subactivity[]
   focusActivityId?: string | null
   focusSubactivityId?: string | null
+  canCreateSubactivity?: boolean
 }) {
   const {
     deleteActivity,
@@ -378,7 +380,7 @@ export function ActivityItem({
   } = useStore()
   const currentProject = projects.find((project) => project.id === projectId)
   const canManageStructure = currentUserRole === "admin" || Boolean(currentProject?.memberIds.includes(currentUserId))
-  const canCreateSubactivity = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(currentProject?.memberIds.includes(currentUserId))
+  const canCreateSubactivity = canCreateSubactivityOverride ?? (currentUserRole === "admin" || currentUserRole === "developer" || Boolean(currentProject?.memberIds.includes(currentUserId)))
   const activityRef = React.useRef<HTMLDivElement>(null)
   const hasFocusedSubactivity = Boolean(
     focusSubactivityId && activity.subactivities.some((sub) => sub.id === focusSubactivityId),

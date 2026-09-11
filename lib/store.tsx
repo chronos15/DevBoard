@@ -44,6 +44,7 @@ import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import { primeIdleDetectionPermission } from "@/lib/idle-detection"
 import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { canPerformAction } from "@/lib/access-control"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
@@ -526,6 +527,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [currentAccessPolicy, setCurrentAccessPolicy] = React.useState<MemberAccessPolicy>({
     enabled: false,
     screenPermissions: { dashboard: true, developer: false, projects: false, followup: true, requests: true, requestsAqs: false, requestsDev: false, analysis: false, hours: false, agenda: false, chat: true, reports: false },
+    actionPermissions: { createProjects: false, editProjects: false, createActivities: false, createSubactivities: false },
     restrictProjects: false, restrictActivities: false, restrictSubactivities: false,
   })
   const [members, setMembers] = React.useState<Member[]>([])
@@ -1556,6 +1558,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserRole, fail, refreshWorkItemTypes])
 
   const addSubactivity = React.useCallback<StoreContextValue["addSubactivity"]>(async (projectId, activityId, data) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")) {
+      fail(new Error("Seu nível de acesso não permite adicionar subatividades."), "Sem permissão para criar subatividades")
+      return false
+    }
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId))
     if (!canManageStructure) {
@@ -1583,7 +1589,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
     return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
 
   const updateSubactivity = React.useCallback<StoreContextValue["updateSubactivity"]>(async (subactivityId, data) => {
     if (currentUserRole !== "admin") {
@@ -1603,6 +1609,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
 
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")) {
+      fail(new Error("Seu nível de acesso não permite adicionar atividades."), "Sem permissão para criar atividades")
+      return false
+    }
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
     if (!canManageStructure) {
@@ -1623,7 +1633,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     await refreshProjects()
     return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
   const deleteActivity = React.useCallback(async (projectId: string, activityId: string) => {
     const project = projects.find((item) => item.id === projectId)
@@ -1660,6 +1670,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [supabase])
 
   const addProject = React.useCallback<StoreContextValue["addProject"]>(async (data, visual) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "createProjects")) {
+      fail(new Error("Seu nível de acesso não permite adicionar projetos."), "Sem permissão para criar projetos")
+      return null
+    }
     const result = await callRpc<string>("create_project", {
       p_name: data.name,
       p_client: data.client,
@@ -1671,6 +1685,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_member_ids: data.memberIds,
     }, "Não foi possível criar o projeto")
     if (!result) return null
+
+    const contextResult = await callRpc<unknown>("set_project_context", {
+      p_project_id: result,
+      p_modules: data.modules ?? [],
+      p_subjects: data.subjects ?? [],
+      p_responsible_departments: data.responsibleDepartments ?? [],
+    }, "Projeto criado, mas não foi possível salvar módulos, assuntos e departamentos")
+    if (contextResult === undefined) {
+      await refreshProjects()
+      return result
+    }
 
     let uploadedPath: string | null = null
     try {
@@ -1698,9 +1723,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await refreshProjects()
       return result
     }
-  }, [callRpc, fail, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
+  }, [callRpc, currentAccessPolicy, currentUserRole, fail, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
 
   const updateProject = React.useCallback<StoreContextValue["updateProject"]>(async (projectId, data, visual) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")) {
+      fail(new Error("Seu nível de acesso não permite editar projetos."), "Sem permissão para editar este projeto")
+      return false
+    }
     const project = projects.find((item) => item.id === projectId)
     const canEdit = currentUserRole === "admin" || Boolean(
       project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
@@ -1732,6 +1761,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return false
       }
 
+      const contextResult = await callRpc<unknown>("set_project_context", {
+        p_project_id: projectId,
+        p_modules: data.modules ?? [],
+        p_subjects: data.subjects ?? [],
+        p_responsible_departments: data.responsibleDepartments ?? [],
+      }, "Projeto atualizado, mas não foi possível salvar módulos, assuntos e departamentos")
+      if (contextResult === undefined) {
+        if (uploadedPath) await removeProjectIconImage(uploadedPath)
+        return false
+      }
+
       const useCustomImage = visual?.useCustomImage ?? Boolean(project?.iconImagePath)
       const removeExistingImage = visual?.removeExistingImage ?? false
       const nextImagePath = useCustomImage
@@ -1757,9 +1797,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fail(error, "Não foi possível atualizar a imagem personalizada do projeto")
       return false
     }
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
 
   const versionProject = React.useCallback(async (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")) {
+      fail(new Error("Seu nível de acesso não permite editar projetos."), "Sem permissão para versionar este projeto")
+      return false
+    }
     const project = projects.find((item) => item.id === projectId)
     const canEdit = currentUserRole === "admin" || Boolean(
       project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
@@ -1772,7 +1816,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (result === undefined) return false
     await refreshProjects()
     return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects])
 
   const addProjectComment = React.useCallback(async (projectId: string, content: string) => {
     const result = await callRpc<string>("add_project_comment", { p_project_id: projectId, p_content: content }, "Não foi possível salvar o comentário")

@@ -111,7 +111,11 @@ export async function loadIdentity(supabase: SupabaseClient) {
 
 
 export async function loadMyWorkspaceAccess(supabase: SupabaseClient, role: AccessRole): Promise<MemberAccessPolicy> {
-  const { data, error } = await supabase.rpc('get_my_workspace_access_profile')
+  let { data, error } = await supabase.rpc('get_my_workspace_access_profile_v2')
+  if (error) {
+    const legacy = await supabase.rpc('get_my_workspace_access_profile')
+    if (!legacy.error) { data = legacy.data; error = null }
+  }
   if (error) {
     // A migration 077 adiciona esta RPC. Até ela ser aplicada, o comportamento
     // permanece exatamente o padrão da role atual.
@@ -131,6 +135,12 @@ export async function loadMyWorkspaceAccess(supabase: SupabaseClient, role: Acce
         chat: true,
         reports: role === 'admin',
       },
+      actionPermissions: {
+        createProjects: role === 'admin' || role === 'developer',
+        editProjects: role === 'admin' || role === 'developer',
+        createActivities: role === 'admin' || role === 'developer',
+        createSubactivities: role === 'admin' || role === 'developer',
+      },
       restrictProjects: false,
       restrictActivities: false,
       restrictSubactivities: false,
@@ -138,15 +148,23 @@ export async function loadMyWorkspaceAccess(supabase: SupabaseClient, role: Acce
   }
   const row = Array.isArray(data) ? data[0] : data
   const raw = row?.screen_permissions && typeof row.screen_permissions === 'object' ? row.screen_permissions : {}
+  const rawActions = row?.action_permissions && typeof row.action_permissions === 'object' ? row.action_permissions : {}
   const defaults = {
     dashboard: true, developer: role === 'developer', projects: role === 'admin' || role === 'developer',
     followup: true, requests: true, requestsAqs: role === 'admin' || role === 'aqs', requestsDev: role === 'admin' || role === 'developer',
     analysis: role === 'admin' || role === 'aqs' || role === 'developer', hours: role === 'admin' || role === 'developer',
     agenda: role === 'admin' || role === 'developer', chat: true, reports: role === 'admin',
   }
+  const defaultActions = {
+    createProjects: role === 'admin' || role === 'developer',
+    editProjects: role === 'admin' || role === 'developer',
+    createActivities: role === 'admin' || role === 'developer',
+    createSubactivities: role === 'admin' || role === 'developer',
+  }
   return {
     enabled: role === 'admin' ? false : row?.enabled === true,
     screenPermissions: { ...defaults, ...raw },
+    actionPermissions: { ...defaultActions, ...rawActions },
     restrictProjects: row?.restrict_projects === true,
     restrictActivities: row?.restrict_activities === true,
     restrictSubactivities: row?.restrict_subactivities === true,
@@ -218,7 +236,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
   const { data, error } = await supabase
     .from('projects')
     .select(`
-      id,name,icon,icon_image_path,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
+      id,name,icon,icon_image_path,client,description,tag,priority,due_date,version,build,repository,modules,subjects,responsible_departments,created_at,updated_at,
       project_members(user_id),
       project_comments(id,author_id,content,created_at),
       attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
@@ -339,6 +357,9 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       version: row.version ?? undefined,
       build: row.build ?? undefined,
       repository: row.repository ?? '',
+      modules: Array.isArray(row.modules) ? row.modules.filter((item: unknown): item is string => typeof item === "string") : [],
+      subjects: Array.isArray(row.subjects) ? row.subjects.filter((item: unknown): item is string => typeof item === "string") : [],
+      responsibleDepartments: Array.isArray(row.responsible_departments) ? row.responsible_departments.filter((item: unknown): item is string => typeof item === "string") : [],
       activities,
       comments: (row.project_comments ?? [])
         .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))

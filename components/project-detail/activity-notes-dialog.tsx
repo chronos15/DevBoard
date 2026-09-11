@@ -25,6 +25,7 @@ import { createClient } from "@/lib/supabase/client"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { useStore } from "@/lib/store"
+import { canPerformAction } from "@/lib/access-control"
 import type { Activity, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -84,6 +85,7 @@ export function ActivityNotesDialog({
     members,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     refreshAll,
   } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
@@ -115,6 +117,7 @@ export function ActivityNotesDialog({
   const canManage = currentUserRole === "admin"
     || currentUserRole === "developer"
     || project.memberIds.includes(currentUserId)
+  const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
 
   const loadNotes = React.useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -196,7 +199,7 @@ export function ActivityNotesDialog({
 
   async function promoteNote(event: React.FormEvent) {
     event.preventDefault()
-    if (!convertNote || !convertTitle.trim() || !convertAssignee || savingId) return
+    if (!canCreateSubactivity || !convertNote || !convertTitle.trim() || !convertAssignee || savingId) return
     setSavingId(`promote:${convertNote.id}`)
     setError("")
     try {
@@ -327,7 +330,7 @@ export function ActivityNotesDialog({
                               )}
                             </div>
                           ) : canManage ? (
-                            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs text-primary" disabled={Boolean(savingId)} onClick={() => setConvertNote(note)}>
+                            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs text-primary" disabled={Boolean(savingId) || !canCreateSubactivity} onClick={() => setConvertNote(note)} title={canCreateSubactivity ? "Transformar em subatividade" : "Sem permissão para adicionar subatividades"}>
                               {promoting ? <LoaderCircle className="size-3.5 animate-spin" /> : <FilePlus2 className="size-3.5" />}
                               Transformar em subatividade
                             </Button>

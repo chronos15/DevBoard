@@ -8,8 +8,8 @@ import { createClient } from "@/lib/supabase/client"
 import { AVATARS_BUCKET } from "@/lib/supabase/helpers"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
-import { ACCESS_ROLE_LABELS, type AccessRole, type Member, type MemberAccessPolicy, type ScreenAccessKey, type UserPreferences } from "@/lib/types"
-import { defaultScreenPermissions, SCREEN_ACCESS_DEFINITIONS } from "@/lib/access-control"
+import { ACCESS_ROLE_LABELS, type AccessRole, type ActionAccessKey, type Member, type MemberAccessPolicy, type ScreenAccessKey, type UserPreferences } from "@/lib/types"
+import { ACTION_ACCESS_DEFINITIONS, defaultActionPermissions, defaultScreenPermissions, SCREEN_ACCESS_DEFINITIONS } from "@/lib/access-control"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
 import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
@@ -520,11 +520,16 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
       ...policy,
       enabled: isAdmin ? false : enabled,
       screenPermissions: enabled ? { ...defaultScreenPermissions(role), ...policy.screenPermissions } : policy.screenPermissions,
+      actionPermissions: enabled ? { ...defaultActionPermissions(role), ...policy.actionPermissions } : policy.actionPermissions,
     })
   }
 
   function toggleScreen(key: ScreenAccessKey) {
     onChange({ ...policy, screenPermissions: { ...policy.screenPermissions, [key]: !policy.screenPermissions[key] } })
+  }
+
+  function toggleAction(key: ActionAccessKey) {
+    onChange({ ...policy, actionPermissions: { ...policy.actionPermissions, [key]: !policy.actionPermissions[key] } })
   }
 
   return (
@@ -556,6 +561,25 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
                   <button key={screen.key} type="button" disabled={disabled} onClick={() => toggleScreen(screen.key)} className={cn("flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:opacity-50", allowed ? "border-primary/20 bg-primary/[0.035]" : "border-border bg-muted/15")}> 
                     <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border", allowed ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-transparent")}><Check className="size-3" /></span>
                     <span className="min-w-0"><span className="block text-xs font-semibold">{screen.label}</span><span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{screen.description}</span></span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+
+          <div className="rounded-2xl border border-border p-3 sm:p-4">
+            <div className="mb-3">
+              <p className="text-sm font-semibold">Ações permitidas</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Controle ações estruturais sem mudar a role do usuário. Essas permissões só restringem o que a role já poderia fazer.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ACTION_ACCESS_DEFINITIONS.filter((action) => defaultActionPermissions(role)[action.key]).map((action) => {
+                const allowed = policy.actionPermissions[action.key] !== false
+                return (
+                  <button key={action.key} type="button" disabled={disabled} onClick={() => toggleAction(action.key)} className={cn("flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:opacity-50", allowed ? "border-primary/20 bg-primary/[0.035]" : "border-border bg-muted/15")}>
+                    <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border", allowed ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-transparent")}><Check className="size-3" /></span>
+                    <span className="min-w-0"><span className="block text-xs font-semibold">{action.label}</span><span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{action.description}</span></span>
                   </button>
                 )
               })}
@@ -598,7 +622,7 @@ function TeamSection() {
   const [editRole, setEditRole] = React.useState<AccessRole>("member")
   const [editActive, setEditActive] = React.useState(true)
   const [editSchedule, setEditSchedule] = React.useState<Record<number, number>>(fallbackWorkSchedule([1, 2, 3, 4, 5], 8))
-  const [editAccess, setEditAccess] = React.useState<MemberAccessPolicy>({ enabled: false, screenPermissions: defaultScreenPermissions("member"), restrictProjects: false, restrictActivities: false, restrictSubactivities: false })
+  const [editAccess, setEditAccess] = React.useState<MemberAccessPolicy>({ enabled: false, screenPermissions: defaultScreenPermissions("member"), actionPermissions: defaultActionPermissions("member"), restrictProjects: false, restrictActivities: false, restrictSubactivities: false })
   const [editTab, setEditTab] = React.useState<"schedule" | "access">("schedule")
   const [editSaving, setEditSaving] = React.useState(false)
   const [editError, setEditError] = React.useState("")
@@ -614,6 +638,7 @@ function TeamSection() {
   const makePolicy = React.useCallback((role: AccessRole, row?: any): MemberAccessPolicy => ({
     enabled: role === "admin" ? false : row?.access_enabled === true,
     screenPermissions: { ...defaultScreenPermissions(role), ...(row?.access_screens && typeof row.access_screens === "object" ? row.access_screens : {}) },
+    actionPermissions: { ...defaultActionPermissions(role), ...(row?.access_actions && typeof row.access_actions === "object" ? row.access_actions : {}) },
     restrictProjects: row?.restrict_projects === true,
     restrictActivities: row?.restrict_activities === true,
     restrictSubactivities: row?.restrict_subactivities === true,
@@ -623,7 +648,7 @@ function TeamSection() {
     if (currentUserRole !== "admin") return
     setLoadingTeam(true)
     try {
-      const { data, error } = await supabase.rpc("list_workspace_team_members")
+      const { data, error } = await supabase.rpc("list_workspace_team_members_v2")
       if (error) throw error
       const rows = (data ?? []).map((row: any): ManagedTeamMember => {
         const avatarPath = row.avatar_path || undefined
@@ -672,7 +697,7 @@ function TeamSection() {
         workDays,
         dailyHours,
         workSchedule,
-        accessPolicy: member.accessPolicy ?? { enabled: false, screenPermissions: defaultScreenPermissions(role), restrictProjects: false, restrictActivities: false, restrictSubactivities: false },
+        accessPolicy: member.accessPolicy ?? { enabled: false, screenPermissions: defaultScreenPermissions(role), actionPermissions: defaultActionPermissions(role), restrictProjects: false, restrictActivities: false, restrictSubactivities: false },
       }
     }))
   }, [currentUserRole, loadAdminTeam, members])
@@ -691,7 +716,7 @@ function TeamSection() {
     setEditRole(role)
     setEditActive(member.active)
     setEditSchedule({ ...member.workSchedule })
-    setEditAccess({ ...member.accessPolicy, screenPermissions: { ...member.accessPolicy.screenPermissions } })
+    setEditAccess({ ...member.accessPolicy, screenPermissions: { ...member.accessPolicy.screenPermissions }, actionPermissions: { ...member.accessPolicy.actionPermissions } })
     setEditTab("schedule")
     setEditError("")
   }
@@ -716,10 +741,11 @@ function TeamSection() {
       if (scheduleError) throw scheduleError
 
       const accessPayload = editRole === "admin" ? { ...editAccess, enabled: false } : editAccess
-      const { error: accessError } = await supabase.rpc("set_workspace_member_access_profile", {
+      const { error: accessError } = await supabase.rpc("set_workspace_member_access_profile_v2", {
         p_user_id: editing.id,
         p_enabled: accessPayload.enabled,
         p_screen_permissions: accessPayload.screenPermissions,
+        p_action_permissions: accessPayload.actionPermissions,
         p_restrict_projects: accessPayload.restrictProjects,
         p_restrict_activities: accessPayload.restrictActivities,
         p_restrict_subactivities: accessPayload.restrictSubactivities,
@@ -859,7 +885,7 @@ function TeamSection() {
               </div>
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold">Perfil base</span>
-                <select value={editRole} disabled={editSaving} onChange={(event) => { const role = event.target.value as AccessRole; setEditRole(role); if (!editAccess.enabled) setEditAccess((current) => ({ ...current, screenPermissions: defaultScreenPermissions(role) })) }} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
+                <select value={editRole} disabled={editSaving} onChange={(event) => { const role = event.target.value as AccessRole; setEditRole(role); setEditAccess((current) => ({ ...current, screenPermissions: current.enabled ? { ...defaultScreenPermissions(role), ...current.screenPermissions } : defaultScreenPermissions(role), actionPermissions: current.enabled ? Object.fromEntries(Object.entries(defaultActionPermissions(role)).map(([key, allowed]) => [key, allowed && current.actionPermissions[key as ActionAccessKey] !== false])) as Record<ActionAccessKey, boolean> : defaultActionPermissions(role) })) }} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
                   <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
                 </select>
               </label>

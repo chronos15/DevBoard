@@ -3,10 +3,11 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, FolderKanban, GitBranch, ImageIcon, LoaderCircle, PackageCheck, Trash2, Upload, Users } from "lucide-react"
+import { ArrowLeft, Building2, Check, FolderKanban, GitBranch, ImageIcon, Layers3, LoaderCircle, PackageCheck, Tags, Trash2, Upload, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import type { Priority } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { canPerformAction } from "@/lib/access-control"
 import { MemberName } from "@/components/member-avatar"
 import { ProjectIcon, ProjectIconPicker, normalizeProjectIcon } from "@/components/projects/project-icon"
 
@@ -22,7 +23,7 @@ export function ProjectForm({
   onSaved?: (projectId: string) => void
 }) {
   const router = useRouter()
-  const { projects, members, addProject, updateProject, currentUserId, currentUserRole, hydrated } = useStore()
+  const { projects, members, addProject, updateProject, currentUserId, currentUserRole, currentAccessPolicy, hydrated } = useStore()
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined
   const editing = Boolean(projectId)
 
@@ -41,6 +42,9 @@ export function ProjectForm({
   const [priority, setPriority] = React.useState<Priority>(project?.priority ?? "medium")
   const [dueDate, setDueDate] = React.useState(project?.dueDate ?? "")
   const [repository, setRepository] = React.useState(project?.repository ?? "")
+  const [modules, setModules] = React.useState<string[]>(project?.modules ?? [])
+  const [subjects, setSubjects] = React.useState<string[]>(project?.subjects ?? [])
+  const [responsibleDepartments, setResponsibleDepartments] = React.useState<string[]>(project?.responsibleDepartments ?? [])
   const [memberIds, setMemberIds] = React.useState<string[]>(project?.memberIds ?? [])
   const initializedNewMembers = React.useRef(Boolean(projectId))
   const initializedProjectDraftIdRef = React.useRef<string | null>(null)
@@ -75,6 +79,9 @@ export function ProjectForm({
     setPriority(project.priority)
     setDueDate(project.dueDate)
     setRepository(project.repository ?? "")
+    setModules(project.modules ?? [])
+    setSubjects(project.subjects ?? [])
+    setResponsibleDepartments(project.responsibleDepartments ?? [])
     setMemberIds(project.memberIds)
   }, [project])
 
@@ -116,9 +123,20 @@ export function ProjectForm({
     )
   }
 
-  const canEditProject = !editing || currentUserRole === "admin" || Boolean(
-    project && currentUserRole === "developer" && project.memberIds.includes(currentUserId),
+  const canCreateProject = canPerformAction(currentUserRole, currentAccessPolicy, "createProjects")
+  const canEditProject = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects") && (
+    currentUserRole === "admin" || Boolean(project && currentUserRole === "developer" && project.memberIds.includes(currentUserId))
   )
+
+  if (!editing && !canCreateProject) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/8">
+        <p className="text-sm font-semibold">Você não pode criar projetos.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Seu nível de acesso personalizado não permite adicionar novos projetos.</p>
+        <Link href="/projetos" className="mt-4 inline-flex text-sm font-medium text-primary hover:underline">Voltar para projetos</Link>
+      </div>
+    )
+  }
 
   if (editing && !canEditProject) {
     return (
@@ -208,6 +226,9 @@ export function ProjectForm({
       version: project?.version,
       build: project?.build,
       repository: repository.trim(),
+      modules,
+      subjects,
+      responsibleDepartments,
       activities: project?.activities ?? [],
     }
 
@@ -290,6 +311,23 @@ export function ProjectForm({
                 <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
                 <span className="text-[0.65rem] leading-relaxed text-muted-foreground">Opcional. Você pode definir ou alterar o prazo depois.</span>
               </Field>
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8 md:p-6">
+            <div className="mb-5 flex items-center gap-2">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-chart-2/10 text-chart-2">
+                <Layers3 className="size-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold">Contexto do sistema</h2>
+                <p className="text-xs text-muted-foreground">Organize o projeto por módulos, assuntos e departamentos responsáveis.</p>
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <TagListField icon={Layers3} label="Módulos do sistema" value={modules} onChange={setModules} placeholder="Ex: Financeiro" />
+              <TagListField icon={Tags} label="Assuntos" value={subjects} onChange={setSubjects} placeholder="Ex: Integração" />
+              <TagListField icon={Building2} label="Departamentos responsáveis" value={responsibleDepartments} onChange={setResponsibleDepartments} placeholder="Ex: Desenvolvimento" />
             </div>
           </section>
 
@@ -498,6 +536,32 @@ export function ProjectForm({
           </div>
         </aside>
       </form>
+    </div>
+  )
+}
+
+
+function TagListField({ icon: Icon, label, value, onChange, placeholder }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string[]; onChange: (value: string[]) => void; placeholder: string }) {
+  const [draft, setDraft] = React.useState("")
+
+  function addDraft() {
+    const items = draft.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean)
+    if (!items.length) return
+    const next = [...value]
+    for (const item of items) if (!next.some((existing) => existing.toLocaleLowerCase("pt-BR") === item.toLocaleLowerCase("pt-BR"))) next.push(item)
+    onChange(next)
+    setDraft("")
+  }
+
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-background/50 p-3">
+      <div className="mb-2 flex items-center gap-2"><Icon className="size-3.5 text-primary" /><span className="text-xs font-semibold">{label}</span></div>
+      {value.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{value.map((item) => <span key={item} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[0.68rem]"><span className="truncate">{item}</span><button type="button" onClick={() => onChange(value.filter((entry) => entry !== item))} className="text-muted-foreground hover:text-destructive" aria-label={`Remover ${item}`}>×</button></span>)}</div>}
+      <div className="flex gap-2">
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addDraft() } }} placeholder={placeholder} className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-card px-2.5 text-xs outline-none focus:border-ring" />
+        <button type="button" onClick={addDraft} disabled={!draft.trim()} className="h-9 rounded-lg border border-border px-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-40">Adicionar</button>
+      </div>
+      <p className="mt-1.5 text-[0.62rem] text-muted-foreground">Enter, vírgula ou ponto e vírgula podem separar vários itens.</p>
     </div>
   )
 }

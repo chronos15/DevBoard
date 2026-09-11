@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference, serviceRequestStatusTone } from "@/lib/service-requests"
 import { DiscordWorkspace } from "@/components/discord/discord-workspace"
-import { canAccessScreen } from "@/lib/access-control"
+import { canAccessScreen, canPerformAction } from "@/lib/access-control"
 
 
 function FollowUpQuickButton() {
@@ -168,7 +168,7 @@ export default function DashboardPage() {
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {canAccessScreen(currentUserRole, currentAccessPolicy, "followup") && <FollowUpQuickButton />}
-            {canAccessScreen(currentUserRole, currentAccessPolicy, "projects") && <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            {canAccessScreen(currentUserRole, currentAccessPolicy, "projects") && canPerformAction(currentUserRole, currentAccessPolicy, "createProjects") && <Link href="/projetos/novo" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
               <Plus className="size-4" /> Novo projeto
             </Link>}
           </div>

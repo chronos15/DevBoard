@@ -11,9 +11,12 @@ export type Priority = "low" | "medium" | "high"
 export type AccessRole = "admin" | "developer" | "aqs" | "support" | "member"
 export type ScreenAccessKey = "dashboard" | "developer" | "projects" | "followup" | "requests" | "requestsAqs" | "requestsDev" | "analysis" | "hours" | "agenda" | "chat" | "reports"
 
+export type ActionAccessKey = "createProjects" | "editProjects" | "createActivities" | "createSubactivities"
+
 export type MemberAccessPolicy = {
   enabled: boolean
   screenPermissions: Record<ScreenAccessKey, boolean>
+  actionPermissions: Record<ActionAccessKey, boolean>
   restrictProjects: boolean
   restrictActivities: boolean
   restrictSubactivities: boolean
@@ -240,6 +243,9 @@ export type Project = {
   version?: string
   build?: string
   repository?: string
+  modules?: string[]
+  subjects?: string[]
+  responsibleDepartments?: string[]
   activities: Activity[]
   comments?: CommentEntry[]
   attachments?: AttachmentEntry[]

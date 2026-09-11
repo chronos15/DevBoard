@@ -43,6 +43,7 @@ import { SubactivityKanban } from "./subactivity-kanban"
 import { VersionProjectDialog } from "./version-project-dialog"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { canPerformAction } from "@/lib/access-control"
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const [focusTarget, setFocusTarget] = React.useState<{ activityId: string | null; subactivityId: string | null }>({
@@ -58,6 +59,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     setProjectAttachmentActive,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     hydrated,
     workItemTypes,
   } = useStore()
@@ -128,8 +130,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const estimated = projectEstimated(project)
 
   const currentMember = members.find((member) => member.id === currentUserId)
-  const canCreateWorkStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
-  const canEditProject = currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId))
+  const canCreateActivity = canPerformAction(currentUserRole, currentAccessPolicy, "createActivities") && (currentUserRole === "admin" || project.memberIds.includes(currentUserId))
+  const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
+  const canEditProject = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects") && (currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId)))
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const activeWorkItemTypes = workItemTypes.filter((item) => item.active)
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
@@ -483,6 +486,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                       activityNumber={activityCreationNumber.get(activity.id) ?? 0}
                       focusActivityId={focusTarget.activityId}
                       focusSubactivityId={focusTarget.subactivityId}
+                      canCreateSubactivity={canCreateSubactivity}
                     />
                   )
                 })}
@@ -494,7 +498,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 )}
               </div>
 
-              {canCreateWorkStructure && (
+              {canCreateActivity && (
                 <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_160px_190px_auto] sm:items-center">
                   <Input value={newActivity} onChange={(e) => setNewActivity(e.target.value)} placeholder="Nova atividade..." className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
                   <label className="relative min-w-0">
@@ -534,7 +538,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             </>
           ) : (
             <>
-              {canCreateWorkStructure && (
+              {canCreateActivity && (
                 <div className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 lg:grid-cols-[minmax(0,1fr)_160px_190px_auto_minmax(220px,280px)_auto] lg:items-center">
                   <Input
                     value={newActivity}

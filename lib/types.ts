@@ -166,6 +166,7 @@ export type Subactivity = {
   trackedSeconds: number
   timerStartedAt?: string
   createdAt?: string
+  updatedAt?: string
   assigneeId: string
   typeId?: string
   memberIds?: string[]

@@ -38,6 +38,8 @@ type ActivityNote = {
   convertedSubactivityId?: string
   convertedAt?: string
   convertedBy?: string
+  deletedAt?: string
+  deletedBy?: string
 }
 
 function mapActivityNote(row: Record<string, unknown>): ActivityNote {
@@ -50,6 +52,8 @@ function mapActivityNote(row: Record<string, unknown>): ActivityNote {
     convertedSubactivityId: typeof row.converted_subactivity_id === "string" ? row.converted_subactivity_id : undefined,
     convertedAt: typeof row.converted_at === "string" ? row.converted_at : undefined,
     convertedBy: typeof row.converted_by === "string" ? row.converted_by : undefined,
+    deletedAt: typeof row.deleted_at === "string" ? row.deleted_at : undefined,
+    deletedBy: typeof row.deleted_by === "string" ? row.deleted_by : undefined,
   }
 }
 
@@ -124,7 +128,7 @@ export function ActivityNotesDialog({
     try {
       const { data, error: queryError } = await supabase
         .from("activity_notes")
-        .select("id,activity_id,content,created_by,created_at,converted_subactivity_id,converted_at,converted_by")
+        .select("id,activity_id,content,created_by,created_at,converted_subactivity_id,converted_at,converted_by,deleted_at,deleted_by")
         .eq("activity_id", activity.id)
         .order("created_at", { ascending: true })
       if (queryError) throw queryError
@@ -187,8 +191,11 @@ export function ActivityNotesDialog({
     try {
       const { error: rpcError } = await supabase.rpc("delete_activity_note", { p_note_id: note.id })
       if (rpcError) throw rpcError
-      setNotes((current) => current.filter((item) => item.id !== note.id))
-      await refreshAll()
+      const deletedAt = new Date().toISOString()
+      setNotes((current) => current.map((item) => item.id === note.id
+        ? { ...item, deletedAt, deletedBy: currentUserId }
+        : item))
+      await Promise.all([loadNotes(true), refreshAll()])
     } catch (rpcError) {
       console.error("[TaskBoard/ActivityNotes] Falha ao excluir anotação:", rpcError)
       setError(toUserFacingError(rpcError, "Não foi possível excluir esta anotação."))
@@ -306,29 +313,47 @@ export function ActivityNotesDialog({
                     const convertedSub = note.convertedSubactivityId
                       ? activity.subactivities.find((sub) => sub.id === note.convertedSubactivityId)
                       : undefined
-                    const canDelete = canManage && (currentUserRole === "admin" || note.createdBy === currentUserId)
+                    const convertedBy = note.convertedBy ? members.find((member) => member.id === note.convertedBy) : undefined
+                    const deletedBy = note.deletedBy ? members.find((member) => member.id === note.deletedBy) : undefined
+                    const inactive = Boolean(note.convertedSubactivityId || note.deletedAt)
+                    const canDelete = canManage && !inactive && (currentUserRole === "admin" || note.createdBy === currentUserId)
                     const promoting = savingId === `promote:${note.id}`
                     return (
-                      <div key={note.id} className={cn("group/note rounded-xl border border-border p-3.5", note.convertedSubactivityId ? "bg-primary/[0.035]" : "bg-card")}> 
+                      <div key={note.id} className={cn(
+                        "group/note rounded-xl border border-border p-3.5",
+                        note.deletedAt ? "bg-muted/25 opacity-80" : note.convertedSubactivityId ? "bg-primary/[0.035]" : "bg-card",
+                      )}> 
                         <div className="flex min-w-0 items-start gap-3">
                           <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-7 shrink-0 text-[0.55rem]" />
                           <div className="min-w-0 flex-1">
-                            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{note.content}</p>
+                            <p className={cn("whitespace-pre-wrap break-words text-sm leading-relaxed", inactive && "text-muted-foreground line-through decoration-current/70")}>{note.content}</p>
                             <p className="mt-1.5 text-[0.62rem] text-muted-foreground">{author?.name ?? "Usuário"} · {noteDate(note.createdAt)}</p>
+                            {note.convertedSubactivityId && (
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-medium text-primary">
+                                <Sparkles className="size-3.5 shrink-0" />
+                                <span>Transformada em subatividade{note.convertedAt ? ` · ${noteDate(note.convertedAt)}` : ""}</span>
+                                {convertedBy && <span className="font-normal text-muted-foreground">por {convertedBy.name}</span>}
+                              </div>
+                            )}
+                            {note.deletedAt && (
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-medium text-destructive">
+                                <span className="inline-flex size-4 items-center justify-center rounded-full border border-destructive/35 text-[0.58rem] leading-none">×</span>
+                                <span>Excluída · {noteDate(note.deletedAt)}</span>
+                                {deletedBy && <span className="font-normal text-muted-foreground">por {deletedBy.name}</span>}
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
                           {note.convertedSubactivityId ? (
-                            <div className="flex min-w-0 items-center gap-2 text-[0.68rem] font-medium text-primary">
-                              <Sparkles className="size-3.5 shrink-0" />
-                              <span className="truncate">Transformada em subatividade</span>
-                              {convertedSub && (
-                                <Link href={followUpHref({ projectId: project.id, activityId: activity.id, subactivityId: convertedSub.id })} className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-primary/10">
-                                  Abrir <ArrowUpRight className="size-3" />
-                                </Link>
-                              )}
-                            </div>
+                            convertedSub ? (
+                              <Link href={followUpHref({ projectId: project.id, activityId: activity.id, subactivityId: convertedSub.id })} className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[0.68rem] font-medium text-primary hover:bg-primary/10">
+                                Abrir subatividade <ArrowUpRight className="size-3" />
+                              </Link>
+                            ) : <span className="text-[0.65rem] text-muted-foreground">Subatividade vinculada ao histórico</span>
+                          ) : note.deletedAt ? (
+                            <span className="text-[0.65rem] text-muted-foreground">Mantida apenas para histórico</span>
                           ) : canManage ? (
                             <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs text-primary" disabled={Boolean(savingId) || !canCreateSubactivity} onClick={() => setConvertNote(note)} title={canCreateSubactivity ? "Transformar em subatividade" : "Sem permissão para adicionar subatividades"}>
                               {promoting ? <LoaderCircle className="size-3.5 animate-spin" /> : <FilePlus2 className="size-3.5" />}

@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -171,19 +172,36 @@ type PreviewableAttachment = Pick<
 >
 
 function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }) {
+  const [imageOpen, setImageOpen] = React.useState(false)
   const downloadHref = attachment.textContent !== undefined
     ? textDownloadHref(attachment)
     : attachment.dataUrl
 
   if (attachment.kind === "image" && attachment.dataUrl) {
     return (
-      <div className="flex min-h-64 items-center justify-center rounded-xl bg-muted/35 p-3">
-        <img
+      <>
+        <button
+          type="button"
+          onClick={() => setImageOpen(true)}
+          className="flex min-h-64 w-full cursor-zoom-in items-center justify-center rounded-xl bg-muted/35 p-3 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+          title="Ampliar imagem"
+          aria-label={`Ampliar ${attachment.name}`}
+        >
+          <img
+            src={attachment.dataUrl}
+            alt={attachment.name}
+            className="max-h-[52dvh] max-w-full rounded-lg object-contain"
+          />
+        </button>
+        <ImageViewerDialog
+          open={imageOpen}
+          onOpenChange={setImageOpen}
           src={attachment.dataUrl}
           alt={attachment.name}
-          className="max-h-[52dvh] max-w-full rounded-lg object-contain"
+          title={attachment.name}
+          downloadName={attachment.name}
         />
-      </div>
+      </>
     )
   }
 

@@ -275,6 +275,7 @@ function optimisticSubStatus(projects: Project[], subId: string, status: Status)
         return {
           ...sub,
           status,
+          updatedAt: now,
           timerStartedAt: status === "in-progress" ? now : undefined,
           brainstormMode: status === "in-progress" ? sub.brainstormMode : false,
         }
@@ -343,6 +344,7 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         trackedSeconds: live,
         timerStartedAt: row.timer_started_at ?? undefined,
         assigneeId: row.assignee_id ?? sub.assigneeId,
+        updatedAt: row.updated_at ?? sub.updatedAt,
         typeId: row.type_id !== undefined ? (row.type_id ?? undefined) : sub.typeId,
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,

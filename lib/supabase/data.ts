@@ -247,7 +247,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
-          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,
+          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,updated_at,
           subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)
@@ -278,6 +278,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             trackedSeconds: liveTrackedSeconds(sub),
             timerStartedAt: sub.timer_started_at ?? undefined,
             createdAt: sub.created_at ?? undefined,
+            updatedAt: sub.updated_at ?? sub.created_at ?? undefined,
             assigneeId: sub.assignee_id,
             typeId: sub.type_id ?? undefined,
             memberIds: Array.from(new Set([sub.assignee_id, ...(sub.subactivity_members ?? []).map((item: any) => item.user_id)].filter(Boolean))),

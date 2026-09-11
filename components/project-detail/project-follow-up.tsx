@@ -87,6 +87,7 @@ import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
+import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -670,31 +671,44 @@ function AttachmentCard({
   onMediaReady?: () => void
 }) {
   const href = resolvedUrl ?? attachment.dataUrl
+  const [imageOpen, setImageOpen] = React.useState(false)
 
   if (attachment.kind === "image") {
     return (
-      <a
-        href={href || undefined}
-        target={href ? "_blank" : undefined}
-        rel={href ? "noreferrer" : undefined}
-        className={cn(
-          "mt-2 block aspect-[16/10] w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-muted/25",
-          !href && "cursor-default",
-        )}
-      >
-        {href ? (
-          <img
-            src={href}
-            alt={attachment.name}
-            onLoad={onMediaReady}
-            className="size-full object-contain"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center text-muted-foreground/55">
-            <FileImage className="size-7" />
-          </div>
-        )}
-      </a>
+      <>
+        <button
+          type="button"
+          onClick={() => href && setImageOpen(true)}
+          disabled={!href}
+          className={cn(
+            "mt-2 block aspect-[16/10] w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-muted/25 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            href ? "cursor-zoom-in hover:border-primary/35" : "cursor-default",
+          )}
+          title={href ? "Ampliar imagem" : undefined}
+          aria-label={href ? `Ampliar ${attachment.name}` : attachment.name}
+        >
+          {href ? (
+            <img
+              src={href}
+              alt={attachment.name}
+              onLoad={onMediaReady}
+              className="size-full object-contain"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-muted-foreground/55">
+              <FileImage className="size-7" />
+            </div>
+          )}
+        </button>
+        <ImageViewerDialog
+          open={imageOpen}
+          onOpenChange={setImageOpen}
+          src={href}
+          alt={attachment.name}
+          title={attachment.name}
+          downloadName={attachment.name}
+        />
+      </>
     )
   }
 

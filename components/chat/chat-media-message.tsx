@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { cn } from "@/lib/utils"
 import type { AttachmentKind } from "@/lib/types"
 import { useChatMediaActivation } from "@/components/chat/use-chat-media-activation"
+import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 
 function formatBytes(bytes?: number) {
   if (!bytes || bytes <= 0) return ""
@@ -166,12 +167,14 @@ export function ChatMediaMessage({
           </button>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="w-[min(96vw,1100px)] max-w-none bg-black/95 p-2" showCloseButton>
-            <DialogHeader className="sr-only"><DialogTitle>{fileName}</DialogTitle></DialogHeader>
-            {url && <img src={url} alt={fileName} className="max-h-[86dvh] w-full object-contain" />}
-          </DialogContent>
-        </Dialog>
+        <ImageViewerDialog
+          open={open}
+          onOpenChange={setOpen}
+          src={url}
+          alt={fileName}
+          title={fileName}
+          downloadName={fileName}
+        />
       </>
     )
   }

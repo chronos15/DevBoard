@@ -38,15 +38,24 @@ function workForMember(projects: Project[], memberId: string) {
   return work
 }
 
-function recentWork(items: WorkRef[], memberId: string) {
-  return [...items].sort((a, b) => {
-    const aRunning = a.subactivity.status === "in-progress" && a.subactivity.assigneeId === memberId
-    const bRunning = b.subactivity.status === "in-progress" && b.subactivity.assigneeId === memberId
-    if (aRunning !== bRunning) return aRunning ? -1 : 1
-    const aCreated = new Date(a.subactivity.createdAt ?? 0).getTime()
-    const bCreated = new Date(b.subactivity.createdAt ?? 0).getTime()
-    return bCreated - aCreated
-  }).slice(0, 3)
+function workLastChangedAt(item: WorkRef) {
+  const candidates = [
+    item.subactivity.updatedAt,
+    item.subactivity.createdAt,
+    ...(item.subactivity.comments ?? []).map((comment) => comment.createdAt),
+    ...(item.subactivity.attachments ?? []).map((attachment) => attachment.statusChangedAt ?? attachment.createdAt),
+  ]
+  return candidates.reduce((latest, value) => {
+    if (!value) return latest
+    const timestamp = new Date(value).getTime()
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest
+  }, 0)
+}
+
+function recentWork(items: WorkRef[]) {
+  return [...items]
+    .sort((a, b) => workLastChangedAt(b) - workLastChangedAt(a))
+    .slice(0, 3)
 }
 
 function shortElapsed(iso: string | undefined, now: number) {
@@ -170,7 +179,7 @@ export function WorkspaceActivityStatus() {
           const online = Boolean(presence?.online)
           const noTasks = work.length === 0
           const expanded = expandedMemberId === member.id
-          const latest = recentWork(work, member.id)
+          const latest = recentWork(work)
 
           return (
             <div
@@ -254,7 +263,7 @@ export function WorkspaceActivityStatus() {
               {expanded && (
                 <div className="border-t border-border/70 px-2.5 pb-2.5 pt-2">
                   <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
-                    <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Últimas tarefas abertas</span>
+                    <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Últimas tarefas alteradas</span>
                     <span className="font-mono text-[0.6rem] tabular-nums text-muted-foreground">{Math.min(work.length, 3)}/{work.length}</span>
                   </div>
 
@@ -263,6 +272,8 @@ export function WorkspaceActivityStatus() {
                       {latest.map((item) => {
                         const isRunning = item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id
                         const meta = statusMeta[item.subactivity.status]
+                        const lastChangedAt = workLastChangedAt(item)
+                        const changedAgo = lastChangedAt ? shortElapsed(new Date(lastChangedAt).toISOString(), now) : "agora"
                         return (
                           <Link
                             key={item.subactivity.id}
@@ -272,7 +283,7 @@ export function WorkspaceActivityStatus() {
                             <span className={cn("size-1.5 shrink-0 rounded-full", isRunning ? "bg-primary" : meta.dot)} />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[0.72rem] font-medium group-hover:text-primary">{item.subactivity.title}</span>
-                              <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">{item.project.name} · {item.activityTitle}</span>
+                              <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">{item.project.name} · {item.activityTitle} · alterada há {changedAgo}</span>
                             </span>
                             <span className={cn(
                               "shrink-0 rounded-full px-1.5 py-0.5 text-[0.56rem] font-semibold",

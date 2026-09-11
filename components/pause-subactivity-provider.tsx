@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Coffee, MoveRight, Pause, Sandwich, UserRound } from "lucide-react"
+import { Coffee, LogOut, MoveRight, Pause, Sandwich, UserRound } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import {
@@ -19,6 +19,7 @@ const PAUSE_PRESETS = [
   { label: "Lanche", icon: Sandwich },
   { label: "Pausa particular", icon: UserRound },
   { label: "Transição de atividade", icon: MoveRight },
+  { label: "Fim de Expediente", icon: LogOut },
 ] as const
 
 type PauseRequestContextValue = {

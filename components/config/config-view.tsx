@@ -903,6 +903,173 @@ function TeamSection() {
   )
 }
 
+function PreferenceToggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string
+  description: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border py-4 last:border-0">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-60",
+          checked ? "bg-primary" : "bg-muted",
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-5 shrink-0 rounded-full bg-background shadow-sm ring-1 ring-foreground/10 transition-transform duration-200 ease-out",
+            checked ? "translate-x-5" : "translate-x-0",
+          )}
+        />
+      </button>
+    </div>
+  )
+}
+
+function usePreferenceEditor() {
+  const { preferences, updatePreferences } = useStore()
+  const [draft, setDraft] = React.useState<UserPreferences>(preferences)
+  const [saving, setSaving] = React.useState(false)
+
+  React.useEffect(() => setDraft(preferences), [preferences])
+
+  async function patch(next: Partial<UserPreferences>) {
+    const value = { ...draft, ...next }
+    setDraft(value)
+    setSaving(true)
+    const ok = await updatePreferences(value)
+    if (!ok) setDraft(preferences)
+    setSaving(false)
+  }
+
+  return { draft, saving, patch }
+}
+
+function BrowserNotificationSettings() {
+  const { currentUserId } = useStore()
+  const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("unsupported")
+  const [dismissed, setDismissed] = React.useState(false)
+  const [requesting, setRequesting] = React.useState(false)
+  const [showHelp, setShowHelp] = React.useState(false)
+
+  const refresh = React.useCallback(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPermission("unsupported")
+      return
+    }
+    setPermission(Notification.permission)
+    setDismissed(isBrowserNotificationPromptDismissed(currentUserId))
+  }, [currentUserId])
+
+  React.useEffect(() => {
+    refresh()
+    if (typeof window === "undefined") return
+    const onPreference = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; dismissed?: boolean }>).detail
+      if (!detail || detail.userId !== currentUserId) return
+      setDismissed(Boolean(detail.dismissed))
+    }
+    const onVisibility = () => { if (document.visibilityState === "visible") refresh() }
+    window.addEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener(BROWSER_NOTIFICATION_PREFERENCE_EVENT, onPreference)
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [currentUserId, refresh])
+
+  async function activate() {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (Notification.permission === "denied") {
+      setPermission("denied")
+      setShowHelp(true)
+      return
+    }
+    setRequesting(true)
+    try {
+      const next = await Notification.requestPermission()
+      setPermission(next)
+      if (next === "granted") {
+        resetBrowserNotificationPrompt(currentUserId)
+        setDismissed(false)
+        setShowHelp(false)
+        try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/devboard-sw.js") } catch {}
+      } else {
+        dismissBrowserNotificationPrompt(currentUserId)
+        setDismissed(true)
+        setShowHelp(next === "denied")
+      }
+    } finally {
+      setRequesting(false)
+    }
+  }
+
+  const status = permission === "granted"
+    ? { label: "Ativadas", className: "bg-success/10 text-success", description: "O Chrome pode exibir chamadas, mensagens, menções e atualizações do TaskBoard." }
+    : permission === "denied"
+      ? { label: "Bloqueadas", className: "bg-destructive/10 text-destructive", description: "O Chrome bloqueou as notificações para este site. A liberação precisa ser feita nas permissões do navegador." }
+      : permission === "unsupported"
+        ? { label: "Indisponíveis", className: "bg-muted text-muted-foreground", description: "Este navegador não oferece suporte às notificações utilizadas pelo TaskBoard." }
+        : dismissed
+          ? { label: "Ignoradas", className: "bg-warning/10 text-warning", description: "Você escolheu não ativar agora. O aviso automático não será exibido novamente neste dispositivo." }
+          : { label: "Não configuradas", className: "bg-muted text-muted-foreground", description: "Ative se quiser receber avisos do TaskBoard mesmo quando estiver em outra tela." }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Bell className="size-4.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">Notificações do navegador</p>
+            <span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", status.className)}>{status.label}</span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{status.description}</p>
+        </div>
+        {permission !== "granted" && permission !== "unsupported" && (
+          <button
+            type="button"
+            disabled={requesting}
+            onClick={() => void activate()}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {requesting && <Loader2 className="size-3.5 animate-spin" />}
+            {permission === "denied" ? "Como ativar" : "Ativar notificações"}
+          </button>
+        )}
+      </div>
+
+      {(showHelp || permission === "denied") && (
+        <div className="mt-4 rounded-xl border border-warning/20 bg-warning/[0.05] px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
+          <strong className="font-semibold text-foreground">Permissão bloqueada no Chrome.</strong> Abra as informações do site (ícone ao lado do endereço), entre em <strong className="font-medium text-foreground">Permissões / Configurações do site → Notificações</strong> e selecione <strong className="font-medium text-foreground">Permitir</strong>. Depois volte ao TaskBoard; o status será atualizado automaticamente.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NotificationsSection() {
   const { draft, saving, patch } = usePreferenceEditor()
   return (

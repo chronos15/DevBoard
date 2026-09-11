@@ -17,6 +17,7 @@ import {
   LogOut,
   MessageCircleMore,
   Paperclip,
+  Pencil,
   Phone,
   Radio,
   Reply,
@@ -38,6 +39,7 @@ import { AudioMessage } from "@/components/chat/audio-message"
 import { AudioRecordButton } from "@/components/chat/audio-record-button"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
+import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
@@ -500,6 +502,7 @@ export function ChatView({
     chatHydrated,
     ensureDirectConversation,
     sendChatMessage,
+    editChatMessage,
     retryChatMessage,
     sendChatAudio,
     sendChatMedia,
@@ -531,6 +534,7 @@ export function ChatView({
   const [conversationActionOpen, setConversationActionOpen] = React.useState(false)
   const [conversationActionBusy, setConversationActionBusy] = React.useState(false)
   const [replyingTo, setReplyingTo] = React.useState<ChatReplyReference | null>(null)
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null)
   const [focusedReplyMessageId, setFocusedReplyMessageId] = React.useState<string | null>(null)
   const [slashCommandIndex, setSlashCommandIndex] = React.useState(0)
   const [executingSlashCommandId, setExecutingSlashCommandId] = React.useState<string | null>(null)
@@ -1467,19 +1471,35 @@ export function ChatView({
                             ) : !own ? <MemberAvatar member={sender} className="size-7 ring-0" /> : null}
                             <div className={cn("relative", commandMessage ? "w-full max-w-[92%] sm:max-w-[86%]" : "max-w-[78%]", alignOwn && "text-right")}>
                               {!item.deliveryStatus && (
-                                <button
-                                  type="button"
-                                  onPointerDown={(event) => event.stopPropagation()}
-                                  onClick={() => selectMessageForReply(item)}
+                                <div
                                   className={cn(
-                                    "absolute top-1/2 z-10 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 shadow-sm ring-1 ring-foreground/10 transition-all hover:text-primary group-hover/message:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:flex",
-                                    alignOwn ? "-left-9" : "-right-9",
+                                    "absolute top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 text-muted-foreground opacity-0 shadow-sm transition-all group-hover/message:opacity-100 focus-within:opacity-100 md:flex",
+                                    alignOwn ? "-left-[4.5rem]" : "-right-[2.5rem]",
                                   )}
-                                  title="Responder mensagem"
-                                  aria-label="Responder mensagem"
                                 >
-                                  <Reply className="size-3.5" />
-                                </button>
+                                  <button
+                                    type="button"
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={() => selectMessageForReply(item)}
+                                    className="flex size-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                                    title="Responder mensagem"
+                                    aria-label="Responder mensagem"
+                                  >
+                                    <Reply className="size-3.5" />
+                                  </button>
+                                  {own && !commandMessage && item.type !== "audio" && item.type !== "media" && item.content.trim() && (
+                                    <button
+                                      type="button"
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={() => setEditingMessageId(item.id)}
+                                      className="flex size-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                                      title="Editar mensagem"
+                                      aria-label="Editar mensagem"
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                               {commandMessage ? (
                                 <p className="tb-chat-meta mb-1 px-1 font-medium text-muted-foreground">TaskBoard · /{item.command?.command}</p>
@@ -1518,7 +1538,14 @@ export function ChatView({
                                     </span>
                                   </button>
                                 )}
-                                {item.command ? (
+                                {editingMessageId === item.id ? (
+                                  <InlineMessageEditor
+                                    initialValue={item.content}
+                                    onCancel={() => setEditingMessageId(null)}
+                                    onSave={(value) => editChatMessage(selected.id, item.id, value)}
+                                    className="text-foreground"
+                                  />
+                                ) : item.command ? (
                                   <ChatCommandCard command={item.command} executor={sender} />
                                 ) : item.type === "audio" ? (
                                   <AudioMessage storagePath={item.mediaPath} durationMs={item.mediaDurationMs} own={own} />
@@ -1535,14 +1562,22 @@ export function ChatView({
                                   <MessageText message={item} own={own} />
                                 )}
                               </div>
-                              <time className="tb-chat-meta mt-1 block px-1 font-mono text-muted-foreground">
-                                {new Date(item.createdAt).toLocaleString("pt-BR", {
-                                  day: "2-digit",
-                                  month: "2-digit",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </time>
+                              <div className={cn("tb-chat-meta mt-1 flex items-center gap-1 px-1 text-muted-foreground", alignOwn && "justify-end")}>
+                                {item.editedAt && <span>(editada)</span>}
+                                <time className="font-mono">
+                                  {new Date(item.createdAt).toLocaleString("pt-BR", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </time>
+                                {own && !item.deliveryStatus && !commandMessage && item.type !== "audio" && item.type !== "media" && item.content.trim() && (
+                                  <button type="button" onClick={() => setEditingMessageId(item.id)} className="ml-1 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary md:hidden" title="Editar mensagem" aria-label="Editar mensagem">
+                                    <Pencil className="size-3" />
+                                  </button>
+                                )}
+                              </div>
                               {own && item.deliveryStatus === "failed" && (
                                 <button
                                   type="button"

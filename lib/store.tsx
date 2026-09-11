@@ -160,6 +160,7 @@ export type StoreContextValue = {
   addServiceRequestAttachments: (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => Promise<boolean>
   addServiceRequestExternalResources: (requestId: string, resources: ServiceRequestExternalResourceInput[], messageId?: string) => Promise<boolean>
   addServiceRequestMessage: (requestId: string, content: string, mentions?: ChatMention[], files?: ServiceRequestFileInput[]) => Promise<boolean>
+  editServiceRequestMessage: (messageId: string, content: string) => Promise<boolean>
   startServiceRequestAqs: (requestId: string) => Promise<boolean>
   requestServiceRequestInfo: (requestId: string, reason: string) => Promise<boolean>
   rejectServiceRequest: (requestId: string, reason: string) => Promise<boolean>
@@ -197,6 +198,7 @@ export type StoreContextValue = {
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
+  editSubactivityComment: (commentId: string, content: string) => Promise<boolean>
   addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyTo?: FollowUpReplyReference, messageGroupId?: string) => Promise<boolean>
   addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[], messageGroupId?: string) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
@@ -211,6 +213,7 @@ export type StoreContextValue = {
   setSubactivityAttachmentActive: (subId: string, attachmentId: string, active: boolean) => Promise<boolean>
   ensureDirectConversation: (memberId: string) => Promise<string | null>
   sendChatMessage: (conversationId: string, content: string, mentions?: ChatMention[], replyTo?: ChatReplyReference) => Promise<boolean>
+  editChatMessage: (conversationId: string, messageId: string, content: string) => Promise<boolean>
   retryChatMessage: (conversationId: string, messageId: string) => Promise<boolean>
   sendChatAudio: (conversationId: string, audio: Blob, durationMs: number) => Promise<boolean>
   sendChatMedia: (conversationId: string, files: File[], caption?: string) => Promise<boolean>
@@ -385,6 +388,25 @@ function mergeChatMessages(previous: ChatMessage[], incoming: ChatMessage[], pre
   const byId = new Map(seed.map((message) => [message.id, message]))
   for (const message of incoming) byId.set(message.id, message)
   return Array.from(byId.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function applyRealtimeChatMessageUpdate(conversations: ChatConversation[], row: any) {
+  if (!row?.id) return conversations
+  return conversations.map((conversation) => ({
+    ...conversation,
+    messages: conversation.messages.map((message) => {
+      if (message.id !== row.id) return message
+      const mentions = Array.isArray(row.mentions)
+        ? row.mentions.filter((mention: any) => mention && (mention.kind === "user" || mention.kind === "project") && typeof mention.id === "string" && typeof mention.label === "string")
+        : message.mentions
+      return {
+        ...message,
+        content: typeof row.content === "string" ? row.content : message.content,
+        mentions,
+        editedAt: typeof row.edited_at === "string" ? row.edited_at : message.editedAt,
+      }
+    }),
+  }))
 }
 
 function optimisticMessageId() {
@@ -864,6 +886,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               setProjects((current) => applyRealtimeSubactivity(current, payload.new))
             } else if (table === "project_logs" && payload?.eventType === "INSERT" && payload?.new?.id) {
               setProjects((current) => applyRealtimeProjectLog(current, payload.new))
+            } else if (table === "chat_messages" && payload?.eventType === "UPDATE" && payload?.new?.id) {
+              setChatConversations((current) => applyRealtimeChatMessageUpdate(current, payload.new))
             } else if (PROJECT_TABLES.has(table)) {
               schedule("projects", refreshProjects)
             }
@@ -1853,6 +1877,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshAqsReviews, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
 
+  const editSubactivityComment = React.useCallback(async (commentId: string, content: string) => {
+    const result = await callRpc<boolean>("edit_subactivity_comment", {
+      p_comment_id: commentId,
+      p_content: content,
+    }, "Não foi possível editar a mensagem")
+    if (result === undefined) return false
+    await Promise.all([refreshProjects(), refreshServiceRequests(), refreshAqsReviews()])
+    return true
+  }, [callRpc, refreshAqsReviews, refreshProjects, refreshServiceRequests])
+
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference, messageGroupId?: string) => {
     try {
       const { data, error } = await supabase.rpc("add_followup_comment_v2", {
@@ -2162,6 +2196,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       chatMessageDeliveriesRef.current.delete(localId)
     }
   }, [supabase])
+
+  const editChatMessage = React.useCallback(async (conversationId: string, messageId: string, content: string) => {
+    const text = content.trim()
+    if (!text) return false
+    const result = await callRpc<boolean>("edit_chat_message", {
+      p_message_id: messageId,
+      p_content: text,
+    }, "Não foi possível editar a mensagem")
+    if (result === undefined) return false
+
+    const editedAt = new Date().toISOString()
+    setChatConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? {
+          ...conversation,
+          messages: conversation.messages.map((message) => message.id === messageId
+            ? {
+                ...message,
+                content: text,
+                editedAt,
+                mentions: (message.mentions ?? []).filter((mention) => text.toLocaleLowerCase("pt-BR").includes(`@${mention.label}`.toLocaleLowerCase("pt-BR"))),
+              }
+            : message),
+        }
+      : conversation))
+    return true
+  }, [callRpc])
 
   const sendChatMessage = React.useCallback((conversationId: string, content: string, mentions: ChatMention[] = [], replyTo?: ChatReplyReference) => {
     const text = content.trim()
@@ -2833,6 +2893,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests])
 
+  const editServiceRequestMessage = React.useCallback(async (messageId: string, content: string) => {
+    const result = await callRpc<boolean>("edit_service_request_message", {
+      p_message_id: messageId,
+      p_content: content,
+    }, "Não foi possível editar a mensagem")
+    if (result === undefined) return false
+    await refreshServiceRequests()
+    return true
+  }, [callRpc, refreshServiceRequests])
+
   const startServiceRequestAqs = React.useCallback(async (requestId: string) => {
     const result = await callRpc<unknown>("start_service_request_aqs", { p_request_id: requestId }, "Não foi possível assumir a análise")
     if (result === undefined) return false
@@ -2960,6 +3030,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addServiceRequestAttachments,
     addServiceRequestExternalResources,
     addServiceRequestMessage,
+    editServiceRequestMessage,
     startServiceRequestAqs,
     requestServiceRequestInfo,
     rejectServiceRequest,
@@ -2990,6 +3061,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     versionProject,
     addProjectComment,
     addSubactivityComment,
+    editSubactivityComment,
     addFollowUpComment,
     addFollowUpAttachments,
     deleteFollowUpComment,
@@ -3004,6 +3076,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSubactivityAttachmentActive,
     ensureDirectConversation,
     sendChatMessage,
+    editChatMessage,
     retryChatMessage,
     sendChatAudio,
     sendChatMedia,
@@ -3028,13 +3101,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }), [
     activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
-    addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
+    addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, editSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, currentAccessPolicy, deleteActivity, deleteChatGroup,
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
-    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, setMemberRole,
+    memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, editChatMessage, setMemberRole,
     setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityBrainstorm, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
-    createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
+    createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, editServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])
 

@@ -16,6 +16,8 @@ import {
   FolderKanban,
   Link2,
   LoaderCircle,
+  Image as ImageIcon,
+  Pencil,
   MessageSquareText,
   Paperclip,
   Pause,
@@ -50,6 +52,7 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -81,15 +84,36 @@ function attachmentIcon(category: string) {
   return FileText
 }
 
-function RequestAttachmentLink({ attachment, compact = false }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean }) {
+function RequestAttachmentLink({ attachment, compact = false, inlineImage = false }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean; inlineImage?: boolean }) {
   const supabase = React.useMemo(() => createClient(), [])
   const [opening, setOpening] = React.useState(false)
   const [imageUrl, setImageUrl] = React.useState<string | null>(null)
   const [imageOpen, setImageOpen] = React.useState(false)
   const isImage = attachment.kind === "image" || attachment.mimeType?.startsWith("image/")
 
+  React.useEffect(() => {
+    if (!inlineImage || !isImage || imageUrl) return
+    let cancelled = false
+    if (attachment.sourceType === "external-url" && attachment.externalUrl) {
+      setImageUrl(attachment.externalUrl)
+      return
+    }
+    if (!attachment.storagePath) return
+    setOpening(true)
+    void supabase.storage.from(SERVICE_REQUEST_MEDIA_BUCKET).createSignedUrl(attachment.storagePath, 60 * 20).then(({ data, error }) => {
+      if (!cancelled && !error && data?.signedUrl) setImageUrl(data.signedUrl)
+    }).finally(() => {
+      if (!cancelled) setOpening(false)
+    })
+    return () => { cancelled = true }
+  }, [attachment.externalUrl, attachment.sourceType, attachment.storagePath, imageUrl, inlineImage, isImage, supabase])
+
   async function open() {
     if (opening) return
+    if (isImage && imageUrl) {
+      setImageOpen(true)
+      return
+    }
     if (attachment.sourceType === "external-url" && attachment.externalUrl) {
       if (isImage) {
         setImageUrl(attachment.externalUrl)
@@ -113,6 +137,36 @@ function RequestAttachmentLink({ attachment, compact = false }: { attachment: Se
     } finally {
       setOpening(false)
     }
+  }
+
+  if (inlineImage && isImage) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => void open()}
+          className="block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/20 text-left align-top transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          title="Ampliar imagem"
+        >
+          {imageUrl ? (
+            <img src={imageUrl} alt={attachment.name} className="block h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)] object-contain" />
+          ) : (
+            <span className="flex h-28 w-44 max-w-full flex-col items-center justify-center gap-2 text-[0.62rem] text-muted-foreground">
+              {opening ? <LoaderCircle className="size-4 animate-spin" /> : <ImageIcon className="size-5" />}
+              <span>{opening ? "Carregando imagem..." : "Imagem"}</span>
+            </span>
+          )}
+        </button>
+        <ImageViewerDialog
+          open={imageOpen}
+          onOpenChange={setImageOpen}
+          src={imageUrl}
+          alt={attachment.name}
+          title={attachment.name}
+          downloadName={attachment.name}
+        />
+      </>
+    )
   }
 
   const Icon = attachment.sourceType === "external-url" ? Link2 : attachmentIcon(attachment.category)
@@ -408,6 +462,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
     sendServiceRequestToAqs,
     returnServiceRequestToDev,
     approveServiceRequestForBuild,
+    editServiceRequestMessage,
   } = useStore()
   const request = serviceRequests.find((item) => item.id === requestId)
   const [infoOpen, setInfoOpen] = React.useState(false)
@@ -419,6 +474,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
   const [approveOpen, setApproveOpen] = React.useState(false)
   const [completeOpen, setCompleteOpen] = React.useState(false)
   const [quickLoading, setQuickLoading] = React.useState<string | null>(null)
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null)
 
   if (!hydrated) return <div className={cn("animate-pulse", embedded ? "flex h-full w-full min-h-0 flex-col" : "mx-auto max-w-7xl space-y-4")}><div className={cn("bg-muted", embedded ? "h-28 border-b border-border" : "h-12 rounded-2xl")} /><div className={cn("flex-1 bg-muted/60", !embedded && "mt-4 h-[560px] rounded-2xl")} /></div>
   if (!request) return <div className={cn("flex items-center justify-center text-center", embedded ? "h-full w-full p-8" : "mx-auto max-w-xl rounded-2xl border border-border bg-card p-8")}><div><ClipboardCheck className="mx-auto size-8 text-muted-foreground" /><h1 className="mt-4 text-lg font-semibold">Solicitação não encontrada</h1><p className="mt-2 text-sm text-muted-foreground">Ela pode não existir ou seu usuário não possui acesso a este protocolo.</p><Button type="button" variant="outline" className="mt-5" onClick={() => router.push(backHref)}><ArrowLeft className="size-4" /> Voltar</Button></div></div>
@@ -508,9 +564,26 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
             ) : (() => {
               const mentionedCurrentUser = item.message.authorId !== currentUserId && isUserMentioned(item.message.mentions, currentUserId)
               return (
-              <div key={`message-${item.message.id}`} className={cn("relative flex gap-3 rounded-xl border border-transparent px-2 py-3 hover:bg-muted/25", mentionedCurrentUser && "tb-mentioned-message")}>
+              <div key={`message-${item.message.id}`} className={cn("group/message relative flex gap-3 rounded-xl border border-transparent px-2 py-3 hover:bg-muted/25", mentionedCurrentUser && "tb-mentioned-message")}>
                 <MemberAvatar member={members.find((member) => member.id === item.message.authorId)} className="mt-0.5 size-8 shrink-0 text-[0.65rem]" />
-                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><MemberName member={members.find((member) => member.id === item.message.authorId)} className="text-xs font-semibold" fallback="Usuário" /><span className="font-mono text-[0.6rem] text-muted-foreground">{formatDateTime(item.message.createdAt)}</span></div>{item.message.content && <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.message.content}</p>}{item.message.attachments.length > 0 && <div className="mt-2 grid gap-2 sm:grid-cols-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact />)}</div>}</div>
+                <div className="min-w-0 flex-1 pr-8">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <MemberName member={members.find((member) => member.id === item.message.authorId)} className="text-xs font-semibold" fallback="Usuário" />
+                    <span className="font-mono text-[0.6rem] text-muted-foreground">{formatDateTime(item.message.createdAt)}</span>
+                    {item.message.editedAt && <span className="text-[0.58rem] text-muted-foreground">(editada)</span>}
+                  </div>
+                  {item.message.content && (editingMessageId === item.message.id ? (
+                    <InlineMessageEditor initialValue={item.message.content} onCancel={() => setEditingMessageId(null)} onSave={(value) => editServiceRequestMessage(item.message.id, value)} />
+                  ) : (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.message.content}</p>
+                  ))}
+                  {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage />)}</div>}
+                </div>
+                {item.message.authorId === currentUserId && item.message.content.trim() && editingMessageId !== item.message.id && (
+                  <button type="button" onClick={() => setEditingMessageId(item.message.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem">
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
               </div>
               )
             })())}

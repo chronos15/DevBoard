@@ -6,6 +6,7 @@ import {
   Loader2,
   MessageSquareText,
   Paperclip,
+  Pencil,
   Reply,
   RotateCcw,
   Send,
@@ -19,6 +20,7 @@ import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AudioMessage } from "@/components/chat/audio-message"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
+import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -114,6 +116,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     currentUserId,
     members,
     sendChatMessage,
+    editChatMessage,
     retryChatMessage,
     sendChatMedia,
     loadChatHistory,
@@ -126,6 +129,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   const [mentionRange, setMentionRange] = React.useState<MentionRange | null>(null)
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const [replyingTo, setReplyingTo] = React.useState<ChatReplyReference | null>(null)
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null)
   const [pickerMessageId, setPickerMessageId] = React.useState<string | null>(null)
   const [reactions, setReactions] = React.useState<ReactionRow[]>([])
   const [reactionBusy, setReactionBusy] = React.useState<string | null>(null)
@@ -417,7 +421,14 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                         </button>
                       )}
 
-                      {item.type === "audio" ? (
+                      {editingMessageId === item.id ? (
+                        <InlineMessageEditor
+                          initialValue={item.content}
+                          onCancel={() => setEditingMessageId(null)}
+                          onSave={(value) => editChatMessage(conversation.id, item.id, value)}
+                          className="text-foreground"
+                        />
+                      ) : item.type === "audio" ? (
                         <AudioMessage storagePath={item.mediaPath} durationMs={item.mediaDurationMs} own={own} />
                       ) : item.type === "media" ? (
                         <ChatMediaMessage
@@ -435,6 +446,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                       <div className={cn("mt-1 flex items-center justify-end gap-1 text-[0.5rem]", own ? "text-primary-foreground/65" : "text-muted-foreground")}>
                         {item.deliveryStatus === "sending" && <span>Enviando…</span>}
                         {item.deliveryStatus === "failed" && <span>Falha</span>}
+                        {!item.deliveryStatus && item.editedAt && <span>(editada)</span>}
                         {!item.deliveryStatus && <span>{timeLabel(item.createdAt)}</span>}
                       </div>
                     </div>
@@ -459,6 +471,11 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                         <button type="button" onClick={() => setReplyingTo(messageReplyReference(item))} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Responder">
                           <Reply className="size-3" />
                         </button>
+                        {own && item.type !== "audio" && item.type !== "media" && item.content.trim() && (
+                          <button type="button" onClick={() => setEditingMessageId(item.id)} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Editar mensagem">
+                            <Pencil className="size-3" />
+                          </button>
+                        )}
                         <button type="button" onClick={() => setPickerMessageId((current) => current === item.id ? null : item.id)} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Reagir">
                           <SmilePlus className="size-3" />
                         </button>

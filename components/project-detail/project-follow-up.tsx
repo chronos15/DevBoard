@@ -88,6 +88,7 @@ import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -681,7 +682,7 @@ function AttachmentCard({
           onClick={() => href && setImageOpen(true)}
           disabled={!href}
           className={cn(
-            "mt-2 block aspect-[16/10] w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-muted/25 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "mt-2 block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/25 text-left align-top transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             href ? "cursor-zoom-in hover:border-primary/35" : "cursor-default",
           )}
           title={href ? "Ampliar imagem" : undefined}
@@ -692,10 +693,10 @@ function AttachmentCard({
               src={href}
               alt={attachment.name}
               onLoad={onMediaReady}
-              className="size-full object-contain"
+              className="block h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)] object-contain"
             />
           ) : (
-            <div className="flex size-full items-center justify-center text-muted-foreground/55">
+            <div className="flex h-28 w-44 max-w-full items-center justify-center text-muted-foreground/55">
               <FileImage className="size-7" />
             </div>
           )}
@@ -830,6 +831,7 @@ export function ProjectFollowUp({
     serviceRequests,
     canManageSubactivity,
     addFollowUpComment,
+    editSubactivityComment,
     addFollowUpAttachments,
     deleteFollowUpComment,
     deleteFollowUpAttachment,
@@ -894,6 +896,7 @@ export function ProjectFollowUp({
   const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false)
   const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null)
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null)
   const [deletingAttachmentId, setDeletingAttachmentId] = React.useState<string | null>(null)
   const [focusedActivityId, setFocusedActivityId] = React.useState<string | null>(null)
   const [clockNow, setClockNow] = React.useState(() => Date.now())
@@ -1930,6 +1933,15 @@ export function ProjectFollowUp({
       return
     }
     timelineEndRef.current?.scrollIntoView({ block: "end" })
+  }
+
+  function releaseInitialBottomLock() {
+    if (!initialBottomLockRef.current) return
+    initialBottomLockRef.current = false
+    if (bottomLockTimerRef.current) {
+      window.clearTimeout(bottomLockTimerRef.current)
+      bottomLockTimerRef.current = null
+    }
   }
 
   function handleTimelineMediaReady() {
@@ -2969,6 +2981,12 @@ export function ProjectFollowUp({
               <div
                 ref={timelineViewportRef}
                 className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
+                onWheel={releaseInitialBottomLock}
+                onTouchMove={releaseInitialBottomLock}
+                onPointerDown={(event) => {
+                  if (event.pointerType === "mouse" && event.button !== 0) return
+                  releaseInitialBottomLock()
+                }}
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy" }}
                 onDrop={(event) => {
                   event.preventDefault()
@@ -3237,6 +3255,7 @@ export function ProjectFollowUp({
                                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-9 min-[761px]:pr-32">
                                   <strong className="tb-chat-title truncate"><MemberName member={author} fallback="Usuário" /></strong>
                                   <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                  {comment.editedAt && <span className="tb-chat-meta shrink-0 text-muted-foreground">(editada)</span>}
                                   {marked && <span className="inline-flex items-center gap-1 text-[0.58rem] font-medium text-primary"><Pin className="size-3 fill-current" /> fixada</span>}
                                 </div>
                                 {comment.replyTo && (
@@ -3257,9 +3276,17 @@ export function ProjectFollowUp({
                                     {!comment.replyTo.unavailable && <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(comment.replyTo)}</span>}
                                   </button>
                                 )}
-                                <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
-                                  {renderMentionedText(comment.content, comment.mentions)}
-                                </p>
+                                {editingCommentId === comment.id ? (
+                                  <InlineMessageEditor
+                                    initialValue={comment.content}
+                                    onCancel={() => setEditingCommentId(null)}
+                                    onSave={(value) => editSubactivityComment(comment.id, value)}
+                                  />
+                                ) : (
+                                  <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
+                                    {renderMentionedText(comment.content, comment.mentions)}
+                                  </p>
+                                )}
                                 {comment.messageGroupId && (
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(comment.messageGroupId) ?? []).map((attachment) => (
@@ -3302,6 +3329,7 @@ export function ProjectFollowUp({
                               <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">
                                 <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(replyReferenceFromTimelineItem(item))} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                {comment.authorId === currentUserId && <button type="button" onClick={() => setEditingCommentId(comment.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>}
                                 {!selectedDeveloperObserver && <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
                                 <CopyEntityLinkButton
                                   href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
@@ -3329,6 +3357,7 @@ export function ProjectFollowUp({
                                   <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
                                     <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
+                                    {comment.authorId === currentUserId && <button type="button" onClick={() => { setCompactActionsItemId(null); setEditingCommentId(comment.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>}
                                     {!selectedDeveloperObserver && <button type="button" onClick={() => { setCompactActionsItemId(null); void toggleCommentMark(comment.id) }} className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
                                     <CopyEntityLinkButton
                                       href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}

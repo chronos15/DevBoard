@@ -100,6 +100,7 @@ export type CommentEntry = {
   authorId: string
   content: string
   createdAt: string
+  editedAt?: string
   messageGroupId?: string
   mentions?: ChatMention[]
   replyTo?: FollowUpReplyReference
@@ -395,6 +396,7 @@ export type ChatMessage = {
   /** Estado local de entrega usado para envio otimista no chat. Mensagens vindas do backend deixam este campo indefinido. */
   deliveryStatus?: "sending" | "failed"
   createdAt: string
+  editedAt?: string
 }
 
 export type ChatConversation = {
@@ -464,6 +466,7 @@ export type ServiceRequestMessage = {
   mentions: ChatMention[]
   createdAt: string
   attachments: ServiceRequestAttachment[]
+  editedAt?: string
 }
 
 export type ServiceRequestEvent = {

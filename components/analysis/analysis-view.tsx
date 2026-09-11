@@ -22,6 +22,7 @@ import {
   Menu,
   MessageSquareText,
   Paperclip,
+  Pencil,
   RotateCcw,
   Search,
   Send,
@@ -47,12 +48,15 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { DeveloperVcsTaskChanges, type DeveloperTaskVcsChange } from "@/components/developer/developer-vcs-task-changes"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { formatHMS } from "@/lib/project-utils"
 import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
@@ -145,6 +149,58 @@ function AttachmentKindIcon({ attachment }: { attachment: AttachmentEntry }) {
   return <Icon className="size-4" />
 }
 
+function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry }) {
+  const supabase = React.useMemo(() => createClient(), [])
+  const [url, setUrl] = React.useState<string | null>(attachment.dataUrl ?? null)
+  const [loading, setLoading] = React.useState(Boolean(attachment.storagePath && !attachment.dataUrl))
+  const [imageOpen, setImageOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (url || !attachment.storagePath) return
+    let cancelled = false
+    setLoading(true)
+    void supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(attachment.storagePath, 3600).then(({ data, error }) => {
+      if (!cancelled && !error && data?.signedUrl) setUrl(data.signedUrl)
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [attachment.storagePath, supabase, url])
+
+  const isImage = attachment.kind === "image" || attachment.mimeType?.startsWith("image/")
+
+  if (isImage) {
+    return (
+      <>
+        <button
+          type="button"
+          disabled={!url}
+          onClick={() => url && setImageOpen(true)}
+          className="mt-2 block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/20 text-left align-top transition-colors enabled:cursor-zoom-in enabled:hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          title={url ? "Ampliar imagem" : undefined}
+        >
+          {url ? (
+            <img src={url} alt={attachment.name} className="block h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)] object-contain" />
+          ) : (
+            <span className="flex h-28 w-44 max-w-full flex-col items-center justify-center gap-2 text-[0.62rem] text-muted-foreground">
+              {loading ? <span className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" /> : <FileImage className="size-5" />}
+              <span>{loading ? "Carregando imagem..." : "Imagem indisponível"}</span>
+            </span>
+          )}
+        </button>
+        <ImageViewerDialog open={imageOpen} onOpenChange={setImageOpen} src={url} alt={attachment.name} title={attachment.name} downloadName={attachment.name} />
+      </>
+    )
+  }
+
+  return (
+    <div className="mt-2 flex max-w-xl min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card p-3">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><AttachmentKindIcon attachment={attachment} /></span>
+      <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={attachment.name}>{attachment.name}</p><p className="mt-0.5 text-[0.58rem] text-muted-foreground">{formatBytes(attachment.size)} · evidência</p></div>
+    </div>
+  )
+}
+
 function reviewMatchesFilter(review: AqsReview, filter: ReviewFilter) {
   if (filter === "all") return true
   if (filter === "active") return review.status === "awaiting" || review.status === "evaluating"
@@ -165,6 +221,7 @@ export function AnalysisView() {
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
     addSubactivityComment,
+    editSubactivityComment,
   } = useStore()
 
   const canReview = currentUserRole === "admin" || currentUserRole === "aqs"
@@ -183,6 +240,7 @@ export function AnalysisView() {
   const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const [sendingComment, setSendingComment] = React.useState(false)
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null)
   const [evidenceDialogOpen, setEvidenceDialogOpen] = React.useState(false)
   const [droppedEvidenceFiles, setDroppedEvidenceFiles] = React.useState<File[]>([])
   const [droppedEvidenceVersion, setDroppedEvidenceVersion] = React.useState(0)
@@ -956,12 +1014,20 @@ export function AnalysisView() {
                           <article key={item.id} className={cn("group relative flex min-w-0 gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-colors hover:bg-muted/35 sm:px-3", mentionedCurrentUser && "tb-mentioned-message")}>
                             <MemberAvatar member={author} className="mt-0.5 size-9 text-[0.68rem]" />
                             <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pr-8">
                                 <strong className="truncate text-xs"><MemberName member={author} fallback="Usuário" /></strong>
                                 <time className="shrink-0 font-mono text-[0.58rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
+                                {item.comment.editedAt && <span className="text-[0.58rem] text-muted-foreground">(editada)</span>}
                               </div>
-                              <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{item.comment.content}</p>
+                              {editingCommentId === item.comment.id ? (
+                                <InlineMessageEditor initialValue={item.comment.content} onCancel={() => setEditingCommentId(null)} onSave={(value) => editSubactivityComment(item.comment.id, value)} />
+                              ) : (
+                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{item.comment.content}</p>
+                              )}
                             </div>
+                            {item.comment.authorId === currentUserId && editingCommentId !== item.comment.id && (
+                              <button type="button" onClick={() => setEditingCommentId(item.comment.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>
+                            )}
                           </article>
                         )
                       }
@@ -975,10 +1041,7 @@ export function AnalysisView() {
                               <strong className="truncate text-xs"><MemberName member={uploader} fallback="Usuário" /></strong>
                               <time className="shrink-0 font-mono text-[0.58rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                             </div>
-                            <div className="mt-2 flex max-w-xl min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card p-3">
-                              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><AttachmentKindIcon attachment={item.attachment} /></span>
-                              <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={item.attachment.name}>{item.attachment.name}</p><p className="mt-0.5 text-[0.58rem] text-muted-foreground">{formatBytes(item.attachment.size)} · evidência</p></div>
-                            </div>
+                            <AnalysisAttachmentPreview attachment={item.attachment} />
                           </div>
                         </article>
                       )

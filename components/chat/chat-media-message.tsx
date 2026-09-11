@@ -135,9 +135,9 @@ export function ChatMediaMessage({
   if (kind === "image") {
     return (
       <>
-        <div ref={targetRef} className="min-w-0 w-[clamp(11rem,58vw,18rem)] max-w-full">
-          <button type="button" className="block w-full text-left" onClick={() => void openPreview()}>
-            <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
+        <div ref={targetRef} className="min-w-0 w-fit max-w-full">
+          <button type="button" className="block w-fit max-w-full text-left" onClick={() => void openPreview()}>
+            <span className="relative block w-fit max-w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
               {url && (
                 <img
                   src={url}
@@ -150,14 +150,17 @@ export function ChatMediaMessage({
                     setFailed(true)
                   }}
                   className={cn(
-                    "absolute inset-0 h-full w-full object-contain transition-opacity duration-200",
+                    "block h-auto w-auto max-h-[420px] max-w-[min(100%,18rem)] object-contain transition-opacity duration-200",
                     mediaReady ? "opacity-100" : "opacity-0",
                   )}
                 />
               )}
 
               {!mediaReady && (
-                <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75">
+                <span className={cn(
+                  "flex h-32 w-44 max-w-full flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75",
+                  url && "absolute inset-0 h-full w-full",
+                )}>
                   {failed ? <ImageIcon className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-6" />}
                   <span>{failed ? "Imagem indisponível" : loadingUrl || activated ? "Carregando imagem..." : "Imagem"}</span>
                 </span>

@@ -249,7 +249,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         subactivities(
           id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,updated_at,
           subactivity_members(user_id),
-          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at),
+          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at,edited_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)
         )
       )
@@ -323,6 +323,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
                   authorId: comment.author_id,
                   content: comment.content,
                   createdAt: comment.created_at,
+                  editedAt: comment.edited_at ?? undefined,
                   messageGroupId: comment.message_group_id ?? undefined,
                   mentions: Array.isArray(comment.mentions)
                     ? comment.mentions
@@ -442,6 +443,7 @@ function mapChatMessageRow(message: any): ChatMessage {
     replyTo: replyMessageId ? { messageId: replyMessageId, unavailable: true } : undefined,
     command: mapChatCommandSnapshot(message.command_payload),
     createdAt: message.created_at,
+    editedAt: message.edited_at ?? undefined,
   }
 }
 
@@ -481,7 +483,7 @@ async function hydrateChatReplyReferences(supabase: SupabaseClient, messages: Ch
   })
 }
 
-const CHAT_MESSAGE_BASE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at'
+const CHAT_MESSAGE_BASE_COLUMNS = 'id,sender_id,content,message_type,media_path,media_mime_type,media_duration_ms,media_size_bytes,media_name,media_kind,mentions,created_at,edited_at'
 const CHAT_MESSAGE_REPLY_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS},reply_to_message_id`
 const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_REPLY_COLUMNS},command_name,command_payload`
 
@@ -743,7 +745,7 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
       priority_requested,priority_reason,priority_approved,created_by,assigned_aqs_id,responsible_dev_id,executor_id,
       project_id,activity_id,aqs_summary,dev_summary,final_build,created_at,updated_at,closed_at,
       service_request_participants(user_id),
-      service_request_messages(id,request_id,author_id,content,mentions,created_at),
+      service_request_messages(id,request_id,author_id,content,mentions,created_at,edited_at),
       service_request_events(id,request_id,actor_id,event_type,title,description,from_status,to_status,created_at),
       service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,source_type,external_url,uploaded_by,created_at)
     `)
@@ -803,6 +805,7 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
         content: item.content || '',
         mentions: Array.isArray(item.mentions) ? item.mentions : [],
         createdAt: item.created_at,
+        editedAt: item.edited_at ?? undefined,
         attachments: attachments.filter((attachment: any) => attachment.messageId === item.id),
       })).sort((a: any, b: any) => a.createdAt.localeCompare(b.createdAt)),
       events: (row.service_request_events ?? []).map((item: any) => ({

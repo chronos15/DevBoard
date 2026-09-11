@@ -13,8 +13,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pencil,
-  Plus,
-  Tag,
   UserRound,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -31,12 +29,12 @@ import {
 import type { ActivityFilter } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { MemberAvatar, MemberName, MemberStack } from "@/components/member-avatar"
 import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { ActivityItem } from "./activity-item"
 import { AddSubactivityDialog } from "./add-subactivity-dialog"
+import { FollowUpAddActivityDialog } from "./follow-up-structure-dialogs"
 import { ActiveTimerHero } from "./active-timer-hero"
 import { ProjectLogDialog } from "./project-log"
 import { SubactivityKanban } from "./subactivity-kanban"
@@ -53,7 +51,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const {
     projects,
     members,
-    addActivity,
     addProjectComment,
     addProjectAttachments,
     setProjectAttachmentActive,
@@ -61,18 +58,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     currentUserRole,
     currentAccessPolicy,
     hydrated,
-    workItemTypes,
   } = useStore()
   const project = projects.find((p) => p.id === projectId)
-  const [newActivity, setNewActivity] = React.useState("")
-  const [newActivityAssignee, setNewActivityAssignee] = React.useState("")
-  const [newActivityTypeId, setNewActivityTypeId] = React.useState("")
   const [viewMode, setViewMode] = React.useState<"list" | "kanban">("list")
   const [activityFilter, setActivityFilter] = React.useState<ActivityFilter>("all")
   const [assigneeFilter, setAssigneeFilter] = React.useState("all")
   const [activitySort, setActivitySort] = React.useState<"newest" | "oldest">("newest")
   const [sidePanelExpanded, setSidePanelExpanded] = React.useState(true)
-  const [addingActivity, setAddingActivity] = React.useState(false)
   const [kanbanActivityId, setKanbanActivityId] = React.useState("")
 
   React.useEffect(() => {
@@ -133,8 +125,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const canCreateActivity = canPerformAction(currentUserRole, currentAccessPolicy, "createActivities") && (currentUserRole === "admin" || project.memberIds.includes(currentUserId))
   const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
   const canEditProject = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects") && (currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId)))
-  const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
-  const activeWorkItemTypes = workItemTypes.filter((item) => item.active)
   const personalSubs = subs.filter((sub) => sub.assigneeId === currentUserId)
   const personalDone = personalSubs.filter((sub) => sub.status === "done").length
   const personalCancelled = personalSubs.filter((sub) => sub.status === "cancelled").length
@@ -185,22 +175,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     const bNumber = activityCreationNumber.get(b.id) ?? 0
     return activitySort === "newest" ? bNumber - aNumber : aNumber - bNumber
   })
-
-  const handleAddActivity = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    const title = newActivity.trim()
-    if (!title || addingActivity) return
-    setAddingActivity(true)
-    try {
-      const ok = await addActivity(project.id, title, newActivityAssignee ? [newActivityAssignee] : [], newActivityTypeId || null)
-      if (ok) {
-        setNewActivity("")
-        setNewActivityTypeId("")
-      }
-    } finally {
-      setAddingActivity(false)
-    }
-  }
 
   function changeView(mode: "list" | "kanban") {
     setViewMode(mode)
@@ -499,110 +473,34 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
 
               {canCreateActivity && (
-                <form onSubmit={handleAddActivity} className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:grid-cols-[minmax(0,1fr)_160px_190px_auto] sm:items-center">
-                  <Input value={newActivity} onChange={(e) => setNewActivity(e.target.value)} placeholder="Nova atividade..." className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
-                  <label className="relative min-w-0">
-                    <span className="sr-only">Tipo da atividade</span>
-                    <Tag className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <select
-                      value={newActivityTypeId}
-                      onChange={(event) => setNewActivityTypeId(event.target.value)}
-                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
-                      aria-label="Tipo da nova atividade"
-                    >
-                      <option value="">Sem tipo</option>
-                      {activeWorkItemTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="relative min-w-0">
-                    <span className="sr-only">Responsável pela atividade</span>
-                    <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <select
-                      value={newActivityAssignee}
-                      onChange={(event) => setNewActivityAssignee(event.target.value)}
-                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
-                      aria-label="Responsável pela nova atividade"
-                    >
-                      <option value="">Sem responsável específico</option>
-                      {executionMembers.map((member) => (
-                        <option key={member.id} value={member.id}>{member.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button type="submit" size="sm" className="gap-1.5" loading={addingActivity} loadingText="Adicionando...">
-                    <Plus className="size-4" />
-                    Adicionar
-                  </Button>
-                </form>
+                <div className="flex justify-end">
+                  <FollowUpAddActivityDialog projectId={project.id} trigger="button" className="w-full sm:w-auto" />
+                </div>
               )}
             </>
           ) : (
             <>
               {canCreateActivity && (
-                <div className="grid min-w-0 gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 lg:grid-cols-[minmax(0,1fr)_160px_190px_auto_minmax(220px,280px)_auto] lg:items-center">
-                  <Input
-                    value={newActivity}
-                    onChange={(e) => setNewActivity(e.target.value)}
-                    placeholder="Nova atividade..."
-                    className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0"
-                  />
-                  <label className="relative min-w-0">
-                    <span className="sr-only">Tipo da atividade</span>
-                    <Tag className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:flex-row sm:items-center sm:justify-between">
+                  <FollowUpAddActivityDialog projectId={project.id} trigger="button" className="w-full sm:w-auto" />
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                     <select
-                      value={newActivityTypeId}
-                      onChange={(event) => setNewActivityTypeId(event.target.value)}
-                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
-                      aria-label="Tipo da nova atividade"
+                      value={kanbanActivityId}
+                      onChange={(event) => setKanbanActivityId(event.target.value)}
+                      className="h-8 min-w-0 rounded-lg border border-border bg-card px-2 text-xs outline-none focus:border-ring sm:max-w-[280px]"
+                      aria-label="Atividade para nova subatividade"
                     >
-                      <option value="">Sem tipo</option>
-                      {activeWorkItemTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="relative min-w-0">
-                    <span className="sr-only">Responsável pela atividade</span>
-                    <UserRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <select
-                      value={newActivityAssignee}
-                      onChange={(event) => setNewActivityAssignee(event.target.value)}
-                      className="h-8 w-full min-w-0 rounded-lg border border-border bg-card pl-8 pr-2 text-xs outline-none focus:border-ring"
-                      aria-label="Responsável pela nova atividade"
-                    >
-                      <option value="">Sem responsável específico</option>
-                      {executionMembers.map((member) => (
-                        <option key={member.id} value={member.id}>{member.name}</option>
+                      {project.activities.map((activity, index) => (
+                        <option key={activity.id} value={activity.id}>{index + 1}. {activity.title}</option>
                       ))}
                     </select>
-                  </label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="gap-1.5"
-                    loading={addingActivity}
-                    loadingText="Adicionando..."
-                    disabled={!newActivity.trim()}
-                    onClick={() => void handleAddActivity()}
-                  >
-                    <Plus className="size-4" />
-                    Atividade
-                  </Button>
-
-                  <select
-                    value={kanbanActivityId}
-                    onChange={(event) => setKanbanActivityId(event.target.value)}
-                    className="h-8 min-w-0 rounded-lg border border-border bg-card px-2 text-xs outline-none focus:border-ring"
-                    aria-label="Atividade para nova subatividade"
-                  >
-                    {project.activities.map((activity, index) => (
-                      <option key={activity.id} value={activity.id}>{index + 1}. {activity.title}</option>
-                    ))}
-                  </select>
-                  <div className="flex justify-end">
-                    {kanbanActivityId ? (
-                      <AddSubactivityDialog projectId={project.id} activityId={kanbanActivityId} />
-                    ) : (
-                      <span className="px-2 text-xs text-muted-foreground">Crie uma atividade primeiro</span>
-                    )}
+                    <div className="flex justify-end">
+                      {kanbanActivityId ? (
+                        <AddSubactivityDialog projectId={project.id} activityId={kanbanActivityId} />
+                      ) : (
+                        <span className="px-2 text-xs text-muted-foreground">Crie uma atividade primeiro</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

@@ -73,18 +73,6 @@ import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { ProjectIcon } from "@/components/projects/project-icon"
@@ -834,6 +822,8 @@ export function ProjectFollowUp({
   const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
   const statusMenuRef = React.useRef<HTMLDivElement>(null)
   const statusMenuButtonRef = React.useRef<HTMLButtonElement>(null)
+  const headerActionsButtonRef = React.useRef<HTMLButtonElement>(null)
+  const headerActionsPortalRef = React.useRef<HTMLDivElement>(null)
   const statusMenuPortalRef = React.useRef<HTMLDivElement>(null)
   const reactionPickerRef = React.useRef<HTMLDivElement>(null)
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
@@ -883,6 +873,8 @@ export function ProjectFollowUp({
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [headerActionsOpen, setHeaderActionsOpen] = React.useState(false)
+  const [headerActionsPosition, setHeaderActionsPosition] = React.useState<{ top: number; left: number } | null>(null)
+  const [headerActionsView, setHeaderActionsView] = React.useState<"main" | "status" | "pinned">("main")
   const [editSubactivityOpen, setEditSubactivityOpen] = React.useState(false)
   const [meetingStarting, setMeetingStarting] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
@@ -1752,10 +1744,70 @@ export function ProjectFollowUp({
     setStatusMenuOpen(false)
     setStatusMenuPosition(null)
     setHeaderActionsOpen(false)
+    setHeaderActionsPosition(null)
+    setHeaderActionsView("main")
     setEditSubactivityOpen(false)
     setPendingFiles([])
     setComposerError("")
   }, [selectedSubId])
+
+  React.useEffect(() => {
+    if (!headerActionsOpen) return
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null
+      if (target && headerActionsButtonRef.current?.contains(target)) return
+      if (target && headerActionsPortalRef.current?.contains(target)) return
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+      setHeaderActionsView("main")
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return
+      if (headerActionsView !== "main") {
+        setHeaderActionsView("main")
+        return
+      }
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+    }
+    function handleViewportChange() {
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+      setHeaderActionsView("main")
+    }
+    const timer = window.setTimeout(() => document.addEventListener("pointerdown", handlePointerDown), 0)
+    document.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", handleViewportChange)
+    window.addEventListener("scroll", handleViewportChange, true)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", handleViewportChange)
+      window.removeEventListener("scroll", handleViewportChange, true)
+    }
+  }, [headerActionsOpen, headerActionsView])
+
+  function toggleHeaderActions() {
+    if (headerActionsOpen) {
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+      setHeaderActionsView("main")
+      return
+    }
+    const rect = headerActionsButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const width = Math.min(272, Math.max(220, window.innerWidth - 16))
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width))
+    const estimatedHeight = 390
+    const openAbove = rect.bottom + estimatedHeight > window.innerHeight - 8 && rect.top > 220
+    setHeaderActionsPosition({
+      left,
+      top: openAbove ? Math.max(8, rect.top - Math.min(estimatedHeight, rect.top - 8) - 6) : rect.bottom + 6,
+    })
+    setHeaderActionsView("main")
+    setHeaderActionsOpen(true)
+  }
 
   function toggleStatusMenu() {
     if (statusMenuOpen) {
@@ -2748,168 +2800,19 @@ export function ProjectFollowUp({
                     Somente leitura
                   </span>
                 )}
-                <DropdownMenu open={headerActionsOpen} onOpenChange={setHeaderActionsOpen}>
-                  <DropdownMenuTrigger
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                    title="Mais ações"
-                    aria-label="Mais ações da subatividade"
-                  >
-                    <Ellipsis className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="w-64 p-1.5">
-                    <DropdownMenuLabel className="px-2 py-1.5">Ações da subatividade</DropdownMenuLabel>
-
-                    {!selectedDeveloperObserver && (
-                      <DropdownMenuItem
-                        disabled={meetingStarting}
-                        className="h-9 cursor-pointer gap-2 px-2.5"
-                        onClick={() => void startSelectedMeeting()}
-                      >
-                        {meetingStarting ? <LoaderCircle className="size-4 animate-spin" /> : <Video className="size-4" />}
-                        <span>Iniciar reunião</span>
-                      </DropdownMenuItem>
-                    )}
-
-                    {currentUserRole === "admin" && (
-                      <DropdownMenuItem
-                        className="h-9 cursor-pointer gap-2 px-2.5"
-                        onClick={() => setEditSubactivityOpen(true)}
-                      >
-                        <Pencil className="size-4" />
-                        <span>Editar subatividade</span>
-                      </DropdownMenuItem>
-                    )}
-
-                    <DropdownMenuItem
-                      className="h-9 cursor-pointer gap-2 px-2.5"
-                      onClick={() => {
-                        setLocalSearchOpen((current) => {
-                          const next = !current
-                          if (next) window.requestAnimationFrame(() => localSearchInputRef.current?.focus())
-                          return next
-                        })
-                      }}
-                    >
-                      <Search className="size-4" />
-                      <span>Pesquisar</span>
-                      <DropdownMenuShortcut>Ctrl F</DropdownMenuShortcut>
-                    </DropdownMenuItem>
-
-                    <DropdownMenuItem
-                      className="h-9 cursor-pointer gap-2 px-2.5"
-                      onClick={() => setChecklistOpen(true)}
-                    >
-                      <ListChecks className="size-4" />
-                      <span className="min-w-0 flex-1">Anotações</span>
-                      {checklistPendingCount > 0 && (
-                        <span className="rounded-full bg-warning/15 px-1.5 py-0.5 font-mono text-[0.58rem] font-semibold text-warning">
-                          {checklistPendingCount > 9 ? "9+" : checklistPendingCount}
-                        </span>
-                      )}
-                    </DropdownMenuItem>
-
-                    <DropdownMenuItem
-                      disabled={!selectedCanManage || brainstormSaving || (selectedSub.status !== "in-progress" && !selectedSub.brainstormMode)}
-                      className={cn("h-9 cursor-pointer gap-2 px-2.5", selectedSub.brainstormMode && "text-primary")}
-                      onClick={() => {
-                        if (brainstormSaving) return
-                        setBrainstormSaving(true)
-                        void setSubactivityBrainstorm(selectedSub.id, !Boolean(selectedSub.brainstormMode)).finally(() => setBrainstormSaving(false))
-                      }}
-                    >
-                      {brainstormSaving ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}
-                      <span>{selectedSub.brainstormMode ? "Encerrar brainstorm" : "Ativar brainstorm"}</span>
-                      <DropdownMenuShortcut>Ctrl ⇧ B</DropdownMenuShortcut>
-                    </DropdownMenuItem>
-
-                    {!selectedDeveloperObserver && pinnedComments.length === 1 && (
-                      <DropdownMenuItem
-                        className="h-9 cursor-pointer gap-2 px-2.5"
-                        onClick={() => focusComment(pinnedComments[0].id)}
-                      >
-                        <Pin className="size-4 fill-current text-primary" />
-                        <span>Ir para mensagem fixada</span>
-                      </DropdownMenuItem>
-                    )}
-
-                    {!selectedDeveloperObserver && pinnedComments.length > 1 && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger className="h-9 cursor-pointer gap-2 px-2.5">
-                          <Pin className="size-4 fill-current text-primary" />
-                          <span className="min-w-0 flex-1">Mensagens fixadas</span>
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{pinnedComments.length}</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-72 p-1.5">
-                          {pinnedComments.map((comment) => {
-                            const author = members.find((member) => member.id === comment.authorId)
-                            return (
-                              <DropdownMenuItem
-                                key={comment.id}
-                                className="min-h-10 cursor-pointer items-start gap-2 px-2.5 py-2"
-                                onClick={() => focusComment(comment.id)}
-                              >
-                                <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-6 shrink-0 text-[0.5rem]" />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-[0.68rem] font-semibold"><MemberName member={author} fallback="Usuário" /></span>
-                                  <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{commentReplySummary(comment) || "Mensagem"}</span>
-                                </span>
-                              </DropdownMenuItem>
-                            )
-                          })}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
-
-                    {selectedCanManage && (
-                      <>
-                        <DropdownMenuSeparator />
-                        {!statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
-                          <DropdownMenuItem
-                            className="h-9 cursor-pointer gap-2 px-2.5"
-                            onClick={() => void (selectedRunning ? requestPause(selectedSub.id) : startTimer(selectedSub.id))}
-                          >
-                            {selectedRunning ? <Pause className="size-4" /> : <Play className="size-4" />}
-                            <span>{selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}</span>
-                          </DropdownMenuItem>
-                        )}
-
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger className="h-9 cursor-pointer gap-2 px-2.5" disabled={statusSaving}>
-                            {statusSaving ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
-                            <span>Alterar situação</span>
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="w-56 p-1.5">
-                            {linkedRequest && (
-                              <div className="mx-1 mb-1 rounded-lg bg-primary/[0.07] px-2 py-1.5 text-[0.58rem] leading-snug text-primary">
-                                {serviceRequestReference(linkedRequest)} · conclusão somente via AQS
-                              </div>
-                            )}
-                            {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
-                              const meta = statusMeta[status]
-                              const active = status === selectedSub.status
-                              return (
-                                <DropdownMenuItem
-                                  key={status}
-                                  disabled={active || statusSaving}
-                                  className={cn(
-                                    "h-9 cursor-pointer gap-2 px-2.5",
-                                    active && "opacity-60",
-                                    status === "cancelled" && !active && "text-destructive",
-                                  )}
-                                  onClick={() => requestSelectedStatus(status)}
-                                >
-                                  <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
-                                  <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                                  {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
-                                </DropdownMenuItem>
-                              )
-                            })}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  ref={headerActionsButtonRef}
+                  type="button"
+                  variant={headerActionsOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  onClick={toggleHeaderActions}
+                  title="Mais ações"
+                  aria-label="Mais ações da subatividade"
+                  aria-haspopup="menu"
+                  aria-expanded={headerActionsOpen}
+                >
+                  <Ellipsis className="size-4" />
+                </Button>
 
                 {currentUserRole === "admin" && (
                   <EditSubactivityDialog
@@ -3617,6 +3520,199 @@ export function ProjectFollowUp({
           )}
         </aside>
       </div>
+
+      {headerActionsOpen && headerActionsPosition && selectedSub && typeof document !== "undefined" && createPortal(
+        <div
+          ref={headerActionsPortalRef}
+          role="menu"
+          aria-label="Ações da subatividade"
+          data-followup-header-actions
+          style={{ top: headerActionsPosition.top, left: headerActionsPosition.left, width: Math.min(272, Math.max(220, window.innerWidth - 16)) }}
+          className="fixed z-[10020] max-h-[min(430px,calc(100vh-16px))] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl ring-1 ring-black/5 [scrollbar-width:thin]"
+        >
+          {headerActionsView !== "main" && (
+            <button
+              type="button"
+              onClick={() => setHeaderActionsView("main")}
+              className="mb-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs font-semibold transition-colors hover:bg-muted"
+            >
+              <ChevronLeft className="size-4" />
+              <span>{headerActionsView === "status" ? "Alterar situação" : "Mensagens fixadas"}</span>
+            </button>
+          )}
+
+          {headerActionsView === "main" && (
+            <>
+              <div className="px-2 py-1.5 text-[0.62rem] font-semibold text-muted-foreground">Ações da subatividade</div>
+              {!selectedDeveloperObserver && (
+                <button
+                  type="button"
+                  disabled={meetingStarting}
+                  onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); void startSelectedMeeting() }}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                >
+                  {meetingStarting ? <LoaderCircle className="size-4 animate-spin" /> : <Video className="size-4" />}
+                  <span>Iniciar reunião</span>
+                </button>
+              )}
+              {currentUserRole === "admin" && (
+                <button
+                  type="button"
+                  onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); setEditSubactivityOpen(true) }}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+                >
+                  <Pencil className="size-4" />
+                  <span>Editar subatividade</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setHeaderActionsOpen(false)
+                  setHeaderActionsPosition(null)
+                  setLocalSearchOpen((current) => {
+                    const next = !current
+                    if (next) window.requestAnimationFrame(() => localSearchInputRef.current?.focus())
+                    return next
+                  })
+                }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+              >
+                <Search className="size-4" />
+                <span className="min-w-0 flex-1">Pesquisar</span>
+                <span className="font-mono text-[0.56rem] text-muted-foreground">Ctrl F</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); setChecklistOpen(true) }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+              >
+                <ListChecks className="size-4" />
+                <span className="min-w-0 flex-1">Anotações</span>
+                {checklistPendingCount > 0 && <span className="rounded-full bg-warning/15 px-1.5 py-0.5 font-mono text-[0.58rem] font-semibold text-warning">{checklistPendingCount > 9 ? "9+" : checklistPendingCount}</span>}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedCanManage || brainstormSaving || (selectedSub.status !== "in-progress" && !selectedSub.brainstormMode)}
+                onClick={() => {
+                  if (brainstormSaving) return
+                  setHeaderActionsOpen(false)
+                  setHeaderActionsPosition(null)
+                  setBrainstormSaving(true)
+                  void setSubactivityBrainstorm(selectedSub.id, !Boolean(selectedSub.brainstormMode)).finally(() => setBrainstormSaving(false))
+                }}
+                className={cn("flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50", selectedSub.brainstormMode && "text-primary")}
+              >
+                {brainstormSaving ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}
+                <span className="min-w-0 flex-1">{selectedSub.brainstormMode ? "Encerrar brainstorm" : "Ativar brainstorm"}</span>
+                <span className="font-mono text-[0.56rem] text-muted-foreground">Ctrl ⇧ B</span>
+              </button>
+              {!selectedDeveloperObserver && pinnedComments.length === 1 && (
+                <button
+                  type="button"
+                  onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); focusComment(pinnedComments[0].id) }}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+                >
+                  <Pin className="size-4 fill-current text-primary" />
+                  <span>Ir para mensagem fixada</span>
+                </button>
+              )}
+              {!selectedDeveloperObserver && pinnedComments.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderActionsView("pinned")}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+                >
+                  <Pin className="size-4 fill-current text-primary" />
+                  <span className="min-w-0 flex-1">Mensagens fixadas</span>
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{pinnedComments.length}</span>
+                  <ChevronRight className="size-3.5" />
+                </button>
+              )}
+              {selectedCanManage && (
+                <>
+                  <div className="my-1 h-px bg-border" />
+                  {!statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
+                    <button
+                      type="button"
+                      onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); void (selectedRunning ? requestPause(selectedSub.id) : startTimer(selectedSub.id)) }}
+                      className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted"
+                    >
+                      {selectedRunning ? <Pause className="size-4" /> : <Play className="size-4" />}
+                      <span>{selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={statusSaving}
+                    onClick={() => setHeaderActionsView("status")}
+                    className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {statusSaving ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
+                    <span className="min-w-0 flex-1">Alterar situação</span>
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          {headerActionsView === "pinned" && (
+            <div className="space-y-0.5">
+              {pinnedComments.map((comment) => {
+                const author = members.find((member) => member.id === comment.authorId)
+                return (
+                  <button
+                    key={comment.id}
+                    type="button"
+                    onClick={() => { setHeaderActionsOpen(false); setHeaderActionsPosition(null); setHeaderActionsView("main"); focusComment(comment.id) }}
+                    className="flex min-h-11 w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted"
+                  >
+                    <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-6 shrink-0 text-[0.5rem]" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[0.68rem] font-semibold"><MemberName member={author} fallback="Usuário" /></span>
+                      <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{commentReplySummary(comment) || "Mensagem"}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {headerActionsView === "status" && (
+            <div className="space-y-0.5">
+              {linkedRequest && <div className="mx-1 mb-1 rounded-lg bg-primary/[0.07] px-2 py-1.5 text-[0.58rem] leading-snug text-primary">{serviceRequestReference(linkedRequest)} · conclusão somente via AQS</div>}
+              {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
+                const meta = statusMeta[status]
+                const active = status === selectedSub.status
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={active || statusSaving}
+                    onClick={() => {
+                      setHeaderActionsOpen(false)
+                      setHeaderActionsPosition(null)
+                      setHeaderActionsView("main")
+                      requestSelectedStatus(status)
+                    }}
+                    className={cn(
+                      "flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors",
+                      active ? "cursor-default bg-muted/40 opacity-60" : "hover:bg-muted",
+                      status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
+                    )}
+                  >
+                    <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
+                    <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                    {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
 
       {statusMenuOpen && statusMenuPosition && selectedSub && typeof document !== "undefined" && createPortal(
         <div

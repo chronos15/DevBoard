@@ -349,15 +349,62 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         )}
       >
         <div className="min-w-0 space-y-3 lg:order-1">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <div className="mr-1 flex shrink-0 items-center gap-2 text-sm font-semibold">
-                <ListTree className="size-4 text-primary" />
-                Atividades
-                <span className="font-mono text-xs font-normal text-muted-foreground">{project.activities.length}</span>
+          <div className="rounded-2xl border border-border bg-card/60 p-2.5 shadow-sm sm:p-3">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2.5 px-1">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <ListTree className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-sm font-semibold">Atividades</h2>
+                    <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground">{project.activities.length}</span>
+                  </div>
+                  <p className="hidden text-[0.65rem] text-muted-foreground sm:block">Organize, filtre e acompanhe o trabalho deste projeto.</p>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-1">
+              <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                {canCreateActivity && (
+                  <FollowUpAddActivityDialog
+                    projectId={project.id}
+                    trigger="button"
+                    className="h-9 w-full rounded-xl px-3 shadow-sm sm:w-auto"
+                  />
+                )}
+                <div className="inline-flex w-full min-w-0 shrink-0 rounded-xl bg-muted p-1 sm:w-fit">
+                  <button
+                    type="button"
+                    onClick={() => changeView("list")}
+                    className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                  >
+                    <List className="size-3.5" />
+                    Lista
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => changeView("kanban")}
+                    className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                  >
+                    <Columns3 className="size-3.5" />
+                    Kanban
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openFollowUp}
+                    className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:flex-none"
+                    title="Abrir página de acompanhamento"
+                  >
+                    <MessageSquareText className="size-3.5" />
+                    <span className="hidden md:inline">Acompanhamento</span>
+                    <span className="md:hidden">Acompanhar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2.5 flex min-w-0 flex-col gap-2 border-t border-border/70 pt-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex max-w-full flex-wrap gap-1">
                 {activityFilters.map((filter) => (
                   <button
                     key={filter.key}
@@ -367,7 +414,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                       "rounded-full border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
                       activityFilter === filter.key
                         ? "border-primary/25 bg-primary/10 text-primary"
-                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                        : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     {filter.label}
@@ -375,69 +422,43 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 ))}
               </div>
 
-              <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[178px]">
-                <UserRound className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
-                <select
-                  data-select-chevron="custom"
-                  value={assigneeFilter}
-                  onChange={(event) => setAssigneeFilter(event.target.value)}
-                  aria-label="Filtrar atividades por usuário"
-                  className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-card pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
-                >
-                  <option value="all">Todos os usuários</option>
-                  {filterMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 size-3 text-muted-foreground" />
-              </label>
-
-              {viewMode === "list" && (
-                <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[154px]">
-                  <ArrowUpDown className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
+              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:justify-end">
+                <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[178px]">
+                  <UserRound className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
                   <select
                     data-select-chevron="custom"
-                    value={activitySort}
-                    onChange={(event) => setActivitySort(event.target.value as "newest" | "oldest")}
-                    aria-label="Ordenar atividades"
-                    className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-card pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
+                    value={assigneeFilter}
+                    onChange={(event) => setAssigneeFilter(event.target.value)}
+                    aria-label="Filtrar atividades por usuário"
+                    className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-background pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
                   >
-                    <option value="newest">Mais recentes</option>
-                    <option value="oldest">Mais antigas</option>
+                    <option value="all">Todos os usuários</option>
+                    {filterMembers.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-2.5 size-3 text-muted-foreground" />
                 </label>
-              )}
-            </div>
 
-            <div className="inline-flex w-full min-w-0 shrink-0 rounded-xl bg-muted p-1 sm:w-fit lg:ml-auto">
-              <button
-                type="button"
-                onClick={() => changeView("list")}
-                className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-              >
-                <List className="size-3.5" />
-                Lista
-              </button>
-              <button
-                type="button"
-                onClick={() => changeView("kanban")}
-                className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-              >
-                <Columns3 className="size-3.5" />
-                Kanban
-              </button>
-              <button
-                type="button"
-                onClick={openFollowUp}
-                className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:flex-none"
-                title="Abrir página de acompanhamento"
-              >
-                <MessageSquareText className="size-3.5" />
-                Acompanhamento
-              </button>
+                {viewMode === "list" && (
+                  <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[154px]">
+                    <ArrowUpDown className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
+                    <select
+                      data-select-chevron="custom"
+                      value={activitySort}
+                      onChange={(event) => setActivitySort(event.target.value as "newest" | "oldest")}
+                      aria-label="Ordenar atividades"
+                      className="h-8 w-full min-w-0 appearance-none rounded-full border border-border bg-background pl-8 pr-7 text-[0.68rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:text-foreground"
+                    >
+                      <option value="newest">Mais recentes</option>
+                      <option value="oldest">Mais antigas</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 size-3 text-muted-foreground" />
+                  </label>
+                )}
+              </div>
             </div>
           </div>
 
@@ -472,38 +493,31 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 )}
               </div>
 
-              {canCreateActivity && (
-                <div className="flex justify-end">
-                  <FollowUpAddActivityDialog projectId={project.id} trigger="button" className="w-full sm:w-auto" />
-                </div>
-              )}
             </>
           ) : (
             <>
-              {canCreateActivity && (
-                <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-dashed border-border bg-card/50 p-2 sm:flex-row sm:items-center sm:justify-between">
-                  <FollowUpAddActivityDialog projectId={project.id} trigger="button" className="w-full sm:w-auto" />
-                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                    <select
-                      value={kanbanActivityId}
-                      onChange={(event) => setKanbanActivityId(event.target.value)}
-                      className="h-8 min-w-0 rounded-lg border border-border bg-card px-2 text-xs outline-none focus:border-ring sm:max-w-[280px]"
-                      aria-label="Atividade para nova subatividade"
-                    >
-                      {project.activities.map((activity, index) => (
-                        <option key={activity.id} value={activity.id}>{index + 1}. {activity.title}</option>
-                      ))}
-                    </select>
-                    <div className="flex justify-end">
-                      {kanbanActivityId ? (
-                        <AddSubactivityDialog projectId={project.id} activityId={kanbanActivityId} />
-                      ) : (
-                        <span className="px-2 text-xs text-muted-foreground">Crie uma atividade primeiro</span>
-                      )}
-                    </div>
+              <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card/60 p-2 sm:flex-row sm:items-center sm:justify-end">
+                <span className="px-1 text-[0.65rem] font-medium text-muted-foreground">Nova subatividade em</span>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <select
+                    value={kanbanActivityId}
+                    onChange={(event) => setKanbanActivityId(event.target.value)}
+                    className="h-8 min-w-0 rounded-lg border border-border bg-background px-2 text-xs outline-none focus:border-ring sm:max-w-[280px]"
+                    aria-label="Atividade para nova subatividade"
+                  >
+                    {project.activities.map((activity, index) => (
+                      <option key={activity.id} value={activity.id}>{index + 1}. {activity.title}</option>
+                    ))}
+                  </select>
+                  <div className="flex justify-end">
+                    {kanbanActivityId ? (
+                      <AddSubactivityDialog projectId={project.id} activityId={kanbanActivityId} />
+                    ) : (
+                      <span className="px-2 text-xs text-muted-foreground">Crie uma atividade primeiro</span>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
 
               <SubactivityKanban
                 project={project}

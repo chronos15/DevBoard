@@ -918,3 +918,17 @@ A 073 cria `activity_notes`, com leitura para membros do workspace e escrita por
 A estrutura antiga `subactivity_checklist_items` é mantida para compatibilidade, mas a interface e os novos logs passam a usar o nome **Anotações**. Nenhum dado histórico é apagado.
 
 O conserto de **Equipe agora** é de frontend/Realtime: o cliente recria automaticamente o canal Presence após timeout, fechamento, suspensão do PWA ou troca de rede e não depende mais exclusivamente de um único evento `sync` para sair de “Atualizando status…”.
+
+## Migration 074 — edição administrativa de subatividade
+
+Depois da 073, execute:
+
+```text
+supabase/migrations/074_taskboard_admin_subactivity_edit_and_team_expand.sql
+```
+
+A 074 adiciona a RPC `update_subactivity_admin`, usada exclusivamente por **Administradores** para alterar os dados principais de uma subatividade já existente: descrição, estimativa, tipo e responsável. A permissão é validada no backend pelo papel do usuário no workspace; Desenvolvedor, AQS, Suporte e Membro não conseguem executar a edição administrativa mesmo que tentem chamar a RPC diretamente.
+
+Quando o responsável é alterado, o novo usuário é associado à subatividade e recebe uma notificação. Para preservar a sessão de trabalho e o cronômetro, a troca de responsável é bloqueada enquanto a subatividade estiver **Em execução**; pause-a antes de trocar. Toda alteração gera o log **Subatividade atualizada** com os campos modificados.
+
+As mudanças de formato `HH:mm`, o título **Equipe**, a expansão inline dos usuários e a equalização dos três cards do painel são somente de frontend e não criam estruturas adicionais no banco.

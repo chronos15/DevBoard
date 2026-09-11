@@ -170,6 +170,7 @@ export type ProjectLogType =
   | "activity-added"
   | "activity-deleted"
   | "subactivity-added"
+  | "subactivity-updated"
   | "subactivity-status"
   | "comment-added"
   | "attachment-added"

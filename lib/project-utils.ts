@@ -24,6 +24,13 @@ export function formatHours(totalSeconds: number): string {
   return `${hours.toFixed(1)}h`
 }
 
+export function formatHM(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+}
+
 export function activityTracked(activity: Activity): number {
   return activity.subactivities.reduce((acc, s) => acc + s.trackedSeconds, 0)
 }

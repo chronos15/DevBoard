@@ -17,6 +17,7 @@ import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
+import { EditSubactivityDialog } from "@/components/project-detail/edit-subactivity-dialog"
 import { cn } from "@/lib/utils"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { serviceRequestReference } from "@/lib/service-requests"
@@ -467,6 +468,7 @@ export function SubactivityKanban({
                             onPointerDown={(event) => event.stopPropagation()}
                             onDragStart={(event) => event.preventDefault()}
                           >
+                            {currentUserRole === "admin" && <EditSubactivityDialog subactivity={item.sub} compact />}
                             <CommentDialog
                               title={`Comentários · ${item.sub.title}`}
                               description="Discussão da subatividade. Todos os usuários podem comentar."

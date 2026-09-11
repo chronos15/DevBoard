@@ -176,6 +176,10 @@ export type StoreContextValue = {
     activityId: string,
     data: { title: string; estimatedHours: number; assigneeId: string; status?: Status; typeId?: string | null },
   ) => Promise<boolean>
+  updateSubactivity: (
+    subactivityId: string,
+    data: { title: string; estimatedHours: number; assigneeId: string; typeId?: string | null },
+  ) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
   createWorkItemType: (data: { name: string; color: string; intermittent?: boolean }) => Promise<boolean>
@@ -1567,6 +1571,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
 
+  const updateSubactivity = React.useCallback<StoreContextValue["updateSubactivity"]>(async (subactivityId, data) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem editar os dados da subatividade."), "Sem permissão para editar a subatividade")
+      return false
+    }
+    const result = await callRpc<unknown>("update_subactivity_admin", {
+      p_subactivity_id: subactivityId,
+      p_title: data.title,
+      p_estimated_hours: data.estimatedHours,
+      p_assignee_id: data.assigneeId,
+      p_type_id: data.typeId ?? null,
+    }, "Não foi possível atualizar a subatividade")
+    if (result === undefined) return false
+    await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
+    return true
+  }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
+
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null) => {
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
@@ -2864,6 +2885,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSubStatus,
     setSubactivityBrainstorm,
     addSubactivity,
+    updateSubactivity,
     addActivity,
     deleteActivity,
     createWorkItemType,
@@ -2912,7 +2934,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
-    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity,
+    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, deleteActivity, deleteChatGroup,

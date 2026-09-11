@@ -41,6 +41,7 @@ const iconByType: Record<ProjectLogType, typeof History> = {
   "activity-added": Plus,
   "activity-deleted": Trash2,
   "subactivity-added": Plus,
+  "subactivity-updated": Pencil,
   "subactivity-status": GitCommitHorizontal,
   "comment-added": MessageSquare,
   "attachment-added": Paperclip,

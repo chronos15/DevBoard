@@ -757,3 +757,19 @@ begin
   end if;
   raise notice 'Migration 071 OK: Brainstorm por subatividade e proteção contra auto-pausa disponíveis.';
 end $$;
+
+-- 074 · Edição administrativa de subatividade
+select
+  to_regprocedure('public.update_subactivity_admin(uuid,text,numeric,uuid,uuid)') is not null as update_subactivity_admin_rpc_ok,
+  has_function_privilege('authenticated','public.update_subactivity_admin(uuid,text,numeric,uuid,uuid)','EXECUTE') as update_subactivity_admin_execute_ok;
+
+do $$
+begin
+  if to_regprocedure('public.update_subactivity_admin(uuid,text,numeric,uuid,uuid)') is null then
+    raise exception 'Backend TaskBoard incompleto: update_subactivity_admin(...) ausente (migration 074)';
+  end if;
+  if not has_function_privilege('authenticated','public.update_subactivity_admin(uuid,text,numeric,uuid,uuid)','EXECUTE') then
+    raise exception 'Backend TaskBoard incompleto: authenticated sem EXECUTE em update_subactivity_admin(...) (migration 074)';
+  end if;
+  raise notice 'Migration 074 OK: edição administrativa de subatividade disponível.';
+end $$;

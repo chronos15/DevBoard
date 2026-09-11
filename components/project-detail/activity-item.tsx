@@ -8,7 +8,7 @@ import { useStore } from "@/lib/store"
 import {
   activityTracked,
   formatHMS,
-  formatHours,
+  formatHM,
   statusMeta,
   statusOrder,
 } from "@/lib/project-utils"
@@ -32,6 +32,7 @@ import { ActivityInfoDialog } from "@/components/project-detail/activity-info-di
 import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { SubactivityInlineSummary } from "@/components/project-detail/subactivity-inline-summary"
+import { EditSubactivityDialog } from "@/components/project-detail/edit-subactivity-dialog"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { serviceRequestReference } from "@/lib/service-requests"
 import { chatMediaKind } from "@/lib/supabase/helpers"
@@ -240,6 +241,9 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
       </div>
 
       <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
+        {currentUserRole === "admin" && (
+          <EditSubactivityDialog subactivity={sub} compact />
+        )}
         <CopyEntityLinkButton
           href={`/projetos/${projectId}#sub-${sub.id}`}
           label={`Copiar link da subatividade ${sub.title}`}
@@ -509,7 +513,7 @@ export function ActivityItem({
                 {(activity.assigneeIds?.length ?? 0) > 0 && <MemberStack ids={activity.assigneeIds ?? []} max={1} />}
                 <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums">{done}/{allSubs.length}</span>
                 {filtering && visibleSubs.length !== allSubs.length && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">{visibleSubs.length} filtro</span>}
-                <span className="ml-auto shrink-0 font-mono text-[0.62rem] tabular-nums text-muted-foreground">{formatHours(tracked)}</span>
+                <span className="ml-auto shrink-0 font-mono text-[0.62rem] tabular-nums text-muted-foreground">{formatHM(tracked)}</span>
               </div>
             </div>
 
@@ -526,7 +530,7 @@ export function ActivityItem({
             </div>
 
             <span className="ml-1 hidden w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:block">
-              {formatHours(tracked)}
+              {formatHM(tracked)}
             </span>
           </button>
 

@@ -78,6 +78,7 @@ import { FollowUpSearchDialog, type FollowUpSearchTarget } from "@/components/pr
 import { FollowUpAddActivityDialog, FollowUpAddSubactivityDialog } from "@/components/project-detail/follow-up-structure-dialogs"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
 import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
+import { EditSubactivityDialog } from "@/components/project-detail/edit-subactivity-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
@@ -2715,6 +2716,7 @@ export function ProjectFollowUp({
                   </span>
                 )}
                 {!selectedDeveloperObserver && <ActivityMeetingButton activityId={selectedActivity.id} subactivityId={selectedSub.id} />}
+                {currentUserRole === "admin" && <EditSubactivityDialog subactivity={selectedSub} compact />}
                 <Button
                   type="button"
                   variant={localSearchOpen ? "secondary" : "ghost"}

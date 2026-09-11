@@ -175,9 +175,9 @@ export default function DashboardPage() {
       />
       <KpiCards />
       <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-12">
-        <div className="min-w-0 h-full xl:col-span-5"><HoursAreaChart /></div>
+        <div className="min-w-0 h-full xl:col-span-4"><HoursAreaChart /></div>
         <div className="min-w-0 h-full xl:col-span-4"><WorkspaceActivityStatus /></div>
-        <div className="min-w-0 h-full xl:col-span-3"><StatusDonut /></div>
+        <div className="min-w-0 h-full xl:col-span-4"><StatusDonut /></div>
         <div className="min-w-0 xl:col-span-4"><ProjectsProgress /></div>
         <div className="min-w-0 xl:col-span-4"><FocusPanel /></div>
         <div className="min-w-0 xl:col-span-4"><HoursByProject /></div>

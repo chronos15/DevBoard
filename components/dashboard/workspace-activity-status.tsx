@@ -2,11 +2,11 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Activity, CircleOff, Clock3, Eye, UsersRound } from "lucide-react"
+import { Activity, ChevronDown, CircleOff, Clock3, Eye, UsersRound } from "lucide-react"
 import { MemberAvatar } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { followUpHref } from "@/lib/follow-up-launcher"
-import { formatHMS } from "@/lib/project-utils"
+import { formatHMS, statusMeta } from "@/lib/project-utils"
 import { ACCESS_ROLE_LABELS, type Member, type Project, type Subactivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -38,6 +38,17 @@ function workForMember(projects: Project[], memberId: string) {
   return work
 }
 
+function recentWork(items: WorkRef[], memberId: string) {
+  return [...items].sort((a, b) => {
+    const aRunning = a.subactivity.status === "in-progress" && a.subactivity.assigneeId === memberId
+    const bRunning = b.subactivity.status === "in-progress" && b.subactivity.assigneeId === memberId
+    if (aRunning !== bRunning) return aRunning ? -1 : 1
+    const aCreated = new Date(a.subactivity.createdAt ?? 0).getTime()
+    const bCreated = new Date(b.subactivity.createdAt ?? 0).getTime()
+    return bCreated - aCreated
+  }).slice(0, 3)
+}
+
 function shortElapsed(iso: string | undefined, now: number) {
   if (!iso) return "agora"
   const value = new Date(iso).getTime()
@@ -57,6 +68,7 @@ function roleLabel(member: Member) {
 export function WorkspaceActivityStatus() {
   const { members, memberPresence, presenceReady, projects } = useStore()
   const [now, setNow] = React.useState(() => Date.now())
+  const [expandedMemberId, setExpandedMemberId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15000)
@@ -79,12 +91,12 @@ export function WorkspaceActivityStatus() {
   const runningCount = rows.filter((row) => row.running).length
 
   return (
-    <section className="flex min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:h-[420px] xl:min-h-0">
+    <section className="flex h-full min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:h-[420px] xl:min-h-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <UsersRound className="size-4 shrink-0 text-primary" />
-            <h2 className="text-base font-semibold">Equipe agora</h2>
+            <h2 className="text-base font-semibold">Equipe</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">Status de todos os usuários do workspace em tempo real.</p>
         </div>
@@ -105,83 +117,128 @@ export function WorkspaceActivityStatus() {
           const screen = presence?.screenLabel || "TaskBoard"
           const online = Boolean(presence?.online)
           const noTasks = work.length === 0
-          const href = running
-            ? followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })
-            : undefined
+          const expanded = expandedMemberId === member.id
+          const latest = recentWork(work, member.id)
 
-          const content = (
-            <>
-              <div className="relative shrink-0">
-                <MemberAvatar member={member} className="size-9" />
-                <span className={cn(
-                  "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
-                  running ? "bg-primary" : online ? (idle ? "bg-warning" : "bg-success") : "bg-muted-foreground/35",
-                )} />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-semibold">{member.name}</span>
-                  <span className="shrink-0 text-[0.6rem] text-muted-foreground">{roleLabel(member)}</span>
+          return (
+            <div
+              key={member.id}
+              className={cn(
+                "overflow-hidden rounded-xl border transition-colors",
+                expanded ? "border-border bg-muted/25" : "border-transparent",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setExpandedMemberId((current) => current === member.id ? null : member.id)}
+                className="flex w-full min-w-0 items-center gap-3 px-2.5 py-2.5 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                aria-expanded={expanded}
+                aria-label={`${expanded ? "Recolher" : "Expandir"} atividades de ${member.name}`}
+              >
+                <div className="relative shrink-0">
+                  <MemberAvatar member={member} className="size-9" />
+                  <span className={cn(
+                    "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
+                    running ? "bg-primary" : online ? (idle ? "bg-warning" : "bg-success") : "bg-muted-foreground/35",
+                  )} />
                 </div>
 
-                {running ? (
-                  <>
-                    <p className="mt-0.5 truncate text-xs font-medium text-foreground/90">{running.subactivity.title}</p>
-                    <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">
-                      {running.project.name} · {running.activityTitle} · <span className="font-mono">{formatHMS(running.subactivity.trackedSeconds)}</span>
-                    </p>
-                  </>
-                ) : online ? (
-                  <>
-                    <p className="mt-0.5 truncate text-xs font-medium text-foreground/85">
-                      {noTasks ? "Sem tarefas abertas" : idle ? `Parado em ${screen}` : `Navegando em ${screen}`}
-                    </p>
-                    <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">
-                      {noTasks ? screen : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
-                      {presence?.lastActiveAt ? ` · interação há ${shortElapsed(presence.lastActiveAt, now)}` : ""}
-                    </p>
-                  </>
-                ) : !presenceReady && !presence ? (
-                  <>
-                    <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Atualizando status…</p>
-                    <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">Sincronizando Presence do workspace</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Offline</p>
-                    <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">
-                      {noTasks ? "Sem tarefas abertas" : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
-                    </p>
-                  </>
-                )}
-              </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-semibold">{member.name}</span>
+                    <span className="shrink-0 text-[0.6rem] text-muted-foreground">{roleLabel(member)}</span>
+                  </div>
 
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <span className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[0.6rem] font-semibold",
-                  running ? "bg-primary/10 text-primary"
-                    : online && idle ? "bg-warning/10 text-warning"
-                    : online ? "bg-success/10 text-success"
-                    : "bg-muted text-muted-foreground",
-                )}>
-                  {running ? <Activity className="size-3" /> : online && idle ? <Clock3 className="size-3" /> : online ? <Eye className="size-3" /> : <CircleOff className="size-3" />}
-                  {running ? "Executando" : !presenceReady ? "…" : online && idle ? "Parado" : online ? "Online" : "Offline"}
-                </span>
-                {presenceReady && presence?.connections && presence.connections > 1 ? (
-                  <span className="text-[0.56rem] text-muted-foreground">{presence.connections} sessões</span>
-                ) : null}
-              </div>
-            </>
-          )
+                  {running ? (
+                    <>
+                      <p className="mt-0.5 truncate text-xs font-medium text-foreground/90">{running.subactivity.title}</p>
+                      <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">
+                        {running.project.name} · {running.activityTitle} · <span className="font-mono">{formatHMS(running.subactivity.trackedSeconds)}</span>
+                      </p>
+                    </>
+                  ) : online ? (
+                    <>
+                      <p className="mt-0.5 truncate text-xs font-medium text-foreground/85">
+                        {noTasks ? "Sem tarefas abertas" : idle ? `Parado em ${screen}` : `Navegando em ${screen}`}
+                      </p>
+                      <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">
+                        {noTasks ? screen : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
+                        {presence?.lastActiveAt ? ` · interação há ${shortElapsed(presence.lastActiveAt, now)}` : ""}
+                      </p>
+                    </>
+                  ) : !presenceReady && !presence ? (
+                    <>
+                      <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Atualizando status…</p>
+                      <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">Sincronizando Presence do workspace</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Offline</p>
+                      <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">
+                        {noTasks ? "Sem tarefas abertas" : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
+                      </p>
+                    </>
+                  )}
+                </div>
 
-          return href ? (
-            <Link key={member.id} href={href} className="flex min-w-0 items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5 transition-colors hover:border-border hover:bg-muted/45">
-              {content}
-            </Link>
-          ) : (
-            <div key={member.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5">
-              {content}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[0.6rem] font-semibold",
+                    running ? "bg-primary/10 text-primary"
+                      : online && idle ? "bg-warning/10 text-warning"
+                      : online ? "bg-success/10 text-success"
+                      : "bg-muted text-muted-foreground",
+                  )}>
+                    {running ? <Activity className="size-3" /> : online && idle ? <Clock3 className="size-3" /> : online ? <Eye className="size-3" /> : <CircleOff className="size-3" />}
+                    {running ? "Executando" : !presenceReady ? "…" : online && idle ? "Parado" : online ? "Online" : "Offline"}
+                  </span>
+                  <div className="flex items-center gap-1 text-[0.56rem] text-muted-foreground">
+                    {presenceReady && presence?.connections && presence.connections > 1 ? <span>{presence.connections} sessões</span> : null}
+                    <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} />
+                  </div>
+                </div>
+              </button>
+
+              {expanded && (
+                <div className="border-t border-border/70 px-2.5 pb-2.5 pt-2">
+                  <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+                    <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Últimas tarefas abertas</span>
+                    <span className="font-mono text-[0.6rem] tabular-nums text-muted-foreground">{Math.min(work.length, 3)}/{work.length}</span>
+                  </div>
+
+                  {latest.length > 0 ? (
+                    <div className="space-y-1">
+                      {latest.map((item) => {
+                        const isRunning = item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id
+                        const meta = statusMeta[item.subactivity.status]
+                        return (
+                          <Link
+                            key={item.subactivity.id}
+                            href={followUpHref({ projectId: item.project.id, activityId: item.activityId, subactivityId: item.subactivity.id })}
+                            className="group flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-background/70"
+                          >
+                            <span className={cn("size-1.5 shrink-0 rounded-full", isRunning ? "bg-primary" : meta.dot)} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[0.72rem] font-medium group-hover:text-primary">{item.subactivity.title}</span>
+                              <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">{item.project.name} · {item.activityTitle}</span>
+                            </span>
+                            <span className={cn(
+                              "shrink-0 rounded-full px-1.5 py-0.5 text-[0.56rem] font-semibold",
+                              isRunning ? "bg-primary/10 text-primary" : meta.className,
+                            )}>
+                              {isRunning ? "Executando" : meta.label}
+                            </span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-[0.68rem] text-muted-foreground">
+                      Nenhuma atividade ou subatividade aberta para este usuário.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

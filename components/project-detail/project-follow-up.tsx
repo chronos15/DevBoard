@@ -293,6 +293,7 @@ type PendingFollowUpComment = {
   content: string
   mentions: ChatMention[]
   replyTo?: FollowUpReplyReference
+  messageGroupId?: string
   createdAt: string
   status: PendingDeliveryStatus
 }
@@ -301,6 +302,7 @@ type PendingFollowUpUpload = {
   id: string
   subactivityId: string
   files: File[]
+  messageGroupId?: string
   createdAt: string
   status: PendingDeliveryStatus
   videoProgress?: VideoProcessingProgress
@@ -503,6 +505,19 @@ function pendingFollowUpId(kind: "message" | "upload") {
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `local:${kind}:${id}`
+}
+
+function followUpMessageGroupId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const bytes = new Uint8Array(16)
+    crypto.getRandomValues(bytes)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
+  }
+  return undefined
 }
 
 function InlineComposerFilePreview({
@@ -1281,6 +1296,36 @@ export function ProjectFollowUp({
 
   const accessibleProjects = availableProjects ?? projects
 
+  const groupedMessageIds = React.useMemo(() => {
+    const ids = new Set<string>()
+    for (const comment of selectedSub?.comments ?? []) if (comment.messageGroupId) ids.add(comment.messageGroupId)
+    for (const pending of pendingComments.filter((item) => item.subactivityId === selectedSub?.id)) if (pending.messageGroupId) ids.add(pending.messageGroupId)
+    return ids
+  }, [pendingComments, selectedSub?.comments, selectedSub?.id])
+
+  const groupedAttachments = React.useMemo(() => {
+    const map = new Map<string, AttachmentEntry[]>()
+    for (const attachment of (selectedSub?.attachments ?? []).filter((item) => item.active && item.messageGroupId)) {
+      const key = attachment.messageGroupId!
+      const list = map.get(key) ?? []
+      list.push(attachment)
+      map.set(key, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    return map
+  }, [selectedSub?.attachments])
+
+  const groupedPendingUploads = React.useMemo(() => {
+    const map = new Map<string, Array<{ batch: PendingFollowUpUpload; file: File; index: number }>>()
+    for (const batch of pendingUploads.filter((item) => item.subactivityId === selectedSub?.id && item.messageGroupId)) {
+      const key = batch.messageGroupId!
+      const list = map.get(key) ?? []
+      batch.files.forEach((file, index) => list.push({ batch, file, index }))
+      map.set(key, list)
+    }
+    return map
+  }, [pendingUploads, selectedSub?.id])
+
   const timeline = React.useMemo<TimelineItem[]>(() => {
     if (!selectedSub) return []
     const items: TimelineItem[] = []
@@ -1289,6 +1334,7 @@ export function ProjectFollowUp({
       items.push({ kind: "comment", id: `comment-${comment.id}`, targetId: comment.id, createdAt: comment.createdAt, authorId: comment.authorId, comment })
     }
     for (const attachment of (selectedSub.attachments ?? []).filter((item) => item.active)) {
+      if (attachment.messageGroupId && groupedMessageIds.has(attachment.messageGroupId)) continue
       items.push({ kind: "attachment", id: `attachment-${attachment.id}`, targetId: attachment.id, createdAt: attachment.createdAt, authorId: attachment.uploadedBy, attachment })
     }
 
@@ -1304,6 +1350,7 @@ export function ProjectFollowUp({
     }
 
     for (const batch of pendingUploads.filter((item) => item.subactivityId === selectedSub.id)) {
+      if (batch.messageGroupId && groupedMessageIds.has(batch.messageGroupId)) continue
       batch.files.forEach((file, index) => {
         items.push({
           kind: "pending-attachment",
@@ -1353,7 +1400,7 @@ export function ProjectFollowUp({
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  }, [currentUserId, pendingComments, pendingUploads, project.logs, selectedActivity, selectedSub, workSessions])
+  }, [currentUserId, groupedMessageIds, pendingComments, pendingUploads, project.logs, selectedActivity, selectedSub, workSessions])
 
   const reactionsByTimelineItem = React.useMemo(() => {
     const map = new Map<string, FollowUpReaction[]>()
@@ -2163,6 +2210,7 @@ export function ProjectFollowUp({
       pending.content,
       pending.mentions,
       pending.replyTo,
+      pending.messageGroupId,
     )
     if (ok) {
       setPendingComments((current) => current.filter((item) => item.id !== pending.id))
@@ -2172,7 +2220,7 @@ export function ProjectFollowUp({
     return false
   }
 
-  function enqueueMessageOptimistically(content: string, mentions: ChatMention[], replyTo?: FollowUpReplyReference) {
+  function enqueueMessageOptimistically(content: string, mentions: ChatMention[], replyTo?: FollowUpReplyReference, messageGroupId?: string) {
     if (!selectedSub) return null
     const pending: PendingFollowUpComment = {
       id: pendingFollowUpId("message"),
@@ -2180,6 +2228,7 @@ export function ProjectFollowUp({
       content,
       mentions,
       replyTo,
+      messageGroupId,
       createdAt: new Date().toISOString(),
       status: "sending",
     }
@@ -2229,7 +2278,7 @@ export function ProjectFollowUp({
       if (invalidPart) throw new Error(`A parte “${invalidPart.name}” ficou acima de 50 MB.`)
 
       const prepared = await Promise.all(sourceFiles.map(fileToUpload))
-      const ok = await addFollowUpAttachments(batch.subactivityId, prepared)
+      const ok = await addFollowUpAttachments(batch.subactivityId, prepared, batch.messageGroupId)
       if (ok) {
         setPendingUploads((current) => current.filter((item) => item.id !== batch.id))
         return true
@@ -2254,13 +2303,14 @@ export function ProjectFollowUp({
     return false
   }
 
-  function enqueueFilesOptimistically(files: File[]) {
+  function enqueueFilesOptimistically(files: File[], messageGroupId?: string) {
     if (!selectedSub || !files.length) return null
     const baseTime = Date.now()
     const batches: PendingFollowUpUpload[] = files.map((file, index) => ({
       id: pendingFollowUpId("upload"),
       subactivityId: selectedSub.id,
       files: [file],
+      messageGroupId,
       createdAt: new Date(baseTime + index).toISOString(),
       status: "sending",
     }))
@@ -2280,13 +2330,14 @@ export function ProjectFollowUp({
     const files = pendingFiles
     if (!content && !files.length) return
 
+    const messageGroupId = content && files.length ? followUpMessageGroupId() : undefined
     if (files.length && !selectedDeveloperObserver) {
-      enqueueFilesOptimistically(files)
+      enqueueFilesOptimistically(files, messageGroupId)
       setPendingFiles([])
     }
     if (content) {
       const validMentions = draftMentions.filter((mention) => content.includes(mentionToken(mention)))
-      enqueueMessageOptimistically(content, validMentions, replyingTo ?? undefined)
+      enqueueMessageOptimistically(content, validMentions, replyingTo ?? undefined, messageGroupId)
     }
 
     stopTyping()
@@ -2923,6 +2974,31 @@ export function ProjectFollowUp({
                                 <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
                                   {renderMentionedText(item.pending.content, item.pending.mentions)}
                                 </p>
+                                {item.pending.messageGroupId && (
+                                  <div className="mt-2 space-y-2">
+                                    {(groupedAttachments.get(item.pending.messageGroupId) ?? []).map((attachment) => (
+                                      <div key={attachment.id} className="relative max-w-3xl">
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} />
+                                      </div>
+                                    ))}
+                                    {(groupedPendingUploads.get(item.pending.messageGroupId) ?? []).map(({ batch, file, index }) => (
+                                      <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
+                                        <PendingTimelineFile file={file} />
+                                        {batch.status === "sending" ? (
+                                          <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                            <LoaderCircle className="size-3 animate-spin" />
+                                            <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
+                                            {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
+                                          </div>
+                                        ) : (
+                                          <button type="button" onClick={() => retryPendingUpload(batch.id)} className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive">
+                                            <CircleAlert className="size-3" /><span>{batch.errorMessage || "Falha ao enviar anexo. Tentar novamente."}</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                                 {item.pending.status === "sending" ? (
                                   <div className="mt-1 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                                     <LoaderCircle className="size-3 animate-spin" />
@@ -3133,6 +3209,43 @@ export function ProjectFollowUp({
                                 <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
                                   {renderMentionedText(comment.content, comment.mentions)}
                                 </p>
+                                {comment.messageGroupId && (
+                                  <div className="mt-2 space-y-2">
+                                    {(groupedAttachments.get(comment.messageGroupId) ?? []).map((attachment) => (
+                                      <div key={attachment.id} className="group/grouped-attachment relative max-w-3xl">
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} />
+                                        <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 opacity-100 shadow-sm sm:opacity-0 sm:transition-opacity sm:group-hover/grouped-attachment:opacity-100 sm:group-focus-within/grouped-attachment:opacity-100">
+                                          <CopyEntityLinkButton
+                                            href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${attachment.id}` })}
+                                            label="Copiar link do anexo"
+                                            className="size-7 rounded-md"
+                                          />
+                                          {canDeleteAttachment(attachment) && (
+                                            <button type="button" disabled={deletingAttachmentId === attachment.id} onClick={() => void deleteAttachment(attachment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title="Excluir anexo" aria-label="Excluir anexo">
+                                              {deletingAttachmentId === attachment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {(groupedPendingUploads.get(comment.messageGroupId) ?? []).map(({ batch, file, index }) => (
+                                      <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
+                                        <PendingTimelineFile file={file} />
+                                        {batch.status === "sending" ? (
+                                          <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                            <LoaderCircle className="size-3 animate-spin" />
+                                            <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
+                                            {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
+                                          </div>
+                                        ) : (
+                                          <button type="button" onClick={() => retryPendingUpload(batch.id)} className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive">
+                                            <CircleAlert className="size-3" /><span>{batch.errorMessage || "Falha ao enviar anexo. Tentar novamente."}</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                                 {renderReactionSummary(item)}
                               </div>
                               <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">

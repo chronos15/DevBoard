@@ -80,6 +80,7 @@ export type CommentEntry = {
   authorId: string
   content: string
   createdAt: string
+  messageGroupId?: string
   mentions?: ChatMention[]
   replyTo?: FollowUpReplyReference
 }
@@ -101,6 +102,7 @@ export type AttachmentEntry = {
   kind: AttachmentKind
   uploadedBy: string
   createdAt: string
+  messageGroupId?: string
   active: boolean
   storagePath?: string
   dataUrl?: string

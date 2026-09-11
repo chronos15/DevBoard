@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Activity, ChevronDown, CircleOff, Clock3, Eye, UsersRound } from "lucide-react"
+import { Activity, ChevronDown, CircleOff, Clock3, Eye, Gauge, UsersRound } from "lucide-react"
 import { MemberAvatar } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
-import { ACCESS_ROLE_LABELS, type Member, type Project, type Subactivity } from "@/lib/types"
+import { ACCESS_ROLE_LABELS, type Member, type Project, type Subactivity, type WorkSession } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const IDLE_AFTER_MS = 2 * 60 * 1000
@@ -65,10 +65,37 @@ function roleLabel(member: Member) {
   return member.role ? ACCESS_ROLE_LABELS[member.role] : "Membro"
 }
 
+const DAILY_EFFECTIVE_TARGET_SECONDS = 8 * 60 * 60
+
+function formatHM(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+}
+
+function effectiveSecondsToday(sessions: WorkSession[], memberId: string, now: number) {
+  const current = new Date(now)
+  const dayStart = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime()
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000
+  let total = 0
+  for (const session of sessions) {
+    if (session.userId !== memberId) continue
+    const rawStart = new Date(session.startedAt).getTime()
+    const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : now
+    if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) continue
+    const start = Math.max(rawStart, dayStart)
+    const end = Math.min(rawEnd, dayEnd, now)
+    if (end > start) total += Math.floor((end - start) / 1000)
+  }
+  return total
+}
+
 export function WorkspaceActivityStatus() {
-  const { members, memberPresence, presenceReady, projects } = useStore()
+  const { members, memberPresence, presenceReady, projects, workSessions, currentUserRole } = useStore()
   const [now, setNow] = React.useState(() => Date.now())
   const [expandedMemberId, setExpandedMemberId] = React.useState<string | null>(null)
+  const [view, setView] = React.useState<"presence" | "effective">("presence")
 
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15000)
@@ -90,6 +117,13 @@ export function WorkspaceActivityStatus() {
   const onlineCount = rows.filter((row) => row.presence?.online).length
   const runningCount = rows.filter((row) => row.running).length
 
+  const effectiveRows = React.useMemo(() => members.map((member) => {
+    const seconds = effectiveSecondsToday(workSessions, member.id, now)
+    const work = workForMember(projects, member.id)
+    const running = work.find((item) => item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id)
+    return { member, seconds, running }
+  }).sort((a, b) => b.seconds - a.seconds || a.member.name.localeCompare(b.member.name, "pt-BR")), [members, now, projects, workSessions])
+
   return (
     <section className="flex h-full min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:h-[420px] xl:min-h-0">
       <div className="flex items-start justify-between gap-3">
@@ -98,20 +132,32 @@ export function WorkspaceActivityStatus() {
             <UsersRound className="size-4 shrink-0 text-primary" />
             <h2 className="text-base font-semibold">Equipe</h2>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Status de todos os usuários do workspace em tempo real.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{view === "presence" ? "Status de todos os usuários do workspace em tempo real." : "Horas efetivadas hoje em subatividades executadas."}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {!presenceReady ? (
+          {view === "presence" && (!presenceReady ? (
             <span className="rounded-full bg-muted px-2 py-1 text-[0.62rem] font-semibold text-muted-foreground">Sincronizando…</span>
           ) : (
             <>
-              <span className="rounded-full bg-success/10 px-2 py-1 text-[0.62rem] font-semibold text-success">{onlineCount} online</span>
-              <span className="rounded-full bg-primary/10 px-2 py-1 text-[0.62rem] font-semibold text-primary">{runningCount} executando</span>
+              <span className="hidden rounded-full bg-success/10 px-2 py-1 text-[0.62rem] font-semibold text-success sm:inline-flex">{onlineCount} online</span>
+              <span className="hidden rounded-full bg-primary/10 px-2 py-1 text-[0.62rem] font-semibold text-primary sm:inline-flex">{runningCount} executando</span>
             </>
+          ))}
+          {currentUserRole === "admin" && (
+            <button
+              type="button"
+              onClick={() => { setView((current) => current === "presence" ? "effective" : "presence"); setExpandedMemberId(null) }}
+              className="flex size-8 items-center justify-center rounded-lg border border-border bg-background/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={view === "presence" ? "Ver horas efetivadas" : "Ver presença da equipe"}
+              aria-label={view === "presence" ? "Ver horas efetivadas" : "Ver presença da equipe"}
+            >
+              {view === "presence" ? <Gauge className="size-4" /> : <UsersRound className="size-4" />}
+            </button>
           )}
         </div>
       </div>
 
+      {view === "presence" ? (
       <div className="mt-4 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
         {rows.map(({ member, presence, work, running, idle }) => {
           const screen = presence?.screenLabel || "TaskBoard"
@@ -249,6 +295,52 @@ export function WorkspaceActivityStatus() {
           </div>
         )}
       </div>
+      ) : (
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {effectiveRows.map(({ member, seconds, running }) => {
+              const percent = Math.min(100, Math.round((seconds / DAILY_EFFECTIVE_TARGET_SECONDS) * 100))
+              return (
+                <div key={member.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-background/35 p-3">
+                  <div className="relative size-16 shrink-0 rounded-full p-[5px]" style={{ background: `conic-gradient(var(--primary) ${percent}%, var(--muted) ${percent}% 100%)` }}>
+                    <div className="flex size-full items-center justify-center rounded-full bg-card">
+                      <div className="text-center">
+                        <div className="font-mono text-[0.7rem] font-semibold tabular-nums">{formatHM(seconds)}</div>
+                        <div className="text-[0.5rem] text-muted-foreground">{percent}%</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <MemberAvatar member={member} className="size-7 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold">{member.name}</div>
+                        <div className="truncate text-[0.58rem] text-muted-foreground">{roleLabel(member)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-baseline justify-between gap-2">
+                      <span className="text-[0.6rem] text-muted-foreground">Efetivado hoje</span>
+                      <strong className="font-mono text-xs tabular-nums">{formatHM(seconds)}</strong>
+                    </div>
+                    <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                      <span className="text-[0.58rem] text-muted-foreground">Referência visual</span>
+                      <span className="font-mono text-[0.58rem] text-muted-foreground">08:00</span>
+                    </div>
+                    {running ? (
+                      <Link href={followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })} className="mt-2 block truncate text-[0.6rem] font-medium text-primary hover:underline">
+                        Executando · {running.subactivity.title}
+                      </Link>
+                    ) : (
+                      <p className="mt-2 truncate text-[0.6rem] text-muted-foreground">Nenhuma subatividade em execução agora</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {effectiveRows.length === 0 && <div className="flex min-h-44 items-center justify-center text-xs text-muted-foreground">Nenhum usuário disponível no workspace.</div>}
+        </div>
+      )}
     </section>
   )
 }

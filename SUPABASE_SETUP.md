@@ -932,3 +932,17 @@ A 074 adiciona a RPC `update_subactivity_admin`, usada exclusivamente por **Admi
 Quando o responsável é alterado, o novo usuário é associado à subatividade e recebe uma notificação. Para preservar a sessão de trabalho e o cronômetro, a troca de responsável é bloqueada enquanto a subatividade estiver **Em execução**; pause-a antes de trocar. Toda alteração gera o log **Subatividade atualizada** com os campos modificados.
 
 As mudanças de formato `HH:mm`, o título **Equipe**, a expansão inline dos usuários e a equalização dos três cards do painel são somente de frontend e não criam estruturas adicionais no banco.
+
+## Migration 075 — mensagem e anexos agrupados no Acompanhamento
+
+Depois da 074, execute:
+
+```text
+supabase/migrations/075_taskboard_followup_message_attachment_groups.sql
+```
+
+A 075 adiciona o campo opcional `message_group_id` em `subactivity_comments` e `attachments`. Ele é usado somente para manter a relação visual entre o texto e os arquivos enviados na mesma ação do compositor do Acompanhamento, inclusive depois de atualizar a página.
+
+As RPCs antigas não têm a assinatura alterada. A migration adiciona apenas `set_followup_comment_message_group` e `set_followup_attachment_message_group`, preservando compatibilidade com clientes/PWA ainda em cache durante o deploy.
+
+O novo modo **Horas efetivadas** do quadro `Equipe` é exibido para Administradores e não cria tabela: ele usa `work_sessions` já existente (cuja RLS já permite ao Admin consultar a equipe) e calcula as sessões do dia atual no frontend, incluindo a sessão em andamento.

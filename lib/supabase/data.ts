@@ -69,6 +69,7 @@ async function mapAttachment(_supabase: SupabaseClient, row: any): Promise<Attac
     textContent: row.text_content ?? undefined,
     statusChangedAt: row.status_changed_at ?? undefined,
     statusChangedBy: row.status_changed_by ?? undefined,
+    messageGroupId: row.message_group_id ?? undefined,
   }
 }
 
@@ -151,18 +152,18 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       id,name,icon,icon_image_path,client,description,tag,priority,due_date,version,build,repository,created_at,updated_at,
       project_members(user_id),
       project_comments(id,author_id,content,created_at),
-      attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
+      attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
       project_logs(id,actor_id,type,title,description,created_at),
       project_versions(id,version,build,created_at),
       activities(
         id,title,type_id,created_at,
         activity_assignees(user_id),
-        attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at),
+        attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
           id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,
           subactivity_members(user_id),
-          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,created_at),
-          attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,created_at)
+          subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at),
+          attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)
         )
       )
     `)
@@ -228,6 +229,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
                   authorId: comment.author_id,
                   content: comment.content,
                   createdAt: comment.created_at,
+                  messageGroupId: comment.message_group_id ?? undefined,
                   mentions: Array.isArray(comment.mentions)
                     ? comment.mentions
                         .filter((mention: any) => mention && mention.kind === "user" && typeof mention.id === "string" && typeof mention.label === "string")

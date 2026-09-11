@@ -192,8 +192,8 @@ export type StoreContextValue = {
   versionProject: (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => Promise<boolean>
   addProjectComment: (projectId: string, content: string) => Promise<boolean>
   addSubactivityComment: (subId: string, content: string, mentions?: ChatMention[]) => Promise<boolean>
-  addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyTo?: FollowUpReplyReference) => Promise<boolean>
-  addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[]) => Promise<boolean>
+  addFollowUpComment: (subId: string, content: string, mentions?: ChatMention[], replyTo?: FollowUpReplyReference, messageGroupId?: string) => Promise<boolean>
+  addFollowUpAttachments: (subId: string, files: AttachmentUploadInput[], messageGroupId?: string) => Promise<boolean>
   deleteFollowUpComment: (commentId: string) => Promise<boolean>
   deleteFollowUpAttachment: (attachmentId: string, storagePath?: string) => Promise<boolean>
   removeFollowUpMember: (subId: string, userId: string) => Promise<boolean>
@@ -1778,7 +1778,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, refreshAqsReviews, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
 
-  const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference) => {
+  const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference, messageGroupId?: string) => {
     try {
       const { data, error } = await supabase.rpc("add_followup_comment_v2", {
         p_subactivity_id: subId,
@@ -1791,6 +1791,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       })
       if (error) throw error
       if (!data) throw new Error("O servidor não confirmou o envio da mensagem.")
+      if (messageGroupId) {
+        const { error: groupError } = await supabase.rpc("set_followup_comment_message_group", {
+          p_comment_id: data,
+          p_message_group_id: messageGroupId,
+        })
+        if (groupError) console.warn("[TaskBoard/Acompanhamento] Mensagem enviada, mas não foi possível vincular o agrupamento visual:", groupError.message)
+      }
       await Promise.all([refreshProjects(), refreshServiceRequests()])
       return true
     } catch (error) {
@@ -1832,7 +1839,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; activityId?: string; subactivityId?: string; aqsReviewId?: string },
     files: AttachmentUploadInput[],
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; messageGroupId?: string },
   ) => {
     if (!workspaceId || files.length === 0) return false
     try {
@@ -1880,10 +1887,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 p_storage_path: storagePath,
                 p_text_content: file.textContent ?? null,
               })
-        const { error: metadataError } = await metadataCall
+        const { data: attachmentId, error: metadataError } = await metadataCall
         if (metadataError) {
           if (storagePath) await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
           throw metadataError
+        }
+        if (options?.messageGroupId && target.subactivityId && attachmentId) {
+          const { error: groupError } = await supabase.rpc("set_followup_attachment_message_group", {
+            p_attachment_id: attachmentId,
+            p_message_group_id: options.messageGroupId,
+          })
+          if (groupError) console.warn("[TaskBoard/Acompanhamento] Anexo enviado, mas não foi possível vincular o agrupamento visual:", groupError.message)
         }
       }
       await Promise.all([refreshProjects(), refreshServiceRequests()])
@@ -1924,10 +1938,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }, files)
   }, [aqsReviews, projects, uploadAttachments])
 
-  const addFollowUpAttachments = React.useCallback(async (subId: string, files: AttachmentUploadInput[]) => {
+  const addFollowUpAttachments = React.useCallback(async (subId: string, files: AttachmentUploadInput[], messageGroupId?: string) => {
     const found = findSubInProjects(projects, subId)
     if (!found) return false
-    return uploadAttachments({ projectId: found.project.id, subactivityId: subId }, files, { silent: true })
+    return uploadAttachments({ projectId: found.project.id, subactivityId: subId }, files, { silent: true, messageGroupId })
   }, [projects, uploadAttachments])
 
   const setAttachmentActive = React.useCallback(async (attachmentId: string, active: boolean) => {

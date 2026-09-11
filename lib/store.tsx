@@ -34,6 +34,7 @@ import {
   chatMediaStoragePath,
   attachmentStoragePath,
   dataUrlToBlob,
+  isAttachmentKind,
   safeFileName,
   topicMediaStoragePath,
   projectIconStoragePath,
@@ -52,12 +53,14 @@ import type {
   MemberAccessPolicy,
   ActivityMeetingLaunch,
   AqsReview,
+  AttachmentEntry,
   AttachmentUploadInput,
   ChatConversation,
   ChatMeeting,
   ChatMention,
   ChatMessage,
   ChatReplyReference,
+  CommentEntry,
   FollowUpReplyReference,
   MeetingMode,
   Member,
@@ -409,6 +412,169 @@ function applyRealtimeChatMessageUpdate(conversations: ChatConversation[], row: 
   }))
 }
 
+function realtimeCommentMentions(value: unknown): ChatMention[] {
+  return Array.isArray(value)
+    ? value.filter((mention: any) => mention && mention.kind === "user" && typeof mention.id === "string" && typeof mention.label === "string")
+    : []
+}
+
+function realtimeCommentReply(row: any): FollowUpReplyReference | undefined {
+  const targetKind = typeof row?.reply_target_kind === "string" && ["comment", "attachment", "log", "session"].includes(row.reply_target_kind)
+    ? row.reply_target_kind as FollowUpReplyReference["targetKind"]
+    : undefined
+  const targetId = typeof row?.reply_target_id === "string" && row.reply_target_id
+    ? row.reply_target_id
+    : undefined
+  const legacyId = typeof row?.reply_to_comment_id === "string" && row.reply_to_comment_id
+    ? row.reply_to_comment_id
+    : undefined
+  const snapshot = row?.reply_snapshot && typeof row.reply_snapshot === "object" ? row.reply_snapshot : undefined
+
+  if (targetKind && targetId) {
+    return {
+      targetKind,
+      targetId,
+      commentId: targetKind === "comment" ? targetId : undefined,
+      authorId: typeof snapshot?.authorId === "string" ? snapshot.authorId : undefined,
+      label: typeof snapshot?.label === "string" ? snapshot.label : undefined,
+      content: typeof snapshot?.content === "string" ? snapshot.content : undefined,
+    }
+  }
+  return legacyId ? { commentId: legacyId, targetKind: "comment", targetId: legacyId, unavailable: true } : undefined
+}
+
+function applyRealtimeSubactivityComment(projects: Project[], row: any) {
+  if (!row?.id || !row?.subactivity_id) return projects
+  return projects.map((project) => ({
+    ...project,
+    activities: project.activities.map((activity) => ({
+      ...activity,
+      subactivities: activity.subactivities.map((sub) => {
+        if (sub.id !== row.subactivity_id) return sub
+        const existing = (sub.comments ?? []).find((comment) => comment.id === row.id)
+        const comment: CommentEntry = {
+          id: String(row.id),
+          authorId: typeof row.author_id === "string" ? row.author_id : existing?.authorId ?? "",
+          content: typeof row.content === "string" ? row.content : existing?.content ?? "",
+          createdAt: typeof row.created_at === "string" ? row.created_at : existing?.createdAt ?? new Date().toISOString(),
+          editedAt: typeof row.edited_at === "string" ? row.edited_at : existing?.editedAt,
+          messageGroupId: typeof row.message_group_id === "string" ? row.message_group_id : existing?.messageGroupId,
+          mentions: Array.isArray(row.mentions) ? realtimeCommentMentions(row.mentions) : existing?.mentions,
+          replyTo: realtimeCommentReply(row) ?? existing?.replyTo,
+        }
+        const comments = existing
+          ? (sub.comments ?? []).map((item) => item.id === comment.id ? comment : item)
+          : [...(sub.comments ?? []), comment].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        return {
+          ...sub,
+          updatedAt: comment.editedAt ?? comment.createdAt ?? sub.updatedAt,
+          memberIds: comment.authorId ? Array.from(new Set([...(sub.memberIds ?? []), comment.authorId])) : sub.memberIds,
+          comments,
+        }
+      }),
+    })),
+  }))
+}
+
+function realtimeAttachmentEntry(row: any, existing?: AttachmentEntry): AttachmentEntry | null {
+  if (!row?.id) return null
+  return {
+    id: String(row.id),
+    name: typeof row.name === "string" ? row.name : existing?.name ?? "Arquivo",
+    mimeType: typeof row.mime_type === "string" ? row.mime_type : existing?.mimeType ?? "application/octet-stream",
+    size: row.size_bytes == null ? existing?.size ?? 0 : Number(row.size_bytes || 0),
+    kind: isAttachmentKind(row.kind) ? row.kind : existing?.kind ?? "other",
+    uploadedBy: typeof row.uploaded_by === "string" ? row.uploaded_by : existing?.uploadedBy ?? "",
+    createdAt: typeof row.created_at === "string" ? row.created_at : existing?.createdAt ?? new Date().toISOString(),
+    active: row.active == null ? existing?.active ?? true : row.active !== false,
+    storagePath: typeof row.storage_path === "string" ? row.storage_path : existing?.storagePath,
+    dataUrl: existing?.dataUrl,
+    textContent: row.text_content == null ? existing?.textContent : row.text_content,
+    statusChangedAt: typeof row.status_changed_at === "string" ? row.status_changed_at : existing?.statusChangedAt,
+    statusChangedBy: typeof row.status_changed_by === "string" ? row.status_changed_by : existing?.statusChangedBy,
+    messageGroupId: typeof row.message_group_id === "string" ? row.message_group_id : existing?.messageGroupId,
+  } as AttachmentEntry
+}
+
+function applyRealtimeAttachment(projects: Project[], row: any) {
+  if (!row?.id) return projects
+  const patch = (entries: AttachmentEntry[] | undefined) => {
+    const list = entries ?? []
+    const existing = list.find((item) => item.id === String(row.id))
+    const next = realtimeAttachmentEntry(row, existing)
+    if (!next) return list
+    return existing ? list.map((item) => item.id === next.id ? next : item) : [...list, next]
+  }
+
+  return projects.map((project) => {
+    if (row.project_id && project.id === row.project_id) return { ...project, attachments: patch(project.attachments) }
+    return {
+      ...project,
+      activities: project.activities.map((activity) => {
+        if (row.activity_id && activity.id === row.activity_id) return { ...activity, attachments: patch(activity.attachments) }
+        if (!row.subactivity_id) return activity
+        return {
+          ...activity,
+          subactivities: activity.subactivities.map((sub) => sub.id === row.subactivity_id
+            ? { ...sub, updatedAt: typeof row.created_at === "string" ? row.created_at : sub.updatedAt, attachments: patch(sub.attachments) }
+            : sub),
+        }
+      }),
+    }
+  })
+}
+
+function applyRealtimeChatMessageInsert(conversations: ChatConversation[], row: any) {
+  if (!row?.id || !row?.conversation_id || !row?.sender_id || !row?.created_at) return conversations
+
+  const mentions = Array.isArray(row.mentions)
+    ? row.mentions.filter((mention: any) => mention && (mention.kind === "user" || mention.kind === "project") && typeof mention.id === "string" && typeof mention.label === "string")
+    : []
+  const type: ChatMessage["type"] = row.message_type === "audio" ? "audio" : row.message_type === "media" ? "media" : "text"
+  const incoming: ChatMessage = {
+    id: row.id,
+    senderId: row.sender_id,
+    content: typeof row.content === "string" ? row.content : "",
+    type,
+    mediaPath: typeof row.media_path === "string" ? row.media_path : undefined,
+    mediaMimeType: typeof row.media_mime_type === "string" ? row.media_mime_type : undefined,
+    mediaDurationMs: row.media_duration_ms == null ? undefined : Number(row.media_duration_ms),
+    mediaSizeBytes: row.media_size_bytes == null ? undefined : Number(row.media_size_bytes),
+    mediaName: typeof row.media_name === "string" ? row.media_name : undefined,
+    mediaKind: isAttachmentKind(row.media_kind) ? row.media_kind : undefined,
+    mentions,
+    replyTo: typeof row.reply_to_message_id === "string" && row.reply_to_message_id
+      ? { messageId: row.reply_to_message_id, unavailable: true }
+      : undefined,
+    createdAt: row.created_at,
+    editedAt: typeof row.edited_at === "string" ? row.edited_at : undefined,
+  }
+
+  return conversations.map((conversation) => {
+    if (conversation.id !== row.conversation_id) return conversation
+    if (conversation.messages.some((message) => message.id === row.id)) return conversation
+
+    // Quando o INSERT do Realtime chega antes da resposta da RPC, troca a
+    // mensagem otimista equivalente em vez de renderizar uma cópia duplicada.
+    const incomingTime = new Date(incoming.createdAt).getTime()
+    const optimisticIndex = conversation.messages.findIndex((message) => {
+      if (!isOptimisticChatMessage(message) || message.senderId !== incoming.senderId || message.content !== incoming.content) return false
+      const localTime = new Date(message.createdAt).getTime()
+      return Number.isFinite(localTime) && Number.isFinite(incomingTime) && Math.abs(localTime - incomingTime) <= 15000
+    })
+
+    const messages = optimisticIndex >= 0
+      ? conversation.messages.map((message, index) => index === optimisticIndex ? incoming : message)
+      : [...conversation.messages, incoming]
+
+    return {
+      ...conversation,
+      updatedAt: incoming.createdAt > conversation.updatedAt ? incoming.createdAt : conversation.updatedAt,
+      messages: messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    }
+  })
+}
+
 function optimisticMessageId() {
   const value = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -577,6 +743,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [timerConflictLoading, setTimerConflictLoading] = React.useState(false)
   const timerConflictResolverRef = React.useRef<((value: boolean) => void) | null>(null)
   const refreshTimers = React.useRef<Record<string, number>>({})
+  const refreshCoordinatorRef = React.useRef<Record<string, { promise: Promise<void> | null; rerun: boolean }>>({})
   const loadedChatHistoryIdsRef = React.useRef<Set<string>>(new Set())
   const chatMessageDeliveriesRef = React.useRef<Set<string>>(new Set())
 
@@ -587,134 +754,188 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return message
   }, [])
 
+  // Evita leituras duplicadas quando uma mutação faz refresh manual e o
+  // Realtime recebe a mesma alteração quase ao mesmo tempo. Se chegar um novo
+  // pedido enquanto a consulta está em andamento, executamos no máximo mais
+  // uma passagem ao final (trailing refresh), nunca duas consultas paralelas.
+  const coalesceRefresh = React.useCallback(async (key: string, task: () => Promise<void>) => {
+    let state = refreshCoordinatorRef.current[key]
+    if (!state) {
+      state = { promise: null, rerun: false }
+      refreshCoordinatorRef.current[key] = state
+    }
+
+    if (state.promise) {
+      state.rerun = true
+      return state.promise
+    }
+
+    const runner = async () => {
+      do {
+        state!.rerun = false
+        await task()
+      } while (state!.rerun)
+    }
+
+    const promise = runner().finally(() => {
+      if (state!.promise === promise) state!.promise = null
+    })
+    state.promise = promise
+    return promise
+  }, [])
+
   const refreshProjects = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setProjects(await loadProjects(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar os projetos")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("projects", async () => {
+      try {
+        setProjects(await loadProjects(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar os projetos")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshWorkItemTypes = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setWorkItemTypes(await loadWorkItemTypes(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar os tipos de atividade")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("work-item-types", async () => {
+      try {
+        setWorkItemTypes(await loadWorkItemTypes(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar os tipos de atividade")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshMembers = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      const next = await loadMembers(supabase, workspaceId)
-      setMembers(next)
-      const me = next.find((member) => member.id === currentUserId)
-      if (me?.role) {
-        setCurrentUserRole(me.role)
-        setCurrentAccessPolicy(await loadMyWorkspaceAccess(supabase, me.role))
+    await coalesceRefresh("members", async () => {
+      try {
+        const next = await loadMembers(supabase, workspaceId)
+        setMembers(next)
+        const me = next.find((member) => member.id === currentUserId)
+        if (me?.role) {
+          setCurrentUserRole(me.role)
+          setCurrentAccessPolicy(await loadMyWorkspaceAccess(supabase, me.role))
+        }
+      } catch (error) {
+        fail(error, "Não foi possível atualizar a equipe")
       }
-    } catch (error) {
-      fail(error, "Não foi possível atualizar a equipe")
-    }
-  }, [currentUserId, fail, supabase, workspaceId])
+    })
+  }, [coalesceRefresh, currentUserId, fail, supabase, workspaceId])
 
   const refreshChat = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      const next = await loadChatConversations(supabase, workspaceId)
-      setChatConversations((current) => next.map((conversation) => {
-        const previous = current.find((item) => item.id === conversation.id)
-        if (!previous) return conversation
-        const merged = mergeChatMessages(
-          previous.messages,
-          conversation.messages,
-          loadedChatHistoryIdsRef.current.has(conversation.id),
-        )
-        const hasLocalDelivery = merged.some(isOptimisticChatMessage)
-        return {
-          ...conversation,
-          updatedAt: hasLocalDelivery && previous.updatedAt > conversation.updatedAt ? previous.updatedAt : conversation.updatedAt,
-          messages: merged,
-        }
-      }))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar o chat")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("chat", async () => {
+      try {
+        const next = await loadChatConversations(supabase, workspaceId)
+        setChatConversations((current) => next.map((conversation) => {
+          const previous = current.find((item) => item.id === conversation.id)
+          if (!previous) return conversation
+          const merged = mergeChatMessages(
+            previous.messages,
+            conversation.messages,
+            loadedChatHistoryIdsRef.current.has(conversation.id),
+          )
+          const hasLocalDelivery = merged.some(isOptimisticChatMessage)
+          return {
+            ...conversation,
+            updatedAt: hasLocalDelivery && previous.updatedAt > conversation.updatedAt ? previous.updatedAt : conversation.updatedAt,
+            messages: merged,
+          }
+        }))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar o chat")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshMeetings = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setChatMeetings(await loadMeetings(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar as reuniões")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("meetings", async () => {
+      try {
+        setChatMeetings(await loadMeetings(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar as reuniões")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshNotifications = React.useCallback(async () => {
     if (!currentUserId) return
-    try {
-      setNotifications(await loadNotifications(supabase, currentUserId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar as notificações")
-    }
-  }, [currentUserId, fail, supabase])
+    await coalesceRefresh("notifications", async () => {
+      try {
+        setNotifications(await loadNotifications(supabase, currentUserId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar as notificações")
+      }
+    })
+  }, [coalesceRefresh, currentUserId, fail, supabase])
 
   const refreshPreferences = React.useCallback(async () => {
     if (!currentUserId) return
-    try {
-      setPreferences(await loadPreferences(supabase, currentUserId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar suas preferências")
-    }
-  }, [currentUserId, fail, supabase])
+    await coalesceRefresh("preferences", async () => {
+      try {
+        setPreferences(await loadPreferences(supabase, currentUserId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar suas preferências")
+      }
+    })
+  }, [coalesceRefresh, currentUserId, fail, supabase])
 
   const refreshWorkSessions = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setWorkSessions(await loadWorkSessions(supabase))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar o histórico de horas")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("work-sessions", async () => {
+      try {
+        setWorkSessions(await loadWorkSessions(supabase))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar o histórico de horas")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshAqsReviews = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setAqsReviews(await loadAqsReviews(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar a fila de AQS")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("aqs-reviews", async () => {
+      try {
+        setAqsReviews(await loadAqsReviews(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar a fila de AQS")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshSupportTopics = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setSupportTopics(await loadSupportTopics(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar os tópicos")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("support-topics", async () => {
+      try {
+        setSupportTopics(await loadSupportTopics(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar os tópicos")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshServiceRequests = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setServiceRequests(await loadServiceRequests(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar as solicitações")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("service-requests", async () => {
+      try {
+        setServiceRequests(await loadServiceRequests(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar as solicitações")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshServiceRequestUnits = React.useCallback(async () => {
     if (!workspaceId) return
-    try {
-      setServiceRequestUnits(await loadServiceRequestUnits(supabase, workspaceId))
-    } catch (error) {
-      fail(error, "Não foi possível atualizar as unidades de solicitação")
-    }
-  }, [fail, supabase, workspaceId])
+    await coalesceRefresh("service-request-units", async () => {
+      try {
+        setServiceRequestUnits(await loadServiceRequestUnits(supabase, workspaceId))
+      } catch (error) {
+        fail(error, "Não foi possível atualizar as unidades de solicitação")
+      }
+    })
+  }, [coalesceRefresh, fail, supabase, workspaceId])
 
   const refreshAll = React.useCallback(async () => {
     setRefreshing(true)
@@ -882,18 +1103,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             // Status/timer é a interação mais frequente do Kanban. Para UPDATEs,
             // aplica o payload do Realtime diretamente e evita uma nova leitura
             // pesada de todo o projeto apenas para mover um card.
+            const directChatMessage = table === "chat_messages" && (payload?.eventType === "INSERT" || payload?.eventType === "UPDATE")
+            const directProjectEvent = (
+              (table === "subactivities" && payload?.eventType === "UPDATE")
+              || (table === "project_logs" && payload?.eventType === "INSERT")
+              || (table === "subactivity_comments" && (payload?.eventType === "INSERT" || payload?.eventType === "UPDATE"))
+              || (table === "attachments" && (payload?.eventType === "INSERT" || payload?.eventType === "UPDATE"))
+            )
             if (table === "subactivities" && payload?.eventType === "UPDATE" && payload?.new?.id) {
               setProjects((current) => applyRealtimeSubactivity(current, payload.new))
             } else if (table === "project_logs" && payload?.eventType === "INSERT" && payload?.new?.id) {
               setProjects((current) => applyRealtimeProjectLog(current, payload.new))
+            } else if (table === "subactivity_comments" && (payload?.eventType === "INSERT" || payload?.eventType === "UPDATE") && payload?.new?.id) {
+              setProjects((current) => applyRealtimeSubactivityComment(current, payload.new))
+            } else if (table === "attachments" && (payload?.eventType === "INSERT" || payload?.eventType === "UPDATE") && payload?.new?.id) {
+              setProjects((current) => applyRealtimeAttachment(current, payload.new))
+            } else if (table === "chat_messages" && payload?.eventType === "INSERT" && payload?.new?.id) {
+              setChatConversations((current) => applyRealtimeChatMessageInsert(current, payload.new))
             } else if (table === "chat_messages" && payload?.eventType === "UPDATE" && payload?.new?.id) {
               setChatConversations((current) => applyRealtimeChatMessageUpdate(current, payload.new))
-            } else if (PROJECT_TABLES.has(table)) {
+            } else if (PROJECT_TABLES.has(table) && !directProjectEvent) {
               schedule("projects", refreshProjects)
             }
             if (MEMBER_TABLES.has(table)) schedule("members", refreshMembers)
-            if (table === "workspace_member_access_profiles") schedule("projects-access", refreshProjects)
-            if (CHAT_TABLES.has(table)) schedule("chat", refreshChat)
+            if (table === "workspace_member_access_profiles") schedule("projects", refreshProjects)
+            if (CHAT_TABLES.has(table) && !directChatMessage) schedule("chat", refreshChat)
             if (MEETING_TABLES.has(table)) schedule("meetings", refreshMeetings)
             if (table === "notifications") schedule("notifications", refreshNotifications)
             if (PREFERENCE_TABLES.has(table)) schedule("preferences", refreshPreferences)
@@ -1368,8 +1602,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    schedule("sessions-after-start", refreshWorkSessions)
-    schedule("requests-after-start", refreshServiceRequests)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
     return true
   }, [callRpc, canManageSubactivity, currentUserRole, projects, refreshServiceRequests, refreshWorkSessions, schedule])
 
@@ -1417,8 +1651,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    schedule("sessions-after-pause", refreshWorkSessions)
-    schedule("requests-after-pause", refreshServiceRequests)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
     return true
   }, [activeSubId, callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule])
 
@@ -1452,8 +1686,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    schedule("sessions-after-status", refreshWorkSessions)
-    schedule("requests-after-status", refreshServiceRequests)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
     return true
   }, [callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule, startTimer])
 
@@ -1493,7 +1727,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    schedule("projects-after-brainstorm", refreshProjects)
+    schedule("projects", refreshProjects)
     return true
   }, [callRpc, canManageSubactivity, fail, projects, refreshProjects, schedule])
 
@@ -1525,9 +1759,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_type_id: typeId || null,
     }, "Não foi possível alterar o tipo da atividade")
     if (result === undefined) return false
-    await refreshProjects()
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => activity.id === activityId
+        ? { ...activity, typeId: typeId || undefined }
+        : activity),
+    })))
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, schedule])
 
   const setSubactivityType = React.useCallback<StoreContextValue["setSubactivityType"]>(async (subactivityId, typeId) => {
     const result = await callRpc<unknown>("set_subactivity_type", {
@@ -1535,9 +1775,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_type_id: typeId || null,
     }, "Não foi possível alterar o tipo da subatividade")
     if (result === undefined) return false
-    await refreshProjects()
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subactivityId
+          ? { ...sub, typeId: typeId || undefined }
+          : sub),
+      })),
+    })))
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, schedule])
 
   const createWorkItemType = React.useCallback<StoreContextValue["createWorkItemType"]>(async (data) => {
     if (currentUserRole !== "admin") {
@@ -1610,13 +1859,43 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         p_type_id: data.typeId,
       }, "Subatividade criada, mas não foi possível salvar o tipo")
       if (typeResult === undefined) {
-        await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
+        schedule("projects", refreshProjects)
+        schedule("notifications", refreshNotifications)
+        schedule("work-sessions", refreshWorkSessions)
+        schedule("service-requests", refreshServiceRequests)
         return true
       }
     }
-    await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
+    const createdAt = new Date().toISOString()
+    setProjects((current) => current.map((item) => item.id !== projectId ? item : {
+      ...item,
+      activities: item.activities.map((activity) => activity.id !== activityId ? activity : {
+        ...activity,
+        subactivities: activity.subactivities.some((sub) => sub.id === result)
+          ? activity.subactivities
+          : [...activity.subactivities, {
+              id: result,
+              title: data.title.trim(),
+              status: data.status ?? "backlog",
+              estimatedHours: Math.max(0, Number(data.estimatedHours || 0)),
+              trackedSeconds: 0,
+              timerStartedAt: data.status === "in-progress" ? createdAt : undefined,
+              createdAt,
+              updatedAt: createdAt,
+              assigneeId: data.assigneeId,
+              typeId: data.typeId || undefined,
+              memberIds: Array.from(new Set([data.assigneeId, currentUserId].filter(Boolean))),
+              comments: [],
+              attachments: [],
+            }],
+      }),
+    }))
+    schedule("projects", refreshProjects)
+    schedule("notifications", refreshNotifications)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions, schedule])
 
   const updateSubactivity = React.useCallback<StoreContextValue["updateSubactivity"]>(async (subactivityId, data) => {
     if (currentUserRole !== "admin") {
@@ -1631,9 +1910,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_type_id: data.typeId ?? null,
     }, "Não foi possível atualizar a subatividade")
     if (result === undefined) return false
-    await Promise.all([refreshProjects(), refreshNotifications(), refreshWorkSessions(), refreshServiceRequests()])
+    schedule("projects", refreshProjects)
+    schedule("notifications", refreshNotifications)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions])
+  }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions, schedule])
 
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null, context?: ActivityContextInput) => {
     if (!canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")) {
@@ -1659,7 +1941,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         p_responsible_department: context.responsibleDepartment?.trim() || null,
       }, "Atividade criada, mas não foi possível salvar os dados adicionais")
       if (contextResult === undefined) {
-        await refreshProjects()
+        schedule("projects", refreshProjects)
       }
     }
     if (typeId) {
@@ -1668,13 +1950,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         p_type_id: typeId,
       }, "Atividade criada, mas não foi possível salvar o tipo")
       if (typeResult === undefined) {
-        await refreshProjects()
+        schedule("projects", refreshProjects)
         return true
       }
     }
-    await refreshProjects()
+    setProjects((current) => current.map((item) => item.id !== projectId ? item : {
+      ...item,
+      activities: item.activities.some((activity) => activity.id === result)
+        ? item.activities
+        : [...item.activities, {
+            id: result,
+            title: title.trim(),
+            typeId: typeId || undefined,
+            assigneeIds,
+            build: context?.build?.trim() || undefined,
+            linkedOs: context?.linkedOs?.trim() || undefined,
+            priority: context?.priority || undefined,
+            relatedModule: context?.relatedModule?.trim() || undefined,
+            subject: context?.subject?.trim() || undefined,
+            responsibleDepartment: context?.responsibleDepartment?.trim() || undefined,
+            attachments: [],
+            subactivities: [],
+          }],
+    }))
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
   const deleteActivity = React.useCallback(async (projectId: string, activityId: string) => {
     const project = projects.find((item) => item.id === projectId)
@@ -1685,9 +1986,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await callRpc<unknown>("delete_activity", { p_activity_id: activityId }, "Não foi possível excluir a atividade")
     if (result === undefined) return false
-    await refreshProjects()
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects])
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
   const uploadProjectIconImage = React.useCallback(async (projectId: string, file: File) => {
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
@@ -1756,7 +2057,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return result
       }
 
-      await refreshProjects()
+      const iconImagePath = visual?.useCustomImage ? (uploadedPath ?? undefined) : undefined
+      const iconImageUrl = iconImagePath
+        ? supabase.storage.from(PROJECT_ICONS_BUCKET).getPublicUrl(iconImagePath).data.publicUrl
+        : undefined
+      setProjects((current) => current.some((item) => item.id === result) ? current : [{
+        id: result,
+        name: data.name.trim(),
+        icon: data.icon ?? "folder-kanban",
+        iconImagePath,
+        iconImageUrl,
+        client: data.client.trim() || "Projeto interno",
+        description: data.description ?? "",
+        tag: data.tag.trim() || "Desenvolvimento",
+        priority: data.priority,
+        dueDate: data.dueDate || "",
+        memberIds: Array.from(new Set([...(data.memberIds ?? []), currentUserId].filter(Boolean))),
+        version: data.version,
+        build: data.build,
+        repository: data.repository ?? "",
+        modules: data.modules ?? [],
+        subjects: data.subjects ?? [],
+        responsibleDepartments: data.responsibleDepartments ?? [],
+        activities: [],
+        comments: [],
+        attachments: [],
+        logs: [],
+        versions: [],
+      }, ...current])
+      schedule("projects", refreshProjects)
       return result
     } catch (error) {
       if (uploadedPath) await removeProjectIconImage(uploadedPath)
@@ -1764,7 +2093,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await refreshProjects()
       return result
     }
-  }, [callRpc, currentAccessPolicy, currentUserRole, fail, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, refreshProjects, removeProjectIconImage, schedule, supabase, uploadProjectIconImage])
 
   const updateProject = React.useCallback<StoreContextValue["updateProject"]>(async (projectId, data, visual) => {
     if (!canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")) {
@@ -1831,14 +2160,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (project?.iconImagePath && project.iconImagePath !== nextImagePath) {
         await removeProjectIconImage(project.iconImagePath)
       }
-      await refreshProjects()
+      const nextImageUrl = nextImagePath
+        ? supabase.storage.from(PROJECT_ICONS_BUCKET).getPublicUrl(nextImagePath).data.publicUrl
+        : undefined
+      setProjects((current) => current.map((item) => item.id !== projectId ? item : {
+        ...item,
+        name: data.name.trim(),
+        icon: data.icon ?? "folder-kanban",
+        iconImagePath: nextImagePath ?? undefined,
+        iconImageUrl: nextImageUrl,
+        client: data.client.trim() || "Projeto interno",
+        description: data.description ?? "",
+        tag: data.tag.trim() || "Desenvolvimento",
+        priority: data.priority,
+        dueDate: data.dueDate || "",
+        repository: data.repository ?? "",
+        memberIds: data.memberIds ?? [],
+        modules: data.modules ?? [],
+        subjects: data.subjects ?? [],
+        responsibleDepartments: data.responsibleDepartments ?? [],
+      }))
+      schedule("projects", refreshProjects)
       return true
     } catch (error) {
       if (uploadedPath) await removeProjectIconImage(uploadedPath)
       fail(error, "Não foi possível atualizar a imagem personalizada do projeto")
       return false
     }
-  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, removeProjectIconImage, uploadProjectIconImage])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, removeProjectIconImage, schedule, supabase, uploadProjectIconImage])
 
   const versionProject = React.useCallback(async (projectId: string, data: { version: string; build: string; allowPending?: boolean }) => {
     if (!canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")) {
@@ -1855,16 +2204,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await callRpc<unknown>("version_project", { p_project_id: projectId, p_version: data.version, p_build: data.build, p_allow_pending: data.allowPending ?? false }, "Não foi possível versionar o projeto")
     if (result === undefined) return false
-    await refreshProjects()
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects])
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
   const addProjectComment = React.useCallback(async (projectId: string, content: string) => {
     const result = await callRpc<string>("add_project_comment", { p_project_id: projectId, p_content: content }, "Não foi possível salvar o comentário")
     if (!result) return false
-    await refreshProjects()
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, schedule])
 
   const addSubactivityComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = []) => {
     const result = await callRpc<string>("add_subactivity_comment_v2", {
@@ -1873,9 +2222,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_mentions: mentions,
     }, "Não foi possível salvar o comentário")
     if (!result) return false
-    await Promise.all([refreshProjects(), refreshServiceRequests(), refreshNotifications(), refreshAqsReviews(), refreshMeetings()])
+    const createdAt = new Date().toISOString()
+    setProjects((current) => applyRealtimeSubactivityComment(current, {
+      id: result,
+      subactivity_id: subId,
+      author_id: currentUserId,
+      content,
+      mentions,
+      created_at: createdAt,
+    }))
+    schedule("service-requests", refreshServiceRequests)
+    schedule("notifications", refreshNotifications)
+    schedule("aqs-reviews", refreshAqsReviews)
+    schedule("meetings", refreshMeetings)
     return true
-  }, [callRpc, refreshAqsReviews, refreshMeetings, refreshNotifications, refreshProjects, refreshServiceRequests])
+  }, [callRpc, currentUserId, refreshAqsReviews, refreshMeetings, refreshNotifications, refreshServiceRequests, schedule])
 
   const editSubactivityComment = React.useCallback(async (commentId: string, content: string) => {
     const result = await callRpc<boolean>("edit_subactivity_comment", {
@@ -1883,9 +2244,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_content: content,
     }, "Não foi possível editar a mensagem")
     if (result === undefined) return false
-    await Promise.all([refreshProjects(), refreshServiceRequests(), refreshAqsReviews()])
+    const editedAt = new Date().toISOString()
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => ({
+          ...sub,
+          comments: (sub.comments ?? []).map((comment) => comment.id === commentId
+            ? { ...comment, content, editedAt }
+            : comment),
+        })),
+      })),
+    })))
+    schedule("service-requests", refreshServiceRequests)
+    schedule("aqs-reviews", refreshAqsReviews)
     return true
-  }, [callRpc, refreshAqsReviews, refreshProjects, refreshServiceRequests])
+  }, [callRpc, refreshAqsReviews, refreshServiceRequests, schedule])
 
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference, messageGroupId?: string) => {
     try {
@@ -1907,7 +2282,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         })
         if (groupError) console.warn("[TaskBoard/Acompanhamento] Mensagem enviada, mas não foi possível vincular o agrupamento visual:", groupError.message)
       }
-      await Promise.all([refreshProjects(), refreshServiceRequests()])
+      const createdAt = new Date().toISOString()
+      setProjects((current) => current.map((project) => ({
+        ...project,
+        activities: project.activities.map((activity) => ({
+          ...activity,
+          subactivities: activity.subactivities.map((sub) => sub.id !== subId ? sub : {
+            ...sub,
+            updatedAt: createdAt,
+            memberIds: Array.from(new Set([...(sub.memberIds ?? []), currentUserId].filter(Boolean))),
+            comments: (sub.comments ?? []).some((comment) => comment.id === String(data))
+              ? sub.comments
+              : [...(sub.comments ?? []), {
+                  id: String(data),
+                  authorId: currentUserId,
+                  content,
+                  createdAt,
+                  messageGroupId,
+                  mentions,
+                  replyTo,
+                }],
+          }),
+        })),
+      })))
+      schedule("service-requests", refreshServiceRequests)
       return true
     } catch (error) {
       // O acompanhamento usa entrega otimista. Falhas aparecem no próprio item
@@ -1915,14 +2313,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       console.error("[TaskBoard/Acompanhamento] Falha ao entregar mensagem", error)
       return false
     }
-  }, [refreshProjects, refreshServiceRequests, supabase])
+  }, [currentUserId, refreshServiceRequests, schedule, supabase])
 
   const deleteFollowUpComment = React.useCallback(async (commentId: string) => {
     const result = await callRpc<boolean>("delete_followup_comment", { p_comment_id: commentId }, "Não foi possível excluir a mensagem")
     if (result === undefined) return false
-    await Promise.all([refreshProjects(), refreshServiceRequests()])
+    schedule("projects", refreshProjects)
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, refreshProjects, refreshServiceRequests])
+  }, [callRpc, refreshProjects, refreshServiceRequests, schedule])
 
   const deleteFollowUpAttachment = React.useCallback(async (attachmentId: string, storagePath?: string) => {
     const result = await callRpc<boolean>("delete_followup_attachment", { p_attachment_id: attachmentId }, "Não foi possível excluir o anexo")
@@ -1931,9 +2330,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).remove([storagePath])
       if (error) console.warn("Não foi possível remover o objeto do Storage após excluir o anexo:", error.message)
     }
-    await Promise.all([refreshProjects(), refreshServiceRequests()])
+    schedule("projects", refreshProjects)
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, refreshProjects, refreshServiceRequests, supabase])
+  }, [callRpc, refreshProjects, refreshServiceRequests, schedule, supabase])
 
   const removeFollowUpMember = React.useCallback(async (subId: string, userId: string) => {
     const result = await callRpc<boolean>("remove_followup_subactivity_member", {
@@ -1941,9 +2341,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_user_id: userId,
     }, "Não foi possível remover o usuário do acompanhamento")
     if (result === undefined) return false
-    await refreshProjects()
+    schedule("projects", refreshProjects)
     return true
-  }, [callRpc, refreshProjects])
+  }, [callRpc, refreshProjects, schedule])
 
   const uploadAttachments = React.useCallback(async (
     target: { projectId: string; activityId?: string; subactivityId?: string; aqsReviewId?: string },
@@ -2008,8 +2408,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           })
           if (groupError) console.warn("[TaskBoard/Acompanhamento] Anexo enviado, mas não foi possível vincular o agrupamento visual:", groupError.message)
         }
+
+        if (attachmentId) {
+          const createdAt = new Date().toISOString()
+          const entry: AttachmentEntry = {
+            id: String(attachmentId),
+            name: file.name,
+            mimeType: file.mimeType || "application/octet-stream",
+            size: Number(file.size || 0),
+            kind: file.kind,
+            uploadedBy: currentUserId,
+            createdAt,
+            messageGroupId: options?.messageGroupId,
+            active: true,
+            storagePath: storagePath ?? undefined,
+            dataUrl: storagePath ? undefined : file.dataUrl,
+            textContent: file.textContent,
+          }
+          setProjects((current) => current.map((project) => {
+            if (project.id !== target.projectId) return project
+            if (!target.activityId && !target.subactivityId) {
+              return (project.attachments ?? []).some((item) => item.id === entry.id)
+                ? project
+                : { ...project, attachments: [...(project.attachments ?? []), entry] }
+            }
+            return {
+              ...project,
+              activities: project.activities.map((activity) => {
+                if (target.activityId && activity.id === target.activityId) {
+                  return (activity.attachments ?? []).some((item) => item.id === entry.id)
+                    ? activity
+                    : { ...activity, attachments: [...(activity.attachments ?? []), entry] }
+                }
+                if (!target.subactivityId) return activity
+                return {
+                  ...activity,
+                  subactivities: activity.subactivities.map((sub) => sub.id !== target.subactivityId
+                    ? sub
+                    : (sub.attachments ?? []).some((item) => item.id === entry.id)
+                      ? sub
+                      : {
+                          ...sub,
+                          updatedAt: createdAt,
+                          memberIds: Array.from(new Set([...(sub.memberIds ?? []), currentUserId].filter(Boolean))),
+                          attachments: [...(sub.attachments ?? []), entry],
+                        }),
+                }
+              }),
+            }
+          }))
+        }
       }
-      await Promise.all([refreshProjects(), refreshServiceRequests()])
+      schedule("service-requests", refreshServiceRequests)
       return true
     } catch (error) {
       if (options?.silent) {
@@ -2019,7 +2469,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       return false
     }
-  }, [currentUserId, fail, refreshProjects, refreshServiceRequests, supabase, workspaceId])
+  }, [currentUserId, fail, refreshServiceRequests, schedule, supabase, workspaceId])
 
   const addProjectAttachments = React.useCallback((projectId: string, files: AttachmentUploadInput[]) => uploadAttachments({ projectId }, files), [uploadAttachments])
 
@@ -2056,9 +2506,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const setAttachmentActive = React.useCallback(async (attachmentId: string, active: boolean) => {
     const result = await callRpc<unknown>("set_attachment_active", { p_attachment_id: attachmentId, p_active: active }, "Não foi possível alterar o anexo")
     if (result === undefined) return false
-    await Promise.all([refreshProjects(), refreshServiceRequests()])
+    schedule("projects", refreshProjects)
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, refreshProjects, refreshServiceRequests])
+  }, [callRpc, refreshProjects, refreshServiceRequests, schedule])
 
   const setProjectAttachmentActive = React.useCallback(async (_projectId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
   const setActivityAttachmentActive = React.useCallback(async (_activityId: string, attachmentId: string, active: boolean) => setAttachmentActive(attachmentId, active), [setAttachmentActive])
@@ -2303,14 +2754,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await supabase.storage.from(CHAT_MEDIA_BUCKET).remove([storagePath])
         return false
       }
-      await refreshChat()
+      const createdAt = new Date().toISOString()
+      setChatConversations((current) => current.map((conversation) => conversation.id !== conversationId
+        ? conversation
+        : conversation.messages.some((message) => message.id === id)
+          ? conversation
+          : {
+              ...conversation,
+              updatedAt: createdAt,
+              messages: [...conversation.messages, {
+                id, senderId: currentUserId, content: "", type: "audio" as const,
+                mediaPath: storagePath, mediaMimeType: mimeType, mediaDurationMs: Math.max(0, Math.round(durationMs)),
+                mediaSizeBytes: audio.size, createdAt,
+              }],
+            }))
       return true
     } catch (error) {
       await supabase.storage.from(CHAT_MEDIA_BUCKET).remove([storagePath]).catch(() => undefined)
       fail(error, "Não foi possível enviar o áudio")
       return false
     }
-  }, [callRpc, currentUserId, fail, refreshChat, supabase, workspaceId])
+  }, [callRpc, currentUserId, fail, supabase, workspaceId])
 
   const sendChatMedia = React.useCallback(async (conversationId: string, files: File[], caption = "") => {
     if (!workspaceId || !currentUserId || !files.length) return false
@@ -2346,17 +2810,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }, "Não foi possível enviar o arquivo")
         if (!id) throw new Error(`Não foi possível registrar “${file.name}” no chat.`)
         registered.add(storagePath)
+        const createdAt = new Date().toISOString()
+        const mediaKind = chatMediaKind(file)
+        const content = index === 0 ? caption.trim() : ""
+        setChatConversations((current) => current.map((conversation) => conversation.id !== conversationId
+          ? conversation
+          : conversation.messages.some((message) => message.id === id)
+            ? conversation
+            : {
+                ...conversation,
+                updatedAt: createdAt,
+                messages: [...conversation.messages, {
+                  id, senderId: currentUserId, content, type: "media" as const,
+                  mediaPath: storagePath, mediaMimeType: mimeType, mediaSizeBytes: file.size,
+                  mediaName: file.name, mediaKind, createdAt,
+                }],
+              }))
       }
-      await refreshChat()
       return true
     } catch (error) {
       const rollback = uploaded.filter((path) => !registered.has(path))
       if (rollback.length) await supabase.storage.from(CHAT_MEDIA_BUCKET).remove(rollback).catch(() => undefined)
       fail(error, "Não foi possível enviar os arquivos")
-      await refreshChat().catch(() => undefined)
+      schedule("chat", refreshChat)
       return false
     }
-  }, [callRpc, currentUserId, fail, refreshChat, supabase, workspaceId])
+  }, [callRpc, currentUserId, fail, refreshChat, schedule, supabase, workspaceId])
 
   const createChatGroup = React.useCallback(async (name: string, memberIds: string[]) => {
     const id = await callRpc<string>("create_chat_group", { p_name: name, p_member_ids: memberIds }, "Não foi possível criar o grupo")
@@ -2739,7 +3218,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (!id) throw new Error(`Não foi possível registrar “${file.name}”.`)
         registered.add(path)
       }
-      await refreshServiceRequests()
+      schedule("service-requests", refreshServiceRequests)
       return true
     } catch (error) {
       const rollback = uploaded.filter((path) => !registered.has(path))
@@ -2747,7 +3226,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fail(error, "Não foi possível enviar os arquivos da solicitação")
       return false
     }
-  }, [callRpc, currentUserId, fail, refreshServiceRequests, supabase, workspaceId])
+  }, [callRpc, currentUserId, fail, refreshServiceRequests, schedule, supabase, workspaceId])
 
   const addServiceRequestExternalResources = React.useCallback(async (requestId: string, resources: ServiceRequestExternalResourceInput[], messageId?: string) => {
     if (resources.length === 0) return true
@@ -2761,9 +3240,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }, "Não foi possível registrar o link externo da solicitação")
       if (!id) return false
     }
-    await refreshServiceRequests()
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, refreshServiceRequests])
+  }, [callRpc, refreshServiceRequests, schedule])
 
   const createServiceRequest = React.useCallback(async (data: ServiceRequestInput) => {
     const id = await callRpc<string>("create_service_request_v2", {
@@ -2889,9 +3368,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const ok = await addServiceRequestAttachments(requestId, files, messageId)
       if (!ok) return false
     }
-    await Promise.all([refreshServiceRequests(), refreshNotifications()])
+    schedule("service-requests", refreshServiceRequests)
+    schedule("notifications", refreshNotifications)
     return true
-  }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests])
+  }, [addServiceRequestAttachments, callRpc, refreshNotifications, refreshServiceRequests, schedule])
 
   const editServiceRequestMessage = React.useCallback(async (messageId: string, content: string) => {
     const result = await callRpc<boolean>("edit_service_request_message", {
@@ -2899,9 +3379,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_content: content,
     }, "Não foi possível editar a mensagem")
     if (result === undefined) return false
-    await refreshServiceRequests()
+    schedule("service-requests", refreshServiceRequests)
     return true
-  }, [callRpc, refreshServiceRequests])
+  }, [callRpc, refreshServiceRequests, schedule])
 
   const startServiceRequestAqs = React.useCallback(async (requestId: string) => {
     const result = await callRpc<unknown>("start_service_request_aqs", { p_request_id: requestId }, "Não foi possível assumir a análise")

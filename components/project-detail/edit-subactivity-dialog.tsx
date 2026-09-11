@@ -20,10 +20,16 @@ export function EditSubactivityDialog({
   subactivity,
   compact = false,
   className,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   subactivity: Subactivity
   compact?: boolean
   className?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
   const {
     members,
@@ -31,7 +37,12 @@ export function EditSubactivityDialog({
     workItemTypes,
     updateSubactivity,
   } = useStore()
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = React.useCallback((value: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(value)
+    onOpenChange?.(value)
+  }, [controlledOpen, onOpenChange])
   const [title, setTitle] = React.useState(subactivity.title)
   const [hours, setHours] = React.useState(String(subactivity.estimatedHours ?? 0))
   const [assigneeId, setAssigneeId] = React.useState(subactivity.assigneeId)
@@ -93,17 +104,19 @@ export function EditSubactivityDialog({
         setOpen(value)
       }}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size={compact ? "icon-sm" : "icon"}
-        className={cn(className)}
-        onClick={() => setOpen(true)}
-        title="Editar subatividade"
-        aria-label={`Editar subatividade ${subactivity.title}`}
-      >
-        <Pencil className="size-3.5" />
-      </Button>
+      {!hideTrigger && (
+        <Button
+          type="button"
+          variant="ghost"
+          size={compact ? "icon-sm" : "icon"}
+          className={cn(className)}
+          onClick={() => setOpen(true)}
+          title="Editar subatividade"
+          aria-label={`Editar subatividade ${subactivity.title}`}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+      )}
 
       <DialogContent className="w-[calc(100vw-1rem)] max-w-xl sm:max-w-xl md:max-w-2xl">
         <DialogHeader>

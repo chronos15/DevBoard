@@ -31,6 +31,7 @@ import {
   Menu,
   Mic,
   Paperclip,
+  Pencil,
   Pin,
   Reply,
   Pause,
@@ -42,6 +43,7 @@ import {
   Square,
   Trash2,
   UsersRound,
+  Video,
   X,
 } from "lucide-react"
 import type {
@@ -71,6 +73,18 @@ import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 import { ProjectIcon } from "@/components/projects/project-icon"
@@ -84,10 +98,11 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
-import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { primeCallAudio } from "@/lib/webrtc/audio-playback"
+import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
@@ -805,6 +820,7 @@ export function ProjectFollowUp({
     markFollowUpContextRead,
     addSubactivityAttachments,
     deleteActivity,
+    startActivityMeeting,
     startTimer,
     setSubStatus,
     setSubactivityBrainstorm,
@@ -866,6 +882,9 @@ export function ProjectFollowUp({
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
+  const [headerActionsOpen, setHeaderActionsOpen] = React.useState(false)
+  const [editSubactivityOpen, setEditSubactivityOpen] = React.useState(false)
+  const [meetingStarting, setMeetingStarting] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
   const [statusMenuPosition, setStatusMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [composerMultiline, setComposerMultiline] = React.useState(false)
@@ -1075,6 +1094,18 @@ export function ProjectFollowUp({
     Boolean(selectedSub) && (!selectedDeveloperObserver || Boolean(replyingTo)),
   )
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
+
+  async function startSelectedMeeting() {
+    if (!selectedActivity || !selectedSub || selectedDeveloperObserver || meetingStarting) return
+    void primeCallAudio()
+    setMeetingStarting(true)
+    try {
+      const launch = await startActivityMeeting(selectedActivity.id, "video", { subactivityId: selectedSub.id })
+      if (launch) openMeetingRoom(launch.meetingId)
+    } finally {
+      setMeetingStarting(false)
+    }
+  }
 
   const loadChecklist = React.useCallback(async (subactivityId: string, quiet = false) => {
     if (!quiet) setChecklistLoading(true)
@@ -1720,6 +1751,8 @@ export function ProjectFollowUp({
   React.useEffect(() => {
     setStatusMenuOpen(false)
     setStatusMenuPosition(null)
+    setHeaderActionsOpen(false)
+    setEditSubactivityOpen(false)
     setPendingFiles([])
     setComposerError("")
   }, [selectedSubId])
@@ -2715,149 +2748,176 @@ export function ProjectFollowUp({
                     Somente leitura
                   </span>
                 )}
-                {!selectedDeveloperObserver && <ActivityMeetingButton activityId={selectedActivity.id} subactivityId={selectedSub.id} />}
-                {currentUserRole === "admin" && <EditSubactivityDialog subactivity={selectedSub} compact />}
-                <Button
-                  type="button"
-                  variant={localSearchOpen ? "secondary" : "ghost"}
-                  size="icon-sm"
-                  onClick={() => {
-                    setLocalSearchOpen((current) => {
-                      const next = !current
-                      if (next) window.requestAnimationFrame(() => localSearchInputRef.current?.focus())
-                      return next
-                    })
-                  }}
-                  title="Pesquisar nesta subatividade (Ctrl + F)"
-                  aria-label="Pesquisar nesta subatividade"
-                >
-                  <Search className="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant={checklistOpen ? "secondary" : "ghost"}
-                  size="icon-sm"
-                  className="relative"
-                  onClick={() => setChecklistOpen(true)}
-                  title="Anotações"
-                  aria-label="Abrir anotações"
-                >
-                  <ListChecks className="size-4" />
-                  {checklistPendingCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-warning px-0.5 font-mono text-[0.48rem] font-bold leading-3.5 text-warning-foreground">
-                      {checklistPendingCount > 9 ? "9+" : checklistPendingCount}
-                    </span>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant={selectedSub.brainstormMode ? "secondary" : "ghost"}
-                  size="icon-sm"
-                  disabled={!selectedCanManage || brainstormSaving || (selectedSub.status !== "in-progress" && !selectedSub.brainstormMode)}
-                  onClick={() => {
-                    if (brainstormSaving) return
-                    setBrainstormSaving(true)
-                    void setSubactivityBrainstorm(selectedSub.id, !Boolean(selectedSub.brainstormMode)).finally(() => setBrainstormSaving(false))
-                  }}
-                  className={cn(selectedSub.brainstormMode && "text-primary")}
-                  title={selectedSub.brainstormMode ? "Encerrar brainstorm (Ctrl + Shift + B)" : selectedSub.status === "in-progress" ? "Ativar brainstorm: não pausar por inatividade (Ctrl + Shift + B)" : "Inicie a subatividade para ativar o brainstorm"}
-                  aria-label={selectedSub.brainstormMode ? "Encerrar modo brainstorm" : "Ativar modo brainstorm"}
-                >
-                  {brainstormSaving ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}
-                </Button>
-                {!selectedDeveloperObserver && markedCommentIds.size > 0 && (
-                  <div ref={pinnedPickerRef} className="relative">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="relative text-primary lg:h-8 lg:w-auto lg:gap-1.5 lg:px-2 lg:text-[0.62rem]"
+                <DropdownMenu open={headerActionsOpen} onOpenChange={setHeaderActionsOpen}>
+                  <DropdownMenuTrigger
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    title="Mais ações"
+                    aria-label="Mais ações da subatividade"
+                  >
+                    <Ellipsis className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="w-64 p-1.5">
+                    <DropdownMenuLabel className="px-2 py-1.5">Ações da subatividade</DropdownMenuLabel>
+
+                    {!selectedDeveloperObserver && (
+                      <DropdownMenuItem
+                        disabled={meetingStarting}
+                        className="h-9 cursor-pointer gap-2 px-2.5"
+                        onClick={() => void startSelectedMeeting()}
+                      >
+                        {meetingStarting ? <LoaderCircle className="size-4 animate-spin" /> : <Video className="size-4" />}
+                        <span>Iniciar reunião</span>
+                      </DropdownMenuItem>
+                    )}
+
+                    {currentUserRole === "admin" && (
+                      <DropdownMenuItem
+                        className="h-9 cursor-pointer gap-2 px-2.5"
+                        onClick={() => setEditSubactivityOpen(true)}
+                      >
+                        <Pencil className="size-4" />
+                        <span>Editar subatividade</span>
+                      </DropdownMenuItem>
+                    )}
+
+                    <DropdownMenuItem
+                      className="h-9 cursor-pointer gap-2 px-2.5"
                       onClick={() => {
-                        if (pinnedComments.length === 1) {
-                          focusComment(pinnedComments[0].id)
-                          setPinnedPickerOpen(false)
-                          return
-                        }
-                        setPinnedPickerOpen((current) => !current)
+                        setLocalSearchOpen((current) => {
+                          const next = !current
+                          if (next) window.requestAnimationFrame(() => localSearchInputRef.current?.focus())
+                          return next
+                        })
                       }}
-                      title={pinnedComments.length > 1 ? "Ver mensagens fixadas" : "Ir para mensagem fixada"}
-                      aria-expanded={pinnedPickerOpen}
                     >
-                      <Pin className="size-3.5 fill-current" />
-                      <span className="hidden lg:inline">{markedCommentIds.size}</span>
-                      <span className="absolute -right-0.5 -top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[0.48rem] leading-3.5 text-primary-foreground lg:hidden">{markedCommentIds.size}</span>
-                    </Button>
-                    {pinnedPickerOpen && pinnedComments.length > 1 && (
-                      <div className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
-                        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-                          <Pin className="size-3.5 text-primary" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold">Mensagens fixadas</p>
-                            <p className="text-[0.6rem] text-muted-foreground">Escolha uma mensagem para ir até ela</p>
-                          </div>
+                      <Search className="size-4" />
+                      <span>Pesquisar</span>
+                      <DropdownMenuShortcut>Ctrl F</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="h-9 cursor-pointer gap-2 px-2.5"
+                      onClick={() => setChecklistOpen(true)}
+                    >
+                      <ListChecks className="size-4" />
+                      <span className="min-w-0 flex-1">Anotações</span>
+                      {checklistPendingCount > 0 && (
+                        <span className="rounded-full bg-warning/15 px-1.5 py-0.5 font-mono text-[0.58rem] font-semibold text-warning">
+                          {checklistPendingCount > 9 ? "9+" : checklistPendingCount}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      disabled={!selectedCanManage || brainstormSaving || (selectedSub.status !== "in-progress" && !selectedSub.brainstormMode)}
+                      className={cn("h-9 cursor-pointer gap-2 px-2.5", selectedSub.brainstormMode && "text-primary")}
+                      onClick={() => {
+                        if (brainstormSaving) return
+                        setBrainstormSaving(true)
+                        void setSubactivityBrainstorm(selectedSub.id, !Boolean(selectedSub.brainstormMode)).finally(() => setBrainstormSaving(false))
+                      }}
+                    >
+                      {brainstormSaving ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}
+                      <span>{selectedSub.brainstormMode ? "Encerrar brainstorm" : "Ativar brainstorm"}</span>
+                      <DropdownMenuShortcut>Ctrl ⇧ B</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+
+                    {!selectedDeveloperObserver && pinnedComments.length === 1 && (
+                      <DropdownMenuItem
+                        className="h-9 cursor-pointer gap-2 px-2.5"
+                        onClick={() => focusComment(pinnedComments[0].id)}
+                      >
+                        <Pin className="size-4 fill-current text-primary" />
+                        <span>Ir para mensagem fixada</span>
+                      </DropdownMenuItem>
+                    )}
+
+                    {!selectedDeveloperObserver && pinnedComments.length > 1 && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="h-9 cursor-pointer gap-2 px-2.5">
+                          <Pin className="size-4 fill-current text-primary" />
+                          <span className="min-w-0 flex-1">Mensagens fixadas</span>
                           <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.58rem] text-muted-foreground">{pinnedComments.length}</span>
-                        </div>
-                        <div className="max-h-80 overflow-y-auto p-1.5 [scrollbar-width:thin]">
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-72 p-1.5">
                           {pinnedComments.map((comment) => {
                             const author = members.find((member) => member.id === comment.authorId)
                             return (
-                              <button
+                              <DropdownMenuItem
                                 key={comment.id}
-                                type="button"
-                                onClick={() => {
-                                  setPinnedPickerOpen(false)
-                                  focusComment(comment.id)
-                                }}
-                                className="flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted"
+                                className="min-h-10 cursor-pointer items-start gap-2 px-2.5 py-2"
+                                onClick={() => focusComment(comment.id)}
                               >
-                                <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-7 shrink-0 text-[0.55rem]" />
+                                <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-6 shrink-0 text-[0.5rem]" />
                                 <span className="min-w-0 flex-1">
-                                  <span className="flex min-w-0 items-center gap-1.5">
-                                    <strong className="truncate text-[0.68rem]"><MemberName member={author} fallback="Usuário" /></strong>
-                                    <time className="shrink-0 text-[0.56rem] text-muted-foreground">{formatDate(comment.createdAt)}</time>
-                                  </span>
-                                  <span className="mt-0.5 block line-clamp-2 text-[0.65rem] leading-relaxed text-muted-foreground">{commentReplySummary(comment) || "Mensagem"}</span>
+                                  <span className="block truncate text-[0.68rem] font-semibold"><MemberName member={author} fallback="Usuário" /></span>
+                                  <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{commentReplySummary(comment) || "Mensagem"}</span>
                                 </span>
-                              </button>
+                              </DropdownMenuItem>
                             )
                           })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {selectedCanManage && (
-                  <div className="flex shrink-0 items-center gap-1">
-                    {!statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
-                      <Button
-                        type="button"
-                        variant={selectedRunning ? "outline" : "default"}
-                        size="icon-sm"
-                        onClick={() => void (selectedRunning ? requestPause(selectedSub.id) : startTimer(selectedSub.id))}
-                        title={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
-                        aria-label={selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
-                      >
-                        {selectedRunning ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                      </Button>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                     )}
 
-                    <div ref={statusMenuRef} className="relative">
-                      <Button
-                        ref={statusMenuButtonRef}
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        disabled={statusSaving}
-                        aria-label="Alterar situação"
-                        title="Enviar para outra situação"
-                        aria-haspopup="menu"
-                        aria-expanded={statusMenuOpen}
-                        onClick={toggleStatusMenu}
-                      >
-                        {statusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
+                    {selectedCanManage && (
+                      <>
+                        <DropdownMenuSeparator />
+                        {!statusIsTerminal(selectedSub.status) && selectedSub.status !== "waiting-aqs" && (
+                          <DropdownMenuItem
+                            className="h-9 cursor-pointer gap-2 px-2.5"
+                            onClick={() => void (selectedRunning ? requestPause(selectedSub.id) : startTimer(selectedSub.id))}
+                          >
+                            {selectedRunning ? <Pause className="size-4" /> : <Play className="size-4" />}
+                            <span>{selectedRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}</span>
+                          </DropdownMenuItem>
+                        )}
+
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger className="h-9 cursor-pointer gap-2 px-2.5" disabled={statusSaving}>
+                            {statusSaving ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
+                            <span>Alterar situação</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-56 p-1.5">
+                            {linkedRequest && (
+                              <div className="mx-1 mb-1 rounded-lg bg-primary/[0.07] px-2 py-1.5 text-[0.58rem] leading-snug text-primary">
+                                {serviceRequestReference(linkedRequest)} · conclusão somente via AQS
+                              </div>
+                            )}
+                            {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
+                              const meta = statusMeta[status]
+                              const active = status === selectedSub.status
+                              return (
+                                <DropdownMenuItem
+                                  key={status}
+                                  disabled={active || statusSaving}
+                                  className={cn(
+                                    "h-9 cursor-pointer gap-2 px-2.5",
+                                    active && "opacity-60",
+                                    status === "cancelled" && !active && "text-destructive",
+                                  )}
+                                  onClick={() => requestSelectedStatus(status)}
+                                >
+                                  <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
+                                  <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                                  {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
+                                </DropdownMenuItem>
+                              )
+                            })}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {currentUserRole === "admin" && (
+                  <EditSubactivityDialog
+                    subactivity={selectedSub}
+                    open={editSubactivityOpen}
+                    onOpenChange={setEditSubactivityOpen}
+                    hideTrigger
+                  />
                 )}
                 <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" onClick={() => setMobileMembersOpen(true)} aria-label="Ver equipe">
                   <UsersRound className="size-4" />

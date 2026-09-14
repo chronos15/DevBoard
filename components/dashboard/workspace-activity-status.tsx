@@ -314,44 +314,48 @@ export function WorkspaceActivityStatus() {
       </div>
       ) : (
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]">
             {effectiveRows.map(({ member, seconds, running, scheduledToday, targetSeconds }) => {
               const percent = targetSeconds > 0 ? Math.round((seconds / targetSeconds) * 100) : null
               const gaugePercent = percent === null ? 0 : Math.min(100, percent)
               return (
-                <div key={member.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-background/35 p-3">
-                  <div className="relative size-16 shrink-0 rounded-full p-[5px]" style={{ background: `conic-gradient(var(--primary) ${gaugePercent}%, var(--muted) ${gaugePercent}% 100%)` }}>
-                    <div className="flex size-full items-center justify-center rounded-full bg-card">
-                      <div className="text-center">
-                        <div className="font-mono text-[0.7rem] font-semibold tabular-nums">{formatHM(seconds)}</div>
-                        <div className="text-[0.5rem] text-muted-foreground">{percent === null ? "folga" : `${percent}%`}</div>
+                <div key={member.id} className="min-w-0 rounded-xl border border-border/70 bg-background/35 p-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MemberAvatar member={member} className="size-8 shrink-0" />
+                    <div className="min-w-0 flex-1 text-left">
+                      <div className="line-clamp-2 break-words text-xs font-semibold leading-4" title={member.name}>{member.name}</div>
+                      <div className="mt-0.5 truncate text-[0.58rem] text-muted-foreground">{roleLabel(member)}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex min-w-0 items-center gap-3">
+                    <div className="relative size-16 shrink-0 rounded-full p-[5px]" style={{ background: `conic-gradient(var(--primary) ${gaugePercent}%, var(--muted) ${gaugePercent}% 100%)` }}>
+                      <div className="flex size-full items-center justify-center rounded-full bg-card">
+                        <div className="text-center">
+                          <div className="font-mono text-[0.7rem] font-semibold tabular-nums">{formatHM(seconds)}</div>
+                          <div className="text-[0.5rem] text-muted-foreground">{percent === null ? "folga" : `${percent}%`}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-[0.6rem] text-muted-foreground">Efetivado hoje</span>
+                        <strong className="shrink-0 font-mono text-xs tabular-nums">{formatHM(seconds)}</strong>
+                      </div>
+                      <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                        <span className="text-[0.58rem] text-muted-foreground">Meta configurada</span>
+                        <span className="shrink-0 font-mono text-[0.58rem] text-muted-foreground">{scheduledToday ? formatHM(targetSeconds) : "Folga"}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <MemberAvatar member={member} className="size-7 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-semibold">{member.name}</div>
-                        <div className="truncate text-[0.58rem] text-muted-foreground">{roleLabel(member)}</div>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-baseline justify-between gap-2">
-                      <span className="text-[0.6rem] text-muted-foreground">Efetivado hoje</span>
-                      <strong className="font-mono text-xs tabular-nums">{formatHM(seconds)}</strong>
-                    </div>
-                    <div className="mt-0.5 flex items-baseline justify-between gap-2">
-                      <span className="text-[0.58rem] text-muted-foreground">Meta configurada</span>
-                      <span className="font-mono text-[0.58rem] text-muted-foreground">{scheduledToday ? formatHM(targetSeconds) : "Folga"}</span>
-                    </div>
-                    {running ? (
-                      <Link href={followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })} className="mt-2 block truncate text-[0.6rem] font-medium text-primary hover:underline">
-                        Executando · {running.subactivity.title}
-                      </Link>
-                    ) : (
-                      <p className="mt-2 truncate text-[0.6rem] text-muted-foreground">Nenhuma subatividade em execução agora</p>
-                    )}
-                  </div>
+
+                  {running ? (
+                    <Link href={followUpHref({ projectId: running.project.id, activityId: running.activityId, subactivityId: running.subactivity.id })} className="mt-2 block truncate text-[0.6rem] font-medium text-primary hover:underline">
+                      Executando · {running.subactivity.title}
+                    </Link>
+                  ) : (
+                    <p className="mt-2 truncate text-[0.6rem] text-muted-foreground">Nenhuma subatividade em execução agora</p>
+                  )}
                 </div>
               )
             })}

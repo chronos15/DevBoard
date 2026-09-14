@@ -333,6 +333,8 @@ export function AnalysisView() {
       query: mentionRange.query,
       memberPresence,
       todosUserIds,
+      priorityUserIds: todosUserIds,
+      priorityUsersFirst: true,
       userLimit: 8,
     })
   }, [currentUserId, memberPresence, members, mentionRange, selected])

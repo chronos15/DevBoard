@@ -391,7 +391,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       request.responsibleDevId,
       request.executorId,
     ].filter((id): id is string => Boolean(id))))
-    return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, todosUserIds, userLimit: 6 })
+    return buildMentionCandidates({ members, currentUserId, query: mentionQuery, memberPresence, todosUserIds, priorityUserIds: todosUserIds, priorityUsersFirst: true, userLimit: 6 })
   }, [currentUserId, memberPresence, members, mentionQuery, request])
 
   function stageFiles(nextFiles: File[]) {

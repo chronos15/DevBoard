@@ -99,6 +99,8 @@ export function mentionCandidates({
   memberPresence,
   hereUserIds,
   todosUserIds,
+  priorityUserIds,
+  priorityUsersFirst = false,
   userLimit = 8,
 }: {
   members: Member[]
@@ -107,6 +109,8 @@ export function mentionCandidates({
   memberPresence?: Record<string, MemberPresence>
   hereUserIds?: string[]
   todosUserIds?: string[]
+  priorityUserIds?: string[]
+  priorityUsersFirst?: boolean
   userLimit?: number
 }): MentionCandidate[] {
   const normalized = query.trim().toLocaleLowerCase("pt-BR")
@@ -114,15 +118,20 @@ export function mentionCandidates({
     .filter((group) => group.userIds.length > 0)
     .filter((group) => !normalized || group.label.includes(normalized) || group.title.toLocaleLowerCase("pt-BR").includes(normalized))
 
+  const priorityOrder = new Map((priorityUserIds ?? []).map((id, index) => [id, index]))
   const users = members
     .filter((member) => member.id !== currentUserId)
     .filter((member) => !normalized
       || member.name.toLocaleLowerCase("pt-BR").includes(normalized)
       || member.email?.toLocaleLowerCase("pt-BR").includes(normalized))
     .sort((a, b) => {
+      const aPriority = priorityOrder.has(a.id) ? 0 : 1
+      const bPriority = priorityOrder.has(b.id) ? 0 : 1
       const aStarts = a.name.toLocaleLowerCase("pt-BR").startsWith(normalized) ? 0 : 1
       const bStarts = b.name.toLocaleLowerCase("pt-BR").startsWith(normalized) ? 0 : 1
-      return aStarts - bStarts || a.name.localeCompare(b.name, "pt-BR")
+      const aOrder = priorityOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER
+      const bOrder = priorityOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER
+      return aPriority - bPriority || aStarts - bStarts || aOrder - bOrder || a.name.localeCompare(b.name, "pt-BR")
     })
     .slice(0, userLimit)
     .map<MentionUserCandidate>((member) => ({
@@ -133,7 +142,11 @@ export function mentionCandidates({
       description: member.email ?? member.role,
     }))
 
-  return [...groups, ...users]
+  if (!priorityUsersFirst || priorityOrder.size === 0) return [...groups, ...users]
+
+  const priorityUsers = users.filter((candidate) => priorityOrder.has(candidate.id))
+  const otherUsers = users.filter((candidate) => !priorityOrder.has(candidate.id))
+  return [...priorityUsers, ...groups, ...otherUsers]
 }
 
 export function mentionsForCandidate(candidate: MentionCandidate): ChatMention[] {

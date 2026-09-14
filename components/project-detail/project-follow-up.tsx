@@ -1262,6 +1262,8 @@ export function ProjectFollowUp({
       memberPresence,
       hereUserIds: watchingIds,
       todosUserIds: selectedSubMemberIds,
+      priorityUserIds: selectedSubMemberIds,
+      priorityUsersFirst: true,
       userLimit: 8,
     })
   }, [currentUserId, memberPresence, members, mentionRange, selectedSubMemberIds, watchingIds])

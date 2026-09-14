@@ -115,6 +115,8 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
       query: mentionRange.query,
       hereUserIds: joinedIds,
       todosUserIds: meeting.memberIds,
+      priorityUserIds: meeting.memberIds,
+      priorityUsersFirst: true,
       userLimit: 8,
     }).map((candidate) => {
       if (candidate.kind === "group") return candidate

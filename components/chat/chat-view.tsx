@@ -576,18 +576,26 @@ export function ChatView({
       subtitle: "Projeto",
     }))
 
-    const regularCandidates = [...userCandidates, ...projectCandidates]
+    const matchingUsers = userCandidates
       .filter((candidate) => !queryText || candidate.label.toLocaleLowerCase("pt-BR").includes(queryText))
       .sort((a, b) => {
         const aStarts = a.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
         const bStarts = b.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
-        const aKind = a.kind === "user" ? 0 : 1
-        const bKind = b.kind === "user" ? 0 : 1
-        return aStarts - bStarts || aKind - bKind || a.label.localeCompare(b.label, "pt-BR")
+        return aStarts - bStarts || a.label.localeCompare(b.label, "pt-BR")
+      })
+      .slice(0, 8)
+    const matchingProjects = projectCandidates
+      .filter((candidate) => !queryText || candidate.label.toLocaleLowerCase("pt-BR").includes(queryText))
+      .sort((a, b) => {
+        const aStarts = a.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
+        const bStarts = b.label.toLocaleLowerCase("pt-BR").startsWith(queryText) ? 0 : 1
+        return aStarts - bStarts || a.label.localeCompare(b.label, "pt-BR")
       })
       .slice(0, 8)
 
-    return [...groupCandidates, ...regularCandidates].slice(0, 12)
+    // No chat, as pessoas do grupo são os envolvidos diretos no contexto.
+    // Elas devem aparecer antes dos atalhos de equipe e dos projetos ao digitar @.
+    return [...matchingUsers, ...groupCandidates, ...matchingProjects].slice(0, 12)
   }, [currentUserId, memberPresence, members, mentionRange, projects, selected])
   const slashCommandQuery = React.useMemo(() => {
     const match = message.match(/^\/([^\s/]*)$/)

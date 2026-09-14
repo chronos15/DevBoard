@@ -247,7 +247,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
-          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,created_at,updated_at,
+          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,is_focus,focus_marked_at,focus_marked_by,created_at,updated_at,
           subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at,edited_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)
@@ -291,6 +291,9 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,
             brainstormMode: sub.brainstorm_mode === true,
+            isFocus: sub.is_focus === true,
+            focusMarkedAt: sub.focus_marked_at ?? undefined,
+            focusMarkedBy: sub.focus_marked_by ?? undefined,
             comments: (() => {
               const rows = [...(sub.subactivity_comments ?? [])]
                 .sort((a: any, b: any) => a.created_at.localeCompare(b.created_at))

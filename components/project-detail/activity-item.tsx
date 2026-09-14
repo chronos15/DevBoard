@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, EllipsisVertical, Info, Link2, LoaderCircle, LockKeyhole, MessageSquareText, NotebookPen, Paperclip, Trash2, X } from "lucide-react"
+import { AlertTriangle, BrainCircuit, Check, ChevronDown, ClipboardCheck, ClipboardList, EllipsisVertical, Info, Link2, LoaderCircle, LockKeyhole, MessageSquareText, NotebookPen, Paperclip, Star, Trash2, X } from "lucide-react"
 import type { Activity, ServiceRequest, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -57,6 +57,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
     setSubactivityBrainstorm,
+    setSubactivityFocus,
     currentUserRole,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
@@ -67,6 +68,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [inlineOpen, setInlineOpen] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
+  const [focusSaving, setFocusSaving] = React.useState(false)
   const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
   const [droppedAttachmentFiles, setDroppedAttachmentFiles] = React.useState<File[]>([])
   const [droppedAttachmentVersion, setDroppedAttachmentVersion] = React.useState(0)
@@ -211,6 +213,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           </button>
           <WorkItemTypeBadge typeId={sub.typeId} compact />
           {sub.brainstormMode && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary"><BrainCircuit className="size-3" /> Brainstorm</span>}
+          {sub.isFocus && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-600 dark:text-amber-400"><Star className="size-3 fill-current" /> Foco</span>}
           <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
         </div>
         {sub.needsAttention && (
@@ -242,7 +245,25 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
 
       <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
         {currentUserRole === "admin" && (
-          <EditSubactivityDialog subactivity={sub} compact />
+          <>
+            <Button
+              type="button"
+              variant={sub.isFocus ? "secondary" : "ghost"}
+              size="icon-sm"
+              disabled={focusSaving}
+              onClick={() => {
+                if (focusSaving) return
+                setFocusSaving(true)
+                void setSubactivityFocus(sub.id, !Boolean(sub.isFocus)).finally(() => setFocusSaving(false))
+              }}
+              className={cn(sub.isFocus && "text-amber-600 dark:text-amber-400")}
+              title={sub.isFocus ? "Remover do Foco de hoje" : "Marcar como Foco de hoje"}
+              aria-label={sub.isFocus ? "Remover subatividade do foco" : "Marcar subatividade como foco"}
+            >
+              {focusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Star className={cn("size-3.5", sub.isFocus && "fill-current")} />}
+            </Button>
+            <EditSubactivityDialog subactivity={sub} compact />
+          </>
         )}
         <CopyEntityLinkButton
           href={`/projetos/${projectId}#sub-${sub.id}`}

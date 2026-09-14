@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { AlertTriangle, Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square } from "lucide-react"
+import { AlertTriangle, Clock3, GripVertical, LoaderCircle, LockKeyhole, Play, Square, Star } from "lucide-react"
 import type { ActivityFilter, Project, ServiceRequest, Status, Subactivity, SubactivityReleaseDraft } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import {
@@ -203,6 +203,7 @@ export function SubactivityKanban({
     addSubactivityComment,
     addSubactivityAttachments,
     setSubactivityAttachmentActive,
+    setSubactivityFocus,
     currentUserRole,
     serviceRequests,
   } = useStore()
@@ -211,6 +212,7 @@ export function SubactivityKanban({
   const [overStatus, setOverStatus] = React.useState<Status | null>(null)
   const [pendingTransition, setPendingTransition] = React.useState<PendingTransition | null>(null)
   const [pendingIds, setPendingIds] = React.useState<Set<string>>(() => new Set())
+  const [focusSavingIds, setFocusSavingIds] = React.useState<Set<string>>(() => new Set())
   const [attachmentDialogSubId, setAttachmentDialogSubId] = React.useState<string | null>(null)
   const [droppedAttachmentFiles, setDroppedAttachmentFiles] = React.useState<File[]>([])
   const [droppedAttachmentVersion, setDroppedAttachmentVersion] = React.useState(0)
@@ -440,6 +442,7 @@ export function SubactivityKanban({
                             </p>
                             <div className="mt-1 flex min-w-0 items-center gap-1.5">
                               <WorkItemTypeBadge typeId={item.sub.typeId} compact />
+                              {item.sub.isFocus && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[0.56rem] font-semibold text-amber-600 dark:text-amber-400"><Star className="size-2.5 fill-current" /> Foco</span>}
                               <p className="min-w-0 truncate text-[0.68rem] text-muted-foreground">
                                 {item.activityTitle}
                               </p>
@@ -468,7 +471,38 @@ export function SubactivityKanban({
                             onPointerDown={(event) => event.stopPropagation()}
                             onDragStart={(event) => event.preventDefault()}
                           >
-                            {currentUserRole === "admin" && <EditSubactivityDialog subactivity={item.sub} compact />}
+                            {currentUserRole === "admin" && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={focusSavingIds.has(item.sub.id)}
+                                  onClick={() => {
+                                    if (focusSavingIds.has(item.sub.id)) return
+                                    setFocusSavingIds((current) => new Set(current).add(item.sub.id))
+                                    void setSubactivityFocus(item.sub.id, !Boolean(item.sub.isFocus)).finally(() => {
+                                      setFocusSavingIds((current) => {
+                                        const next = new Set(current)
+                                        next.delete(item.sub.id)
+                                        return next
+                                      })
+                                    })
+                                  }}
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-lg transition-colors",
+                                    item.sub.isFocus
+                                      ? "bg-amber-500/12 text-amber-600 hover:bg-amber-500/18 dark:text-amber-400"
+                                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                                  )}
+                                  title={item.sub.isFocus ? "Remover do Foco de hoje" : "Marcar como Foco de hoje"}
+                                  aria-label={item.sub.isFocus ? "Remover subatividade do foco" : "Marcar subatividade como foco"}
+                                >
+                                  {focusSavingIds.has(item.sub.id)
+                                    ? <LoaderCircle className="size-3.5 animate-spin" />
+                                    : <Star className={cn("size-3.5", item.sub.isFocus && "fill-current")} />}
+                                </button>
+                                <EditSubactivityDialog subactivity={item.sub} compact />
+                              </>
+                            )}
                             <CommentDialog
                               title={`Comentários · ${item.sub.title}`}
                               description="Discussão da subatividade. Todos os usuários podem comentar."

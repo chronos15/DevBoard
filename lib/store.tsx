@@ -180,6 +180,7 @@ export type StoreContextValue = {
   stopTimer: (subId?: string, reason?: string) => Promise<boolean>
   setSubStatus: (subId: string, status: Status, releaseInfo?: SubactivityReleaseInfo) => Promise<boolean>
   setSubactivityBrainstorm: (subId: string, enabled: boolean) => Promise<boolean>
+  setSubactivityFocus: (subId: string, enabled: boolean) => Promise<boolean>
   addSubactivity: (
     projectId: string,
     activityId: string,
@@ -356,6 +357,9 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,
         brainstormMode: row.brainstorm_mode !== undefined ? row.brainstorm_mode === true : sub.brainstormMode,
+        isFocus: row.is_focus !== undefined ? row.is_focus === true : sub.isFocus,
+        focusMarkedAt: row.focus_marked_at !== undefined ? (row.focus_marked_at ?? undefined) : sub.focusMarkedAt,
+        focusMarkedBy: row.focus_marked_by !== undefined ? (row.focus_marked_by ?? undefined) : sub.focusMarkedBy,
       } : sub),
     })),
   }))
@@ -1730,6 +1734,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     schedule("projects", refreshProjects)
     return true
   }, [callRpc, canManageSubactivity, fail, projects, refreshProjects, schedule])
+
+  const setSubactivityFocus = React.useCallback<StoreContextValue["setSubactivityFocus"]>(async (subId, enabled) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem definir o foco do dashboard."), "Sem permissão para alterar o foco")
+      return false
+    }
+
+    const found = findSubInProjects(projects, subId)
+    const target = found?.sub
+    if (!target) return false
+
+    const previous = {
+      isFocus: Boolean(target.isFocus),
+      focusMarkedAt: target.focusMarkedAt,
+      focusMarkedBy: target.focusMarkedBy,
+    }
+    if (previous.isFocus === enabled) return true
+
+    const optimisticMarkedAt = enabled ? new Date().toISOString() : undefined
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subId ? {
+          ...sub,
+          isFocus: enabled,
+          focusMarkedAt: optimisticMarkedAt,
+          focusMarkedBy: enabled ? currentUserId : undefined,
+        } : sub),
+      })),
+    })))
+
+    const result = await callRpc<unknown>(
+      "set_subactivity_focus_admin",
+      { p_subactivity_id: subId, p_enabled: enabled },
+      enabled ? "Não foi possível marcar a subatividade como foco" : "Não foi possível remover a subatividade do foco",
+    )
+
+    if (result === undefined) {
+      setProjects((current) => current.map((project) => ({
+        ...project,
+        activities: project.activities.map((activity) => ({
+          ...activity,
+          subactivities: activity.subactivities.map((sub) => sub.id === subId ? { ...sub, ...previous } : sub),
+        })),
+      })))
+      return false
+    }
+
+    schedule("projects", refreshProjects)
+    return true
+  }, [callRpc, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
   const cancelTimerConflict = React.useCallback(() => {
     if (timerConflictLoading) return
@@ -3527,6 +3583,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     stopTimer,
     setSubStatus,
     setSubactivityBrainstorm,
+    setSubactivityFocus,
     addSubactivity,
     updateSubactivity,
     addActivity,
@@ -3586,7 +3643,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, editChatMessage, setMemberRole,
-    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityBrainstorm, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
+    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityBrainstorm, setSubactivityFocus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, editServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])

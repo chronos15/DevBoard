@@ -174,6 +174,9 @@ export type Subactivity = {
   needsAttention?: boolean
   attentionMessage?: string
   brainstormMode?: boolean
+  isFocus?: boolean
+  focusMarkedAt?: string
+  focusMarkedBy?: string
   comments?: CommentEntry[]
   attachments?: AttachmentEntry[]
 }

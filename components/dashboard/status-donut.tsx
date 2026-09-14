@@ -38,14 +38,17 @@ export function StatusDonut() {
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
-        {data.map((d) => (
-          <div key={d.name} className="flex items-center justify-between gap-2 text-xs">
+      <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2.5 sm:gap-x-10 xl:gap-x-12">
+        {data.map((d, index) => (
+          <div
+            key={d.name}
+            className={`flex min-w-0 items-center gap-2 text-xs ${index % 2 === 1 ? "justify-self-end" : "justify-self-start"}`}
+          >
             <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
               <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: d.color }} />
               <span className="truncate">{d.name}</span>
             </span>
-            <span className="font-mono font-medium tabular-nums">{d.value}</span>
+            <span className="ml-0.5 shrink-0 font-mono font-medium tabular-nums">{d.value}</span>
           </div>
         ))}
       </div>

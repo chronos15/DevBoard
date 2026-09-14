@@ -41,6 +41,7 @@ import {
   Send,
   SmilePlus,
   Square,
+  Star,
   Trash2,
   UsersRound,
   Video,
@@ -812,6 +813,7 @@ export function ProjectFollowUp({
     startTimer,
     setSubStatus,
     setSubactivityBrainstorm,
+    setSubactivityFocus,
     refreshAll,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
@@ -873,6 +875,7 @@ export function ProjectFollowUp({
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
+  const [focusSaving, setFocusSaving] = React.useState(false)
   const [headerActionsOpen, setHeaderActionsOpen] = React.useState(false)
   const [headerActionsPosition, setHeaderActionsPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [headerActionsView, setHeaderActionsView] = React.useState<"main" | "status" | "pinned">("main")
@@ -2882,6 +2885,26 @@ export function ProjectFollowUp({
                     <Eye className="size-3" />
                     Somente leitura
                   </span>
+                )}
+                {currentUserRole === "admin" && (
+                  <Button
+                    type="button"
+                    variant={selectedSub.isFocus ? "secondary" : "ghost"}
+                    size="icon-sm"
+                    disabled={focusSaving}
+                    onClick={() => {
+                      if (focusSaving) return
+                      setFocusSaving(true)
+                      void setSubactivityFocus(selectedSub.id, !Boolean(selectedSub.isFocus)).finally(() => setFocusSaving(false))
+                    }}
+                    className={cn(selectedSub.isFocus && "text-amber-600 dark:text-amber-400")}
+                    title={selectedSub.isFocus ? "Remover do Foco de hoje" : "Marcar como Foco de hoje"}
+                    aria-label={selectedSub.isFocus ? "Remover subatividade do foco" : "Marcar subatividade como foco"}
+                  >
+                    {focusSaving
+                      ? <LoaderCircle className="size-3.5 animate-spin" />
+                      : <Star className={cn("size-3.5", selectedSub.isFocus && "fill-current")} />}
+                  </Button>
                 )}
                 <Button
                   ref={headerActionsButtonRef}

@@ -412,6 +412,43 @@ function ContextItem({
 }
 
 
+function formatDurationInputFromMinutes(totalMinutes: number) {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes))
+  const hours = Math.floor(safeMinutes / 60)
+  const minutes = safeMinutes % 60
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+}
+
+function parseDurationInput(value: string) {
+  const match = value.trim().match(/^(\d+):([0-5]\d)$/)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isSafeInteger(hours) || hours < 0) return null
+  return { totalMinutes: (hours * 60) + minutes, hours: hours + (minutes / 60) }
+}
+
+function normalizeDurationInput(value: string) {
+  const sanitized = value.replace(/[^\d:]/g, "")
+  const firstColon = sanitized.indexOf(":")
+  if (firstColon < 0) return sanitized.slice(0, 4)
+
+  const hours = sanitized.slice(0, firstColon).replace(/:/g, "")
+  const minutes = sanitized.slice(firstColon + 1).replace(/:/g, "").slice(0, 2)
+  return `${hours}:${minutes}`
+}
+
+function normalizeDurationOnBlur(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  const match = trimmed.match(/^(\d+):(\d{1,2})$/)
+  if (!match) return trimmed
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes > 59) return trimmed
+  return `${String(Math.trunc(hours)).padStart(2, "0")}:${String(Math.trunc(minutes)).padStart(2, "0")}`
+}
+
 function SubactivityTimeMaintenanceEditor({
   title,
   estimatedHours,
@@ -426,39 +463,36 @@ function SubactivityTimeMaintenanceEditor({
   onSave: (estimatedHours: number, trackedHours: number | null) => Promise<boolean>
 }) {
   const [open, setOpen] = React.useState(false)
-  const editableTrackedHours = React.useCallback((seconds: number) => {
-    const value = (Math.max(0, seconds) / 3600).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
-    return value.replace(".", ",")
-  }, [])
-  const [estimateValue, setEstimateValue] = React.useState(String(estimatedHours ?? 0).replace(".", ","))
-  const [trackedValue, setTrackedValue] = React.useState(() => editableTrackedHours(trackedSeconds))
-  const [trackedSnapshotSeconds, setTrackedSnapshotSeconds] = React.useState(Math.max(0, trackedSeconds))
+  const estimatedMinutes = React.useMemo(() => Math.max(0, Math.round(Number(estimatedHours ?? 0) * 60)), [estimatedHours])
+  const editableTrackedMinutes = React.useMemo(() => Math.max(0, Math.floor(trackedSeconds / 60)), [trackedSeconds])
+  const [estimateValue, setEstimateValue] = React.useState(() => formatDurationInputFromMinutes(estimatedMinutes))
+  const [trackedValue, setTrackedValue] = React.useState(() => formatDurationInputFromMinutes(editableTrackedMinutes))
+  const [trackedSnapshotMinutes, setTrackedSnapshotMinutes] = React.useState(editableTrackedMinutes)
   const [trackedTouched, setTrackedTouched] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (open) return
-    setEstimateValue(String(estimatedHours ?? 0).replace(".", ","))
-    setTrackedValue(editableTrackedHours(trackedSeconds))
-    setTrackedSnapshotSeconds(Math.max(0, trackedSeconds))
+    setEstimateValue(formatDurationInputFromMinutes(estimatedMinutes))
+    setTrackedValue(formatDurationInputFromMinutes(editableTrackedMinutes))
+    setTrackedSnapshotMinutes(editableTrackedMinutes)
     setTrackedTouched(false)
-  }, [editableTrackedHours, estimatedHours, trackedSeconds, open])
+  }, [editableTrackedMinutes, estimatedMinutes, open])
 
-  const parsedEstimate = Number(estimateValue.trim().replace(",", "."))
-  const parsedTracked = Number(trackedValue.trim().replace(",", "."))
-  const estimateValid = estimateValue.trim().length > 0 && Number.isFinite(parsedEstimate) && parsedEstimate >= 0
-  const trackedValid = trackedValue.trim().length > 0 && Number.isFinite(parsedTracked) && parsedTracked >= 0
+  const parsedEstimate = parseDurationInput(estimateValue)
+  const parsedTracked = parseDurationInput(trackedValue)
+  const estimateValid = parsedEstimate !== null
+  const trackedValid = parsedTracked !== null
   const valid = estimateValid && trackedValid
-  const estimateChanged = estimateValid && Math.abs(parsedEstimate - Number(estimatedHours ?? 0)) > 0.0001
-  const snapshotTrackedHours = trackedSnapshotSeconds / 3600
-  const trackedChanged = trackedTouched && trackedValid && Math.abs(parsedTracked - snapshotTrackedHours) > (0.5 / 3600)
+  const estimateChanged = parsedEstimate !== null && parsedEstimate.totalMinutes !== estimatedMinutes
+  const trackedChanged = trackedTouched && parsedTracked !== null && parsedTracked.totalMinutes !== trackedSnapshotMinutes
   const isChanged = estimateChanged || trackedChanged
 
   const save = async () => {
-    if (!valid || !isChanged || saving) return
+    if (!parsedEstimate || !parsedTracked || !valid || !isChanged || saving) return
     setSaving(true)
     try {
-      const ok = await onSave(parsedEstimate, trackedChanged ? parsedTracked : null)
+      const ok = await onSave(parsedEstimate.hours, trackedChanged ? parsedTracked.hours : null)
       if (ok) setOpen(false)
     } finally {
       setSaving(false)
@@ -490,56 +524,58 @@ function SubactivityTimeMaintenanceEditor({
           <div className="rounded-xl border border-border bg-muted/35 px-3.5 py-3">
             <p className="line-clamp-2 text-xs font-semibold leading-relaxed">{title}</p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.65rem] text-muted-foreground">
-              <span>Estimativa atual: <strong className="font-semibold text-foreground">{formatHours(Math.max(0, estimatedHours) * 3600)}</strong></span>
-              <span>Trabalhado atual: <strong className="font-semibold text-foreground">{formatHours(trackedSeconds)}</strong></span>
+              <span>Estimativa atual: <strong className="font-mono font-semibold tabular-nums text-foreground">{formatDurationInputFromMinutes(estimatedMinutes)}</strong></span>
+              <span>Trabalhado atual: <strong className="font-mono font-semibold tabular-nums text-foreground">{formatDurationInputFromMinutes(editableTrackedMinutes)}</strong></span>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-xs font-medium">Estimativa em horas</span>
+              <span className="text-xs font-medium">Estimativa (HH:mm)</span>
               <Input
                 autoFocus
                 value={estimateValue}
-                onChange={(event) => setEstimateValue(event.target.value)}
+                onChange={(event) => setEstimateValue(normalizeDurationInput(event.target.value))}
+                onBlur={() => setEstimateValue((current) => normalizeDurationOnBlur(current))}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault()
                     void save()
                   }
                 }}
-                inputMode="decimal"
-                placeholder="Ex.: 8 ou 8,5"
+                inputMode="text"
+                placeholder="Ex.: 08:30"
                 aria-invalid={estimateValue.trim().length > 0 && !estimateValid}
-                className="mt-2 h-10"
+                className="mt-2 h-10 font-mono tabular-nums"
               />
-              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Planejamento previsto para a subatividade.</p>
+              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Use HH:mm. Ex.: 01:30, 08:00 ou 37:20.</p>
             </label>
 
             <label className="block">
-              <span className="text-xs font-medium">Horas trabalhadas</span>
+              <span className="text-xs font-medium">Horas trabalhadas (HH:mm)</span>
               <Input
                 value={trackedValue}
                 onChange={(event) => {
                   setTrackedTouched(true)
-                  setTrackedValue(event.target.value)
+                  setTrackedValue(normalizeDurationInput(event.target.value))
                 }}
+                onBlur={() => setTrackedValue((current) => normalizeDurationOnBlur(current))}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault()
                     void save()
                   }
                 }}
-                inputMode="decimal"
-                placeholder="Ex.: 2 ou 2,5"
+                inputMode="text"
+                placeholder="Ex.: 02:45"
                 aria-invalid={trackedValue.trim().length > 0 && !trackedValid}
-                className="mt-2 h-10"
+                className="mt-2 h-10 font-mono tabular-nums"
               />
-              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Total efetivamente contabilizado para a subatividade.</p>
+              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Total contabilizado no formato HH:mm.</p>
             </label>
           </div>
 
-          {valid && parsedEstimate < parsedTracked && (
+          {parsedEstimate && parsedTracked && parsedEstimate.totalMinutes < parsedTracked.totalMinutes && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-[0.68rem] leading-relaxed text-amber-700 dark:text-amber-300">
               As horas trabalhadas ficarão acima da estimativa. Isso é permitido em manutenção administrativa.
             </div>

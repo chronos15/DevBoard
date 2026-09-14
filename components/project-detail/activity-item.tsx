@@ -159,8 +159,13 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     <div
       id={`sub-${sub.id}`}
       ref={rowRef}
+      onClick={(event) => {
+        const target = event.target as HTMLElement | null
+        if (target?.closest("button, a, input, select, textarea, [role='button'], [role='link'], [role='menuitem'], [data-subactivity-row-control='true']")) return
+        setInlineOpen((current) => !current)
+      }}
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-colors sm:flex-nowrap sm:px-3",
+        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-colors sm:flex-nowrap sm:px-3",
         running ? "bg-primary/[0.06]" : "hover:bg-muted/50",
         cancelled && "opacity-70",
         focused && "bg-primary/[0.08] ring-2 ring-inset ring-primary/30",
@@ -243,7 +248,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         </div>
       </div>
 
-      <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
+      <div data-subactivity-row-control="true" className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
         {currentUserRole === "admin" && (
           <>
             <Button

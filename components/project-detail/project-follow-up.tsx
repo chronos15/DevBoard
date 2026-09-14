@@ -530,7 +530,7 @@ function InlineComposerFilePreview({
   )
 }
 
-function PendingTimelineFile({ file }: { file: File }) {
+function PendingTimelineFile({ file, onMediaReady }: { file: File; onMediaReady?: () => void }) {
   const [url, setUrl] = React.useState<string | null>(null)
   const kind = detectKind(file)
 
@@ -542,13 +542,13 @@ function PendingTimelineFile({ file }: { file: File }) {
   }, [file, kind])
 
   if (kind === "image" && url) {
-    return <img src={url} alt={file.name} className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border object-contain" />
+    return <img src={url} alt={file.name} onLoad={onMediaReady} className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border object-contain" />
   }
   if (kind === "video" && url) {
-    return <video src={url} controls playsInline preload="metadata" className="mt-2 block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] rounded-xl border border-border" />
+    return <video src={url} controls playsInline preload="metadata" onLoadedMetadata={onMediaReady} className="mt-2 block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] rounded-xl border border-border" />
   }
   if (kind === "audio" && url) {
-    return <audio src={url} controls preload="metadata" className="mt-2 w-full max-w-xl" />
+    return <audio src={url} controls preload="metadata" onLoadedMetadata={onMediaReady} className="mt-2 w-full max-w-xl" />
   }
   return (
     <div className="mt-2 flex max-w-xl items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-3">
@@ -864,6 +864,8 @@ export function ProjectFollowUp({
   const pendingTimelineFocusRef = React.useRef<string | null>(initialTimelineId ?? null)
   const initialBottomLockRef = React.useRef(false)
   const bottomLockTimerRef = React.useRef<number | null>(null)
+  const deliveryBottomLockRef = React.useRef(false)
+  const deliveryBottomLockTimerRef = React.useRef<number | null>(null)
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
   const mediaStreamRef = React.useRef<MediaStream | null>(null)
   const audioChunksRef = React.useRef<Blob[]>([])
@@ -1650,7 +1652,12 @@ export function ProjectFollowUp({
       return
     }
     initialBottomLockRef.current = true
+    deliveryBottomLockRef.current = false
     if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
+    if (deliveryBottomLockTimerRef.current) {
+      window.clearTimeout(deliveryBottomLockTimerRef.current)
+      deliveryBottomLockTimerRef.current = null
+    }
 
     const firstFrame = window.requestAnimationFrame(() => {
       scrollTimelineToBottom()
@@ -1682,10 +1689,38 @@ export function ProjectFollowUp({
   }, [selectedSubId, timeline.length])
 
   React.useEffect(() => {
-    if (!initialBottomLockRef.current) return
+    if (!initialBottomLockRef.current && !deliveryBottomLockRef.current) return
     const frame = window.requestAnimationFrame(scrollTimelineToBottom)
     return () => window.cancelAnimationFrame(frame)
   }, [timeline.length, resolvedUrls])
+
+  // Durante o envio de um anexo, o composer encolhe e o item otimista troca
+  // pelo anexo definitivo. Mantemos o rodapé visualmente ancorado apenas
+  // enquanto o usuário não tenta rolar manualmente. Isso elimina o salto de
+  // tela sem reintroduzir o bloqueio antigo de scroll.
+  React.useEffect(() => {
+    if (!deliveryBottomLockRef.current || !selectedSubId) return
+    const active = pendingUploads.some((item) => item.subactivityId === selectedSubId && item.status === "sending")
+    if (active) {
+      if (deliveryBottomLockTimerRef.current) {
+        window.clearTimeout(deliveryBottomLockTimerRef.current)
+        deliveryBottomLockTimerRef.current = null
+      }
+      return
+    }
+    if (deliveryBottomLockTimerRef.current) window.clearTimeout(deliveryBottomLockTimerRef.current)
+    deliveryBottomLockTimerRef.current = window.setTimeout(() => {
+      if (deliveryBottomLockRef.current) scrollTimelineToBottom()
+      deliveryBottomLockRef.current = false
+      deliveryBottomLockTimerRef.current = null
+    }, 1100)
+    return () => {
+      if (deliveryBottomLockTimerRef.current) {
+        window.clearTimeout(deliveryBottomLockTimerRef.current)
+        deliveryBottomLockTimerRef.current = null
+      }
+    }
+  }, [pendingUploads, selectedSubId])
 
   React.useEffect(() => {
     setMentionIndex(0)
@@ -1710,6 +1745,7 @@ export function ProjectFollowUp({
   React.useEffect(() => () => {
     unmountedRef.current = true
     if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
+    if (deliveryBottomLockTimerRef.current) window.clearTimeout(deliveryBottomLockTimerRef.current)
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state !== "inactive") recorder.stop()
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -1945,16 +1981,32 @@ export function ProjectFollowUp({
   }
 
   function releaseInitialBottomLock() {
-    if (!initialBottomLockRef.current) return
     initialBottomLockRef.current = false
+    deliveryBottomLockRef.current = false
     if (bottomLockTimerRef.current) {
       window.clearTimeout(bottomLockTimerRef.current)
       bottomLockTimerRef.current = null
     }
+    if (deliveryBottomLockTimerRef.current) {
+      window.clearTimeout(deliveryBottomLockTimerRef.current)
+      deliveryBottomLockTimerRef.current = null
+    }
+  }
+
+  function beginDeliveryBottomLock() {
+    deliveryBottomLockRef.current = true
+    if (deliveryBottomLockTimerRef.current) {
+      window.clearTimeout(deliveryBottomLockTimerRef.current)
+      deliveryBottomLockTimerRef.current = null
+    }
+    window.requestAnimationFrame(() => {
+      scrollTimelineToBottom()
+      window.requestAnimationFrame(scrollTimelineToBottom)
+    })
   }
 
   function handleTimelineMediaReady() {
-    if (!initialBottomLockRef.current) return
+    if (!initialBottomLockRef.current && !deliveryBottomLockRef.current) return
     window.requestAnimationFrame(scrollTimelineToBottom)
   }
 
@@ -2413,6 +2465,7 @@ export function ProjectFollowUp({
       createdAt: new Date(baseTime + index).toISOString(),
       status: "sending",
     }))
+    beginDeliveryBottomLock()
     setPendingUploads((current) => [...current, ...batches])
     scrollAfterOptimisticInsert()
     batches.forEach((batch) => window.setTimeout(() => { void deliverPendingUpload(batch) }, 0))
@@ -3136,7 +3189,7 @@ export function ProjectFollowUp({
                                     ))}
                                     {(groupedPendingUploads.get(item.pending.messageGroupId) ?? []).map(({ batch, file, index }) => (
                                       <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
-                                        <PendingTimelineFile file={file} />
+                                        <PendingTimelineFile file={file} onMediaReady={handleTimelineMediaReady} />
                                         {batch.status === "sending" ? (
                                           <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                                             <LoaderCircle className="size-3 animate-spin" />
@@ -3192,7 +3245,7 @@ export function ProjectFollowUp({
                                   <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                 </div>
                                 <p className="tb-chat-text mt-1 text-foreground/90">enviou um arquivo</p>
-                                <PendingTimelineFile file={item.file} />
+                                <PendingTimelineFile file={item.file} onMediaReady={handleTimelineMediaReady} />
                                 {item.status === "sending" ? (
                                   <div className="mt-1.5 space-y-1.5">
                                     <div className="flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
@@ -3394,7 +3447,7 @@ export function ProjectFollowUp({
                                     ))}
                                     {(groupedPendingUploads.get(comment.messageGroupId) ?? []).map(({ batch, file, index }) => (
                                       <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
-                                        <PendingTimelineFile file={file} />
+                                        <PendingTimelineFile file={file} onMediaReady={handleTimelineMediaReady} />
                                         {batch.status === "sending" ? (
                                           <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                                             <LoaderCircle className="size-3 animate-spin" />

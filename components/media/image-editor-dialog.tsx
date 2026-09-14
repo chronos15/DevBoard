@@ -10,6 +10,7 @@ import {
   RotateCcw,
   RotateCw,
   Undo2,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -406,6 +407,7 @@ export function ImageEditorDialog({
   return (
     <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}>
       <DialogContent
+        showCloseButton={false}
         className="flex h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:h-[min(94dvh,980px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
         data-no-swipe-reply="true"
         onPointerDown={(event) => event.stopPropagation()}
@@ -421,18 +423,32 @@ export function ImageEditorDialog({
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <DialogHeader className="shrink-0 border-b border-border px-3 py-3 sm:px-5 sm:pr-14">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1 pr-10 sm:pr-0">
+        <DialogHeader className="shrink-0 border-b border-border px-3 py-3 sm:px-5">
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
               <DialogTitle className="truncate text-sm sm:text-base">Editar imagem</DialogTitle>
               <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{name || "Imagem"} · recorte livre e desenho</p>
             </div>
-            <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/25 p-1">
-              <Button type="button" variant={mode === "crop" ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => setMode("crop")}>
-                <Crop className="size-3.5" /> <span className="hidden sm:inline">Recortar</span>
-              </Button>
-              <Button type="button" variant={mode === "draw" ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => setMode("draw")}>
-                <Paintbrush className="size-3.5" /> <span className="hidden sm:inline">Desenhar</span>
+            <div className="flex shrink-0 items-center gap-1">
+              <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/25 p-1">
+                <Button type="button" variant={mode === "crop" ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => setMode("crop")}>
+                  <Crop className="size-3.5" /> <span className="hidden sm:inline">Recortar</span>
+                </Button>
+                <Button type="button" variant={mode === "draw" ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => setMode("draw")}>
+                  <Paintbrush className="size-3.5" /> <span className="hidden sm:inline">Desenhar</span>
+                </Button>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+                title="Fechar editor"
+                aria-label="Fechar editor"
+              >
+                <X className="size-4" />
               </Button>
             </div>
           </div>

@@ -190,6 +190,7 @@ export type StoreContextValue = {
     subactivityId: string,
     data: { title: string; estimatedHours: number; assigneeId: string; typeId?: string | null },
   ) => Promise<boolean>
+  updateSubactivityEstimatedHours: (subactivityId: string, estimatedHours: number) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null, context?: ActivityContextInput) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
   createWorkItemType: (data: { name: string; color: string; intermittent?: boolean }) => Promise<boolean>
@@ -1973,6 +1974,39 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, currentUserRole, fail, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions, schedule])
 
+  const updateSubactivityEstimatedHours = React.useCallback<StoreContextValue["updateSubactivityEstimatedHours"]>(async (subactivityId, estimatedHours) => {
+    if (currentUserRole !== "admin") {
+      fail(new Error("Apenas administradores podem ajustar a estimativa de horas."), "Sem permissão para alterar a estimativa")
+      return false
+    }
+
+    const normalizedHours = Number(estimatedHours)
+    if (!Number.isFinite(normalizedHours) || normalizedHours < 0) {
+      fail(new Error("Informe uma quantidade de horas válida."), "Estimativa inválida")
+      return false
+    }
+
+    const result = await callRpc<unknown>("update_subactivity_estimate_admin", {
+      p_subactivity_id: subactivityId,
+      p_estimated_hours: normalizedHours,
+    }, "Não foi possível atualizar a estimativa da subatividade")
+    if (result === undefined) return false
+
+    const updatedAt = new Date().toISOString()
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subactivityId
+          ? { ...sub, estimatedHours: normalizedHours, updatedAt }
+          : sub),
+      })),
+    })))
+
+    schedule("projects", refreshProjects)
+    return true
+  }, [callRpc, currentUserRole, fail, refreshProjects, schedule])
+
   const addActivity = React.useCallback(async (projectId: string, title: string, assigneeIds: string[] = [], typeId?: string | null, context?: ActivityContextInput) => {
     if (!canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")) {
       fail(new Error("Seu nível de acesso não permite adicionar atividades."), "Sem permissão para criar atividades")
@@ -3586,6 +3620,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSubactivityFocus,
     addSubactivity,
     updateSubactivity,
+    updateSubactivityEstimatedHours,
     addActivity,
     deleteActivity,
     createWorkItemType,
@@ -3636,7 +3671,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
-    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity,
+    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity, updateSubactivityEstimatedHours,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, editSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, currentAccessPolicy, deleteActivity, deleteChatGroup,

@@ -13,12 +13,14 @@ import {
   GitBranch,
   Info,
   ListChecks,
+  PencilLine,
   Tags,
   Timer,
   UsersRound,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { MemberAvatar } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { activityEstimated, activityTracked, formatHours, priorityMeta, statusMeta } from "@/lib/project-utils"
@@ -44,7 +46,7 @@ export function ActivityInfoDialog({
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
 }) {
-  const { members, workItemTypes } = useStore()
+  const { members, workItemTypes, currentUserRole, updateSubactivityEstimatedHours } = useStore()
   const [internalOpen, setInternalOpen] = React.useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = React.useCallback((nextOpen: boolean) => {
@@ -197,12 +199,22 @@ export function ActivityInfoDialog({
                                     {subEstimatedSeconds > 0 && <span>de {formatHours(subEstimatedSeconds)}</span>}
                                   </div>
                                 </div>
-                                {assignee && (
-                                  <div className="flex shrink-0 items-center gap-2 rounded-xl bg-muted/60 px-2.5 py-1.5">
-                                    <MemberAvatar member={assignee} className="size-6" />
-                                    <span className="max-w-32 truncate text-[0.65rem] font-medium">{assignee.name}</span>
-                                  </div>
-                                )}
+                                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                                  {currentUserRole === "admin" && (
+                                    <SubactivityEstimateEditor
+                                      title={sub.title}
+                                      estimatedHours={sub.estimatedHours}
+                                      trackedSeconds={sub.trackedSeconds}
+                                      onSave={(hours) => updateSubactivityEstimatedHours(sub.id, hours)}
+                                    />
+                                  )}
+                                  {assignee && (
+                                    <div className="flex items-center gap-2 rounded-xl bg-muted/60 px-2.5 py-1.5">
+                                      <MemberAvatar member={assignee} className="size-6" />
+                                      <span className="max-w-32 truncate text-[0.65rem] font-medium">{assignee.name}</span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                               <div className="mt-3 flex items-center gap-2">
                                 <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
@@ -395,5 +407,109 @@ function ContextItem({
         </p>
       )}
     </div>
+  )
+}
+
+
+function SubactivityEstimateEditor({
+  title,
+  estimatedHours,
+  trackedSeconds,
+  onSave,
+}: {
+  title: string
+  estimatedHours: number
+  trackedSeconds: number
+  onSave: (hours: number) => Promise<boolean>
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [value, setValue] = React.useState(String(estimatedHours ?? 0).replace(".", ","))
+  const [saving, setSaving] = React.useState(false)
+  const trackedHours = trackedSeconds / 3600
+
+  React.useEffect(() => {
+    if (!open) setValue(String(estimatedHours ?? 0).replace(".", ","))
+  }, [estimatedHours, open])
+
+  const parsedValue = Number(value.trim().replace(",", "."))
+  const valid = value.trim().length > 0 && Number.isFinite(parsedValue) && parsedValue >= 0
+  const isChanged = valid && Math.abs(parsedValue - Number(estimatedHours ?? 0)) > 0.0001
+
+  const save = async () => {
+    if (!valid || !isChanged || saving) return
+    setSaving(true)
+    try {
+      const ok = await onSave(parsedValue)
+      if (ok) setOpen(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        className="h-7 rounded-xl px-2.5 text-[0.65rem]"
+        title="Ajustar estimativa de horas"
+      >
+        <PencilLine className="size-3.5" />
+        Editar horas
+      </Button>
+      <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-[440px]" showCloseButton={!saving}>
+        <DialogHeader className="border-b border-border px-5 py-4 pr-12">
+          <DialogTitle className="text-base font-semibold">Ajustar horas estimadas</DialogTitle>
+          <DialogDescription className="text-xs leading-relaxed">
+            Correção administrativa da estimativa da subatividade. O tempo já registrado não será alterado.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 px-5 py-5">
+          <div className="rounded-xl border border-border bg-muted/35 px-3.5 py-3">
+            <p className="line-clamp-2 text-xs font-semibold leading-relaxed">{title}</p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.65rem] text-muted-foreground">
+              <span>Atual: <strong className="font-semibold text-foreground">{formatHours(Math.max(0, estimatedHours) * 3600)}</strong></span>
+              <span>Registrado: <strong className="font-semibold text-foreground">{formatHours(trackedSeconds)}</strong></span>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="text-xs font-medium">Nova estimativa em horas</span>
+            <Input
+              autoFocus
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void save()
+                }
+              }}
+              inputMode="decimal"
+              placeholder="Ex.: 8 ou 8,5"
+              aria-invalid={value.trim().length > 0 && !valid}
+              className="mt-2 h-10"
+            />
+            <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Aceita valores decimais, por exemplo 1,5h. Use 0 para deixar sem estimativa.</p>
+          </label>
+
+          {valid && parsedValue < trackedHours && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-[0.68rem] leading-relaxed text-amber-700 dark:text-amber-300">
+              A nova estimativa ficará abaixo das horas já registradas. Isso não apaga o histórico trabalhado.
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-4">
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
+          <Button type="button" onClick={() => void save()} disabled={!valid || !isChanged} loading={saving} loadingText="Salvando...">
+            Salvar estimativa
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

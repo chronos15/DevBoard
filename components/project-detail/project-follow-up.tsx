@@ -157,6 +157,30 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+function localMediaFileKey(file: File) {
+  return `${file.name}::${file.size}::${file.type}::${file.lastModified}`
+}
+
+function localMediaTransferKey(name: string, size: number, messageGroupId?: string) {
+  return `${messageGroupId ?? "standalone"}::${name}::${size}`
+}
+
+function localMediaBoxStyle(preview: LocalMediaPreview | undefined, maxHeight: number): React.CSSProperties | undefined {
+  if (!preview?.width || !preview.height) return undefined
+  const ratio = preview.width / preview.height
+  if (!Number.isFinite(ratio) || ratio <= 0) return undefined
+  const targetWidth = Math.min(preview.width, 672, maxHeight * ratio)
+  return {
+    width: `${Math.max(1, Math.round(targetWidth))}px`,
+    maxWidth: "100%",
+    aspectRatio: `${preview.width} / ${preview.height}`,
+  }
+}
+
+function isVisualPendingMedia(kind: AttachmentKind) {
+  return kind === "image" || kind === "video"
+}
+
 function statusIsTerminal(status: Status) {
   return status === "done" || status === "cancelled"
 }
@@ -255,6 +279,14 @@ type PendingFollowUpComment = {
   messageGroupId?: string
   createdAt: string
   status: PendingDeliveryStatus
+}
+
+type LocalMediaPreview = {
+  key: string
+  kind: AttachmentKind
+  url: string
+  width?: number
+  height?: number
 }
 
 type PendingFollowUpUpload = {
@@ -561,22 +593,61 @@ function InlineComposerFilePreview({
   )
 }
 
-function PendingTimelineFile({ file, onMediaReady }: { file: File; onMediaReady?: () => void }) {
-  const [url, setUrl] = React.useState<string | null>(null)
+function PendingTimelineFile({
+  file,
+  preview,
+  status,
+  videoProgress,
+  onMediaReady,
+}: {
+  file: File
+  preview?: LocalMediaPreview
+  status: PendingDeliveryStatus
+  videoProgress?: VideoProcessingProgress
+  onMediaReady?: () => void
+}) {
+  const [fallbackUrl, setFallbackUrl] = React.useState<string | null>(null)
   const kind = detectKind(file)
 
   React.useEffect(() => {
-    if (kind !== "image" && kind !== "video" && kind !== "audio") return
+    if (preview?.url || (kind !== "image" && kind !== "video" && kind !== "audio")) return
     const next = URL.createObjectURL(file)
-    setUrl(next)
+    setFallbackUrl(next)
     return () => URL.revokeObjectURL(next)
-  }, [file, kind])
+  }, [file, kind, preview?.url])
+
+  const url = preview?.url ?? fallbackUrl
+  const visual = isVisualPendingMedia(kind)
+  const visualStyle = visual
+    ? localMediaBoxStyle(preview, kind === "image" ? 420 : 520)
+      ?? { width: "min(100%, 42rem)", aspectRatio: kind === "image" ? "16 / 10" : "16 / 9" }
+    : undefined
 
   if (kind === "image" && url) {
-    return <img src={url} alt={file.name} onLoad={onMediaReady} className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border object-contain" />
+    return (
+      <div className="relative mt-2 max-w-full overflow-hidden rounded-xl border border-border bg-muted/45" style={visualStyle}>
+        <img src={url} alt={file.name} onLoad={onMediaReady} className="block h-full w-full object-contain" />
+        {status === "sending" && (
+          <span className="absolute right-2 top-2 inline-flex h-7 items-center gap-1.5 rounded-lg bg-background/90 px-2 text-[0.58rem] font-medium text-muted-foreground shadow-sm backdrop-blur">
+            <LoaderCircle className="size-3 animate-spin" />
+            Enviando
+          </span>
+        )}
+      </div>
+    )
   }
   if (kind === "video" && url) {
-    return <video src={url} controls playsInline preload="metadata" onLoadedMetadata={onMediaReady} className="mt-2 block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] rounded-xl border border-border" />
+    return (
+      <div className="relative mt-2 max-w-full overflow-hidden rounded-xl border border-border bg-black" style={visualStyle}>
+        <video src={url} controls playsInline preload="metadata" onLoadedMetadata={onMediaReady} className="block h-full w-full object-contain" />
+        {status === "sending" && (
+          <span className="pointer-events-none absolute right-2 top-2 inline-flex h-7 items-center gap-1.5 rounded-lg bg-background/90 px-2 text-[0.58rem] font-medium text-muted-foreground shadow-sm backdrop-blur">
+            <LoaderCircle className="size-3 animate-spin" />
+            {videoProgress ? `${Math.round(videoProgress.progress * 100)}%` : "Enviando"}
+          </span>
+        )}
+      </div>
+    )
   }
   if (kind === "audio" && url) {
     return <audio src={url} controls preload="metadata" onLoadedMetadata={onMediaReady} className="mt-2 w-full max-w-xl" />
@@ -590,9 +661,11 @@ function PendingTimelineFile({ file, onMediaReady }: { file: File; onMediaReady?
         <span className="block truncate text-xs font-medium">{file.name}</span>
         <span className="mt-0.5 block text-[0.6rem] text-muted-foreground">{formatBytes(file.size)}</span>
       </span>
+      {status === "sending" && <LoaderCircle className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
     </div>
   )
 }
+
 
 const MemberLine = React.memo(function MemberLine({
   member,
@@ -653,15 +726,18 @@ const MemberLine = React.memo(function MemberLine({
 function AttachmentCard({
   attachment,
   resolvedUrl,
+  localPreview,
   onMediaReady,
   onSendEditedImage,
 }: {
   attachment: AttachmentEntry
   resolvedUrl?: string
+  localPreview?: LocalMediaPreview
   onMediaReady?: () => void
   onSendEditedImage?: (file: File) => Promise<boolean | void>
 }) {
   const href = resolvedUrl ?? attachment.dataUrl
+  const displayHref = localPreview?.url ?? href
   const [imageOpen, setImageOpen] = React.useState(false)
   const [fileOpen, setFileOpen] = React.useState(false)
   const effectiveKind = inferAttachmentKind({
@@ -675,21 +751,23 @@ function AttachmentCard({
       <>
         <button
           type="button"
-          onClick={() => href && setImageOpen(true)}
-          disabled={!href}
+          onClick={() => displayHref && setImageOpen(true)}
+          disabled={!displayHref}
           className={cn(
-            "mt-2 block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/25 text-left align-top transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            href ? "cursor-zoom-in hover:border-primary/35" : "cursor-default",
+            "mt-2 block max-w-full overflow-hidden rounded-xl border border-border bg-muted/25 text-left align-top transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            localPreview ? "w-auto" : "w-fit",
+            displayHref ? "cursor-zoom-in hover:border-primary/35" : "cursor-default",
           )}
-          title={href ? "Ampliar imagem" : undefined}
-          aria-label={href ? `Ampliar ${attachment.name}` : attachment.name}
+          style={localMediaBoxStyle(localPreview, 420)}
+          title={displayHref ? "Ampliar imagem" : undefined}
+          aria-label={displayHref ? `Ampliar ${attachment.name}` : attachment.name}
         >
-          {href ? (
+          {displayHref ? (
             <img
-              src={href}
+              src={displayHref}
               alt={attachment.name}
               onLoad={onMediaReady}
-              className="block h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)] object-contain"
+              className={cn("block object-contain", localPreview ? "h-full w-full" : "h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)]")}
             />
           ) : (
             <div className="flex h-28 w-44 max-w-full items-center justify-center text-muted-foreground/55">
@@ -700,7 +778,7 @@ function AttachmentCard({
         <ImageViewerDialog
           open={imageOpen}
           onOpenChange={setImageOpen}
-          src={href}
+          src={displayHref}
           alt={attachment.name}
           title={attachment.name}
           downloadName={attachment.name}
@@ -713,15 +791,18 @@ function AttachmentCard({
 
   if (effectiveKind === "video") {
     return (
-      <div className="mt-2 w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/20">
-        {href ? (
+      <div
+        className={cn("mt-2 max-w-full overflow-hidden rounded-xl border border-border bg-black", localPreview ? "w-auto" : "w-fit")}
+        style={localMediaBoxStyle(localPreview, 520)}
+      >
+        {displayHref ? (
           <video
-            src={href}
+            src={displayHref}
             controls
             playsInline
             preload="metadata"
             onLoadedMetadata={onMediaReady}
-            className="block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]"
+            className={cn("block object-contain", localPreview ? "h-full w-full" : "h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]")}
           />
         ) : (
           <div className="flex h-36 w-60 max-w-full items-center justify-center text-muted-foreground/55">
@@ -895,8 +976,8 @@ export function ProjectFollowUp({
   const pendingTimelineFocusRef = React.useRef<string | null>(initialTimelineId ?? null)
   const initialBottomLockRef = React.useRef(false)
   const bottomLockTimerRef = React.useRef<number | null>(null)
-  const deliveryBottomLockRef = React.useRef(false)
-  const deliveryBottomLockTimerRef = React.useRef<number | null>(null)
+  const localMediaPreviewCacheRef = React.useRef<Map<string, LocalMediaPreview>>(new Map())
+  const localMediaTransferAliasesRef = React.useRef<Map<string, string>>(new Map())
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
   const mediaStreamRef = React.useRef<MediaStream | null>(null)
   const audioChunksRef = React.useRef<Blob[]>([])
@@ -904,6 +985,7 @@ export function ProjectFollowUp({
   const unmountedRef = React.useRef(false)
 
   const [selectedSubId, setSelectedSubId] = React.useState<string | null>(initialSubactivityId ?? null)
+  const [localMediaPreviewVersion, setLocalMediaPreviewVersion] = React.useState(0)
   const [expandedActivities, setExpandedActivities] = React.useState<Set<string>>(() => new Set(project.activities.map((activity) => activity.id)))
   const [message, setMessage] = React.useState("")
   const [recording, setRecording] = React.useState(false)
@@ -1683,12 +1765,7 @@ export function ProjectFollowUp({
       return
     }
     initialBottomLockRef.current = true
-    deliveryBottomLockRef.current = false
     if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
-    if (deliveryBottomLockTimerRef.current) {
-      window.clearTimeout(deliveryBottomLockTimerRef.current)
-      deliveryBottomLockTimerRef.current = null
-    }
 
     const firstFrame = window.requestAnimationFrame(() => {
       scrollTimelineToBottom()
@@ -1720,38 +1797,10 @@ export function ProjectFollowUp({
   }, [selectedSubId, timeline.length])
 
   React.useEffect(() => {
-    if (!initialBottomLockRef.current && !deliveryBottomLockRef.current) return
+    if (!initialBottomLockRef.current) return
     const frame = window.requestAnimationFrame(scrollTimelineToBottom)
     return () => window.cancelAnimationFrame(frame)
   }, [timeline.length, resolvedUrls])
-
-  // Durante o envio de um anexo, o composer encolhe e o item otimista troca
-  // pelo anexo definitivo. Mantemos o rodapé visualmente ancorado apenas
-  // enquanto o usuário não tenta rolar manualmente. Isso elimina o salto de
-  // tela sem reintroduzir o bloqueio antigo de scroll.
-  React.useEffect(() => {
-    if (!deliveryBottomLockRef.current || !selectedSubId) return
-    const active = pendingUploads.some((item) => item.subactivityId === selectedSubId && item.status === "sending")
-    if (active) {
-      if (deliveryBottomLockTimerRef.current) {
-        window.clearTimeout(deliveryBottomLockTimerRef.current)
-        deliveryBottomLockTimerRef.current = null
-      }
-      return
-    }
-    if (deliveryBottomLockTimerRef.current) window.clearTimeout(deliveryBottomLockTimerRef.current)
-    deliveryBottomLockTimerRef.current = window.setTimeout(() => {
-      if (deliveryBottomLockRef.current) scrollTimelineToBottom()
-      deliveryBottomLockRef.current = false
-      deliveryBottomLockTimerRef.current = null
-    }, 1100)
-    return () => {
-      if (deliveryBottomLockTimerRef.current) {
-        window.clearTimeout(deliveryBottomLockTimerRef.current)
-        deliveryBottomLockTimerRef.current = null
-      }
-    }
-  }, [pendingUploads, selectedSubId])
 
   React.useEffect(() => {
     setMentionIndex(0)
@@ -1776,7 +1825,9 @@ export function ProjectFollowUp({
   React.useEffect(() => () => {
     unmountedRef.current = true
     if (bottomLockTimerRef.current) window.clearTimeout(bottomLockTimerRef.current)
-    if (deliveryBottomLockTimerRef.current) window.clearTimeout(deliveryBottomLockTimerRef.current)
+    for (const preview of localMediaPreviewCacheRef.current.values()) URL.revokeObjectURL(preview.url)
+    localMediaPreviewCacheRef.current.clear()
+    localMediaTransferAliasesRef.current.clear()
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state !== "inactive") recorder.stop()
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -2002,6 +2053,72 @@ export function ProjectFollowUp({
     setComposerMultiline(contentHeight > lineHeight * 1.45)
   }
 
+  function ensureLocalMediaPreview(file: File) {
+    const kind = detectKind(file)
+    if (kind !== "image" && kind !== "video" && kind !== "audio") return undefined
+    const key = localMediaFileKey(file)
+    const cached = localMediaPreviewCacheRef.current.get(key)
+    if (cached) return cached
+
+    const preview: LocalMediaPreview = {
+      key,
+      kind,
+      url: URL.createObjectURL(file),
+    }
+    localMediaPreviewCacheRef.current.set(key, preview)
+    if (!unmountedRef.current) setLocalMediaPreviewVersion((current) => current + 1)
+
+    const commitDimensions = (width: number, height: number) => {
+      if (!width || !height || !Number.isFinite(width) || !Number.isFinite(height)) return
+      const current = localMediaPreviewCacheRef.current.get(key)
+      if (!current || (current.width === width && current.height === height)) return
+      current.width = width
+      current.height = height
+      if (!unmountedRef.current) setLocalMediaPreviewVersion((version) => version + 1)
+    }
+
+    if (kind === "image") {
+      const image = new Image()
+      image.onload = () => commitDimensions(image.naturalWidth, image.naturalHeight)
+      image.src = preview.url
+    } else if (kind === "video") {
+      const video = document.createElement("video")
+      video.preload = "metadata"
+      video.muted = true
+      video.playsInline = true
+      video.onloadedmetadata = () => {
+        commitDimensions(video.videoWidth, video.videoHeight)
+        video.removeAttribute("src")
+        video.load()
+      }
+      video.src = preview.url
+    }
+
+    return preview
+  }
+
+  function rememberLocalMediaTransfer(file: File, messageGroupId?: string) {
+    const preview = ensureLocalMediaPreview(file)
+    if (!preview) return
+    localMediaTransferAliasesRef.current.set(
+      localMediaTransferKey(file.name, file.size, messageGroupId),
+      preview.key,
+    )
+  }
+
+  function localPreviewForFile(file: File) {
+    void localMediaPreviewVersion
+    return localMediaPreviewCacheRef.current.get(localMediaFileKey(file))
+  }
+
+  function localPreviewForAttachment(attachment: AttachmentEntry) {
+    void localMediaPreviewVersion
+    const alias = localMediaTransferAliasesRef.current.get(
+      localMediaTransferKey(attachment.name, attachment.size, attachment.messageGroupId),
+    )
+    return alias ? localMediaPreviewCacheRef.current.get(alias) : undefined
+  }
+
   function scrollTimelineToBottom() {
     const viewport = timelineViewportRef.current
     if (viewport) {
@@ -2013,31 +2130,14 @@ export function ProjectFollowUp({
 
   function releaseInitialBottomLock() {
     initialBottomLockRef.current = false
-    deliveryBottomLockRef.current = false
     if (bottomLockTimerRef.current) {
       window.clearTimeout(bottomLockTimerRef.current)
       bottomLockTimerRef.current = null
     }
-    if (deliveryBottomLockTimerRef.current) {
-      window.clearTimeout(deliveryBottomLockTimerRef.current)
-      deliveryBottomLockTimerRef.current = null
-    }
-  }
-
-  function beginDeliveryBottomLock() {
-    deliveryBottomLockRef.current = true
-    if (deliveryBottomLockTimerRef.current) {
-      window.clearTimeout(deliveryBottomLockTimerRef.current)
-      deliveryBottomLockTimerRef.current = null
-    }
-    window.requestAnimationFrame(() => {
-      scrollTimelineToBottom()
-      window.requestAnimationFrame(scrollTimelineToBottom)
-    })
   }
 
   function handleTimelineMediaReady() {
-    if (!initialBottomLockRef.current && !deliveryBottomLockRef.current) return
+    if (!initialBottomLockRef.current) return
     window.requestAnimationFrame(scrollTimelineToBottom)
   }
 
@@ -2439,6 +2539,7 @@ export function ProjectFollowUp({
       return
     }
     setComposerError("")
+    files.forEach((file) => { void ensureLocalMediaPreview(file) })
     setPendingFiles(merged)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
@@ -2459,6 +2560,7 @@ export function ProjectFollowUp({
       const invalidPart = sourceFiles.find((file) => file.size > MAX_FILE_BYTES)
       if (invalidPart) throw new Error(`A parte “${invalidPart.name}” ficou acima de 50 MB.`)
 
+      sourceFiles.forEach((file) => rememberLocalMediaTransfer(file, batch.messageGroupId))
       const prepared = await Promise.all(sourceFiles.map(fileToUpload))
       const ok = await addFollowUpAttachments(batch.subactivityId, prepared, batch.messageGroupId)
       if (ok) {
@@ -2488,15 +2590,17 @@ export function ProjectFollowUp({
   function enqueueFilesOptimistically(files: File[], messageGroupId?: string) {
     if (!selectedSub || !files.length) return null
     const baseTime = Date.now()
-    const batches: PendingFollowUpUpload[] = files.map((file, index) => ({
-      id: pendingFollowUpId("upload"),
-      subactivityId: selectedSub.id,
-      files: [file],
-      messageGroupId,
-      createdAt: new Date(baseTime + index).toISOString(),
-      status: "sending",
-    }))
-    beginDeliveryBottomLock()
+    const batches: PendingFollowUpUpload[] = files.map((file, index) => {
+      rememberLocalMediaTransfer(file, messageGroupId)
+      return {
+        id: pendingFollowUpId("upload"),
+        subactivityId: selectedSub.id,
+        files: [file],
+        messageGroupId,
+        createdAt: new Date(baseTime + index).toISOString(),
+        status: "sending",
+      }
+    })
     setPendingUploads((current) => [...current, ...batches])
     scrollAfterOptimisticInsert()
     batches.forEach((batch) => window.setTimeout(() => { void deliverPendingUpload(batch) }, 0))
@@ -3215,18 +3319,20 @@ export function ProjectFollowUp({
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(item.pending.messageGroupId) ?? []).map((attachment) => (
                                       <div key={attachment.id} className="relative max-w-3xl">
-                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} localPreview={localPreviewForAttachment(attachment)} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
                                       </div>
                                     ))}
                                     {(groupedPendingUploads.get(item.pending.messageGroupId) ?? []).map(({ batch, file, index }) => (
-                                      <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
-                                        <PendingTimelineFile file={file} onMediaReady={handleTimelineMediaReady} />
+                                      <div key={`${batch.id}:${index}`} className="max-w-3xl">
+                                        <PendingTimelineFile file={file} preview={localPreviewForFile(file)} status={batch.status} videoProgress={batch.videoProgress} onMediaReady={handleTimelineMediaReady} />
                                         {batch.status === "sending" ? (
-                                          <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                                            <LoaderCircle className="size-3 animate-spin" />
-                                            <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
-                                            {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
-                                          </div>
+                                          !isVisualPendingMedia(detectKind(file)) && (
+                                            <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                              <LoaderCircle className="size-3 animate-spin" />
+                                              <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
+                                              {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
+                                            </div>
+                                          )
                                         ) : (
                                           <button type="button" onClick={() => retryPendingUpload(batch.id)} className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive">
                                             <CircleAlert className="size-3" /><span>{batch.errorMessage || "Falha ao enviar anexo. Tentar novamente."}</span>
@@ -3276,25 +3382,14 @@ export function ProjectFollowUp({
                                   <time className="tb-chat-meta shrink-0 text-muted-foreground">{formatDate(item.createdAt)}</time>
                                 </div>
                                 <p className="tb-chat-text mt-1 text-foreground/90">enviou um arquivo</p>
-                                <PendingTimelineFile file={item.file} onMediaReady={handleTimelineMediaReady} />
+                                <PendingTimelineFile file={item.file} preview={localPreviewForFile(item.file)} status={item.status} videoProgress={item.videoProgress} onMediaReady={handleTimelineMediaReady} />
                                 {item.status === "sending" ? (
-                                  <div className="mt-1.5 space-y-1.5">
-                                    <div className="flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                  !isVisualPendingMedia(detectKind(item.file)) && (
+                                    <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                                       <LoaderCircle className="size-3 animate-spin" />
                                       <span>{item.videoProgress?.message ?? "Enviando..."}</span>
-                                      {item.videoProgress && (
-                                        <span className="font-mono text-primary">{Math.round(item.videoProgress.progress * 100)}%</span>
-                                      )}
                                     </div>
-                                    {item.videoProgress && (
-                                      <div className="h-1 max-w-sm overflow-hidden rounded-full bg-muted">
-                                        <div
-                                          className="h-full rounded-full bg-primary transition-[width] duration-300"
-                                          style={{ width: `${Math.round(item.videoProgress.progress * 100)}%` }}
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
+                                  )
                                 ) : (
                                   <button
                                     type="button"
@@ -3461,7 +3556,7 @@ export function ProjectFollowUp({
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(comment.messageGroupId) ?? []).map((attachment) => (
                                       <div key={attachment.id} className="group/grouped-attachment relative max-w-3xl">
-                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} localPreview={localPreviewForAttachment(attachment)} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
                                         <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 opacity-100 shadow-sm sm:opacity-0 sm:transition-opacity sm:group-hover/grouped-attachment:opacity-100 sm:group-focus-within/grouped-attachment:opacity-100">
                                           <CopyEntityLinkButton
                                             href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${attachment.id}` })}
@@ -3477,14 +3572,16 @@ export function ProjectFollowUp({
                                       </div>
                                     ))}
                                     {(groupedPendingUploads.get(comment.messageGroupId) ?? []).map(({ batch, file, index }) => (
-                                      <div key={`${batch.id}:${index}`} className="max-w-3xl rounded-xl border border-border/70 bg-muted/20 p-2">
-                                        <PendingTimelineFile file={file} onMediaReady={handleTimelineMediaReady} />
+                                      <div key={`${batch.id}:${index}`} className="max-w-3xl">
+                                        <PendingTimelineFile file={file} preview={localPreviewForFile(file)} status={batch.status} videoProgress={batch.videoProgress} onMediaReady={handleTimelineMediaReady} />
                                         {batch.status === "sending" ? (
-                                          <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                                            <LoaderCircle className="size-3 animate-spin" />
-                                            <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
-                                            {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
-                                          </div>
+                                          !isVisualPendingMedia(detectKind(file)) && (
+                                            <div className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] text-muted-foreground">
+                                              <LoaderCircle className="size-3 animate-spin" />
+                                              <span>{batch.videoProgress?.message ?? "Enviando anexo..."}</span>
+                                              {batch.videoProgress && <span className="font-mono text-primary">{Math.round(batch.videoProgress.progress * 100)}%</span>}
+                                            </div>
+                                          )
                                         ) : (
                                           <button type="button" onClick={() => retryPendingUpload(batch.id)} className="mt-1.5 flex items-center gap-1.5 text-[0.58rem] font-medium text-destructive">
                                             <CircleAlert className="size-3" /><span>{batch.errorMessage || "Falha ao enviar anexo. Tentar novamente."}</span>
@@ -3561,6 +3658,7 @@ export function ProjectFollowUp({
                               <AttachmentCard
                                 attachment={item.attachment}
                                 resolvedUrl={resolvedUrls[item.attachment.id]}
+                                localPreview={localPreviewForAttachment(item.attachment)}
                                 onMediaReady={handleTimelineMediaReady}
                                 onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined}
                               />
@@ -3723,6 +3821,7 @@ export function ProjectFollowUp({
                                 setComposerError("")
                               }}
                               onReplace={(editedFile) => {
+                                void ensureLocalMediaPreview(editedFile)
                                 setPendingFiles((current) => {
                                   const nextFiles = current.map((currentFile, itemIndex) => itemIndex === index ? editedFile : currentFile)
                                   const error = validateFiles(nextFiles)

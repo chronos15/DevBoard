@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { RichMessageText } from "@/components/text/rich-message-text"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 function formatCommentDate(value: string) {
@@ -179,15 +180,16 @@ export function CommentDialog({
                             {formatCommentDate(comment.createdAt)}
                           </time>
                         </div>
-                        <p
+                        <RichMessageText
+                          content={comment.content}
+                          mentions={comment.mentions}
+                          own={own}
                           className={cn(
-                            "whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
+                            "rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
                             own ? "rounded-tr-md bg-primary text-primary-foreground" : "rounded-tl-md bg-card ring-1 ring-foreground/8",
                             mentionedCurrentUser && "tb-mentioned-bubble rounded-tl-md",
                           )}
-                        >
-                          {comment.content}
-                        </p>
+                        />
                       </div>
                     </article>
                   )

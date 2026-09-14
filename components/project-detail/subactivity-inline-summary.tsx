@@ -12,12 +12,13 @@ import {
   MessageSquareText,
   Paperclip,
 } from "lucide-react"
-import type { AttachmentEntry, Subactivity } from "@/lib/types"
+import type { AttachmentEntry, ChatMention, Subactivity } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { formatHMS } from "@/lib/project-utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { cn } from "@/lib/utils"
+import { RichMessageText } from "@/components/text/rich-message-text"
 
 function formatMoment(value: string) {
   const date = new Date(value)
@@ -45,7 +46,7 @@ function AttachmentIcon({ attachment }: { attachment: AttachmentEntry }) {
 }
 
 type InlineTimelineItem =
-  | { kind: "comment"; id: string; createdAt: string; authorId: string; content: string }
+  | { kind: "comment"; id: string; createdAt: string; authorId: string; content: string; mentions?: ChatMention[] }
   | { kind: "attachment"; id: string; createdAt: string; authorId: string; attachment: AttachmentEntry }
   | { kind: "session"; id: string; createdAt: string; authorId: string; durationSeconds: number }
   | { kind: "log"; id: string; createdAt: string; authorId?: string; title: string; description?: string }
@@ -70,6 +71,7 @@ export function SubactivityInlineSummary({
         createdAt: comment.createdAt,
         authorId: comment.authorId,
         content: comment.content,
+        mentions: comment.mentions,
       })
     }
 
@@ -169,7 +171,7 @@ export function SubactivityInlineSummary({
                     </div>
 
                     {item.kind === "comment" && (
-                      <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/90">{item.content}</p>
+                      <RichMessageText content={item.content} mentions={item.mentions} className="mt-0.5 text-xs leading-relaxed text-foreground/90" />
                     )}
                     {item.kind === "attachment" && (
                       <div className="mt-1 flex min-w-0 items-center gap-1.5 rounded-lg border border-border/60 bg-card/70 px-2 py-1.5 text-xs">

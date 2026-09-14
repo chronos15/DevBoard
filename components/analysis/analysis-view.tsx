@@ -57,6 +57,7 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { RichMessageText } from "@/components/text/rich-message-text"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
@@ -1022,7 +1023,7 @@ export function AnalysisView() {
                               {editingCommentId === item.comment.id ? (
                                 <InlineMessageEditor initialValue={item.comment.content} onCancel={() => setEditingCommentId(null)} onSave={(value) => editSubactivityComment(item.comment.id, value)} />
                               ) : (
-                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{item.comment.content}</p>
+                                <RichMessageText content={item.comment.content} mentions={item.comment.mentions} className="mt-1 text-sm leading-relaxed text-foreground/90" />
                               )}
                             </div>
                             {item.comment.authorId === currentUserId && editingCommentId !== item.comment.id && (

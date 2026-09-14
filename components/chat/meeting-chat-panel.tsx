@@ -21,6 +21,7 @@ import { AudioMessage } from "@/components/chat/audio-message"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { RichMessageText } from "@/components/text/rich-message-text"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -66,48 +67,7 @@ function timeLabel(value: string) {
 }
 
 function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
-  const mentions = React.useMemo(() => {
-    const unique = new Map<string, ChatMention>()
-    for (const mention of message.mentions ?? []) unique.set(`${mention.kind}:${mention.id}`, mention)
-    return Array.from(unique.values()).sort((a, b) => mentionToken(b).length - mentionToken(a).length)
-  }, [message.mentions])
-
-  if (!mentions.length) return <p className="whitespace-pre-wrap break-words">{message.content}</p>
-
-  const parts: React.ReactNode[] = []
-  let cursor = 0
-  let key = 0
-  while (cursor < message.content.length) {
-    let nextIndex = -1
-    let nextMention: ChatMention | null = null
-    for (const mention of mentions) {
-      const token = mentionToken(mention)
-      const index = message.content.indexOf(token, cursor)
-      if (index >= 0 && (nextIndex < 0 || index < nextIndex)) {
-        nextIndex = index
-        nextMention = mention
-      }
-    }
-    if (!nextMention || nextIndex < 0) {
-      parts.push(message.content.slice(cursor))
-      break
-    }
-    if (nextIndex > cursor) parts.push(message.content.slice(cursor, nextIndex))
-    const token = mentionToken(nextMention)
-    parts.push(
-      <span
-        key={`mention-${key++}`}
-        className={cn(
-          "inline-flex max-w-full items-center rounded-md px-1 py-0.5 font-medium",
-          own ? "bg-primary-foreground/15 text-primary-foreground" : "bg-primary/12 text-primary",
-        )}
-      >
-        {token}
-      </span>,
-    )
-    cursor = nextIndex + token.length
-  }
-  return <p className="whitespace-pre-wrap break-words">{parts}</p>
+  return <RichMessageText content={message.content} mentions={message.mentions} own={own} />
 }
 
 export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {

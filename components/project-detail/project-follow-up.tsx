@@ -89,6 +89,7 @@ import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/fo
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -184,38 +185,6 @@ function normalizeFollowUpSearch(value: string) {
     .trim()
 }
 
-function renderMentionedText(content: string, mentions: ChatMention[] = []) {
-  if (!mentions.length) return content
-  const unique = Array.from(new Map(mentions.map((mention) => [`${mention.kind}:${mention.id}`, mention])).values())
-    .sort((a, b) => mentionToken(b).length - mentionToken(a).length)
-  const nodes: React.ReactNode[] = []
-  let cursor = 0
-  let key = 0
-  while (cursor < content.length) {
-    let foundIndex = -1
-    let found: ChatMention | null = null
-    for (const mention of unique) {
-      const index = content.indexOf(mentionToken(mention), cursor)
-      if (index >= 0 && (foundIndex < 0 || index < foundIndex)) {
-        foundIndex = index
-        found = mention
-      }
-    }
-    if (!found || foundIndex < 0) {
-      nodes.push(content.slice(cursor))
-      break
-    }
-    if (foundIndex > cursor) nodes.push(content.slice(cursor, foundIndex))
-    const token = mentionToken(found)
-    nodes.push(
-      <span key={`mention-${key++}`} className="rounded bg-primary/12 px-1 py-0.5 font-medium text-primary">
-        {token}
-      </span>,
-    )
-    cursor = foundIndex + token.length
-  }
-  return nodes
-}
 
 function commentReplySummary(comment: CommentEntry) {
   const text = comment.content.trim()
@@ -3040,9 +3009,11 @@ export function ProjectFollowUp({
                                     <span className="mt-0.5 block truncate text-muted-foreground">{followUpReplySummary(item.pending.replyTo)}</span>
                                   </div>
                                 )}
-                                <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
-                                  {renderMentionedText(item.pending.content, item.pending.mentions)}
-                                </p>
+                                <RichMessageText
+                                  content={item.pending.content}
+                                  mentions={item.pending.mentions}
+                                  className="tb-chat-text mt-1 text-foreground/90"
+                                />
                                 {item.pending.messageGroupId && (
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(item.pending.messageGroupId) ?? []).map((attachment) => (
@@ -3283,9 +3254,11 @@ export function ProjectFollowUp({
                                     onSave={(value) => editSubactivityComment(comment.id, value)}
                                   />
                                 ) : (
-                                  <p className="tb-chat-text mt-1 whitespace-pre-wrap break-words text-foreground/90">
-                                    {renderMentionedText(comment.content, comment.mentions)}
-                                  </p>
+                                  <RichMessageText
+                                    content={comment.content}
+                                    mentions={comment.mentions}
+                                    className="tb-chat-text mt-1 text-foreground/90"
+                                  />
                                 )}
                                 {comment.messageGroupId && (
                                   <div className="mt-2 space-y-2">

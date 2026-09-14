@@ -53,6 +53,7 @@ import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, 
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { RichMessageText } from "@/components/text/rich-message-text"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -526,7 +527,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
             <div className={cn("flex min-w-0 flex-wrap items-center", embedded ? "gap-1.5" : "mt-3 gap-2")}><span className={cn("font-mono font-semibold text-primary", embedded ? "text-[0.68rem]" : "text-xs")}>{serviceRequestReference(request)}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestTypeTone(request.requestType))}>{SERVICE_REQUEST_TYPE_LABELS[request.requestType]}</span><span className={cn("rounded-full border font-semibold", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]", serviceRequestStatusTone(request.status))}>{SERVICE_REQUEST_STATUS_LABELS[request.status]}</span>{request.priorityRequested && <span className={cn("rounded-full border border-warning/25 bg-warning/10 font-semibold text-warning", embedded ? "px-2 py-0.5 text-[0.6rem]" : "px-2.5 py-1 text-[0.65rem]")}>{request.priorityApproved ? "Prioridade aprovada" : "Prioridade solicitada"}</span>}</div>
             <div className={cn(embedded ? "mt-1.5 flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-3" : "")}>
               <h1 className={cn("font-semibold tracking-tight", embedded ? "line-clamp-1 text-lg lg:max-w-[48%] lg:shrink-0" : "mt-3 text-xl sm:text-2xl")}>{request.title}</h1>
-              <p className={cn("text-muted-foreground", embedded ? "line-clamp-1 min-w-0 text-xs leading-5 lg:flex-1" : "mt-2 max-w-4xl text-sm leading-relaxed")}>{request.description}</p>
+              <RichMessageText content={request.description} className={cn("text-muted-foreground", embedded ? "line-clamp-1 min-w-0 text-xs leading-5 lg:flex-1" : "mt-2 max-w-4xl text-sm leading-relaxed")} />
             </div>
           </div>
 
@@ -575,7 +576,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
                   {item.message.content && (editingMessageId === item.message.id ? (
                     <InlineMessageEditor initialValue={item.message.content} onCancel={() => setEditingMessageId(null)} onSave={(value) => editServiceRequestMessage(item.message.id, value)} />
                   ) : (
-                    <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.message.content}</p>
+                    <RichMessageText content={item.message.content} mentions={item.message.mentions} className="mt-1 text-sm leading-relaxed" />
                   ))}
                   {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage />)}</div>}
                 </div>

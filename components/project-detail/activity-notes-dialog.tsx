@@ -28,6 +28,7 @@ import { useStore } from "@/lib/store"
 import { canPerformAction } from "@/lib/access-control"
 import type { Activity, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { RichMessageText } from "@/components/text/rich-message-text"
 
 type ActivityNote = {
   id: string
@@ -326,7 +327,7 @@ export function ActivityNotesDialog({
                         <div className="flex min-w-0 items-start gap-3">
                           <MemberAvatar member={author} profileEnabled={false} className="mt-0.5 size-7 shrink-0 text-[0.55rem]" />
                           <div className="min-w-0 flex-1">
-                            <p className={cn("whitespace-pre-wrap break-words text-sm leading-relaxed", inactive && "text-muted-foreground line-through decoration-current/70")}>{note.content}</p>
+                            <RichMessageText content={note.content} className={cn("text-sm leading-relaxed", inactive && "text-muted-foreground line-through decoration-current/70")} />
                             <p className="mt-1.5 text-[0.62rem] text-muted-foreground">{author?.name ?? "Usuário"} · {noteDate(note.createdAt)}</p>
                             {note.convertedSubactivityId && (
                               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-medium text-primary">

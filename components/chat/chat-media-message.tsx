@@ -7,6 +7,7 @@ import { CHAT_MEDIA_BUCKET } from "@/lib/supabase/helpers"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { AttachmentKind } from "@/lib/types"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { useChatMediaActivation } from "@/components/chat/use-chat-media-activation"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 
@@ -51,7 +52,8 @@ export function ChatMediaMessage({
   const urlRef = React.useRef<string | null>(null)
   const pendingUrlRef = React.useRef<Promise<string | null> | null>(null)
   const mountedRef = React.useRef(true)
-  const isVisualMedia = kind === "image" || kind === "video"
+  const effectiveKind = inferAttachmentKind({ name, mimeType, kind })
+  const isVisualMedia = effectiveKind === "image" || effectiveKind === "video"
   const { targetRef, activated, activate } = useChatMediaActivation<HTMLDivElement>({ enabled: isVisualMedia })
 
   React.useEffect(() => {
@@ -117,7 +119,7 @@ export function ChatMediaMessage({
     activate()
     const signedUrl = await ensureUrl()
     if (!signedUrl) return
-    if (kind === "text" && textPreview === null) {
+    if (effectiveKind === "text" && textPreview === null) {
       try {
         const response = await fetch(signedUrl)
         const text = await response.text()
@@ -132,7 +134,7 @@ export function ChatMediaMessage({
   const fileName = name || "Arquivo"
   const info = [mimeType || "Arquivo", formatBytes(sizeBytes)].filter(Boolean).join(" · ")
 
-  if (kind === "image") {
+  if (effectiveKind === "image") {
     return (
       <>
         <div ref={targetRef} className="min-w-0 w-fit max-w-full">
@@ -182,7 +184,7 @@ export function ChatMediaMessage({
     )
   }
 
-  if (kind === "video") {
+  if (effectiveKind === "video") {
     return (
       <div ref={targetRef} className="min-w-0 w-[clamp(13rem,62vw,22rem)] max-w-full">
         <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
@@ -217,13 +219,13 @@ export function ChatMediaMessage({
   }
 
   if (failed) {
-    return <div className="flex min-w-0 max-w-full items-center gap-2 py-1 text-xs opacity-80"><KindIcon kind={kind} /><span>Arquivo indisponível</span></div>
+    return <div className="flex min-w-0 max-w-full items-center gap-2 py-1 text-xs opacity-80"><KindIcon kind={effectiveKind} /><span>Arquivo indisponível</span></div>
   }
 
   return (
     <>
       <button type="button" onClick={() => void openPreview()} className="flex w-72 min-w-0 max-w-full items-center gap-3 rounded-xl bg-background/15 p-2.5 text-left ring-1 ring-current/10">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/20"><KindIcon kind={kind} /></span>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/20"><KindIcon kind={effectiveKind} /></span>
         <span className="min-w-0 flex-1">
           <span className="tb-chat-title block truncate font-medium">{fileName}</span>
           <span className="tb-chat-meta mt-0.5 block truncate opacity-70">{info || "Abrir arquivo"}</span>
@@ -238,15 +240,15 @@ export function ChatMediaMessage({
             <DialogTitle className="break-all">{fileName}</DialogTitle>
           </DialogHeader>
           <div className="min-h-48 max-h-[66dvh] overflow-auto rounded-xl bg-muted/30 p-3 ring-1 ring-foreground/8">
-            {kind === "audio" && url ? (
+            {effectiveKind === "audio" && url ? (
               <audio controls src={url} className="w-full" />
-            ) : mimeType === "application/pdf" && url ? (
+            ) : effectiveKind === "pdf" && url ? (
               <iframe title={fileName} src={url} className="h-[58dvh] w-full rounded-lg bg-white" />
-            ) : kind === "text" ? (
+            ) : effectiveKind === "text" ? (
               <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{textPreview ?? "Carregando..."}</pre>
             ) : (
               <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">
-                <KindIcon kind={kind} />
+                <KindIcon kind={effectiveKind} />
                 <p className="tb-chat-title max-w-md break-all">{fileName}</p>
                 <p className="tb-chat-meta text-muted-foreground">{info}</p>
               </div>

@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
@@ -30,8 +31,7 @@ function fileExtension(name: string) {
 }
 
 function isTextFile(file: File) {
-  const ext = fileExtension(file.name)
-  return file.type.startsWith("text/") || ["sql", "txt", "md", "json", "xml", "yaml", "yml", "csv", "log", "ts", "tsx", "js", "jsx", "css", "scss", "html", "dart", "pas", "kt", "java", "py", "sh", "ps1"].includes(ext)
+  return inferAttachmentKind({ name: file.name, mimeType: file.type }) === "text"
 }
 
 function fileIcon(file: File) {

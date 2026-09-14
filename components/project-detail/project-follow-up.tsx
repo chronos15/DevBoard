@@ -13,7 +13,6 @@ import {
   ChevronUp,
   CircleAlert,
   Clock3,
-  Download,
   Ellipsis,
   Eye,
   FileAudio,
@@ -72,6 +71,7 @@ import { cn } from "@/lib/utils"
 import { serviceRequestReference } from "@/lib/service-requests"
 import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -89,6 +89,7 @@ import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
 import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
+import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -104,11 +105,6 @@ import {
   type VideoProcessingProgress,
 } from "@/lib/video-attachment-processor"
 
-const textExtensions = new Set([
-  "sql", "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "env",
-  "js", "ts", "tsx", "jsx", "css", "html", "dart", "pas",
-])
-const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"])
 const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 const FOLLOW_UP_NAV_MIN_WIDTH = 240
@@ -117,20 +113,8 @@ const FOLLOW_UP_NAV_DEFAULT_WIDTH = 290
 const FOLLOW_UP_MEMBERS_EXPANDED_WIDTH = 245
 const FOLLOW_UP_MEMBERS_COLLAPSED_WIDTH = 58
 
-function extensionOf(name: string) {
-  const index = name.lastIndexOf(".")
-  return index >= 0 ? name.slice(index + 1).toLowerCase() : ""
-}
-
 function detectKind(file: File): AttachmentKind {
-  const extension = extensionOf(file.name)
-  if (file.type.startsWith("image/")) return "image"
-  if (file.type === "application/pdf" || extension === "pdf") return "pdf"
-  if (file.type.startsWith("video/")) return "video"
-  if (file.type.startsWith("audio/")) return "audio"
-  if (file.type.startsWith("text/") || textExtensions.has(extension)) return "text"
-  if (documentExtensions.has(extension)) return "document"
-  return "other"
+  return inferAttachmentKind({ name: file.name, mimeType: file.type })
 }
 
 async function fileToUpload(file: File): Promise<AttachmentUploadInput> {
@@ -644,8 +628,14 @@ function AttachmentCard({
 }) {
   const href = resolvedUrl ?? attachment.dataUrl
   const [imageOpen, setImageOpen] = React.useState(false)
+  const [fileOpen, setFileOpen] = React.useState(false)
+  const effectiveKind = inferAttachmentKind({
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    kind: attachment.kind,
+  })
 
-  if (attachment.kind === "image") {
+  if (effectiveKind === "image") {
     return (
       <>
         <button
@@ -684,7 +674,7 @@ function AttachmentCard({
     )
   }
 
-  if (attachment.kind === "video") {
+  if (effectiveKind === "video") {
     return (
       <div className="mt-2 aspect-video w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-black">
         {href ? (
@@ -704,7 +694,7 @@ function AttachmentCard({
     )
   }
 
-  if (attachment.kind === "audio" && href) {
+  if (effectiveKind === "audio" && href) {
     return (
       <div className="mt-2 max-w-xl rounded-xl border border-border bg-muted/25 p-3">
         <div className="tb-chat-title mb-2 flex items-center gap-2 font-medium">
@@ -716,26 +706,44 @@ function AttachmentCard({
     )
   }
 
+  const previewAvailable = effectiveKind === "text" || effectiveKind === "pdf" || effectiveKind === "audio"
+  const downloadable = Boolean(href || attachment.textContent !== undefined || attachment.storagePath)
+
   return (
-    <a
-      href={href || undefined}
-      download={attachment.name}
-      target={href ? "_blank" : undefined}
-      rel={href ? "noreferrer" : undefined}
-      className={cn(
-        "mt-2 flex max-w-xl items-center gap-3 rounded-xl border border-border bg-muted/25 p-3 transition-colors",
-        href ? "hover:bg-muted/50" : "cursor-default opacity-75",
-      )}
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card ring-1 ring-foreground/8">
-        <KindIcon kind={attachment.kind} className="size-4 text-primary" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="tb-chat-title block truncate font-medium">{attachment.name}</span>
-        <span className="tb-chat-meta mt-0.5 block text-muted-foreground">{formatBytes(attachment.size)}</span>
-      </span>
-      {href && <Download className="size-4 shrink-0 text-muted-foreground" />}
-    </a>
+    <>
+      <button
+        type="button"
+        onClick={() => setFileOpen(true)}
+        className={cn(
+          "mt-2 flex w-full max-w-xl items-center gap-3 rounded-xl border border-border bg-muted/25 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          downloadable || previewAvailable ? "hover:bg-muted/50" : "cursor-default opacity-75",
+        )}
+      >
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card ring-1 ring-foreground/8">
+          <KindIcon kind={effectiveKind} className="size-4 text-primary" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="tb-chat-title block truncate font-medium">{attachment.name}</span>
+          <span className="tb-chat-meta mt-0.5 block text-muted-foreground">
+            {formatBytes(attachment.size)} · {previewAvailable ? "Visualizar arquivo" : "Arquivo"}
+          </span>
+        </span>
+        {downloadable && <Eye className="size-4 shrink-0 text-muted-foreground" />}
+      </button>
+
+      <FilePreviewDialog
+        open={fileOpen}
+        onOpenChange={setFileOpen}
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        size={attachment.size}
+        kind={effectiveKind}
+        sourceUrl={href}
+        bucket={ATTACHMENTS_BUCKET}
+        storagePath={attachment.storagePath}
+        textContent={attachment.textContent}
+      />
+    </>
   )
 }
 

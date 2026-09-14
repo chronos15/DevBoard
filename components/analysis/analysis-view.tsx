@@ -37,6 +37,7 @@ import type { AqsReview, AqsReviewStatus, AttachmentEntry, ChatMention, CommentE
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
+import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -49,6 +50,7 @@ import {
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { DeveloperVcsTaskChanges, type DeveloperTaskVcsChange } from "@/components/developer/developer-vcs-task-changes"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { formatHMS } from "@/lib/project-utils"
@@ -152,12 +154,14 @@ function AttachmentKindIcon({ attachment }: { attachment: AttachmentEntry }) {
 
 function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry }) {
   const supabase = React.useMemo(() => createClient(), [])
+  const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const [url, setUrl] = React.useState<string | null>(attachment.dataUrl ?? null)
-  const [loading, setLoading] = React.useState(Boolean(attachment.storagePath && !attachment.dataUrl))
+  const [loading, setLoading] = React.useState(Boolean(attachment.storagePath && !attachment.dataUrl && effectiveKind === "image"))
   const [imageOpen, setImageOpen] = React.useState(false)
+  const [fileOpen, setFileOpen] = React.useState(false)
 
   React.useEffect(() => {
-    if (url || !attachment.storagePath) return
+    if (effectiveKind !== "image" || url || !attachment.storagePath) return
     let cancelled = false
     setLoading(true)
     void supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(attachment.storagePath, 3600).then(({ data, error }) => {
@@ -166,11 +170,9 @@ function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [attachment.storagePath, supabase, url])
+  }, [attachment.storagePath, effectiveKind, supabase, url])
 
-  const isImage = attachment.kind === "image" || attachment.mimeType?.startsWith("image/")
-
-  if (isImage) {
+  if (effectiveKind === "image") {
     return (
       <>
         <button
@@ -195,10 +197,31 @@ function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry
   }
 
   return (
-    <div className="mt-2 flex max-w-xl min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card p-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><AttachmentKindIcon attachment={attachment} /></span>
-      <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={attachment.name}>{attachment.name}</p><p className="mt-0.5 text-[0.58rem] text-muted-foreground">{formatBytes(attachment.size)} · evidência</p></div>
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setFileOpen(true)}
+        className="mt-2 flex w-full max-w-xl min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+      >
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><AttachmentKindIcon attachment={{ ...attachment, kind: effectiveKind }} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium" title={attachment.name}>{attachment.name}</p>
+          <p className="mt-0.5 text-[0.58rem] text-muted-foreground">{formatBytes(attachment.size)} · visualizar / baixar</p>
+        </div>
+      </button>
+      <FilePreviewDialog
+        open={fileOpen}
+        onOpenChange={setFileOpen}
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        size={attachment.size}
+        kind={effectiveKind}
+        sourceUrl={attachment.dataUrl}
+        bucket={ATTACHMENTS_BUCKET}
+        storagePath={attachment.storagePath}
+        textContent={attachment.textContent}
+      />
+    </>
   )
 }
 

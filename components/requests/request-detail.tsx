@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { SERVICE_REQUEST_MEDIA_BUCKET, chatMediaKind } from "@/lib/supabase/helpers"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { useStore } from "@/lib/store"
 import {
   SERVICE_REQUEST_ATTACHMENT_LABELS,
@@ -51,6 +52,7 @@ import { ActivityMeetingButton } from "@/components/activity-meeting-button"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
+import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -87,10 +89,12 @@ function attachmentIcon(category: string) {
 
 function RequestAttachmentLink({ attachment, compact = false, inlineImage = false }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean; inlineImage?: boolean }) {
   const supabase = React.useMemo(() => createClient(), [])
+  const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const [opening, setOpening] = React.useState(false)
   const [imageUrl, setImageUrl] = React.useState<string | null>(null)
   const [imageOpen, setImageOpen] = React.useState(false)
-  const isImage = attachment.kind === "image" || attachment.mimeType?.startsWith("image/")
+  const [fileOpen, setFileOpen] = React.useState(false)
+  const isImage = effectiveKind === "image"
 
   React.useEffect(() => {
     if (!inlineImage || !isImage || imageUrl) return
@@ -109,19 +113,15 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
     return () => { cancelled = true }
   }, [attachment.externalUrl, attachment.sourceType, attachment.storagePath, imageUrl, inlineImage, isImage, supabase])
 
-  async function open() {
+  async function openImage() {
     if (opening) return
-    if (isImage && imageUrl) {
+    if (imageUrl) {
       setImageOpen(true)
       return
     }
     if (attachment.sourceType === "external-url" && attachment.externalUrl) {
-      if (isImage) {
-        setImageUrl(attachment.externalUrl)
-        setImageOpen(true)
-      } else {
-        window.open(attachment.externalUrl, "_blank", "noopener,noreferrer")
-      }
+      setImageUrl(attachment.externalUrl)
+      setImageOpen(true)
       return
     }
     if (!attachment.storagePath) return
@@ -129,12 +129,8 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
     try {
       const { data, error } = await supabase.storage.from(SERVICE_REQUEST_MEDIA_BUCKET).createSignedUrl(attachment.storagePath, 60 * 20)
       if (error) throw error
-      if (isImage) {
-        setImageUrl(data.signedUrl)
-        setImageOpen(true)
-      } else {
-        window.open(data.signedUrl, "_blank", "noopener,noreferrer")
-      }
+      setImageUrl(data.signedUrl)
+      setImageOpen(true)
     } finally {
       setOpening(false)
     }
@@ -145,7 +141,7 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
       <>
         <button
           type="button"
-          onClick={() => void open()}
+          onClick={() => void openImage()}
           className="block w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/20 text-left align-top transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
           title="Ampliar imagem"
         >
@@ -174,10 +170,15 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
   const metadata = attachment.sourceType === "external-url"
     ? `${SERVICE_REQUEST_ATTACHMENT_LABELS[attachment.category]} · ${attachment.externalUrl ?? "Link FTP/externo"}`
     : `${SERVICE_REQUEST_ATTACHMENT_LABELS[attachment.category]} · ${formatBytes(attachment.size)}`
+
   return (
     <>
-      <button type="button" onClick={() => void open()} className={cn("group flex w-full max-w-full min-w-0 overflow-hidden items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}>
-        <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-primary", compact ? "size-8" : "size-9")}>
+      <button
+        type="button"
+        onClick={() => isImage ? void openImage() : setFileOpen(true)}
+        className={cn("group flex w-full max-w-full min-w-0 overflow-hidden items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}
+      >
+        <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-primary", compact ? "size-8" : "size-9")}> 
           {opening ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
         </span>
         <span className="min-w-0 flex-1 overflow-hidden">
@@ -186,7 +187,8 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
         </span>
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
       </button>
-      {isImage && (
+
+      {isImage ? (
         <ImageViewerDialog
           open={imageOpen}
           onOpenChange={setImageOpen}
@@ -194,6 +196,18 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
           alt={attachment.name}
           title={attachment.name}
           downloadName={attachment.name}
+        />
+      ) : (
+        <FilePreviewDialog
+          open={fileOpen}
+          onOpenChange={setFileOpen}
+          name={attachment.name}
+          mimeType={attachment.mimeType}
+          size={attachment.size}
+          kind={effectiveKind}
+          sourceUrl={attachment.sourceType === "external-url" ? attachment.externalUrl : null}
+          bucket={attachment.sourceType === "upload" ? SERVICE_REQUEST_MEDIA_BUCKET : undefined}
+          storagePath={attachment.sourceType === "upload" ? attachment.storagePath : undefined}
         />
       )}
     </>

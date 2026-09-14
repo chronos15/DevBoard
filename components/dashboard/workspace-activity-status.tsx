@@ -24,13 +24,12 @@ function workForMember(projects: Project[], memberId: string) {
   const work: WorkRef[] = []
   for (const project of projects) {
     for (const activity of project.activities) {
-      const activityAssigned = Boolean(activity.assigneeIds?.includes(memberId))
       for (const subactivity of activity.subactivities) {
         if (!OPEN_STATUSES.has(subactivity.status)) continue
-        const related = activityAssigned
-          || subactivity.assigneeId === memberId
-          || Boolean(subactivity.memberIds?.includes(memberId))
-        if (!related) continue
+        // O card Equipe representa responsabilidade real, não participação no tópico.
+        // memberIds também contém autores de comentários/menções, então não deve
+        // ser usado para decidir quais subatividades pertencem ao usuário aqui.
+        if (subactivity.assigneeId !== memberId) continue
         work.push({ project, activityId: activity.id, activityTitle: activity.title, subactivity })
       }
     }

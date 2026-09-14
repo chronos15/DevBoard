@@ -25,6 +25,7 @@ import type {
 import { useStore } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
+import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -46,54 +47,8 @@ import {
 const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 
-const textExtensions = new Set([
-  "sql",
-  "txt",
-  "md",
-  "json",
-  "xml",
-  "csv",
-  "log",
-  "yaml",
-  "yml",
-  "ini",
-  "env",
-  "js",
-  "ts",
-  "tsx",
-  "jsx",
-  "css",
-  "html",
-  "dart",
-  "pas",
-])
-
-const documentExtensions = new Set([
-  "doc",
-  "docx",
-  "xls",
-  "xlsx",
-  "ppt",
-  "pptx",
-  "odt",
-  "ods",
-  "odp",
-])
-
-function extensionOf(name: string) {
-  const index = name.lastIndexOf(".")
-  return index >= 0 ? name.slice(index + 1).toLowerCase() : ""
-}
-
 function detectKind(file: File): AttachmentKind {
-  const extension = extensionOf(file.name)
-  if (file.type.startsWith("image/")) return "image"
-  if (file.type === "application/pdf" || extension === "pdf") return "pdf"
-  if (file.type.startsWith("video/")) return "video"
-  if (file.type.startsWith("audio/")) return "audio"
-  if (file.type.startsWith("text/") || textExtensions.has(extension)) return "text"
-  if (documentExtensions.has(extension)) return "document"
-  return "other"
+  return inferAttachmentKind({ name: file.name, mimeType: file.type })
 }
 
 
@@ -168,16 +123,17 @@ function textDownloadHref(attachment: AttachmentEntry) {
 
 type PreviewableAttachment = Pick<
   AttachmentEntry,
-  "name" | "kind" | "dataUrl" | "textContent"
+  "name" | "kind" | "mimeType" | "dataUrl" | "textContent"
 >
 
 function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }) {
   const [imageOpen, setImageOpen] = React.useState(false)
+  const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const downloadHref = attachment.textContent !== undefined
     ? textDownloadHref(attachment)
     : attachment.dataUrl
 
-  if (attachment.kind === "image" && attachment.dataUrl) {
+  if (effectiveKind === "image" && attachment.dataUrl) {
     return (
       <>
         <button
@@ -205,7 +161,7 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
     )
   }
 
-  if (attachment.kind === "pdf" && attachment.dataUrl) {
+  if (effectiveKind === "pdf" && attachment.dataUrl) {
     return (
       <iframe
         src={attachment.dataUrl}
@@ -215,7 +171,7 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
     )
   }
 
-  if (attachment.kind === "video" && attachment.dataUrl) {
+  if (effectiveKind === "video" && attachment.dataUrl) {
     return (
       <div className="flex min-h-64 items-center justify-center rounded-xl bg-muted/35 p-3">
         <video src={attachment.dataUrl} controls className="max-h-[50dvh] max-w-full rounded-lg" />
@@ -223,7 +179,7 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
     )
   }
 
-  if (attachment.kind === "audio" && attachment.dataUrl) {
+  if (effectiveKind === "audio" && attachment.dataUrl) {
     return (
       <div className="flex min-h-52 flex-col items-center justify-center rounded-xl bg-muted/35 p-6">
         <FileAudio className="size-9 text-muted-foreground/55" />
@@ -232,7 +188,7 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
     )
   }
 
-  if (attachment.kind === "text" && attachment.textContent !== undefined) {
+  if (effectiveKind === "text" && attachment.textContent !== undefined) {
     return (
       <pre className="max-h-[52dvh] min-h-72 overflow-auto rounded-xl border border-border bg-sidebar p-4 font-mono text-xs leading-relaxed text-sidebar-foreground selection:bg-primary/25">
         <code>{attachment.textContent}</code>
@@ -242,7 +198,7 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
 
   return (
     <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 text-center">
-      <KindIcon kind={attachment.kind} className="size-10 text-muted-foreground/45" />
+      <KindIcon kind={effectiveKind} className="size-10 text-muted-foreground/45" />
       <p className="mt-4 text-sm font-medium">Pré-visualização não disponível</p>
       <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
         Este formato fica preservado como anexo, mas não possui visualizador nativo nesta etapa da interface.

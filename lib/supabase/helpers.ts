@@ -1,4 +1,5 @@
 import type { AttachmentKind, AttachmentUploadInput, Member } from '@/lib/types'
+import { inferAttachmentKind } from '@/lib/attachment-preview'
 
 export const ATTACHMENTS_BUCKET = 'cadence-attachments'
 export const AVATARS_BUCKET = 'cadence-avatars'
@@ -106,15 +107,7 @@ export function chatAudioStoragePath(
 }
 
 export function chatMediaKind(file: Pick<File, 'name' | 'type'>): AttachmentKind {
-  const mime = (file.type || '').toLowerCase()
-  const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? '' : ''
-  if (mime.startsWith('image/')) return 'image'
-  if (mime.startsWith('video/')) return 'video'
-  if (mime.startsWith('audio/')) return 'audio'
-  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
-  if (mime.startsWith('text/') || ['sql','txt','md','json','xml','yaml','yml','csv','log','ts','tsx','js','jsx','css','scss','html','dart','pas','kt','java','py','sh','ps1'].includes(ext)) return 'text'
-  if (['doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','rtf'].includes(ext) || /officedocument|msword|ms-excel|ms-powerpoint/.test(mime)) return 'document'
-  return 'other'
+  return inferAttachmentKind({ name: file.name, mimeType: file.type })
 }
 
 

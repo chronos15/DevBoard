@@ -122,7 +122,13 @@ export function MeetingSessionHost() {
     // No Android/PWA o botão físico/gesto “Voltar” dispara popstate. A navegação
     // pode continuar normalmente, mas a chamada vira o popup persistente em vez
     // de permanecer cobrindo a nova tela. Escape faz o mesmo no desktop.
-    const minimizeFromNavigation = () => setMinimized(true)
+    const minimizeFromNavigation = () => {
+      // O preview/editor de imagem cria entradas de histórico próprias para o
+      // botão Voltar no Android. Não minimize a reunião enquanto essas camadas
+      // estiverem abertas; o primeiro Voltar deve apenas fechar editor/preview.
+      if (typeof document !== "undefined" && document.body.dataset.taskboardImageViewerOpen === "true") return
+      setMinimized(true)
+    }
     const minimizeFromKeyboard = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       event.preventDefault()

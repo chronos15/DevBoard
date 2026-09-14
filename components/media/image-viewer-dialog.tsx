@@ -13,6 +13,8 @@ const MAX_SCALE = 5
 const SCALE_STEP = 0.35
 const DOUBLE_TAP_DELAY = 280
 const TAP_MOVE_TOLERANCE = 18
+const HISTORY_KEY = "__taskboardImageOverlay"
+
 
 type Point = { x: number; y: number }
 
@@ -84,6 +86,24 @@ export function ImageViewerDialog({
   const offsetRef = React.useRef<Point>({ x: 0, y: 0 })
   const rafRef = React.useRef<number | null>(null)
   const pendingTransformRef = React.useRef<{ scale: number; offset: Point } | null>(null)
+  const viewerHistoryTokenRef = React.useRef<string | null>(null)
+  const editorHistoryTokenRef = React.useRef<string | null>(null)
+
+  const createHistoryToken = React.useCallback((layer: "viewer" | "editor") => {
+    const random = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
+    return `${layer}-${random}`
+  }, [])
+
+  const pushOverlayHistory = React.useCallback((layer: "viewer" | "editor", token: string) => {
+    if (typeof window === "undefined") return
+    const currentState = window.history.state && typeof window.history.state === "object" ? window.history.state : {}
+    window.history.pushState({ ...currentState, [HISTORY_KEY]: { layer, token } }, "", window.location.href)
+  }, [])
+
+  const currentOverlayHistory = React.useCallback(() => {
+    if (typeof window === "undefined") return null
+    return window.history.state?.[HISTORY_KEY] as { layer?: string; token?: string } | undefined ?? null
+  }, [])
 
   const clampOffset = React.useCallback((nextOffset: Point, nextScale: number, nextRotation = rotationRef.current) => {
     if (nextScale <= MIN_SCALE) return { x: 0, y: 0 }
@@ -194,6 +214,81 @@ export function ImageViewerDialog({
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
   }, [])
+
+  // O preview/editor cria suas próprias entradas de histórico. Assim o botão
+  // Voltar do Android/navegador percorre Editor -> Preview -> tópico, sem
+  // abandonar a página atual nem fechar as duas camadas de uma só vez.
+  React.useEffect(() => {
+    if (!open || typeof window === "undefined") return
+    if (!viewerHistoryTokenRef.current) {
+      const token = createHistoryToken("viewer")
+      viewerHistoryTokenRef.current = token
+      pushOverlayHistory("viewer", token)
+    }
+
+    const handlePopState = () => {
+      if (editorOpen) {
+        editorHistoryTokenRef.current = null
+        setEditorOpen(false)
+        return
+      }
+
+      const token = viewerHistoryTokenRef.current
+      const current = currentOverlayHistory()
+      if (token && current?.token !== token) {
+        viewerHistoryTokenRef.current = null
+        onOpenChange(false)
+      }
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [createHistoryToken, currentOverlayHistory, editorOpen, onOpenChange, open, pushOverlayHistory])
+
+  React.useEffect(() => {
+    if (open) return
+    viewerHistoryTokenRef.current = null
+    editorHistoryTokenRef.current = null
+  }, [open])
+
+  const requestCloseViewer = React.useCallback(() => {
+    if (typeof window === "undefined") {
+      onOpenChange(false)
+      return
+    }
+    const token = viewerHistoryTokenRef.current
+    const current = currentOverlayHistory()
+    if (token && current?.layer === "viewer" && current.token === token) {
+      window.history.back()
+      return
+    }
+    viewerHistoryTokenRef.current = null
+    onOpenChange(false)
+  }, [currentOverlayHistory, onOpenChange])
+
+  const requestEditorOpenChange = React.useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      if (typeof window !== "undefined" && !editorHistoryTokenRef.current) {
+        const token = createHistoryToken("editor")
+        editorHistoryTokenRef.current = token
+        pushOverlayHistory("editor", token)
+      }
+      setEditorOpen(true)
+      return
+    }
+
+    if (typeof window !== "undefined") {
+      const token = editorHistoryTokenRef.current
+      const current = currentOverlayHistory()
+      if (token && current?.layer === "editor" && current.token === token) {
+        window.history.back()
+        return
+      }
+    }
+
+    editorHistoryTokenRef.current = null
+    setEditorOpen(false)
+  }, [createHistoryToken, currentOverlayHistory, pushOverlayHistory])
 
   // Enquanto o visualizador estiver aberto, nenhum gesto deve ser reaproveitado
   // pelos cards/mensagens que existem atrás do Portal. Além do bloqueio visual
@@ -484,7 +579,7 @@ export function ImageViewerDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? onOpenChange(true) : requestCloseViewer()}>
       <DialogContent
         className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden bg-background/98 p-0 sm:h-[min(92dvh,920px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
         showCloseButton
@@ -502,52 +597,52 @@ export function ImageViewerDialog({
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <DialogHeader className="shrink-0 border-b border-border px-3 py-2.5 pr-12 sm:px-5 sm:py-3 sm:pr-14">
+        <DialogHeader className="shrink-0 border-b border-border px-3 py-2.5 sm:px-5 sm:py-3 sm:pr-14">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 pr-10 sm:pr-0">
               <DialogTitle className="truncate text-sm sm:text-base">{title || alt || "Visualizar imagem"}</DialogTitle>
               <p className="mt-0.5 hidden text-[0.65rem] text-muted-foreground sm:block">Role para ampliar, arraste quando houver zoom ou use pinça em telas touch.</p>
               {editedStatus && <p className={cn("mt-0.5 text-[0.62rem]", editedStatus.includes("reenviada") ? "text-success" : "text-primary")}>{editedStatus}</p>}
             </div>
-            <div className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => zoomBy(-SCALE_STEP)} disabled={scale <= MIN_SCALE} title="Diminuir zoom" aria-label="Diminuir zoom">
+            <div className="flex h-12 w-full max-w-full shrink-0 items-center justify-between gap-0.5 overflow-x-auto rounded-xl border border-border bg-card px-1.5 py-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:h-auto sm:w-auto sm:justify-start sm:gap-1 sm:p-1">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => zoomBy(-SCALE_STEP)} disabled={scale <= MIN_SCALE} title="Diminuir zoom" aria-label="Diminuir zoom">
                 <Minus className="size-3.5" />
               </Button>
-              <button type="button" onClick={() => setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE)} className="min-w-12 rounded-md px-1.5 py-1 font-mono text-[0.62rem] text-muted-foreground hover:bg-muted" title="Alternar zoom">
+              <button type="button" onClick={() => setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE)} className="h-10 min-w-14 flex-1 rounded-md px-1.5 py-1 font-mono text-[0.68rem] text-muted-foreground hover:bg-muted sm:h-auto sm:min-w-12 sm:flex-none sm:text-[0.62rem]" title="Alternar zoom">
                 {Math.round(scale * 100)}%
               </button>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => zoomBy(SCALE_STEP)} disabled={scale >= MAX_SCALE} title="Aumentar zoom" aria-label="Aumentar zoom">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => zoomBy(SCALE_STEP)} disabled={scale >= MAX_SCALE} title="Aumentar zoom" aria-label="Aumentar zoom">
                 <Plus className="size-3.5" />
               </Button>
               <span className="mx-0.5 h-5 w-px bg-border" />
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => viewerSrc && setEditorOpen(true)} disabled={!viewerSrc} title="Editar imagem" aria-label="Editar imagem">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => viewerSrc && requestEditorOpenChange(true)} disabled={!viewerSrc} title="Editar imagem" aria-label="Editar imagem">
                 <Pencil className="size-3.5" />
               </Button>
               {editedFile && onSendEditedImage && (
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => void sendEditedImage()} disabled={sendingEdited} title={editedSendLabel} aria-label={editedSendLabel}>
+                <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => void sendEditedImage()} disabled={sendingEdited} title={editedSendLabel} aria-label={editedSendLabel}>
                   {sendingEdited ? <LoaderCircle className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
                 </Button>
               )}
               {editedFile && (
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => void shareEditedImage()} title="Enviar imagem editada para outro local" aria-label="Enviar imagem editada para outro local">
+                <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => void shareEditedImage()} title="Enviar imagem editada para outro local" aria-label="Enviar imagem editada para outro local">
                   <Share2 className="size-3.5" />
                 </Button>
               )}
               <span className="mx-0.5 h-5 w-px bg-border" />
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => rotateBy(-90)} title="Girar para a esquerda" aria-label="Girar para a esquerda">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => rotateBy(-90)} title="Girar para a esquerda" aria-label="Girar para a esquerda">
                 <RotateCcw className="size-3.5" />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => rotateBy(90)} title="Girar para a direita" aria-label="Girar para a direita">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => rotateBy(90)} title="Girar para a direita" aria-label="Girar para a direita">
                 <RotateCw className="size-3.5" />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={reset} title="Ajustar imagem à tela" aria-label="Ajustar imagem à tela">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={reset} title="Ajustar imagem à tela" aria-label="Ajustar imagem à tela">
                 <Maximize2 className="size-3.5" />
               </Button>
               {viewerSrc && (
                 <a
                   href={viewerSrc}
                   download={editedFile?.name || downloadName || undefined}
-                  className={buttonVariants({ variant: "ghost", size: "icon-xs" })}
+                  className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }), "h-10 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none")}
                   title="Baixar imagem"
                   aria-label="Baixar imagem"
                 >
@@ -604,7 +699,7 @@ export function ImageViewerDialog({
     </Dialog>
     <ImageEditorDialog
       open={editorOpen}
-      onOpenChange={setEditorOpen}
+      onOpenChange={requestEditorOpenChange}
       src={viewerSrc}
       name={editedFile?.name || downloadName || title || alt}
       onComplete={handleEditedImage}

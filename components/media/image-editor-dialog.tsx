@@ -421,9 +421,9 @@ export function ImageEditorDialog({
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <DialogHeader className="shrink-0 border-b border-border px-3 py-3 pr-12 sm:px-5">
+        <DialogHeader className="shrink-0 border-b border-border px-3 py-3 sm:px-5 sm:pr-14">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 pr-10 sm:pr-0">
               <DialogTitle className="truncate text-sm sm:text-base">Editar imagem</DialogTitle>
               <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground">{name || "Imagem"} · recorte livre e desenho</p>
             </div>
@@ -529,14 +529,14 @@ export function ImageEditorDialog({
           )}
         </div>
 
-        <DialogFooter className="shrink-0 border-t border-border px-3 py-3 sm:px-5">
-          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[0.65rem] text-muted-foreground">A imagem original não é alterada. A edição gera uma nova imagem PNG.</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
-              <Button type="button" onClick={() => void complete()} disabled={loading || Boolean(error) || saving}>
-                {saving ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
-                Concluir edição
+        <DialogFooter className="m-0 shrink-0 border-t border-border bg-background px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-3">
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 text-[0.62rem] leading-4 text-muted-foreground sm:text-[0.65rem]">A imagem original não é alterada. A edição gera uma nova imagem PNG.</p>
+            <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:justify-end">
+              <Button type="button" variant="outline" className="min-w-0 w-full sm:w-auto" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
+              <Button type="button" className="min-w-0 w-full text-xs sm:w-auto sm:text-sm" onClick={() => void complete()} disabled={loading || Boolean(error) || saving}>
+                {saving ? <LoaderCircle className="size-4 shrink-0 animate-spin" /> : <Check className="size-4 shrink-0" />}
+                <span className="truncate">Concluir edição</span>
               </Button>
             </div>
           </div>

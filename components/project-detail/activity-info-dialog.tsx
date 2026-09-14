@@ -46,7 +46,7 @@ export function ActivityInfoDialog({
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
 }) {
-  const { members, workItemTypes, currentUserRole, updateSubactivityEstimatedHours } = useStore()
+  const { members, workItemTypes, currentUserRole, updateSubactivityTimeMaintenance } = useStore()
   const [internalOpen, setInternalOpen] = React.useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = React.useCallback((nextOpen: boolean) => {
@@ -201,11 +201,12 @@ export function ActivityInfoDialog({
                                 </div>
                                 <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                                   {currentUserRole === "admin" && (
-                                    <SubactivityEstimateEditor
+                                    <SubactivityTimeMaintenanceEditor
                                       title={sub.title}
                                       estimatedHours={sub.estimatedHours}
                                       trackedSeconds={sub.trackedSeconds}
-                                      onSave={(hours) => updateSubactivityEstimatedHours(sub.id, hours)}
+                                      running={sub.status === "in-progress"}
+                                      onSave={(estimatedHours, trackedHours) => updateSubactivityTimeMaintenance(sub.id, estimatedHours, trackedHours)}
                                     />
                                   )}
                                   {assignee && (
@@ -411,35 +412,53 @@ function ContextItem({
 }
 
 
-function SubactivityEstimateEditor({
+function SubactivityTimeMaintenanceEditor({
   title,
   estimatedHours,
   trackedSeconds,
+  running,
   onSave,
 }: {
   title: string
   estimatedHours: number
   trackedSeconds: number
-  onSave: (hours: number) => Promise<boolean>
+  running: boolean
+  onSave: (estimatedHours: number, trackedHours: number | null) => Promise<boolean>
 }) {
   const [open, setOpen] = React.useState(false)
-  const [value, setValue] = React.useState(String(estimatedHours ?? 0).replace(".", ","))
+  const editableTrackedHours = React.useCallback((seconds: number) => {
+    const value = (Math.max(0, seconds) / 3600).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
+    return value.replace(".", ",")
+  }, [])
+  const [estimateValue, setEstimateValue] = React.useState(String(estimatedHours ?? 0).replace(".", ","))
+  const [trackedValue, setTrackedValue] = React.useState(() => editableTrackedHours(trackedSeconds))
+  const [trackedSnapshotSeconds, setTrackedSnapshotSeconds] = React.useState(Math.max(0, trackedSeconds))
+  const [trackedTouched, setTrackedTouched] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
-  const trackedHours = trackedSeconds / 3600
 
   React.useEffect(() => {
-    if (!open) setValue(String(estimatedHours ?? 0).replace(".", ","))
-  }, [estimatedHours, open])
+    if (open) return
+    setEstimateValue(String(estimatedHours ?? 0).replace(".", ","))
+    setTrackedValue(editableTrackedHours(trackedSeconds))
+    setTrackedSnapshotSeconds(Math.max(0, trackedSeconds))
+    setTrackedTouched(false)
+  }, [editableTrackedHours, estimatedHours, trackedSeconds, open])
 
-  const parsedValue = Number(value.trim().replace(",", "."))
-  const valid = value.trim().length > 0 && Number.isFinite(parsedValue) && parsedValue >= 0
-  const isChanged = valid && Math.abs(parsedValue - Number(estimatedHours ?? 0)) > 0.0001
+  const parsedEstimate = Number(estimateValue.trim().replace(",", "."))
+  const parsedTracked = Number(trackedValue.trim().replace(",", "."))
+  const estimateValid = estimateValue.trim().length > 0 && Number.isFinite(parsedEstimate) && parsedEstimate >= 0
+  const trackedValid = trackedValue.trim().length > 0 && Number.isFinite(parsedTracked) && parsedTracked >= 0
+  const valid = estimateValid && trackedValid
+  const estimateChanged = estimateValid && Math.abs(parsedEstimate - Number(estimatedHours ?? 0)) > 0.0001
+  const snapshotTrackedHours = trackedSnapshotSeconds / 3600
+  const trackedChanged = trackedTouched && trackedValid && Math.abs(parsedTracked - snapshotTrackedHours) > (0.5 / 3600)
+  const isChanged = estimateChanged || trackedChanged
 
   const save = async () => {
     if (!valid || !isChanged || saving) return
     setSaving(true)
     try {
-      const ok = await onSave(parsedValue)
+      const ok = await onSave(parsedEstimate, trackedChanged ? parsedTracked : null)
       if (ok) setOpen(false)
     } finally {
       setSaving(false)
@@ -454,16 +473,16 @@ function SubactivityEstimateEditor({
         size="sm"
         onClick={() => setOpen(true)}
         className="h-7 rounded-xl px-2.5 text-[0.65rem]"
-        title="Ajustar estimativa de horas"
+        title="Manutenção administrativa das horas"
       >
         <PencilLine className="size-3.5" />
         Editar horas
       </Button>
-      <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-[440px]" showCloseButton={!saving}>
+      <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-[500px]" showCloseButton={!saving}>
         <DialogHeader className="border-b border-border px-5 py-4 pr-12">
-          <DialogTitle className="text-base font-semibold">Ajustar horas estimadas</DialogTitle>
+          <DialogTitle className="text-base font-semibold">Manutenção de horas</DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            Correção administrativa da estimativa da subatividade. O tempo já registrado não será alterado.
+            Ajuste administrativo da estimativa e do total trabalhado. As alterações ficam registradas no log do projeto.
           </DialogDescription>
         </DialogHeader>
 
@@ -471,34 +490,64 @@ function SubactivityEstimateEditor({
           <div className="rounded-xl border border-border bg-muted/35 px-3.5 py-3">
             <p className="line-clamp-2 text-xs font-semibold leading-relaxed">{title}</p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.65rem] text-muted-foreground">
-              <span>Atual: <strong className="font-semibold text-foreground">{formatHours(Math.max(0, estimatedHours) * 3600)}</strong></span>
-              <span>Registrado: <strong className="font-semibold text-foreground">{formatHours(trackedSeconds)}</strong></span>
+              <span>Estimativa atual: <strong className="font-semibold text-foreground">{formatHours(Math.max(0, estimatedHours) * 3600)}</strong></span>
+              <span>Trabalhado atual: <strong className="font-semibold text-foreground">{formatHours(trackedSeconds)}</strong></span>
             </div>
           </div>
 
-          <label className="block">
-            <span className="text-xs font-medium">Nova estimativa em horas</span>
-            <Input
-              autoFocus
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault()
-                  void save()
-                }
-              }}
-              inputMode="decimal"
-              placeholder="Ex.: 8 ou 8,5"
-              aria-invalid={value.trim().length > 0 && !valid}
-              className="mt-2 h-10"
-            />
-            <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Aceita valores decimais, por exemplo 1,5h. Use 0 para deixar sem estimativa.</p>
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium">Estimativa em horas</span>
+              <Input
+                autoFocus
+                value={estimateValue}
+                onChange={(event) => setEstimateValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    void save()
+                  }
+                }}
+                inputMode="decimal"
+                placeholder="Ex.: 8 ou 8,5"
+                aria-invalid={estimateValue.trim().length > 0 && !estimateValid}
+                className="mt-2 h-10"
+              />
+              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Planejamento previsto para a subatividade.</p>
+            </label>
 
-          {valid && parsedValue < trackedHours && (
+            <label className="block">
+              <span className="text-xs font-medium">Horas trabalhadas</span>
+              <Input
+                value={trackedValue}
+                onChange={(event) => {
+                  setTrackedTouched(true)
+                  setTrackedValue(event.target.value)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    void save()
+                  }
+                }}
+                inputMode="decimal"
+                placeholder="Ex.: 2 ou 2,5"
+                aria-invalid={trackedValue.trim().length > 0 && !trackedValid}
+                className="mt-2 h-10"
+              />
+              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">Total efetivamente contabilizado para a subatividade.</p>
+            </label>
+          </div>
+
+          {valid && parsedEstimate < parsedTracked && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-[0.68rem] leading-relaxed text-amber-700 dark:text-amber-300">
-              A nova estimativa ficará abaixo das horas já registradas. Isso não apaga o histórico trabalhado.
+              As horas trabalhadas ficarão acima da estimativa. Isso é permitido em manutenção administrativa.
+            </div>
+          )}
+
+          {running && trackedChanged && (
+            <div className="rounded-xl border border-primary/20 bg-primary/[0.07] px-3 py-2.5 text-[0.68rem] leading-relaxed text-primary">
+              O cronômetro está ativo. O valor informado passa a ser o total trabalhado neste instante e o cronômetro continuará somando normalmente após o ajuste.
             </div>
           )}
         </div>
@@ -506,7 +555,7 @@ function SubactivityEstimateEditor({
         <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-4">
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
           <Button type="button" onClick={() => void save()} disabled={!valid || !isChanged} loading={saving} loadingText="Salvando...">
-            Salvar estimativa
+            Salvar manutenção
           </Button>
         </DialogFooter>
       </DialogContent>

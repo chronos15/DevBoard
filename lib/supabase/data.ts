@@ -76,9 +76,11 @@ async function mapAttachment(_supabase: SupabaseClient, row: any): Promise<Attac
 
 function liveTrackedSeconds(row: any) {
   const persisted = Number(row.tracked_seconds || 0)
-  if (row.status !== 'in-progress' || !row.timer_started_at) return persisted
+  const manualAdjustment = Number(row.manual_adjustment_seconds || 0)
+  const adjusted = persisted + manualAdjustment
+  if (row.status !== 'in-progress' || !row.timer_started_at) return Math.max(0, adjusted)
   const elapsed = Math.max(0, Math.floor((Date.now() - new Date(row.timer_started_at).getTime()) / 1000))
-  return persisted + elapsed
+  return Math.max(0, adjusted + elapsed)
 }
 
 export async function loadIdentity(supabase: SupabaseClient) {
@@ -247,7 +249,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
-          id,title,type_id,status,estimated_hours,tracked_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,is_focus,focus_marked_at,focus_marked_by,created_at,updated_at,
+          id,title,type_id,status,estimated_hours,tracked_seconds,manual_adjustment_seconds,timer_started_at,assignee_id,needs_attention,attention_message,brainstorm_mode,is_focus,focus_marked_at,focus_marked_by,created_at,updated_at,
           subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at,edited_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)

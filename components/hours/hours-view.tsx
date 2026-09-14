@@ -250,7 +250,7 @@ export function HoursView() {
       const existing = grouped.get(groupKey)
       if (existing) {
         existing.trackedSeconds += seconds
-        existing.sessions += 1
+        if (!session.isAdjustment) existing.sessions += 1
         if (new Date(session.startedAt) > new Date(existing.latestStartedAt)) existing.latestStartedAt = session.startedAt
         continue
       }
@@ -264,7 +264,7 @@ export function HoursView() {
         status: session.subactivityStatus as Status,
         estimatedHours: session.estimatedHours,
         trackedSeconds: seconds,
-        sessions: 1,
+        sessions: session.isAdjustment ? 0 : 1,
         latestStartedAt: session.startedAt,
       })
     }
@@ -275,7 +275,7 @@ export function HoursView() {
   const projectCount = new Set(rows.map((row) => row.projectId)).size
   const peopleCount = new Set(rows.map((row) => row.userId)).size
   const subactivityCount = new Set(rows.map((row) => row.subactivityId)).size
-  const totalSessions = sessions.length
+  const totalSessions = sessions.filter((session) => !session.isAdjustment).length
   const runningSessionKeys = new Set(
     sessions.filter((session) => !session.endedAt).map((session) => `${session.subactivityId}:${session.userId}`),
   )

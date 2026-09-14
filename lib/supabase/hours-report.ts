@@ -14,6 +14,7 @@ export type HoursReportSession = {
   startedAt: string
   endedAt?: string
   reportedSeconds: number
+  isAdjustment: boolean
 }
 
 export async function loadHoursReport(
@@ -48,5 +49,6 @@ export async function loadHoursReport(
     startedAt: row.started_at,
     endedAt: row.ended_at ?? undefined,
     reportedSeconds: Number(row.reported_seconds || 0),
+    isAdjustment: row.is_adjustment === true,
   }))
 }

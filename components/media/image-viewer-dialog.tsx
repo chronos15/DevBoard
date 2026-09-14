@@ -611,45 +611,45 @@ export function ImageViewerDialog({
               <p className="mt-0.5 hidden text-[0.65rem] text-muted-foreground sm:block">Role para ampliar, arraste quando houver zoom ou use pinça em telas touch.</p>
               {editedStatus && <p className={cn("mt-0.5 text-[0.62rem]", editedStatus.includes("reenviada") ? "text-success" : "text-primary")}>{editedStatus}</p>}
             </div>
-            <div className="flex h-[52px] w-[calc(100%-0.5rem)] max-w-full shrink-0 items-center justify-between gap-0.5 overflow-x-auto rounded-xl border border-border bg-card px-2 py-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:h-auto sm:w-auto sm:justify-start sm:gap-1 sm:p-1">
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => zoomBy(-SCALE_STEP)} disabled={scale <= MIN_SCALE} title="Diminuir zoom" aria-label="Diminuir zoom">
+            <div className="grid h-[52px] w-full min-w-0 shrink-0 grid-flow-col auto-cols-fr items-center gap-0.5 overflow-hidden rounded-xl border border-border bg-card px-1.5 py-1 shadow-sm sm:flex sm:h-auto sm:w-auto sm:justify-start sm:gap-1 sm:p-1">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => zoomBy(-SCALE_STEP)} disabled={scale <= MIN_SCALE} title="Diminuir zoom" aria-label="Diminuir zoom">
                 <Minus className="size-3.5" />
               </Button>
-              <button type="button" onClick={() => setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE)} className="h-11 min-w-14 flex-1 rounded-md px-1.5 py-1 font-mono text-[0.68rem] text-muted-foreground hover:bg-muted sm:h-auto sm:min-w-12 sm:flex-none sm:text-[0.62rem]" title="Alternar zoom">
+              <button type="button" onClick={() => setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE)} className="h-11 w-full min-w-0 rounded-md px-0.5 py-1 font-mono text-[0.66rem] text-muted-foreground hover:bg-muted sm:h-auto sm:min-w-12 sm:w-auto sm:flex-none sm:px-1.5 sm:text-[0.62rem]" title="Alternar zoom">
                 {Math.round(scale * 100)}%
               </button>
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => zoomBy(SCALE_STEP)} disabled={scale >= MAX_SCALE} title="Aumentar zoom" aria-label="Aumentar zoom">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => zoomBy(SCALE_STEP)} disabled={scale >= MAX_SCALE} title="Aumentar zoom" aria-label="Aumentar zoom">
                 <Plus className="size-3.5" />
               </Button>
-              <span className="mx-0.5 h-5 w-px bg-border" />
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => viewerSrc && requestEditorOpenChange(true)} disabled={!viewerSrc} title="Editar imagem" aria-label="Editar imagem">
+              <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" />
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => viewerSrc && requestEditorOpenChange(true)} disabled={!viewerSrc} title="Editar imagem" aria-label="Editar imagem">
                 <Pencil className="size-3.5" />
               </Button>
               {editedFile && onSendEditedImage && (
-                <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => void sendEditedImage()} disabled={sendingEdited} title={editedSendLabel} aria-label={editedSendLabel}>
+                <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => void sendEditedImage()} disabled={sendingEdited} title={editedSendLabel} aria-label={editedSendLabel}>
                   {sendingEdited ? <LoaderCircle className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
                 </Button>
               )}
               {editedFile && (
-                <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => void shareEditedImage()} title="Enviar imagem editada para outro local" aria-label="Enviar imagem editada para outro local">
+                <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => void shareEditedImage()} title="Enviar imagem editada para outro local" aria-label="Enviar imagem editada para outro local">
                   <Share2 className="size-3.5" />
                 </Button>
               )}
-              <span className="mx-0.5 h-5 w-px bg-border" />
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => rotateBy(-90)} title="Girar para a esquerda" aria-label="Girar para a esquerda">
+              <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" />
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => rotateBy(-90)} title="Girar para a esquerda" aria-label="Girar para a esquerda">
                 <RotateCcw className="size-3.5" />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={() => rotateBy(90)} title="Girar para a direita" aria-label="Girar para a direita">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={() => rotateBy(90)} title="Girar para a direita" aria-label="Girar para a direita">
                 <RotateCw className="size-3.5" />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" className="h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none" onClick={reset} title="Ajustar imagem à tela" aria-label="Ajustar imagem à tela">
+              <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0" onClick={reset} title="Ajustar imagem à tela" aria-label="Ajustar imagem à tela">
                 <Maximize2 className="size-3.5" />
               </Button>
               {viewerSrc && (
                 <a
                   href={viewerSrc}
                   download={editedFile?.name || downloadName || undefined}
-                  className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }), "h-11 min-w-9 flex-1 sm:h-7 sm:w-7 sm:flex-none")}
+                  className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }), "h-11 w-full min-w-0 px-0 sm:h-7 sm:w-7 sm:flex-none sm:px-0")}
                   title="Baixar imagem"
                   aria-label="Baixar imagem"
                 >

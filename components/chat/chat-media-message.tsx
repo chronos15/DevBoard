@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { cn } from "@/lib/utils"
 import type { AttachmentKind } from "@/lib/types"
 import { inferAttachmentKind } from "@/lib/attachment-preview"
+import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { useChatMediaActivation } from "@/components/chat/use-chat-media-activation"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 
@@ -213,6 +214,23 @@ export function ChatMediaMessage({
             </div>
           )}
         </div>
+        {caption && <p className="tb-chat-text mt-2 whitespace-pre-wrap break-words">{caption}</p>}
+      </div>
+    )
+  }
+
+  if (effectiveKind === "text") {
+    return (
+      <div className="min-w-0 max-w-full">
+        <InlineTextAttachment
+          name={fileName}
+          mimeType={mimeType}
+          size={sizeBytes}
+          bucket={CHAT_MEDIA_BUCKET}
+          storagePath={storagePath}
+          compact
+          className="max-w-xl"
+        />
         {caption && <p className="tb-chat-text mt-2 whitespace-pre-wrap break-words">{caption}</p>}
       </div>
     )

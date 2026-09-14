@@ -53,6 +53,7 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
+import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -163,6 +164,20 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
           downloadName={attachment.name}
         />
       </>
+    )
+  }
+
+  if (effectiveKind === "text") {
+    return (
+      <InlineTextAttachment
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        size={attachment.size}
+        sourceUrl={attachment.sourceType === "external-url" ? attachment.externalUrl : null}
+        bucket={attachment.sourceType === "upload" ? SERVICE_REQUEST_MEDIA_BUCKET : undefined}
+        storagePath={attachment.sourceType === "upload" ? attachment.storagePath : undefined}
+        compact={compact}
+      />
     )
   }
 

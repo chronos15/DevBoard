@@ -90,6 +90,7 @@ import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/fo
 import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
+import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -703,6 +704,20 @@ function AttachmentCard({
         </div>
         <audio src={href} controls className="w-full" />
       </div>
+    )
+  }
+
+  if (effectiveKind === "text") {
+    return (
+      <InlineTextAttachment
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        size={attachment.size}
+        sourceUrl={href}
+        bucket={ATTACHMENTS_BUCKET}
+        storagePath={attachment.storagePath}
+        textContent={attachment.textContent}
+      />
     )
   }
 

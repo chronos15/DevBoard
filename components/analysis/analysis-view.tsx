@@ -38,6 +38,7 @@ import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
+import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -193,6 +194,20 @@ function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry
         </button>
         <ImageViewerDialog open={imageOpen} onOpenChange={setImageOpen} src={url} alt={attachment.name} title={attachment.name} downloadName={attachment.name} />
       </>
+    )
+  }
+
+  if (effectiveKind === "text") {
+    return (
+      <InlineTextAttachment
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        size={attachment.size}
+        sourceUrl={attachment.dataUrl}
+        bucket={ATTACHMENTS_BUCKET}
+        storagePath={attachment.storagePath}
+        textContent={attachment.textContent}
+      />
     )
   }
 

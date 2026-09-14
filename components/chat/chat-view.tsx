@@ -891,6 +891,7 @@ export function ChatView({
   }
 
   function beginMessageHold(event: React.PointerEvent<HTMLDivElement>, item: ChatMessage) {
+    if (typeof document !== "undefined" && document.body.dataset.taskboardImageViewerOpen === "true") return
     if (item.deliveryStatus) return
     if (event.pointerType === "mouse" && event.button !== 0) return
     const target = event.target as HTMLElement

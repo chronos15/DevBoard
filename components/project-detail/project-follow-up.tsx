@@ -305,6 +305,7 @@ function MobileSwipeReply({
   }, [])
 
   function canStart(event: React.PointerEvent<HTMLDivElement>) {
+    if (typeof document !== "undefined" && document.body.dataset.taskboardImageViewerOpen === "true") return false
     if (event.pointerType !== "touch" && event.pointerType !== "pen") return false
     const target = event.target as HTMLElement | null
     if (target?.closest("button, input, textarea, select, video, audio, [data-no-swipe-reply]")) return false

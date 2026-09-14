@@ -195,6 +195,28 @@ export function ImageViewerDialog({
     }
   }, [])
 
+  // Enquanto o visualizador estiver aberto, nenhum gesto deve ser reaproveitado
+  // pelos cards/mensagens que existem atrás do Portal. Além do bloqueio visual
+  // do Dialog, esta flag protege gestos implementados no React (swipe/hold).
+  React.useEffect(() => {
+    if (!open || typeof document === "undefined") return
+    const body = document.body
+    const previousViewerFlag = body.dataset.taskboardImageViewerOpen
+    const previousTouchAction = body.style.touchAction
+    const previousOverscrollBehavior = body.style.overscrollBehavior
+
+    body.dataset.taskboardImageViewerOpen = "true"
+    body.style.touchAction = "none"
+    body.style.overscrollBehavior = "none"
+
+    return () => {
+      if (previousViewerFlag === undefined) delete body.dataset.taskboardImageViewerOpen
+      else body.dataset.taskboardImageViewerOpen = previousViewerFlag
+      body.style.touchAction = previousTouchAction
+      body.style.overscrollBehavior = previousOverscrollBehavior
+    }
+  }, [open])
+
   // iOS/Safari ainda pode tentar aplicar o zoom nativo da página mesmo com
   // touch-action:none em alguns WebViews/PWAs. Estes listeners bloqueiam apenas
   // o gesto dentro do visualizador, sem interferir no restante da aplicação.
@@ -203,21 +225,35 @@ export function ImageViewerDialog({
     const viewport = viewportRef.current
     if (!viewport) return
 
-    const preventNativeGesture = (event: Event) => event.preventDefault()
-    const preventTouchScroll = (event: TouchEvent) => {
-      if (event.touches.length >= 2 || scaleRef.current > MIN_SCALE) event.preventDefault()
+    const preventNativeGesture = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
     }
+    const isolateTouchStart = (event: TouchEvent) => event.stopPropagation()
+    const preventTouchScroll = (event: TouchEvent) => {
+      // No viewer, um dedo pertence ao viewer mesmo em 100%. Isso impede o
+      // scroll/swipe-to-reply da timeline que está atrás da imagem.
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const isolateTouchEnd = (event: TouchEvent) => event.stopPropagation()
 
     viewport.addEventListener("gesturestart", preventNativeGesture, { passive: false } as AddEventListenerOptions)
     viewport.addEventListener("gesturechange", preventNativeGesture, { passive: false } as AddEventListenerOptions)
     viewport.addEventListener("gestureend", preventNativeGesture, { passive: false } as AddEventListenerOptions)
+    viewport.addEventListener("touchstart", isolateTouchStart, { passive: true })
     viewport.addEventListener("touchmove", preventTouchScroll, { passive: false })
+    viewport.addEventListener("touchend", isolateTouchEnd, { passive: true })
+    viewport.addEventListener("touchcancel", isolateTouchEnd, { passive: true })
 
     return () => {
       viewport.removeEventListener("gesturestart", preventNativeGesture)
       viewport.removeEventListener("gesturechange", preventNativeGesture)
       viewport.removeEventListener("gestureend", preventNativeGesture)
+      viewport.removeEventListener("touchstart", isolateTouchStart)
       viewport.removeEventListener("touchmove", preventTouchScroll)
+      viewport.removeEventListener("touchend", isolateTouchEnd)
+      viewport.removeEventListener("touchcancel", isolateTouchEnd)
     }
   }, [open])
 
@@ -264,10 +300,12 @@ export function ImageViewerDialog({
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
     event.preventDefault()
+    event.stopPropagation()
     zoomBy(event.deltaY < 0 ? SCALE_STEP : -SCALE_STEP, { x: event.clientX, y: event.clientY })
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    event.stopPropagation()
     if (!viewerSrc) return
     if (event.pointerType === "touch") event.preventDefault()
 
@@ -301,6 +339,7 @@ export function ImageViewerDialog({
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    event.stopPropagation()
     if (!pointersRef.current.has(event.pointerId)) return
     if (event.pointerType === "touch") event.preventDefault()
 
@@ -350,6 +389,7 @@ export function ImageViewerDialog({
   }
 
   function handlePointerEnd(event: React.PointerEvent<HTMLDivElement>) {
+    event.stopPropagation()
     const endPoint = { x: event.clientX, y: event.clientY }
     const startPoint = pointerStartsRef.current.get(event.pointerId)
     const wasTap = Boolean(startPoint && distance(startPoint, endPoint) <= TAP_MOVE_TOLERANCE)
@@ -448,6 +488,19 @@ export function ImageViewerDialog({
       <DialogContent
         className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden bg-background/98 p-0 sm:h-[min(92dvh,920px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
         showCloseButton
+        data-no-swipe-reply="true"
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onPointerCancel={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onTouchMove={(event) => event.stopPropagation()}
+        onTouchEnd={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
         <DialogHeader className="shrink-0 border-b border-border px-3 py-2.5 pr-12 sm:px-5 sm:py-3 sm:pr-14">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -512,7 +565,7 @@ export function ImageViewerDialog({
             scale > MIN_SCALE ? "cursor-grab active:cursor-grabbing" : "cursor-zoom-in",
           )}
           style={{ touchAction: "none", WebkitUserSelect: "none" }}
-          onContextMenu={(event) => event.preventDefault()}
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation() }}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -522,6 +575,7 @@ export function ImageViewerDialog({
             if (pointersRef.current.has(event.pointerId)) handlePointerEnd(event)
           }}
           onDoubleClick={(event) => {
+            event.stopPropagation()
             setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE, { x: event.clientX, y: event.clientY })
           }}
         >

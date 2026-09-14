@@ -405,7 +405,22 @@ export function ImageEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}>
-      <DialogContent className="flex h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:h-[min(94dvh,980px)] sm:w-[min(96vw,1500px)] sm:max-w-none">
+      <DialogContent
+        className="flex h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:h-[min(94dvh,980px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
+        data-no-swipe-reply="true"
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onPointerCancel={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onTouchMove={(event) => event.stopPropagation()}
+        onTouchEnd={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
         <DialogHeader className="shrink-0 border-b border-border px-3 py-3 pr-12 sm:px-5">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="min-w-0 flex-1">

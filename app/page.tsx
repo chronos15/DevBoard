@@ -175,13 +175,17 @@ export default function DashboardPage() {
         }
       />
       <KpiCards />
-      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-12">
-        <div className="min-w-0 h-full xl:col-span-4"><HoursAreaChart /></div>
-        <div className="min-w-0 h-full xl:col-span-4"><WorkspaceActivityStatus /></div>
-        <div className="min-w-0 h-full xl:col-span-4 xl:w-[92%] xl:justify-self-end"><StatusDonut /></div>
-        <div className="min-w-0 xl:col-span-4"><ProjectsProgress /></div>
-        <div className="min-w-0 xl:col-span-4"><FocusPanel /></div>
-        <div className="min-w-0 xl:col-span-4"><HoursByProject /></div>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1.04fr)_minmax(0,1.04fr)_minmax(0,0.92fr)]">
+          <div className="min-w-0 h-full"><HoursAreaChart /></div>
+          <div className="min-w-0 h-full"><WorkspaceActivityStatus /></div>
+          <div className="min-w-0 h-full"><StatusDonut /></div>
+        </div>
+        <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-3">
+          <div className="min-w-0"><ProjectsProgress /></div>
+          <div className="min-w-0"><FocusPanel /></div>
+          <div className="min-w-0"><HoursByProject /></div>
+        </div>
       </div>
     </div>
   )

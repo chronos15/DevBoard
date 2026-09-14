@@ -19,6 +19,9 @@ export function StatusDonut() {
     { name: "Canceladas", value: counts.cancelled, color: "var(--destructive)" },
   ]
 
+  const leftLegend = [data[0], data[2], data[4], data[6]]
+  const rightLegend = [data[1], data[3], data[5]]
+
   return (
     <div className="flex min-h-[360px] flex-col rounded-2xl bg-card p-5 ring-1 ring-foreground/8 xl:h-[420px] xl:min-h-0">
       <h2 className="text-base font-semibold">Status das tarefas</h2>
@@ -38,19 +41,30 @@ export function StatusDonut() {
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2.5 sm:gap-x-10 xl:gap-x-12">
-        {data.map((d, index) => (
-          <div
-            key={d.name}
-            className={`flex min-w-0 items-center gap-2 text-xs ${index % 2 === 1 ? "justify-self-end" : "justify-self-start"}`}
-          >
-            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: d.color }} />
-              <span className="truncate">{d.name}</span>
-            </span>
-            <span className="ml-0.5 shrink-0 font-mono font-medium tabular-nums">{d.value}</span>
-          </div>
-        ))}
+      <div className="mt-3 flex items-start justify-between gap-8 sm:gap-12 xl:gap-14">
+        <div className="grid grid-cols-[auto_auto] items-center gap-x-4 gap-y-2.5 text-xs">
+          {leftLegend.map((d) => (
+            <div key={d.name} className="contents">
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: d.color }} />
+                <span className="whitespace-nowrap">{d.name}</span>
+              </span>
+              <span className="justify-self-end font-mono font-medium tabular-nums">{d.value}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-[auto_auto] items-center gap-x-4 gap-y-2.5 text-xs">
+          {rightLegend.map((d) => (
+            <div key={d.name} className="contents">
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: d.color }} />
+                <span className="whitespace-nowrap">{d.name}</span>
+              </span>
+              <span className="justify-self-end font-mono font-medium tabular-nums">{d.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -87,6 +87,7 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { isFollowUpUnreadNotification, type FollowUpUnreadLevel } from "@/lib/follow-up-unread"
+import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
@@ -1989,6 +1990,33 @@ export function ProjectFollowUp({
     }
   }
 
+  function openMentionShortcut(activityId?: string, subactivityId?: string) {
+    const target = resolveFollowUpMentionShortcut(project, notifications, currentUserId, {
+      projectId: project.id,
+      activityId,
+      subactivityId,
+    })
+    if (!target) return
+
+    if (target.activityId) {
+      setExpandedActivities((current) => new Set(current).add(target.activityId!))
+    }
+
+    if (target.subactivityId) {
+      if (target.timelineId) pendingTimelineFocusRef.current = target.timelineId
+      if (target.subactivityId !== selectedSubId) {
+        selectSubactivity(target.subactivityId)
+      } else if (target.timelineId) {
+        window.requestAnimationFrame(() => focusTimelineItem(target.timelineId!))
+      }
+      return
+    }
+
+    if (target.activityId) {
+      window.requestAnimationFrame(() => document.getElementById(`followup-activity-${target.activityId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }))
+    }
+  }
+
   function detectMention(value: string, caret: number | null) {
     const position = caret ?? value.length
     const before = value.slice(0, position)
@@ -2521,17 +2549,17 @@ export function ProjectFollowUp({
             <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
               <span className="truncate">{project.name}</span>
               {unreadMaps.byProject.get(project.id) && (
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full",
-                    unreadMaps.byProject.get(project.id) === "mention"
-                      ? "flex size-4 items-center justify-center bg-rose-500 text-[0.52rem] font-bold text-white"
-                      : "size-2 bg-sky-400",
-                  )}
-                  title={unreadMaps.byProject.get(project.id) === "mention" ? "Você foi mencionado neste projeto" : "Alterações não vistas"}
-                >
-                  {unreadMaps.byProject.get(project.id) === "mention" ? "@" : null}
-                </span>
+                unreadMaps.byProject.get(project.id) === "mention" ? (
+                  <button
+                    type="button"
+                    onClick={() => openMentionShortcut()}
+                    className="flex size-4 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[0.52rem] font-bold text-white transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
+                    title="Ir para a menção mais recente neste projeto"
+                    aria-label="Ir para a menção mais recente neste projeto"
+                  >@</button>
+                ) : (
+                  <span className="size-2 shrink-0 rounded-full bg-sky-400" title="Alterações não vistas" />
+                )
               )}
             </p>
             <p className="truncate text-[0.65rem] text-muted-foreground">{preferences.interfaceMode === "focused" ? "Tópicos do projeto" : "Atividades e subatividades"}</p>
@@ -2560,13 +2588,23 @@ export function ProjectFollowUp({
                   <span className="min-w-0 flex-1 truncate">{preferences.interfaceMode === "focused" ? activity.title : `${index + 1}. ${activity.title}`}</span>
                   {activityUnread && (
                     <span
+                      role={activityUnread === "mention" ? "button" : undefined}
+                      tabIndex={activityUnread === "mention" ? 0 : undefined}
+                      onClick={activityUnread === "mention" ? (event) => { event.stopPropagation(); openMentionShortcut(activity.id) } : undefined}
+                      onKeyDown={activityUnread === "mention" ? (event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        openMentionShortcut(activity.id)
+                      } : undefined}
                       className={cn(
                         "shrink-0 rounded-full",
                         activityUnread === "mention"
-                          ? "flex size-4 items-center justify-center bg-rose-500 text-[0.5rem] font-bold text-white"
+                          ? "flex size-4 items-center justify-center bg-rose-500 text-[0.5rem] font-bold text-white transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
                           : "size-2 bg-sky-400",
                       )}
-                      title={activityUnread === "mention" ? "Você foi mencionado nesta atividade" : "Alterações não vistas nesta atividade"}
+                      title={activityUnread === "mention" ? "Ir para a menção mais recente nesta atividade" : "Alterações não vistas nesta atividade"}
+                      aria-label={activityUnread === "mention" ? "Ir para a menção mais recente nesta atividade" : undefined}
                     >
                       {activityUnread === "mention" ? "@" : null}
                     </span>
@@ -2637,6 +2675,22 @@ export function ProjectFollowUp({
                               <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
                             </div>
                           </div>
+                          {subUnread === "mention" && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => { event.stopPropagation(); openMentionShortcut(activity.id, sub.id) }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ") return
+                                event.preventDefault()
+                                event.stopPropagation()
+                                openMentionShortcut(activity.id, sub.id)
+                              }}
+                              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[0.5rem] font-bold text-white transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
+                              title="Ir para a mensagem em que você foi mencionado"
+                              aria-label={`Ir para a menção na subatividade ${sub.title}`}
+                            >@</span>
+                          )}
                           <MemberAvatar member={assignee} profileEnabled={false} className="size-5 text-[0.48rem] ring-1 ring-card" />
                         </button>
                         <CopyEntityLinkButton

@@ -60,6 +60,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
 import type { AqsReview, ChatCommandBlock, Project } from "@/lib/types"
 import { WORKSPACE_COMMAND_FILES_BUCKET, workspaceCommandFileStoragePath } from "@/lib/supabase/helpers"
+import { isFollowUpUnreadNotification } from "@/lib/follow-up-unread"
+import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
 
 type DiscordSpace = "project" | "channels" | "requests" | "aqs" | "chat"
 
@@ -156,6 +158,7 @@ function ProjectServerButton({
   unread,
   expanded,
   onClick,
+  onMentionClick,
   onEdit,
 }: {
   project: Project
@@ -163,6 +166,7 @@ function ProjectServerButton({
   unread: "mention" | "unread" | null
   expanded?: boolean
   onClick: () => void
+  onMentionClick?: () => void
   onEdit?: () => void
 }) {
   const holdTimerRef = React.useRef<number | null>(null)
@@ -221,7 +225,21 @@ function ProjectServerButton({
         <span className="flex size-full items-center justify-center overflow-hidden rounded-[inherit]">
           <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-5" imageClassName="size-full rounded-[inherit] object-cover" />
         </span>
-        {unread === "mention" && <span className="absolute -bottom-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.52rem] font-bold leading-4 text-destructive-foreground ring-2 ring-background">@</span>}
+        {unread === "mention" && <span
+          role={onMentionClick ? "button" : undefined}
+          tabIndex={onMentionClick ? 0 : undefined}
+          onPointerDown={onMentionClick ? (event) => event.stopPropagation() : undefined}
+          onClick={onMentionClick ? (event) => { event.preventDefault(); event.stopPropagation(); onMentionClick() } : undefined}
+          onKeyDown={onMentionClick ? (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return
+            event.preventDefault()
+            event.stopPropagation()
+            onMentionClick()
+          } : undefined}
+          className="absolute -bottom-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.52rem] font-bold leading-4 text-destructive-foreground ring-2 ring-background transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+          title={onMentionClick ? "Ir para a menção mais recente neste projeto" : undefined}
+          aria-label={onMentionClick ? `Ir para menção em ${project.name}` : undefined}
+        >@</span>}
         {unread === "unread" && <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-sky-400 ring-2 ring-background" />}
       </span>
       {expanded && <span className="min-w-0 flex-1 truncate text-left text-xs font-medium text-foreground/85">{project.name}</span>}
@@ -402,6 +420,7 @@ export function DiscordWorkspace() {
   const requestedChannelId = searchParams.get("channel")
   const requestedSubId = searchParams.get("sub")
   const requestedActivityId = searchParams.get("activity")
+  const requestedTimelineId = searchParams.get("focus")
 
   const requestedResolvedSpace: DiscordSpace = requestedSpace && ["project", "channels", "requests", "aqs", "chat"].includes(requestedSpace)
     ? requestedSpace
@@ -559,6 +578,48 @@ export function DiscordWorkspace() {
     if (unread.some((n) => n.type === "followup-mention")) return "mention" as const
     return unread.length ? "unread" as const : null
   }, [currentUserId, notifications])
+
+  const selectedProjectUnreadMaps = React.useMemo(() => {
+    const byActivity = new Map<string, "mention" | "unread">()
+    const bySubactivity = new Map<string, "mention" | "unread">()
+    if (!selectedProject) return { byActivity, bySubactivity }
+
+    const promote = (map: Map<string, "mention" | "unread">, key: string | undefined, level: "mention" | "unread") => {
+      if (!key) return
+      const current = map.get(key)
+      if (current === "mention") return
+      if (level === "mention" || !current) map.set(key, level)
+    }
+
+    for (const notification of notifications) {
+      if (!isFollowUpUnreadNotification(notification, currentUserId) || notification.projectId !== selectedProject.id) continue
+      const level = notification.type === "followup-mention" ? "mention" as const : "unread" as const
+      promote(byActivity, notification.activityId, level)
+      promote(bySubactivity, notification.subactivityId, level)
+    }
+    return { byActivity, bySubactivity }
+  }, [currentUserId, notifications, selectedProject])
+
+  const mentionTarget = React.useCallback((project: Project, activityId?: string, subactivityId?: string) => (
+    resolveFollowUpMentionShortcut(project, notifications, currentUserId, {
+      projectId: project.id,
+      activityId,
+      subactivityId,
+    })
+  ), [currentUserId, notifications])
+
+  const openMentionTarget = React.useCallback((project: Project, activityId?: string, subactivityId?: string) => {
+    const target = mentionTarget(project, activityId, subactivityId)
+    if (!target) return
+    setLocation({
+      space: "project",
+      project: target.projectId,
+      activity: target.activityId,
+      sub: target.subactivityId,
+      focus: target.timelineId,
+    })
+    setMobileChannelsOpen(false)
+  }, [mentionTarget, setLocation])
 
   async function createWorkspaceChannel() {
     const name = createChannelName.trim().replace(/^#+\s*/, "")
@@ -845,6 +906,7 @@ export function DiscordWorkspace() {
                 const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
                 const toggleActivity = () => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })
                 const runningCount = activity.subactivities.filter((sub) => sub.status === "in-progress").length
+                const activityUnread = selectedProjectUnreadMaps.byActivity.get(activity.id)
                 return (
                   <div key={activity.id} className="rounded-lg">
                     <div className="group/activity relative flex min-w-0 items-center">
@@ -859,6 +921,22 @@ export function DiscordWorkspace() {
                         {isOpen ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
                         <Hash className="size-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate">{`${index + 1}. ${activity.title}`}</span>
+                        {activityUnread === "mention" && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => { event.stopPropagation(); openMentionTarget(selectedProject, activity.id) }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return
+                              event.preventDefault()
+                              event.stopPropagation()
+                              openMentionTarget(selectedProject, activity.id)
+                            }}
+                            className="flex size-4 shrink-0 items-center justify-center rounded-full bg-destructive text-[0.5rem] font-bold text-destructive-foreground transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+                            title="Ir para a menção mais recente nesta atividade"
+                            aria-label={`Ir para menção na atividade ${activity.title}`}
+                          >@</span>
+                        )}
                         <span className="shrink-0 font-mono text-[0.55rem] text-muted-foreground/70" title={`${activity.subactivities.length} ${activity.subactivities.length === 1 ? "subatividade" : "subatividades"}`}>{activity.subactivities.length}</span>
                         {runningCount > 0 && <span className="size-1.5 shrink-0 rounded-full bg-success" title="Possui execução ativa" />}
                       </button>
@@ -881,6 +959,7 @@ export function DiscordWorkspace() {
                           const meta = statusMeta[sub.status]
                           const assignee = members.find((member) => member.id === sub.assigneeId)
                           const running = sub.status === "in-progress"
+                          const subUnread = selectedProjectUnreadMaps.bySubactivity.get(sub.id)
                           return (
                             <button
                               key={sub.id}
@@ -904,6 +983,22 @@ export function DiscordWorkspace() {
                                   {observer && <span className="inline-flex items-center gap-1" title="Somente leitura: você pode visualizar, responder e reagir"><Eye className="size-3" aria-hidden="true" /><span className="sr-only">Somente leitura</span></span>}
                                 </div>
                               </div>
+                              {subUnread === "mention" && (
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(event) => { event.stopPropagation(); openMentionTarget(selectedProject, activity.id, sub.id) }}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter" && event.key !== " ") return
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    openMentionTarget(selectedProject, activity.id, sub.id)
+                                  }}
+                                  className="flex size-4 shrink-0 items-center justify-center rounded-full bg-destructive text-[0.5rem] font-bold text-destructive-foreground transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+                                  title="Ir para a mensagem em que você foi mencionado"
+                                  aria-label={`Ir para menção na subatividade ${sub.title}`}
+                                >@</span>
+                              )}
                               <MemberAvatar member={assignee} profileEnabled={false} className="size-5 text-[0.48rem] ring-1 ring-card" />
                             </button>
                           )
@@ -962,7 +1057,7 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
+  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {
@@ -1018,9 +1113,9 @@ export function DiscordWorkspace() {
     content = <RequestDetail requestId={selectedRequest.id} embedded backHref="/" />
   } else if (selectedReview) {
     const project = projects.find((item) => item.id === selectedReview.projectId)
-    content = project ? <div className="flex h-full min-h-0 flex-col"><AqsActionBar review={selectedReview} /><div className="min-h-0 flex-1"><ProjectFollowUp project={project} availableProjects={accessibleProjects} initialActivityId={selectedReview.activityId} initialSubactivityId={selectedReview.subactivityId} discordEmbedded /></div></div> : null
+    content = project ? <div className="flex h-full min-h-0 flex-col"><AqsActionBar review={selectedReview} /><div className="min-h-0 flex-1"><ProjectFollowUp project={project} availableProjects={accessibleProjects} initialActivityId={selectedReview.activityId} initialSubactivityId={selectedReview.subactivityId} initialTimelineId={requestedTimelineId} discordEmbedded /></div></div> : null
   } else if (selectedProject && projectSelection) {
-    content = <ProjectFollowUp key={`${selectedProject.id}:${projectSelection.subactivityId}`} project={selectedProject} availableProjects={accessibleProjects} initialActivityId={projectSelection.activityId} initialSubactivityId={projectSelection.subactivityId} discordEmbedded />
+    content = <ProjectFollowUp key={`${selectedProject.id}:${projectSelection.subactivityId}:${requestedTimelineId ?? ""}`} project={selectedProject} availableProjects={accessibleProjects} initialActivityId={projectSelection.activityId} initialSubactivityId={projectSelection.subactivityId} initialTimelineId={requestedTimelineId} discordEmbedded />
   } else {
     content = <div className="flex h-full items-center justify-center p-8 text-center"><div><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><MessageCircleMore className="size-7" /></div><h2 className="mt-4 text-lg font-semibold">Bem-vindo ao TaskBoard</h2><p className="mt-2 max-w-md text-sm text-muted-foreground">Escolha um projeto, canal, solicitação ou análise na lateral para começar. No Modo Resumido, tudo acontece em canais e conversas.</p></div></div>
   }
@@ -1064,7 +1159,7 @@ export function DiscordWorkspace() {
             )}
             {accessibleProjects.map((project) => {
               const canEdit = allowEditProjects && (currentUserRole === "admin" || (currentUserRole === "developer" && project.memberIds.includes(currentUserId)))
-              return <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} onEdit={canEdit ? () => { setEditProjectId(project.id); collapseServerRailOnSmallScreen() } : undefined} />
+              return <ProjectServerButton key={project.id} project={project} active={space === "project" && selectedProject?.id === project.id} unread={projectUnread(project.id)} expanded={serverRailExpanded} onClick={() => { selectProject(project); collapseServerRailOnSmallScreen() }} onMentionClick={projectUnread(project.id) === "mention" ? () => { openMentionTarget(project); collapseServerRailOnSmallScreen() } : undefined} onEdit={canEdit ? () => { setEditProjectId(project.id); collapseServerRailOnSmallScreen() } : undefined} />
             })}
           </div>
 

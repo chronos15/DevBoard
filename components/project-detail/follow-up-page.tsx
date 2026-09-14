@@ -8,6 +8,7 @@ import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects, scopeMyWorkProjects } from "@/lib/follow-up-access"
 import { followUpUnreadLevel, isFollowUpUnreadNotification } from "@/lib/follow-up-unread"
+import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
 
 function FollowUpPageSkeleton() {
   return (
@@ -91,6 +92,11 @@ export function FollowUpPage({ mineOnly: mineOnlyProp = false }: { mineOnly?: bo
       isFollowUpUnreadNotification(notification, currentUserId) && notification.projectId === projectId,
     ),
   ), [currentUserId, notifications, projectId])
+  const selectedProjectMentionTarget = React.useMemo(() => (
+    selectedProject && selectedProjectUnread === "mention"
+      ? resolveFollowUpMentionShortcut(selectedProject, notifications, currentUserId, { projectId: selectedProject.id })
+      : null
+  ), [currentUserId, notifications, selectedProject, selectedProjectUnread])
   const resolvedActivity = selectedProject?.activities.find((activity) => activity.id === requestedActivityId) ?? null
   const initialSubactivityId = requestedSubactivityId && selectedProject?.activities.some((activity) => activity.subactivities.some((sub) => sub.id === requestedSubactivityId))
     ? requestedSubactivityId
@@ -150,12 +156,22 @@ export function FollowUpPage({ mineOnly: mineOnlyProp = false }: { mineOnly?: bo
                 <ProjectIcon icon={selectedProject.icon} imageUrl={selectedProject.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" />
               </span>
               {selectedProjectUnread && (
-                <span
-                  className={`absolute -right-1 -top-1 rounded-full ring-2 ring-card ${selectedProjectUnread === "mention" ? "flex size-4 items-center justify-center bg-rose-500 text-[0.55rem] font-bold text-white" : "size-2.5 bg-sky-400"}`}
-                  title={selectedProjectUnread === "mention" ? "Você foi mencionado neste projeto" : "Há alterações não vistas neste projeto"}
-                >
-                  {selectedProjectUnread === "mention" ? "@" : null}
-                </span>
+                selectedProjectUnread === "mention" && selectedProjectMentionTarget ? (
+                  <button
+                    type="button"
+                    onClick={() => showProject(
+                      selectedProjectMentionTarget.projectId,
+                      selectedProjectMentionTarget.subactivityId ?? null,
+                      selectedProjectMentionTarget.timelineId ?? null,
+                      selectedProjectMentionTarget.activityId ?? null,
+                    )}
+                    className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[0.55rem] font-bold text-white ring-2 ring-card transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
+                    title="Ir para a menção mais recente neste projeto"
+                    aria-label="Ir para a menção mais recente neste projeto"
+                  >@</button>
+                ) : (
+                  <span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-sky-400 ring-2 ring-card" title="Há alterações não vistas neste projeto" />
+                )
               )}
             </span>
           )}

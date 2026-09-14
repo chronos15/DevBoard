@@ -31,6 +31,7 @@ import { useStore } from "@/lib/store"
 import type { AttachmentKind, AttachmentUploadInput, Project, ServiceRequestAttachmentCategory } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { DevboardLogo } from "@/components/devboard-logo"
+import { ProjectIcon } from "@/components/projects/project-icon"
 import { cn } from "@/lib/utils"
 import { SERVICE_REQUEST_FINAL_STATUSES, serviceRequestReference } from "@/lib/service-requests"
 import {
@@ -253,20 +254,15 @@ function destinationLabel(type: ShareDestinationType) {
 }
 
 function DestinationGlyph({ destination }: { destination: ShareDestination }) {
-  if (destination.projectIconUrl) {
+  if (destination.projectIcon || destination.projectIconUrl) {
     return (
-      <img
-        src={destination.projectIconUrl}
-        alt=""
-        className="size-11 shrink-0 rounded-full bg-muted object-cover ring-1 ring-foreground/10"
-      />
-    )
-  }
-
-  if (destination.projectIcon) {
-    return (
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted text-lg ring-1 ring-foreground/10">
-        {destination.projectIcon}
+      <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-foreground ring-1 ring-foreground/10">
+        <ProjectIcon
+          icon={destination.projectIcon}
+          imageUrl={destination.projectIconUrl}
+          className="size-5"
+          imageClassName="size-full rounded-none object-cover"
+        />
       </span>
     )
   }

@@ -32,6 +32,7 @@ import type { AttachmentKind, AttachmentUploadInput, Project, ServiceRequestAtta
 import { Button } from "@/components/ui/button"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { ProjectIcon } from "@/components/projects/project-icon"
+import { SharePageSkeleton } from "@/components/share/share-page-skeleton"
 import { cn } from "@/lib/utils"
 import { SERVICE_REQUEST_FINAL_STATUSES, serviceRequestReference } from "@/lib/service-requests"
 import {
@@ -755,14 +756,7 @@ export default function ShareToDevboardPage() {
   }
 
   if (!hydrated || loadingShare) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center bg-background p-5">
-        <div className="flex items-center gap-3 rounded-2xl bg-card px-5 py-4 text-sm text-muted-foreground ring-1 ring-foreground/10">
-          <LoaderCircle className="size-4 animate-spin text-primary" />
-          Preparando compartilhamento…
-        </div>
-      </main>
-    )
+    return <SharePageSkeleton />
   }
 
   if (success) {

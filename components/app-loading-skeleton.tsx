@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SharePageSkeleton } from "@/components/share/share-page-skeleton"
 
 function HeadingSkeleton() {
   return (
@@ -277,6 +278,7 @@ function ChatSkeleton() {
 export function AppLoadingSkeleton() {
   const pathname = usePathname()
 
+  if (pathname.startsWith("/compartilhar")) return <SharePageSkeleton />
   if (pathname === "/") return <DashboardSkeleton />
   if (pathname === "/projetos") return <ProjectsSkeleton />
   if (pathname === "/projetos/novo" || /\/projetos\/[^/]+\/editar$/.test(pathname)) return <FormSkeleton />

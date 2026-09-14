@@ -33,7 +33,7 @@ import {
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
-import type { AqsReview, AqsReviewStatus, AttachmentEntry, ChatMention, CommentEntry, Project, Subactivity } from "@/lib/types"
+import type { AqsReview, AqsReviewStatus, AttachmentEntry, AttachmentUploadInput, ChatMention, CommentEntry, Project, Subactivity } from "@/lib/types"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
@@ -153,7 +153,7 @@ function AttachmentKindIcon({ attachment }: { attachment: AttachmentEntry }) {
   return <Icon className="size-4" />
 }
 
-function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry }) {
+function AnalysisAttachmentPreview({ attachment, onSendEditedImage }: { attachment: AttachmentEntry; onSendEditedImage?: (file: File) => Promise<boolean | void> }) {
   const supabase = React.useMemo(() => createClient(), [])
   const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const [url, setUrl] = React.useState<string | null>(attachment.dataUrl ?? null)
@@ -192,7 +192,7 @@ function AnalysisAttachmentPreview({ attachment }: { attachment: AttachmentEntry
             </span>
           )}
         </button>
-        <ImageViewerDialog open={imageOpen} onOpenChange={setImageOpen} src={url} alt={attachment.name} title={attachment.name} downloadName={attachment.name} />
+        <ImageViewerDialog open={imageOpen} onOpenChange={setImageOpen} src={url} alt={attachment.name} title={attachment.name} downloadName={attachment.name} onSendEditedImage={onSendEditedImage} editedSendLabel="Reenviar imagem editada nesta análise" />
       </>
     )
   }
@@ -350,6 +350,18 @@ export function AnalysisView() {
     () => locatedReviews.find((item) => item.review.id === selectedReviewId) ?? null,
     [locatedReviews, selectedReviewId],
   )
+
+  const sendEditedImageToSelected = React.useCallback(async (file: File) => {
+    if (!selected) return false
+    const upload: AttachmentUploadInput = {
+      name: file.name,
+      mimeType: file.type || "image/png",
+      size: file.size,
+      kind: "image",
+      file,
+    }
+    return addSubactivityAttachments(selected.sub.id, [upload])
+  }, [addSubactivityAttachments, selected])
 
   const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
     selected ? `followup:sub:${selected.sub.id}` : null,
@@ -1082,7 +1094,7 @@ export function AnalysisView() {
                               <strong className="truncate text-xs"><MemberName member={uploader} fallback="Usuário" /></strong>
                               <time className="shrink-0 font-mono text-[0.58rem] text-muted-foreground">{formatDate(item.createdAt)}</time>
                             </div>
-                            <AnalysisAttachmentPreview attachment={item.attachment} />
+                            <AnalysisAttachmentPreview attachment={item.attachment} onSendEditedImage={sendEditedImageToSelected} />
                           </div>
                         </article>
                       )

@@ -1,10 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Download, Maximize2, Minus, Plus, RotateCcw, RotateCw } from "lucide-react"
+import { Download, LoaderCircle, Maximize2, Minus, Pencil, Plus, RotateCcw, RotateCw, Send, Share2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
+import { stageFilesForTaskBoardShare } from "@/lib/taskboard-share-cache"
 
 const MIN_SCALE = 1
 const MAX_SCALE = 5
@@ -21,6 +23,8 @@ type ImageViewerDialogProps = {
   alt?: string
   title?: string
   downloadName?: string
+  onSendEditedImage?: (file: File) => Promise<boolean | void>
+  editedSendLabel?: string
 }
 
 type PinchState = {
@@ -53,11 +57,20 @@ export function ImageViewerDialog({
   alt = "Imagem",
   title,
   downloadName,
+  onSendEditedImage,
+  editedSendLabel = "Enviar imagem editada neste tópico",
 }: ImageViewerDialogProps) {
   const [scale, setScaleState] = React.useState(1)
   const [rotation, setRotationState] = React.useState(0)
   const [offset, setOffsetState] = React.useState<Point>({ x: 0, y: 0 })
   const [isGestureActive, setIsGestureActive] = React.useState(false)
+  const [editorOpen, setEditorOpen] = React.useState(false)
+  const [editedFile, setEditedFile] = React.useState<File | null>(null)
+  const [editedSrc, setEditedSrc] = React.useState<string | null>(null)
+  const [sendingEdited, setSendingEdited] = React.useState(false)
+  const [editedStatus, setEditedStatus] = React.useState("")
+
+  const viewerSrc = editedSrc ?? src ?? null
 
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const imageRef = React.useRef<HTMLImageElement | null>(null)
@@ -150,7 +163,31 @@ export function ImageViewerDialog({
 
   React.useEffect(() => {
     if (open) reset()
-  }, [open, reset, src])
+  }, [open, reset, viewerSrc])
+
+  React.useEffect(() => {
+    setEditedFile(null)
+    setEditedStatus("")
+    setEditedSrc((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return null
+    })
+  }, [src])
+
+  React.useEffect(() => {
+    if (open) return
+    setEditorOpen(false)
+    setEditedFile(null)
+    setEditedStatus("")
+    setEditedSrc((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return null
+    })
+  }, [open])
+
+  React.useEffect(() => () => {
+    if (editedSrc) URL.revokeObjectURL(editedSrc)
+  }, [editedSrc])
 
   React.useEffect(() => {
     return () => {
@@ -231,7 +268,7 @@ export function ImageViewerDialog({
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!src) return
+    if (!viewerSrc) return
     if (event.pointerType === "touch") event.preventDefault()
 
     const point = { x: event.clientX, y: event.clientY }
@@ -351,6 +388,51 @@ export function ImageViewerDialog({
     }
   }
 
+  function handleEditedImage(file: File) {
+    setEditedFile(file)
+    setEditedStatus("Edição pronta. Use Enviar para este tópico ou Compartilhar para escolher outro destino.")
+    setEditedSrc((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return URL.createObjectURL(file)
+    })
+    reset()
+  }
+
+  async function sendEditedImage() {
+    if (!editedFile || !onSendEditedImage || sendingEdited) return
+    setSendingEdited(true)
+    setEditedStatus("")
+    try {
+      const result = await onSendEditedImage(editedFile)
+      setEditedStatus(result === false ? "Não foi possível reenviar a imagem." : "Imagem editada reenviada neste tópico.")
+    } catch {
+      setEditedStatus("Não foi possível reenviar a imagem.")
+    } finally {
+      setSendingEdited(false)
+    }
+  }
+
+  async function shareEditedImage() {
+    if (!editedFile) return
+    try {
+      const target = await stageFilesForTaskBoardShare([editedFile], editedFile.name)
+      window.location.assign(target)
+    } catch {
+      if (typeof navigator !== "undefined" && "share" in navigator) {
+        try {
+          const payload = { files: [editedFile], title: editedFile.name }
+          if (!("canShare" in navigator) || typeof navigator.canShare !== "function" || navigator.canShare(payload)) {
+            await navigator.share(payload)
+            return
+          }
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return
+        }
+      }
+      setEditedStatus("Não foi possível abrir os destinos de compartilhamento.")
+    }
+  }
+
   function rotateBy(delta: number) {
     const nextRotation = rotationRef.current + delta
     rotationRef.current = nextRotation
@@ -361,6 +443,7 @@ export function ImageViewerDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden bg-background/98 p-0 sm:h-[min(92dvh,920px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
@@ -371,6 +454,7 @@ export function ImageViewerDialog({
             <div className="min-w-0 flex-1">
               <DialogTitle className="truncate text-sm sm:text-base">{title || alt || "Visualizar imagem"}</DialogTitle>
               <p className="mt-0.5 hidden text-[0.65rem] text-muted-foreground sm:block">Role para ampliar, arraste quando houver zoom ou use pinça em telas touch.</p>
+              {editedStatus && <p className={cn("mt-0.5 text-[0.62rem]", editedStatus.includes("reenviada") ? "text-success" : "text-primary")}>{editedStatus}</p>}
             </div>
             <div className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Button type="button" variant="ghost" size="icon-xs" onClick={() => zoomBy(-SCALE_STEP)} disabled={scale <= MIN_SCALE} title="Diminuir zoom" aria-label="Diminuir zoom">
@@ -383,6 +467,20 @@ export function ImageViewerDialog({
                 <Plus className="size-3.5" />
               </Button>
               <span className="mx-0.5 h-5 w-px bg-border" />
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => viewerSrc && setEditorOpen(true)} disabled={!viewerSrc} title="Editar imagem" aria-label="Editar imagem">
+                <Pencil className="size-3.5" />
+              </Button>
+              {editedFile && onSendEditedImage && (
+                <Button type="button" variant="ghost" size="icon-xs" onClick={() => void sendEditedImage()} disabled={sendingEdited} title={editedSendLabel} aria-label={editedSendLabel}>
+                  {sendingEdited ? <LoaderCircle className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                </Button>
+              )}
+              {editedFile && (
+                <Button type="button" variant="ghost" size="icon-xs" onClick={() => void shareEditedImage()} title="Enviar imagem editada para outro local" aria-label="Enviar imagem editada para outro local">
+                  <Share2 className="size-3.5" />
+                </Button>
+              )}
+              <span className="mx-0.5 h-5 w-px bg-border" />
               <Button type="button" variant="ghost" size="icon-xs" onClick={() => rotateBy(-90)} title="Girar para a esquerda" aria-label="Girar para a esquerda">
                 <RotateCcw className="size-3.5" />
               </Button>
@@ -392,10 +490,10 @@ export function ImageViewerDialog({
               <Button type="button" variant="ghost" size="icon-xs" onClick={reset} title="Ajustar imagem à tela" aria-label="Ajustar imagem à tela">
                 <Maximize2 className="size-3.5" />
               </Button>
-              {src && (
+              {viewerSrc && (
                 <a
-                  href={src}
-                  download={downloadName || undefined}
+                  href={viewerSrc}
+                  download={editedFile?.name || downloadName || undefined}
                   className={buttonVariants({ variant: "ghost", size: "icon-xs" })}
                   title="Baixar imagem"
                   aria-label="Baixar imagem"
@@ -427,11 +525,11 @@ export function ImageViewerDialog({
             setZoomAroundPoint(scaleRef.current === MIN_SCALE ? 2 : MIN_SCALE, { x: event.clientX, y: event.clientY })
           }}
         >
-          {src ? (
+          {viewerSrc ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3 sm:p-6">
               <img
                 ref={imageRef}
-                src={src}
+                src={viewerSrc}
                 alt={alt}
                 draggable={false}
                 className="max-h-full max-w-full object-contain will-change-transform"
@@ -450,5 +548,13 @@ export function ImageViewerDialog({
         </div>
       </DialogContent>
     </Dialog>
+    <ImageEditorDialog
+      open={editorOpen}
+      onOpenChange={setEditorOpen}
+      src={viewerSrc}
+      name={editedFile?.name || downloadName || title || alt}
+      onComplete={handleEditedImage}
+    />
+    </>
   )
 }

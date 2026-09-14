@@ -622,10 +622,12 @@ function AttachmentCard({
   attachment,
   resolvedUrl,
   onMediaReady,
+  onSendEditedImage,
 }: {
   attachment: AttachmentEntry
   resolvedUrl?: string
   onMediaReady?: () => void
+  onSendEditedImage?: (file: File) => Promise<boolean | void>
 }) {
   const href = resolvedUrl ?? attachment.dataUrl
   const [imageOpen, setImageOpen] = React.useState(false)
@@ -670,6 +672,8 @@ function AttachmentCard({
           alt={attachment.name}
           title={attachment.name}
           downloadName={attachment.name}
+          onSendEditedImage={onSendEditedImage}
+          editedSendLabel="Reenviar imagem editada neste acompanhamento"
         />
       </>
     )
@@ -1111,6 +1115,11 @@ export function ProjectFollowUp({
     currentUserRole === "developer" &&
     !selectedIsParticipant
   )
+  const sendEditedImageToCurrentFollowUp = React.useCallback(async (file: File) => {
+    if (!selectedSub || selectedDeveloperObserver) return false
+    const prepared = await fileToUpload(file)
+    return addFollowUpAttachments(selectedSub.id, [prepared])
+  }, [addFollowUpAttachments, selectedDeveloperObserver, selectedSub])
   const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
     selectedSub ? `followup:sub:${selectedSub.id}` : null,
     Boolean(selectedSub) && (!selectedDeveloperObserver || Boolean(replyingTo)),
@@ -3121,7 +3130,7 @@ export function ProjectFollowUp({
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(item.pending.messageGroupId) ?? []).map((attachment) => (
                                       <div key={attachment.id} className="relative max-w-3xl">
-                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} />
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
                                       </div>
                                     ))}
                                     {(groupedPendingUploads.get(item.pending.messageGroupId) ?? []).map(({ batch, file, index }) => (
@@ -3367,7 +3376,7 @@ export function ProjectFollowUp({
                                   <div className="mt-2 space-y-2">
                                     {(groupedAttachments.get(comment.messageGroupId) ?? []).map((attachment) => (
                                       <div key={attachment.id} className="group/grouped-attachment relative max-w-3xl">
-                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} />
+                                        <AttachmentCard attachment={attachment} resolvedUrl={resolvedUrls[attachment.id]} onMediaReady={handleTimelineMediaReady} onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined} />
                                         <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 opacity-100 shadow-sm sm:opacity-0 sm:transition-opacity sm:group-hover/grouped-attachment:opacity-100 sm:group-focus-within/grouped-attachment:opacity-100">
                                           <CopyEntityLinkButton
                                             href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `attachment-${attachment.id}` })}
@@ -3468,6 +3477,7 @@ export function ProjectFollowUp({
                                 attachment={item.attachment}
                                 resolvedUrl={resolvedUrls[item.attachment.id]}
                                 onMediaReady={handleTimelineMediaReady}
+                                onSendEditedImage={!selectedDeveloperObserver ? sendEditedImageToCurrentFollowUp : undefined}
                               />
                               {renderReactionSummary(item)}
                             </div>

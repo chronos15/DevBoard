@@ -1515,6 +1515,7 @@ export function ChatView({
                                     sizeBytes={item.mediaSizeBytes}
                                     kind={item.mediaKind}
                                     caption={item.content}
+                                    onSendEditedImage={selected ? (file) => sendChatMedia(selected.id, [file], "") : undefined}
                                   />
                                 ) : (
                                   <MessageText message={item} own={own} />

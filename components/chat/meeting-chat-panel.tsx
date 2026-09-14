@@ -400,6 +400,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                           sizeBytes={item.mediaSizeBytes}
                           kind={item.mediaKind}
                           caption={item.content}
+                          onSendEditedImage={conversation ? (file) => sendChatMedia(conversation.id, [file], "") : undefined}
                         />
                       ) : (
                         <MessageText message={item} own={own} />

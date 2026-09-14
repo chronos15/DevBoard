@@ -35,6 +35,7 @@ export function ChatMediaMessage({
   sizeBytes,
   kind,
   caption,
+  onSendEditedImage,
 }: {
   storagePath?: string
   name?: string
@@ -42,6 +43,7 @@ export function ChatMediaMessage({
   sizeBytes?: number
   kind?: AttachmentKind
   caption?: string
+  onSendEditedImage?: (file: File) => Promise<boolean | void>
 }) {
   const supabase = React.useMemo(() => createClient(), [])
   const [url, setUrl] = React.useState<string | null>(null)
@@ -180,6 +182,8 @@ export function ChatMediaMessage({
           alt={fileName}
           title={fileName}
           downloadName={fileName}
+          onSendEditedImage={onSendEditedImage}
+          editedSendLabel="Reenviar imagem editada nesta conversa"
         />
       </>
     )

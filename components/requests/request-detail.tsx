@@ -88,7 +88,7 @@ function attachmentIcon(category: string) {
   return FileText
 }
 
-function RequestAttachmentLink({ attachment, compact = false, inlineImage = false }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean; inlineImage?: boolean }) {
+function RequestAttachmentLink({ attachment, compact = false, inlineImage = false, onSendEditedImage }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean; inlineImage?: boolean; onSendEditedImage?: (file: File) => Promise<boolean | void> }) {
   const supabase = React.useMemo(() => createClient(), [])
   const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const [opening, setOpening] = React.useState(false)
@@ -162,6 +162,8 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
           alt={attachment.name}
           title={attachment.name}
           downloadName={attachment.name}
+          onSendEditedImage={onSendEditedImage}
+          editedSendLabel="Reenviar imagem editada nesta solicitação"
         />
       </>
     )
@@ -211,6 +213,8 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
           alt={attachment.name}
           title={attachment.name}
           downloadName={attachment.name}
+          onSendEditedImage={onSendEditedImage}
+          editedSendLabel="Reenviar imagem editada nesta solicitação"
         />
       ) : (
         <FilePreviewDialog
@@ -493,6 +497,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
     returnServiceRequestToDev,
     approveServiceRequestForBuild,
     editServiceRequestMessage,
+    addServiceRequestMessage,
   } = useStore()
   const request = serviceRequests.find((item) => item.id === requestId)
   const [infoOpen, setInfoOpen] = React.useState(false)
@@ -545,6 +550,10 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
     if (quickLoading) return
     setQuickLoading(key)
     try { await action() } finally { setQuickLoading(null) }
+  }
+
+  async function sendEditedImageToRequest(file: File) {
+    return addServiceRequestMessage(request.id, "", [], [{ file, category: "other" }])
   }
 
   return (
@@ -607,7 +616,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
                   ) : (
                     <RichMessageText content={item.message.content} mentions={item.message.mentions} className="mt-1 text-sm leading-relaxed" />
                   ))}
-                  {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage />)}</div>}
+                  {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage onSendEditedImage={sendEditedImageToRequest} />)}</div>}
                 </div>
                 {item.message.authorId === currentUserId && item.message.content.trim() && editingMessageId !== item.message.id && (
                   <button type="button" onClick={() => setEditingMessageId(item.message.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem">
@@ -638,7 +647,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
             <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Checklist do protocolo</h2><span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", checklist.every((item) => item.ok) ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{checklist.filter((item) => item.ok).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((item) => <div key={item.category} className="flex items-center gap-2 text-xs"><span className={cn("flex size-5 items-center justify-center rounded-full", item.ok ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.ok ? <CheckCircle2 className="size-3" /> : <AlertTriangle className="size-3" />}</span><span>{SERVICE_REQUEST_ATTACHMENT_LABELS[item.category as keyof typeof SERVICE_REQUEST_ATTACHMENT_LABELS]}</span></div>)}</div></section>
           )}
 
-          <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
+          <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact onSendEditedImage={sendEditedImageToRequest} />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
 
           <section className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Trabalho técnico relacionado</h2>{linkedTechnicalWork && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.6rem] font-semibold text-primary">Sincronização automática</span>}</div>

@@ -187,8 +187,8 @@ export function ChatMediaMessage({
 
   if (effectiveKind === "video") {
     return (
-      <div ref={targetRef} className="min-w-0 w-[clamp(13rem,62vw,22rem)] max-w-full">
-        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
+      <div ref={targetRef} className="min-w-0 w-fit max-w-full">
+        <div className="relative w-fit max-w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
           {url && (
             <video
               src={url}
@@ -201,14 +201,17 @@ export function ChatMediaMessage({
                 setFailed(true)
               }}
               className={cn(
-                "absolute inset-0 h-full w-full object-contain transition-opacity duration-200",
+                "block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] transition-opacity duration-200",
                 mediaReady ? "opacity-100" : "opacity-0",
               )}
             />
           )}
 
           {!mediaReady && (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75">
+            <div className={cn(
+              "pointer-events-none flex h-36 w-60 max-w-full flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75",
+              url && "absolute inset-0 h-full w-full",
+            )}>
               {failed ? <Film className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <Film className="size-6" />}
               <span>{failed ? "Vídeo indisponível" : loadingUrl || activated ? "Carregando vídeo..." : "Vídeo"}</span>
             </div>

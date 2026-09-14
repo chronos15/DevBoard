@@ -299,8 +299,8 @@ function ChatCommandCard({ command, executor }: { command: ChatCommandSnapshot; 
                 const url = safeHttpUrl(block.url)
                 if (!url) return null
                 return (
-                  <figure key={index} className="overflow-hidden rounded-lg border border-border bg-black/90">
-                    <video src={url} controls preload="metadata" className="max-h-[420px] w-full" />
+                  <figure key={index} className="w-fit max-w-full overflow-hidden rounded-lg border border-border bg-muted/20">
+                    <video src={url} controls playsInline preload="metadata" className="block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]" />
                     {block.caption && <figcaption className="border-t border-border bg-card px-3 py-2 text-xs text-muted-foreground">{block.caption}</figcaption>}
                   </figure>
                 )

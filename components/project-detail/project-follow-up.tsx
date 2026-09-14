@@ -544,7 +544,7 @@ function PendingTimelineFile({ file }: { file: File }) {
     return <img src={url} alt={file.name} className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border object-contain" />
   }
   if (kind === "video" && url) {
-    return <video src={url} controls playsInline className="mt-2 max-h-[420px] max-w-full rounded-xl border border-border bg-black" />
+    return <video src={url} controls playsInline preload="metadata" className="mt-2 block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] rounded-xl border border-border" />
   }
   if (kind === "audio" && url) {
     return <audio src={url} controls preload="metadata" className="mt-2 w-full max-w-xl" />
@@ -677,17 +677,18 @@ function AttachmentCard({
 
   if (effectiveKind === "video") {
     return (
-      <div className="mt-2 aspect-video w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-black">
+      <div className="mt-2 w-fit max-w-full overflow-hidden rounded-xl border border-border bg-muted/20">
         {href ? (
           <video
             src={href}
             controls
+            playsInline
             preload="metadata"
             onLoadedMetadata={onMediaReady}
-            className="size-full object-contain"
+            className="block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]"
           />
         ) : (
-          <div className="flex size-full items-center justify-center text-white/45">
+          <div className="flex h-36 w-60 max-w-full items-center justify-center text-muted-foreground/55">
             <FileVideo className="size-7" />
           </div>
         )}

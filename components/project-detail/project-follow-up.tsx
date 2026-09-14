@@ -92,6 +92,7 @@ import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
@@ -482,51 +483,81 @@ function followUpMessageGroupId() {
 function InlineComposerFilePreview({
   file,
   onRemove,
+  onReplace,
 }: {
   file: File
   onRemove: () => void
+  onReplace: (file: File) => void
 }) {
   const [url, setUrl] = React.useState<string | null>(null)
+  const [editorOpen, setEditorOpen] = React.useState(false)
   const kind = detectKind(file)
 
   React.useEffect(() => {
-    if (kind !== "image" && kind !== "video") return
+    if (kind !== "image" && kind !== "video") {
+      setUrl(null)
+      return
+    }
     const next = URL.createObjectURL(file)
     setUrl(next)
     return () => URL.revokeObjectURL(next)
   }, [file, kind])
 
   return (
-    <div className="group/preview relative h-28 w-40 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/35 sm:h-32 sm:w-44">
-      {kind === "image" && url ? (
-        <img src={url} alt={file.name} className="h-full w-full object-cover" />
-      ) : kind === "video" && url ? (
-        <video src={url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-background text-muted-foreground ring-1 ring-border">
-            <KindIcon kind={kind} className="size-5" />
-          </span>
-          <span className="line-clamp-2 max-w-full break-all text-[0.62rem] font-medium text-foreground/80">{file.name}</span>
-          <span className="text-[0.56rem] text-muted-foreground">{formatBytes(file.size)}</span>
+    <>
+      <div className="group/preview relative h-28 w-40 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/35 sm:h-32 sm:w-44">
+        {kind === "image" && url ? (
+          <img src={url} alt={file.name} className="h-full w-full object-cover" />
+        ) : kind === "video" && url ? (
+          <video src={url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-background text-muted-foreground ring-1 ring-border">
+              <KindIcon kind={kind} className="size-5" />
+            </span>
+            <span className="line-clamp-2 max-w-full break-all text-[0.62rem] font-medium text-foreground/80">{file.name}</span>
+            <span className="text-[0.56rem] text-muted-foreground">{formatBytes(file.size)}</span>
+          </div>
+        )}
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+          {kind === "image" && url && (
+            <button
+              type="button"
+              onClick={() => setEditorOpen(true)}
+              className="flex size-7 items-center justify-center rounded-lg border border-border/80 bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
+              title="Editar imagem antes de enviar"
+              aria-label={`Editar ${file.name}`}
+            >
+              <Pencil className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex size-7 items-center justify-center rounded-lg border border-border/80 bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-destructive hover:text-destructive-foreground"
+            title="Remover arquivo"
+            aria-label={`Remover ${file.name}`}
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
+        {(kind === "image" || kind === "video") && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-7 text-[0.58rem] text-white">
+            <p className="truncate font-medium">{file.name}</p>
+            <p className="mt-0.5 opacity-75">{formatBytes(file.size)}</p>
+          </div>
+        )}
+      </div>
+      {kind === "image" && url && (
+        <ImageEditorDialog
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          src={url}
+          name={file.name}
+          onComplete={onReplace}
+        />
       )}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute right-1.5 top-1.5 flex size-7 items-center justify-center rounded-lg border border-border/80 bg-background/90 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-destructive hover:text-destructive-foreground"
-        title="Remover arquivo"
-        aria-label={`Remover ${file.name}`}
-      >
-        <X className="size-3.5" />
-      </button>
-      {(kind === "image" || kind === "video") && (
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-7 text-[0.58rem] text-white">
-          <p className="truncate font-medium">{file.name}</p>
-          <p className="mt-0.5 opacity-75">{formatBytes(file.size)}</p>
-        </div>
-      )}
-    </div>
+    </>
   )
 }
 
@@ -3690,6 +3721,18 @@ export function ProjectFollowUp({
                               onRemove={() => {
                                 setPendingFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
                                 setComposerError("")
+                              }}
+                              onReplace={(editedFile) => {
+                                setPendingFiles((current) => {
+                                  const nextFiles = current.map((currentFile, itemIndex) => itemIndex === index ? editedFile : currentFile)
+                                  const error = validateFiles(nextFiles)
+                                  if (error) {
+                                    setComposerError(error)
+                                    return current
+                                  }
+                                  setComposerError("")
+                                  return nextFiles
+                                })
                               }}
                             />
                           ))}

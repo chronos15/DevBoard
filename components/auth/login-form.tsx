@@ -91,7 +91,6 @@ export function LoginForm() {
         </>
       )}
 
-      <p className="text-center text-sm text-muted-foreground">{"Não tem uma conta? "}<Link href="/login/cadastro" className="font-semibold text-primary transition-opacity hover:opacity-80">Criar conta</Link></p>
     </form>
   )
 }

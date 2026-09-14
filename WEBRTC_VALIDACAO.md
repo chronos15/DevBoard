@@ -75,3 +75,22 @@ Teste recomendado:
 O Devboard usa `navigator.mediaDevices.getDisplayMedia()` quando a API existe. O compartilhamento exige HTTPS e uma ação explícita do usuário.
 
 No Chrome Android/Android WebView, a API de captura de tela do sistema ainda não é exposta ao conteúdo web. Nesse ambiente o Devboard mostra uma mensagem específica em vez do erro genérico de contexto. Captura da tela inteira do aparelho Android exigirá um cliente Android nativo (por exemplo, usando MediaProjection) ou um wrapper com ponte nativa; uma PWA/web pura não consegue contornar a ausência da API do navegador.
+
+## V111 — vídeo congelado/preto e gravação owner-only
+
+A V111 separa a saúde do RTP de **vídeo** da saúde geral de áudio. Isso evita o caso em que o áudio continua chegando e mascara uma câmera/tela congelada.
+
+Fluxo de recuperação por participante:
+
+1. detecta ausência sustentada de bytes de vídeo enquanto câmera/tela deveriam estar ativas;
+2. solicita ressincronização da track ao emissor e ICE restart;
+3. se o vídeo continuar parado, recria somente o `RTCPeerConnection` daquele participante;
+4. o restante da sala permanece conectado.
+
+No Android nativo, peers de `MediaProjection` em `DISCONNECTED` também são recriados automaticamente. Uma nova oferta recebida não reutiliza peer nativo já desconectado.
+
+### Gravação
+
+Somente `meetings.created_by` (owner/criador da reunião) pode criar, manter e publicar a gravação automática. Convidados não executam `MediaRecorder`, não assumem a gravação por timeout e não enviam partes do vídeo ao Storage.
+
+Para chamadas fora da mesma rede, o TURN continua sendo requisito importante. Confirme em **Áudio e vídeo → Conectividade WebRTC** que a Edge Function `webrtc-ice-servers` está retornando servidores TURN quando a rota direta não for possível.

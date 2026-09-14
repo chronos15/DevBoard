@@ -260,13 +260,27 @@ object NativeScreenShareManager {
             override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
             override fun onStandardizedIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
-                if (newState == PeerConnection.PeerConnectionState.FAILED) {
+                if (
+                    newState == PeerConnection.PeerConnectionState.FAILED ||
+                    newState == PeerConnection.PeerConnectionState.DISCONNECTED
+                ) {
+                    // A captura pode continuar viva enquanto apenas a rota WebRTC
+                    // daquele participante congela. Recria somente esse peer para
+                    // voltar a enviar frames contínuos, em vez de deixar a tela remota
+                    // parada como uma captura estática.
                     mainHandler.postDelayed({
-                        if (started && recipients.containsKey(recipient.sessionId)) {
+                        val current = peers[recipient.sessionId]
+                        if (
+                            started &&
+                            recipients.containsKey(recipient.sessionId) &&
+                            current != null &&
+                            (current.connectionState() == PeerConnection.PeerConnectionState.FAILED ||
+                             current.connectionState() == PeerConnection.PeerConnectionState.DISCONNECTED)
+                        ) {
                             closePeer(recipient.sessionId, notify = false)
                             createSenderPeer(recipient)
                         }
-                    }, 1500)
+                    }, 1800)
                 }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit

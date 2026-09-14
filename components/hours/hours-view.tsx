@@ -212,7 +212,9 @@ export function HoursView() {
         start: start.toISOString(),
         endExclusive: endExclusive.toISOString(),
         projectId: appliedFilters.projectFilter === "all" ? undefined : appliedFilters.projectFilter,
-        userId: isAdmin && appliedFilters.memberFilter !== "all" ? appliedFilters.memberFilter : undefined,
+        userId: isAdmin
+          ? (appliedFilters.memberFilter !== "all" ? appliedFilters.memberFilter : undefined)
+          : currentUserId,
       })
       if (requestId === requestRef.current) setSessions(next)
     } catch (cause: any) {

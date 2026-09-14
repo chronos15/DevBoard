@@ -103,7 +103,7 @@ type MeetingMemberRemovedSignal = {
 }
 
 type CallSignal = {
-  type: "offer" | "answer" | "ice" | "restart-request"
+  type: "offer" | "answer" | "ice" | "restart-request" | "media-resync-request"
   meetingId: string
   fromSession: string
   fromUserId: string
@@ -182,6 +182,8 @@ function ParticipantTile({
   prioritized,
   compact,
   onPrioritize,
+  videoRecoveryKey,
+  onVideoStalled,
   deafened,
 }: {
   member: Member
@@ -199,6 +201,8 @@ function ParticipantTile({
   prioritized?: boolean
   compact?: boolean
   onPrioritize?: () => void
+  videoRecoveryKey?: string
+  onVideoStalled?: (sessionId: string) => void
   deafened?: boolean
 }) {
   const tileRef = React.useRef<HTMLDivElement | null>(null)
@@ -392,6 +396,43 @@ function ParticipantTile({
       if (timeoutId !== null) window.clearTimeout(timeoutId)
     }
   }, [camOn, mediaTick, own, remoteScreenStream, remoteStream, remoteVideoSource])
+
+  React.useEffect(() => {
+    if (own || !connected || !camOn || !remoteVideoSource || !videoRecoveryKey || !onVideoStalled) return
+    const element = remoteVideoRef.current
+    if (!element || typeof element.requestVideoFrameCallback !== "function") return
+
+    let cancelled = false
+    let frameId: number | null = null
+    let lastFrameAt = Date.now()
+    let lastRecoveryAt = 0
+
+    const watchFrame = () => {
+      if (cancelled) return
+      frameId = element.requestVideoFrameCallback(() => {
+        lastFrameAt = Date.now()
+        watchFrame()
+      })
+    }
+    watchFrame()
+
+    const health = window.setInterval(() => {
+      if (cancelled || !videoPlaying || !remoteHasVideo) return
+      const now = Date.now()
+      if (now - lastFrameAt < 8000 || now - lastRecoveryAt < 12000) return
+      lastRecoveryAt = now
+      lastFrameAt = now
+      onVideoStalled(videoRecoveryKey)
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(health)
+      if (frameId !== null && typeof element.cancelVideoFrameCallback === "function") {
+        element.cancelVideoFrameCallback(frameId)
+      }
+    }
+  }, [camOn, connected, onVideoStalled, own, remoteHasVideo, remoteVideoSource, videoPlaying, videoRecoveryKey])
 
   // mediaTick é proposital: MediaStream/MediaStreamTrack mudam internamente sem trocar
   // a referência do objeto. A leitura abaixo precisa ser refeita em mute/unmute/addtrack.
@@ -611,7 +652,15 @@ export function CallRoom({
   const peerPruneTimersRef = React.useRef<Map<string, number>>(new Map())
   const livePresenceSessionsRef = React.useRef<Set<string>>(new Set())
   const signalQueuesRef = React.useRef<Map<string, Promise<void>>>(new Map())
-  const peerHealthRef = React.useRef<Map<string, { inboundBytes: number; outboundBytes: number; stalledChecks: number }>>(new Map())
+  const peerHealthRef = React.useRef<Map<string, {
+    inboundBytes: number
+    outboundBytes: number
+    inboundVideoBytes: number
+    outboundVideoBytes: number
+    stalledChecks: number
+    videoStalledChecks: number
+    recoveries: number
+  }>>(new Map())
   const lastIceRestartRef = React.useRef<Map<string, number>>(new Map())
   const presencePublishTimerRef = React.useRef<number | null>(null)
   const iceServersRef = React.useRef<RTCIceServer[]>([])
@@ -791,7 +840,7 @@ export function CallRoom({
   }, [broadcastMediaState])
 
   const broadcastRecordingState = React.useCallback(async (status: RecordingStateSignal["status"]) => {
-    if (!meeting || !channelRef.current) return false
+    if (!meeting || !channelRef.current || meeting.createdBy !== currentUserId) return false
     try {
       const result = await channelRef.current.send({
         type: "broadcast",
@@ -807,7 +856,7 @@ export function CallRoom({
     } catch {
       return false
     }
-  }, [currentUserId, meeting?.id])
+  }, [currentUserId, meeting?.createdBy, meeting?.id])
 
   const schedulePresenceReconcile = React.useCallback(() => {
     if (presencePublishTimerRef.current !== null) window.clearTimeout(presencePublishTimerRef.current)
@@ -888,7 +937,10 @@ export function CallRoom({
 
   const ensureNativeScreenReceiverPeer = React.useCallback((fromSession: string, fromUserId: string) => {
     const existing = nativeScreenPeersRef.current.get(fromSession)
-    if (existing) return existing
+    if (existing) {
+      if (!["failed", "closed", "disconnected"].includes(existing.connectionState)) return existing
+      closeNativeScreenPeer(fromSession)
+    }
     if (!meeting) return null
 
     const peer = new RTCPeerConnection({ iceServers: iceServersRef.current })
@@ -920,6 +972,14 @@ export function CallRoom({
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "failed" || peer.connectionState === "closed") {
         closeNativeScreenPeer(fromSession)
+        return
+      }
+      if (peer.connectionState === "disconnected") {
+        window.setTimeout(() => {
+          if (nativeScreenPeersRef.current.get(fromSession) === peer && peer.connectionState === "disconnected") {
+            closeNativeScreenPeer(fromSession)
+          }
+        }, 2200)
       }
     }
 
@@ -1206,6 +1266,24 @@ export function CallRoom({
     return true
   }, [])
 
+  const resyncPeerMedia = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection) => {
+    if (peer.connectionState === "closed") return
+    await bindPeerSenders(remoteSession, peer)
+    const senders = peerSendersRef.current.get(remoteSession)
+    if (!senders) return
+
+    const videoTrack = screenStreamRef.current?.getVideoTracks()[0] ?? localStreamRef.current?.getVideoTracks()[0] ?? null
+    try {
+      // replaceTrack(null -> track) força o encoder a reanexar a fonte e tende a
+      // produzir novo keyframe sem criar outro m-line/transceiver.
+      await senders.video.replaceTrack(null)
+      await sleep(70)
+      await senders.video.replaceTrack(videoTrack)
+    } catch (error) {
+      console.warn("TaskBoard: não foi possível ressincronizar a track de vídeo", remoteSession, error)
+    }
+  }, [bindPeerSenders])
+
   const sendOffer = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection, iceRestart = false) => {
     const role = getPeerRole(remoteSession)
     if (!role.offerer || peer.connectionState === "closed" || peer.signalingState === "closed") return
@@ -1356,6 +1434,28 @@ export function CallRoom({
     return peer
   }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
 
+  const recoverParticipantVideo = React.useCallback((sessionId: string) => {
+    const presence = presences[sessionId]
+    if (!presence) return
+
+    const nativeScreen = nativeScreenStreams[sessionId]
+    const hasNativeScreen = Boolean(
+      presence.screenSharing && nativeScreen?.getVideoTracks().some((track) => track.readyState === "live"),
+    )
+    if (hasNativeScreen) {
+      // Fecha apenas o receiver nativo congelado. O bridge Android detecta a
+      // desconexão e recria seu peer/offer para este participante.
+      closeNativeScreenPeer(sessionId)
+      return
+    }
+
+    const peer = peersRef.current.get(sessionId)
+    if (!peer || peer.connectionState === "closed") return
+    syncRemoteReceiverTracks(sessionId, peer)
+    void postSignal({ type: "media-resync-request", toSession: sessionId })
+    requestIceRestart(sessionId, peer)
+  }, [closeNativeScreenPeer, nativeScreenStreams, postSignal, presences, requestIceRestart, syncRemoteReceiverTracks])
+
   const updateLocalVideo = React.useCallback(() => {
     if (!localVideoRef.current) return
     const stream = screenStreamRef.current ?? localStreamRef.current
@@ -1495,6 +1595,26 @@ export function CallRoom({
     if (!open || !meeting || currentMeetingState?.status !== "joined" || mediaReadyMeetingId !== meeting.id) return
     let disposed = false
 
+    // V111: somente o criador/owner da reunião grava e publica o vídeo final.
+    // Participantes continuam recebendo o estado por Broadcast, mas não criam
+    // MediaRecorder local nem tentam assumir a gravação em caso de atraso do owner.
+    if (meeting.createdBy !== currentUserId) {
+      recordingContextRef.current = null
+      setRecordingState("waiting")
+      setRecordingMessage("A gravação desta reunião é responsabilidade do criador da sala.")
+      void supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id }).then(({ data }) => {
+        if (disposed) return
+        const status = data as { status?: string; recorderId?: string | null } | null
+        if (status?.status === "published") {
+          setRecordingState("published")
+          setRemoteRecordingActive(false)
+        } else {
+          setRemoteRecordingActive(status?.status === "recording" || status?.status === "finalizing")
+        }
+      })
+      return () => { disposed = true }
+    }
+
     async function attemptClaim() {
       if (disposed || !meeting) return
       try {
@@ -1517,9 +1637,11 @@ export function CallRoom({
         }
 
         if (!context.canRecord) {
+          // Com a regra owner-only isto só deve acontecer durante uma transição
+          // curta de banco/estado. Reconsulta sem permitir takeover por terceiros.
           setRecordingState("waiting")
           setRemoteRecordingActive(context.status === "recording" || context.status === "finalizing")
-          recordingClaimTimerRef.current = window.setTimeout(() => void attemptClaim(), 12_000)
+          recordingClaimTimerRef.current = window.setTimeout(() => void attemptClaim(), 4_000)
           return
         }
 
@@ -1534,7 +1656,7 @@ export function CallRoom({
           return
         }
         setRecordingState("recording")
-        setRecordingMessage(previousSegments > 0 ? "Gravação retomada neste dispositivo." : "Gravação automática em andamento.")
+        setRecordingMessage(previousSegments > 0 ? "Gravação retomada pelo criador da reunião." : "Gravação automática pelo criador em andamento.")
         setRemoteRecordingActive(false)
         void broadcastRecordingState("recording")
 
@@ -1564,7 +1686,7 @@ export function CallRoom({
         recordingClaimTimerRef.current = null
       }
     }
-  }, [broadcastRecordingState, currentMeetingState?.status, mediaReadyMeetingId, meeting?.id, open, supabase])
+  }, [broadcastRecordingState, currentMeetingState?.status, currentUserId, mediaReadyMeetingId, meeting?.createdBy, meeting?.id, open, supabase])
 
   React.useEffect(() => {
     const recorder = meetingRecorderRef.current
@@ -1736,7 +1858,7 @@ export function CallRoom({
     }
 
     const handleRecordingState = (state: RecordingStateSignal) => {
-      if (state.meetingId !== meeting.id || state.recorderId === currentUserId) return
+      if (state.meetingId !== meeting.id || state.recorderId !== meeting.createdBy || state.recorderId === currentUserId) return
       setRemoteRecordingActive(state.status === "recording" || state.status === "finalizing")
       if (state.status === "published") setRecordingState((current) => current === "recording" ? current : "published")
     }
@@ -1800,6 +1922,11 @@ export function CallRoom({
               queue.push(signal.candidate)
               pendingIceRef.current.set(signal.fromSession, queue)
             }
+            return
+          }
+
+          if (signal.type === "media-resync-request") {
+            await resyncPeerMedia(signal.fromSession, peer)
             return
           }
 
@@ -1901,6 +2028,7 @@ export function CallRoom({
     postSignal,
     sendOffer,
     requestIceRestart,
+    resyncPeerMedia,
     publishPresence,
     schedulePeerPrune,
     supabase,
@@ -2210,68 +2338,143 @@ export function CallRoom({
         void peer.getStats().then((stats) => {
           let inboundBytes = 0
           let outboundBytes = 0
+          let inboundVideoBytes = 0
+          let outboundVideoBytes = 0
 
           stats.forEach((report) => {
+            const kind = String(report.kind ?? report.mediaType ?? "")
             if (report.type === "inbound-rtp" && !report.isRemote) {
-              inboundBytes += Number(report.bytesReceived ?? 0)
+              const bytes = Number(report.bytesReceived ?? 0)
+              inboundBytes += bytes
+              if (kind === "video") inboundVideoBytes += bytes
             } else if (report.type === "outbound-rtp" && !report.isRemote) {
-              outboundBytes += Number(report.bytesSent ?? 0)
+              const bytes = Number(report.bytesSent ?? 0)
+              outboundBytes += bytes
+              if (kind === "video") outboundVideoBytes += bytes
             }
           })
 
           const previous = peerHealthRef.current.get(sessionId)
-          const remote = remoteMediaStateRef.current.get(sessionId)
-          const inboundExpected = Boolean(
-            remote?.micEnabled || remote?.cameraEnabled || remote?.screenSharing,
-          )
+          const remote = presences[sessionId]
           const local = presenceStateRef.current
-          const outboundExpected = Boolean(
-            local.micEnabled || local.cameraEnabled || local.screenSharing,
+          const hasNativeRemoteScreen = Boolean(
+            nativeScreenStreams[sessionId]?.getVideoTracks().some((track) => track.readyState === "live"),
+          )
+          const inboundExpected = Boolean(remote?.micEnabled || remote?.cameraEnabled || remote?.screenSharing)
+          const outboundExpected = Boolean(local.micEnabled || local.cameraEnabled || local.screenSharing)
+          // Compartilhamento nativo Android trafega em um PeerConnection separado.
+          // O health-check do peer principal não deve interpretá-lo como vídeo travado.
+          const inboundVideoExpected = Boolean(
+            remote?.cameraEnabled || (remote?.screenSharing && !hasNativeRemoteScreen),
+          )
+          const outboundVideoExpected = Boolean(
+            local.cameraEnabled || (local.screenSharing && !nativeScreenSharing),
           )
 
-          const inboundStalled = Boolean(
-            previous && inboundExpected && inboundBytes <= previous.inboundBytes,
+          const inboundStalled = Boolean(previous && inboundExpected && inboundBytes <= previous.inboundBytes)
+          const outboundStalled = Boolean(previous && outboundExpected && outboundBytes <= previous.outboundBytes)
+          const inboundVideoStalled = Boolean(
+            previous && inboundVideoExpected && inboundVideoBytes <= previous.inboundVideoBytes,
           )
-          const outboundStalled = Boolean(
-            previous && outboundExpected && outboundBytes <= previous.outboundBytes,
+          const outboundVideoStalled = Boolean(
+            previous && outboundVideoExpected && outboundVideoBytes <= previous.outboundVideoBytes,
           )
+
           const stalledChecks = inboundStalled || outboundStalled
             ? (previous?.stalledChecks ?? 0) + 1
             : 0
+          const videoStalledChecks = inboundVideoStalled || outboundVideoStalled
+            ? (previous?.videoStalledChecks ?? 0) + 1
+            : 0
+          const recoveries = previous?.recoveries ?? 0
 
           peerHealthRef.current.set(sessionId, {
             inboundBytes,
             outboundBytes,
+            inboundVideoBytes,
+            outboundVideoBytes,
             stalledChecks,
+            videoStalledChecks,
+            recoveries,
           })
 
           syncRemoteReceiverTracks(sessionId, peer)
 
-          // Quatro verificações de 5 s evitam reiniciar por jitter momentâneo.
-          // Quando RTP realmente para por ~20 s, recupera a rota ICE automaticamente.
-          if (stalledChecks >= 4) {
+          // Antes a saúde somava áudio+vídeo. Se o áudio continuasse chegando,
+          // um vídeo congelado/preto nunca era considerado travado. Agora o fluxo
+          // de vídeo é acompanhado separadamente e pede ressincronização ao emissor.
+          if (videoStalledChecks === 2) {
+            void postSignal({ type: "media-resync-request", toSession: sessionId })
+            requestIceRestart(sessionId, peer)
             peerHealthRef.current.set(sessionId, {
               inboundBytes,
               outboundBytes,
+              inboundVideoBytes,
+              outboundVideoBytes,
+              stalledChecks,
+              videoStalledChecks,
+              recoveries: recoveries + 1,
+            })
+          }
+
+          // Se mesmo após ressincronizar/ICE restart a track continuar sem tráfego,
+          // recria somente o peer daquele participante. Isso evita manter um card
+          // preto enquanto o restante da reunião segue saudável.
+          if (videoStalledChecks >= 5) {
+            const presence = presences[sessionId]
+            closePeer(sessionId)
+            if (presence) {
+              window.setTimeout(() => {
+                const replacement = ensurePeer(sessionId, presence.userId)
+                if (replacement) {
+                  syncRemoteReceiverTracks(sessionId, replacement)
+                  // Se este lado for o answerer, o offerer remoto precisa saber que
+                  // deve gerar uma nova oferta para o peer recém-criado.
+                  void postSignal({ type: "restart-request", toSession: sessionId })
+                }
+              }, 250)
+            }
+            return
+          }
+
+          // Recuperação geral para interrupção completa de RTP.
+          if (stalledChecks >= 5) {
+            peerHealthRef.current.set(sessionId, {
+              inboundBytes,
+              outboundBytes,
+              inboundVideoBytes,
+              outboundVideoBytes,
               stalledChecks: 0,
+              videoStalledChecks,
+              recoveries: recoveries + 1,
             })
             requestIceRestart(sessionId, peer)
           }
         }).catch(() => undefined)
       })
-    }, 5000)
+    }, 4000)
 
     return () => window.clearInterval(interval)
   }, [
-    open,
-    meeting?.id,
+    closePeer,
     currentMeetingState?.status,
+    ensurePeer,
+    meeting?.id,
+    nativeScreenSharing,
+    nativeScreenStreams,
+    open,
+    postSignal,
+    presences,
     requestIceRestart,
     syncRemoteReceiverTracks,
   ])
 
   const finalizeAndPublishRecording = React.useCallback(async () => {
     if (!meeting) return true
+    if (meeting.createdBy !== currentUserId) {
+      const { data } = await supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id })
+      return String((data as { status?: string } | null)?.status ?? "") === "published"
+    }
     if (recordingFinalizePromiseRef.current) return recordingFinalizePromiseRef.current
 
     const task = (async () => {
@@ -2383,7 +2586,7 @@ export function CallRoom({
     } finally {
       recordingFinalizePromiseRef.current = null
     }
-  }, [broadcastRecordingState, currentUserId, meeting?.id, meeting?.title, refreshAll, supabase])
+  }, [broadcastRecordingState, currentUserId, meeting?.createdBy, meeting?.id, meeting?.title, refreshAll, supabase])
 
   finalizeRecordingRef.current = finalizeAndPublishRecording
 
@@ -2886,6 +3089,8 @@ export function CallRoom({
                       prioritized={prioritized}
                       compact={compact}
                       onPrioritize={minimized ? undefined : () => setFocusedMemberId((current) => current === member.id ? null : member.id)}
+                      videoRecoveryKey={presence?.sessionId}
+                      onVideoStalled={recoverParticipantVideo}
                       deafened={deafened}
                     />
                   </div>

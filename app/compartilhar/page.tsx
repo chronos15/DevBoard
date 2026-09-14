@@ -4,10 +4,11 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
-  ChevronDown,
   ClipboardCheck,
   ClipboardList,
+  Clock3,
   File as FileIcon,
   FileAudio,
   FileCode2,
@@ -15,14 +16,15 @@ import {
   FileText,
   FileVideo,
   FolderKanban,
+  Hash,
   Layers3,
   Link2,
   LoaderCircle,
+  MessageSquareText,
   Paperclip,
   RotateCcw,
+  Search,
   Send,
-  Share2,
-  Smartphone,
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -30,7 +32,7 @@ import type { AttachmentKind, AttachmentUploadInput, Project, ServiceRequestAtta
 import { Button } from "@/components/ui/button"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { cn } from "@/lib/utils"
-import { SERVICE_REQUEST_FINAL_STATUSES, SERVICE_REQUEST_STATUS_LABELS, serviceRequestReference } from "@/lib/service-requests"
+import { SERVICE_REQUEST_FINAL_STATUSES, serviceRequestReference } from "@/lib/service-requests"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -51,6 +53,30 @@ const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx",
 
 type DestinationGroup = "work" | "request" | "aqs"
 type DestinationKind = "project" | "activity" | "subactivity"
+type ShareDestinationType = DestinationKind | "request" | "aqs"
+type DestinationFilter = "all" | ShareDestinationType
+
+type ShareDestination = {
+  key: string
+  type: ShareDestinationType
+  title: string
+  subtitle: string
+  searchText: string
+  updatedAt: string
+  projectId?: string
+  activityId?: string
+  subactivityId?: string
+  requestId?: string
+  aqsReviewId?: string
+  projectIcon?: string
+  projectIconUrl?: string
+}
+
+type ShareHistoryEntry = {
+  key: string
+  count: number
+  lastUsedAt: string
+}
 
 type SharedFileMetadata = {
   index: number
@@ -213,37 +239,96 @@ function projectIsAvailable(project: Project, currentUserId: string, isAdmin: bo
   return project.activities.some((activity) => activityIsAvailable(activity, currentUserId, false))
 }
 
-function NativeSelect({
-  value,
-  onChange,
-  disabled,
-  label,
-  placeholder,
-  children,
+
+function latestIso(values: Array<string | undefined>) {
+  return values.filter(Boolean).sort().at(-1) ?? ""
+}
+
+function destinationLabel(type: ShareDestinationType) {
+  if (type === "subactivity") return "Acompanhamento"
+  if (type === "activity") return "Atividade"
+  if (type === "project") return "Projeto"
+  if (type === "request") return "Solicitação"
+  return "Análise AQS"
+}
+
+function DestinationGlyph({ destination }: { destination: ShareDestination }) {
+  if (destination.projectIconUrl) {
+    return (
+      <img
+        src={destination.projectIconUrl}
+        alt=""
+        className="size-11 shrink-0 rounded-full bg-muted object-cover ring-1 ring-foreground/10"
+      />
+    )
+  }
+
+  if (destination.projectIcon) {
+    return (
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted text-lg ring-1 ring-foreground/10">
+        {destination.projectIcon}
+      </span>
+    )
+  }
+
+  const Icon = destination.type === "subactivity"
+    ? MessageSquareText
+    : destination.type === "activity"
+      ? Layers3
+      : destination.type === "project"
+        ? FolderKanban
+        : destination.type === "request"
+          ? ClipboardList
+          : ClipboardCheck
+
+  return (
+    <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/8 text-primary ring-1 ring-primary/10">
+      <Icon className="size-5" />
+    </span>
+  )
+}
+
+function DestinationRow({
+  destination,
+  selected,
+  onSelect,
+  compact = false,
 }: {
-  value: string
-  onChange: (value: string) => void
-  disabled?: boolean
-  label: string
-  placeholder: string
-  children: React.ReactNode
+  destination: ShareDestination
+  selected: boolean
+  onSelect: () => void
+  compact?: boolean
 }) {
   return (
-    <label className="block min-w-0">
-      <span className="mb-1.5 block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span>
-      <span className="relative block">
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full appearance-none rounded-xl border border-border bg-card px-3 pr-9 text-sm font-medium outline-none transition-colors hover:bg-muted/40 focus:border-primary/40 focus:ring-3 focus:ring-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="">{placeholder}</option>
-          {children}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex w-full min-w-0 items-center gap-3 rounded-2xl text-left transition-colors",
+        compact ? "px-2.5 py-2" : "px-3 py-2.5",
+        selected ? "bg-primary/[0.075] ring-1 ring-primary/20" : "hover:bg-muted/65 active:bg-muted",
+      )}
+    >
+      <DestinationGlyph destination={destination} />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold">{destination.title}</span>
+          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.56rem] font-semibold text-muted-foreground">
+            {destinationLabel(destination.type)}
+          </span>
+        </span>
+        <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">{destination.subtitle}</span>
       </span>
-    </label>
+      <span
+        className={cn(
+          "flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors",
+          selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background",
+        )}
+        aria-hidden="true"
+      >
+        {selected && <Check className="size-3.5" strokeWidth={2.5} />}
+      </span>
+    </button>
   )
 }
 
@@ -275,6 +360,10 @@ export default function ShareToDevboardPage() {
   const [subactivityId, setSubactivityId] = React.useState("")
   const [requestId, setRequestId] = React.useState("")
   const [aqsReviewId, setAqsReviewId] = React.useState("")
+  const [selectedDestinationKey, setSelectedDestinationKey] = React.useState("")
+  const [destinationQuery, setDestinationQuery] = React.useState("")
+  const [destinationFilter, setDestinationFilter] = React.useState<DestinationFilter>("all")
+  const [shareHistory, setShareHistory] = React.useState<ShareHistoryEntry[]>([])
   const [error, setError] = React.useState("")
   const [warning, setWarning] = React.useState("")
   const [sending, setSending] = React.useState(false)
@@ -336,15 +425,6 @@ export default function ShareToDevboardPage() {
     projectIsAvailable(project, currentUserId, isAdmin),
   ), [currentUserId, isAdmin, projects])
 
-  const selectedProject = availableProjects.find((project) => project.id === projectId)
-  const activities = React.useMemo(() => (selectedProject?.activities ?? []).filter((activity) =>
-    activityIsAvailable(activity, currentUserId, isAdmin),
-  ), [currentUserId, isAdmin, selectedProject])
-  const selectedActivity = activities.find((activity) => activity.id === activityId)
-  const subactivities = React.useMemo(() => (selectedActivity?.subactivities ?? []).filter((sub) =>
-    subactivityIsAvailable(sub, currentUserId, isAdmin),
-  ), [currentUserId, isAdmin, selectedActivity])
-
   const availableRequests = React.useMemo(() => serviceRequests
     .filter((request) => !SERVICE_REQUEST_FINAL_STATUSES.has(request.status))
     .filter((request) => isAdmin
@@ -370,68 +450,185 @@ export default function ShareToDevboardPage() {
   }).sort((a, b) => b.review.createdAt.localeCompare(a.review.createdAt)), [aqsReviews, currentUserId, isAdmin, projects])
   const selectedAqsReview = availableAqsReviews.find((item) => item.review.id === aqsReviewId)
 
+  const allDestinations = React.useMemo<ShareDestination[]>(() => {
+    const items: ShareDestination[] = []
+
+    for (const project of availableProjects) {
+      const visibleActivities = project.activities.filter((activity) =>
+        activityIsAvailable(activity, currentUserId, isAdmin),
+      )
+      const visibleSubs = visibleActivities.flatMap((activity) =>
+        activity.subactivities
+          .filter((sub) => subactivityIsAvailable(sub, currentUserId, isAdmin))
+          .map((sub) => ({ activity, sub })),
+      )
+      const projectUpdatedAt = latestIso(visibleSubs.flatMap(({ sub }) => [sub.updatedAt, sub.createdAt]))
+
+      items.push({
+        key: `project:${project.id}`,
+        type: "project",
+        title: project.name,
+        subtitle: project.client ? `Projeto · ${project.client}` : "Projeto",
+        searchText: `${project.name} ${project.client} ${project.tag}`.toLowerCase(),
+        updatedAt: projectUpdatedAt,
+        projectId: project.id,
+        projectIcon: project.icon,
+        projectIconUrl: project.iconImageUrl,
+      })
+
+      for (const activity of visibleActivities) {
+        const activitySubs = activity.subactivities.filter((sub) =>
+          subactivityIsAvailable(sub, currentUserId, isAdmin),
+        )
+        items.push({
+          key: `activity:${activity.id}`,
+          type: "activity",
+          title: activity.title,
+          subtitle: `${project.name} · Atividade`,
+          searchText: `${activity.title} ${project.name} ${project.client}`.toLowerCase(),
+          updatedAt: latestIso(activitySubs.flatMap((sub) => [sub.updatedAt, sub.createdAt])),
+          projectId: project.id,
+          activityId: activity.id,
+          projectIcon: project.icon,
+          projectIconUrl: project.iconImageUrl,
+        })
+
+        for (const sub of activitySubs) {
+          items.push({
+            key: `subactivity:${sub.id}`,
+            type: "subactivity",
+            title: sub.title,
+            subtitle: `${project.name} · ${activity.title}`,
+            searchText: `${sub.title} ${activity.title} ${project.name} ${project.client}`.toLowerCase(),
+            updatedAt: sub.updatedAt || sub.createdAt || "",
+            projectId: project.id,
+            activityId: activity.id,
+            subactivityId: sub.id,
+            projectIcon: project.icon,
+            projectIconUrl: project.iconImageUrl,
+          })
+        }
+      }
+    }
+
+    for (const request of availableRequests) {
+      items.push({
+        key: `request:${request.id}`,
+        type: "request",
+        title: request.title,
+        subtitle: `${serviceRequestReference(request)} · ${request.unit || request.module || "Solicitação"}`,
+        searchText: `${request.title} ${serviceRequestReference(request)} ${request.unit} ${request.module} ${request.subject}`.toLowerCase(),
+        updatedAt: request.updatedAt,
+        requestId: request.id,
+      })
+    }
+
+    for (const { review, project, activity, sub } of availableAqsReviews) {
+      items.push({
+        key: `aqs:${review.id}`,
+        type: "aqs",
+        title: sub.title,
+        subtitle: `${project.name} · ${activity.title}`,
+        searchText: `${sub.title} ${activity.title} ${project.name} aqs análise`.toLowerCase(),
+        updatedAt: sub.updatedAt || review.createdAt,
+        projectId: project.id,
+        activityId: activity.id,
+        subactivityId: sub.id,
+        aqsReviewId: review.id,
+        projectIcon: project.icon,
+        projectIconUrl: project.iconImageUrl,
+      })
+    }
+
+    const rank: Record<ShareDestinationType, number> = {
+      subactivity: 0,
+      request: 1,
+      aqs: 2,
+      activity: 3,
+      project: 4,
+    }
+
+    return items.sort((a, b) => {
+      const byDate = b.updatedAt.localeCompare(a.updatedAt)
+      return byDate || rank[a.type] - rank[b.type] || a.title.localeCompare(b.title)
+    })
+  }, [availableAqsReviews, availableProjects, availableRequests, currentUserId, isAdmin])
+
+  const selectedDestination = allDestinations.find((item) => item.key === selectedDestinationKey)
+
+  React.useEffect(() => {
+    if (!currentUserId) return
+    try {
+      const raw = window.localStorage.getItem(`taskboard-share-history-v2:${currentUserId}`)
+      const parsed = raw ? JSON.parse(raw) : []
+      setShareHistory(Array.isArray(parsed) ? parsed.slice(0, 20) : [])
+    } catch {
+      setShareHistory([])
+    }
+  }, [currentUserId])
+
+  const frequentDestinations = React.useMemo(() => shareHistory
+    .slice()
+    .sort((a, b) => b.count - a.count || b.lastUsedAt.localeCompare(a.lastUsedAt))
+    .map((entry) => allDestinations.find((item) => item.key === entry.key))
+    .filter((item): item is ShareDestination => Boolean(item))
+    .slice(0, 6), [allDestinations, shareHistory])
+
+  const recentDestinations = React.useMemo(() => {
+    const frequentKeys = new Set(frequentDestinations.map((item) => item.key))
+    return allDestinations
+      .filter((item) => !frequentKeys.has(item.key))
+      .slice(0, 8)
+  }, [allDestinations, frequentDestinations])
+
+  const normalizedDestinationQuery = destinationQuery.trim().toLowerCase()
+  const filteredDestinations = React.useMemo(() => allDestinations.filter((item) => {
+    if (destinationFilter !== "all" && item.type !== destinationFilter) return false
+    if (!normalizedDestinationQuery) return true
+    return item.searchText.includes(normalizedDestinationQuery)
+      || item.title.toLowerCase().includes(normalizedDestinationQuery)
+      || item.subtitle.toLowerCase().includes(normalizedDestinationQuery)
+  }), [allDestinations, destinationFilter, normalizedDestinationQuery])
+
   const sharedText = payload ? textEvidence(payload) : null
   const hasContent = files.length > 0 || Boolean(includeText && sharedText)
 
-  React.useEffect(() => {
-    if (destinationGroup !== "work" || projectId || availableProjects.length !== 1) return
-    setProjectId(availableProjects[0].id)
-  }, [availableProjects, destinationGroup, projectId])
-
-  React.useEffect(() => {
-    if (destinationGroup !== "work" || destination === "project" || activityId || activities.length !== 1) return
-    setActivityId(activities[0].id)
-  }, [activities, activityId, destination, destinationGroup])
-
-  React.useEffect(() => {
-    if (destinationGroup !== "work" || destination !== "subactivity" || subactivityId || subactivities.length !== 1) return
-    setSubactivityId(subactivities[0].id)
-  }, [destination, destinationGroup, subactivities, subactivityId])
-
-  React.useEffect(() => {
-    if (destinationGroup !== "request" || requestId || availableRequests.length !== 1) return
-    setRequestId(availableRequests[0].id)
-  }, [availableRequests, destinationGroup, requestId])
-
-  React.useEffect(() => {
-    if (destinationGroup !== "aqs" || aqsReviewId || availableAqsReviews.length !== 1) return
-    setAqsReviewId(availableAqsReviews[0].review.id)
-  }, [aqsReviewId, availableAqsReviews, destinationGroup])
-
-  function changeDestinationGroup(next: DestinationGroup) {
-    setDestinationGroup(next)
+  function chooseDestination(item: ShareDestination) {
+    setSelectedDestinationKey(item.key)
     setError("")
-    if (next !== "work") {
-      setProjectId("")
-      setActivityId("")
-      setSubactivityId("")
+    setProjectId(item.projectId ?? "")
+    setActivityId(item.activityId ?? "")
+    setSubactivityId(item.subactivityId ?? "")
+    setRequestId(item.requestId ?? "")
+    setAqsReviewId(item.aqsReviewId ?? "")
+
+    if (item.type === "request") {
+      setDestinationGroup("request")
+      return
     }
-    if (next !== "request") setRequestId("")
-    if (next !== "aqs") setAqsReviewId("")
-  }
-
-  function selectProject(next: string) {
-    setProjectId(next)
-    setActivityId("")
-    setSubactivityId("")
-    setError("")
-  }
-
-  function selectActivity(next: string) {
-    setActivityId(next)
-    setSubactivityId("")
-    setError("")
-  }
-
-  function changeDestination(next: DestinationKind) {
-    setDestination(next)
-    if (next === "project") {
-      setActivityId("")
-      setSubactivityId("")
-    } else if (next === "activity") {
-      setSubactivityId("")
+    if (item.type === "aqs") {
+      setDestinationGroup("aqs")
+      return
     }
-    setError("")
+
+    setDestinationGroup("work")
+    setDestination(item.type)
+  }
+
+  function rememberDestination(key: string) {
+    if (!currentUserId || !key) return
+    const now = new Date().toISOString()
+    const current = shareHistory.find((entry) => entry.key === key)
+    const next = [
+      { key, count: (current?.count ?? 0) + 1, lastUsedAt: now },
+      ...shareHistory.filter((entry) => entry.key !== key),
+    ].slice(0, 20)
+    setShareHistory(next)
+    try {
+      window.localStorage.setItem(`taskboard-share-history-v2:${currentUserId}`, JSON.stringify(next))
+    } catch {
+      // O histórico é apenas um acelerador local; o envio não depende dele.
+    }
   }
 
   async function discardAndLeave() {
@@ -442,6 +639,10 @@ export default function ShareToDevboardPage() {
 
   async function sendEvidence() {
     if (sending || !hasContent) return
+    if (!selectedDestinationKey || !selectedDestination) {
+      setError("Escolha onde deseja enviar este conteúdo.")
+      return
+    }
     if (destinationGroup === "work") {
       if (!projectId) {
         setError("Selecione o projeto de destino.")
@@ -523,6 +724,7 @@ export default function ShareToDevboardPage() {
       }
 
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
+      rememberDestination(selectedDestinationKey)
       setSuccess(true)
     } catch (cause) {
       console.error("[TaskBoard/PWA Share] Falha ao preparar evidências", cause)
@@ -576,7 +778,7 @@ export default function ShareToDevboardPage() {
           </span>
           <h1 className="mt-5 text-xl font-bold tracking-tight">Evidência anexada</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            O conteúdo foi salvo no destino escolhido e a cópia temporária recebida pelo Android foi removida.
+            O conteúdo foi salvo no destino escolhido e a cópia temporária recebida pelo dispositivo foi removida.
           </p>
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
             <Button variant="outline" size="lg" onClick={() => void discardAndLeave()}>
@@ -592,294 +794,297 @@ export default function ShareToDevboardPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-background px-3 py-3 sm:px-5 sm:py-5">
-      <div className="mx-auto w-full max-w-3xl">
-        <header className="flex min-w-0 items-center gap-3 px-1 py-2">
-          <button
-            type="button"
-            onClick={() => void discardAndLeave()}
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Cancelar compartilhamento"
-          >
-            <ArrowLeft className="size-4.5" />
-          </button>
-          <DevboardLogo className="size-8 shrink-0" priority />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Compartilhar no TaskBoard</h1>
-            <p className="truncate text-[0.68rem] text-muted-foreground">Recebido pelo PWA · Chrome Android</p>
-          </div>
-          <span className="hidden items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[0.65rem] font-semibold text-muted-foreground sm:flex">
-            <Smartphone className="size-3" /> PWA
-          </span>
-        </header>
-
-        <section className="mt-3 overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10">
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Share2 className="size-4 text-primary" /> Conteúdo recebido
-              </div>
-              <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
-                Só será enviado depois que você confirmar o destino.
+    <main className="min-h-dvh bg-background">
+      <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
+        <header className="sticky top-0 z-30 border-b border-border/70 bg-background/92 px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void discardAndLeave()}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+              aria-label="Cancelar compartilhamento"
+            >
+              <ArrowLeft className="size-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-lg font-semibold tracking-tight">Enviar para...</h1>
+              <p className="truncate text-[0.68rem] text-muted-foreground">
+                Escolha rapidamente onde anexar no TaskBoard
               </p>
             </div>
-            <span className="shrink-0 rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground">
-              {files.length + (includeText && sharedText ? 1 : 0)} item(ns)
-            </span>
+            <DevboardLogo className="size-8 shrink-0" priority />
           </div>
 
-          <div className="space-y-2 p-3 sm:p-4">
-            {files.map((file, index) => {
-              const kind = detectKind(file)
-              return (
-                <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-background/60 p-2.5">
-                  <SharedFilePreview file={file} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold" title={file.name}>{file.name || "Arquivo compartilhado"}</p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
-                      <KindIcon kind={kind} className="size-3" />
-                      {formatBytes(file.size)}
-                      {file.type && <span className="truncate">· {file.type}</span>}
-                      {files.length === 1 && kind === "video" && file.size > MAX_FILE_BYTES && (
-                        <span className="shrink-0 text-primary">· otimização automática</span>
-                      )}
-                    </p>
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={destinationQuery}
+              onChange={(event) => setDestinationQuery(event.target.value)}
+              placeholder="Buscar projeto, atividade, subatividade, solicitação..."
+              className="h-11 w-full rounded-2xl border border-border bg-muted/55 pl-10 pr-10 text-sm outline-none transition-colors placeholder:text-muted-foreground/80 focus:border-primary/30 focus:bg-card focus:ring-3 focus:ring-primary/10"
+              inputMode="search"
+              autoComplete="off"
+            />
+            {destinationQuery && (
+              <button
+                type="button"
+                onClick={() => setDestinationQuery("")}
+                className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Limpar busca"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="flex-1 px-3 pb-32 pt-3 sm:px-5">
+          <details className="group overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-3 [&::-webkit-details-marker]:hidden">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
+                <Paperclip className="size-4.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  {files.length + (includeText && sharedText ? 1 : 0)} {files.length + (includeText && sharedText ? 1 : 0) === 1 ? "item pronto" : "itens prontos"} para enviar
+                </span>
+                <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">
+                  Toque para revisar ou remover antes do envio
+                </span>
+              </span>
+              <span className="rounded-full bg-muted px-2 py-1 text-[0.62rem] font-semibold text-muted-foreground transition-colors group-open:bg-primary/8 group-open:text-primary">
+                Ver conteúdo
+              </span>
+            </summary>
+
+            <div className="space-y-2 border-t border-border/70 p-3">
+              {files.map((file, index) => {
+                const kind = detectKind(file)
+                return (
+                  <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 p-2.5">
+                    <SharedFilePreview file={file} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold" title={file.name}>{file.name || "Arquivo compartilhado"}</p>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+                        <KindIcon kind={kind} className="size-3" />
+                        {formatBytes(file.size)}
+                        {file.type && <span className="truncate">· {file.type}</span>}
+                        {files.length === 1 && kind === "video" && file.size > MAX_FILE_BYTES && (
+                          <span className="shrink-0 text-primary">· otimização automática</span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                )
+              })}
+
+              {sharedText && includeText && payload && (
+                <div className="flex min-w-0 items-start gap-3 rounded-xl bg-muted/40 p-2.5">
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary ring-1 ring-primary/10">
+                    {payload.url ? <Link2 className="size-5" /> : <FileText className="size-5" />}
+                  </span>
+                  <div className="min-w-0 flex-1 py-0.5">
+                    <p className="truncate text-sm font-semibold">{payload.title || (payload.url ? "Link compartilhado" : "Texto compartilhado")}</p>
+                    {payload.text && <p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{payload.text}</p>}
+                    {payload.url && (
+                      <a href={payload.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-[0.68rem] font-medium text-primary hover:underline">
+                        {payload.url}
+                      </a>
+                    )}
                   </div>
                   <button
                     type="button"
-                    onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label={`Remover ${file.name}`}
+                    onClick={() => setIncludeText(false)}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    aria-label="Remover texto ou link compartilhado"
                   >
                     <X className="size-4" />
                   </button>
                 </div>
-              )
-            })}
+              )}
 
-            {sharedText && includeText && payload && (
-              <div className="flex min-w-0 items-start gap-3 rounded-xl border border-border/70 bg-background/60 p-2.5">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary ring-1 ring-primary/10">
-                  {payload.url ? <Link2 className="size-5" /> : <FileText className="size-5" />}
-                </span>
-                <div className="min-w-0 flex-1 py-0.5">
-                  <p className="truncate text-sm font-semibold">{payload.title || (payload.url ? "Link compartilhado" : "Texto compartilhado")}</p>
-                  {payload.text && <p className="mt-1 line-clamp-2 text-[0.68rem] leading-relaxed text-muted-foreground">{payload.text}</p>}
-                  {payload.url && (
-                    <a href={payload.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-[0.68rem] font-medium text-primary hover:underline">
-                      {payload.url}
-                    </a>
-                  )}
+              {!hasContent && !warning && (
+                <div className="rounded-xl border border-dashed border-border px-4 py-7 text-center">
+                  <Paperclip className="mx-auto size-5 text-muted-foreground" />
+                  <p className="mt-2 text-sm font-semibold">Nenhum conteúdo recebido</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Compartilhe novamente pelo menu do Android/iOS.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIncludeText(false)}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Remover texto ou link compartilhado"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            )}
-
-            {!hasContent && !warning && (
-              <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
-                <Paperclip className="mx-auto size-5 text-muted-foreground" />
-                <p className="mt-2 text-sm font-semibold">Nenhuma evidência recebida</p>
-                <p className="mt-1 text-xs text-muted-foreground">Abra uma foto, arquivo ou link em outro aplicativo e escolha Compartilhar → TaskBoard.</p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="mt-3 rounded-2xl bg-card p-4 ring-1 ring-foreground/10 sm:p-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
-              <Share2 className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold">Onde enviar?</h2>
-              <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
-                Primeiro escolha o contexto. Depois o TaskBoard mostra somente os destinos disponíveis para você.
-              </p>
+              )}
             </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
-            {([
-              ["work", "Projeto", FolderKanban],
-              ["request", "Solicitação", ClipboardList],
-              ["aqs", "Análise AQS", ClipboardCheck],
-            ] as const).map(([key, label, Icon]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => changeDestinationGroup(key)}
-                className={cn(
-                  "flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.68rem] font-semibold transition-all sm:text-xs",
-                  destinationGroup === key ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Icon className="size-3.5 shrink-0" />
-                <span className="truncate">{label}</span>
-              </button>
-            ))}
-          </div>
+          </details>
 
           {!isAdmin && (
-            <div className="mt-3 rounded-xl border border-primary/10 bg-primary/[0.035] px-3 py-2 text-[0.66rem] leading-relaxed text-muted-foreground">
-              Para manter o envio seguro, você vê apenas itens em aberto dos quais já participa ou acompanha.
-            </div>
+            <p className="mt-3 px-1 text-[0.65rem] leading-relaxed text-muted-foreground">
+              Você vê somente destinos disponíveis para o seu nível de acesso.
+            </p>
           )}
 
-          {destinationGroup === "work" && (
-            <div className="mt-4">
-              <div className="grid grid-cols-3 gap-1 rounded-xl border border-border/70 bg-background/60 p-1">
-                {([
-                  ["project", "Projeto", FolderKanban],
-                  ["activity", "Atividade", Layers3],
-                  ["subactivity", "Subatividade", Paperclip],
-                ] as const).map(([key, label, Icon]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => changeDestination(key)}
-                    className={cn(
-                      "flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.68rem] font-semibold transition-all sm:text-xs",
-                      destination === key ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5 shrink-0" />
-                    <span className="truncate">{label}</span>
-                  </button>
-                ))}
+          {!normalizedDestinationQuery && destinationFilter === "all" && frequentDestinations.length > 0 && (
+            <section className="mt-5">
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <Hash className="size-3.5 text-primary" />
+                <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Frequentes</h2>
               </div>
-
-              <div className="mt-3 grid gap-3">
-                <NativeSelect value={projectId} onChange={selectProject} label="Projeto" placeholder="Selecione o projeto">
-                  {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                </NativeSelect>
-
-                {destination !== "project" && (
-                  <NativeSelect value={activityId} onChange={selectActivity} disabled={!projectId} label="Atividade" placeholder={projectId ? "Selecione a atividade" : "Selecione o projeto primeiro"}>
-                    {activities.map((activity) => <option key={activity.id} value={activity.id}>{activity.title}</option>)}
-                  </NativeSelect>
-                )}
-
-                {destination === "subactivity" && (
-                  <NativeSelect value={subactivityId} onChange={(value) => { setSubactivityId(value); setError("") }} disabled={!activityId} label="Subatividade" placeholder={activityId ? "Selecione a subatividade" : "Selecione a atividade primeiro"}>
-                    {subactivities.map((sub) => <option key={sub.id} value={sub.id}>{sub.title}</option>)}
-                  </NativeSelect>
-                )}
-              </div>
-
-              {availableProjects.length === 0 && (
-                <p className="mt-3 rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
-                  Nenhum projeto acompanhado está disponível para receber esta evidência.
-                </p>
-              )}
-            </div>
-          )}
-
-          {destinationGroup === "request" && (
-            <div className="mt-4 grid gap-3">
-              <NativeSelect value={requestId} onChange={(value) => { setRequestId(value); setError("") }} label="Solicitação em aberto" placeholder="Selecione a solicitação">
-                {availableRequests.map((request) => (
-                  <option key={request.id} value={request.id}>{serviceRequestReference(request)} · {request.title}</option>
-                ))}
-              </NativeSelect>
-
-              {selectedRequest && (
-                <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <p className="truncate text-xs font-semibold">{selectedRequest.title}</p>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.6rem] font-medium text-muted-foreground">{SERVICE_REQUEST_STATUS_LABELS[selectedRequest.status]}</span>
-                  </div>
-                  <p className="mt-1 truncate text-[0.65rem] text-muted-foreground">{serviceRequestReference(selectedRequest)} · {selectedRequest.unit} · {selectedRequest.module}</p>
-                </div>
-              )}
-
-              {availableRequests.length === 0 && (
-                <p className="rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
-                  Nenhuma solicitação em aberto que você acompanha está disponível.
-                </p>
-              )}
-            </div>
-          )}
-
-          {destinationGroup === "aqs" && (
-            <div className="mt-4 grid gap-3">
-              <NativeSelect value={aqsReviewId} onChange={(value) => { setAqsReviewId(value); setError("") }} label="Análise AQS em aberto" placeholder="Selecione a análise">
-                {availableAqsReviews.map(({ review, project, sub }) => (
-                  <option key={review.id} value={review.id}>{project.name} · {sub.title}</option>
-                ))}
-              </NativeSelect>
-
-              {selectedAqsReview && (
-                <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <p className="truncate text-xs font-semibold">{selectedAqsReview.sub.title}</p>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.6rem] font-medium text-muted-foreground">
-                      {selectedAqsReview.review.status === "evaluating" ? "Em análise" : "Aguardando AQS"}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-[0.65rem] text-muted-foreground">{selectedAqsReview.project.name} · {selectedAqsReview.activity.title}</p>
-                </div>
-              )}
-
-              {availableAqsReviews.length === 0 && (
-                <p className="rounded-xl border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-relaxed text-warning">
-                  Nenhuma análise AQS em aberto que você acompanha está disponível.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
-
-        {videoProgress && sending && (
-          <div className="mt-3 rounded-2xl border border-primary/15 bg-primary/[0.045] px-4 py-3">
-            <div className="flex items-start gap-3">
-              <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold text-foreground">Preparando vídeo</p>
-                  <span className="font-mono text-[0.65rem] text-primary">{Math.round(videoProgress.progress * 100)}%</span>
-                </div>
-                <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">{videoProgress.message}</p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-300"
-                    style={{ width: `${Math.round(videoProgress.progress * 100)}%` }}
+              <div className="grid gap-1 sm:grid-cols-2">
+                {frequentDestinations.map((item) => (
+                  <DestinationRow
+                    key={`frequent-${item.key}`}
+                    destination={item}
+                    selected={selectedDestinationKey === item.key}
+                    onSelect={() => chooseDestination(item)}
+                    compact
                   />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {!normalizedDestinationQuery && destinationFilter === "all" && recentDestinations.length > 0 && (
+            <section className="mt-5">
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <Clock3 className="size-3.5 text-primary" />
+                <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Recentes</h2>
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {recentDestinations.map((item) => (
+                  <DestinationRow
+                    key={`recent-${item.key}`}
+                    destination={item}
+                    selected={selectedDestinationKey === item.key}
+                    onSelect={() => chooseDestination(item)}
+                    compact
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="mt-5">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h2 className="text-sm font-semibold">
+                {normalizedDestinationQuery ? "Resultados" : "Todos os destinos"}
+              </h2>
+              <span className="text-[0.65rem] text-muted-foreground">{filteredDestinations.length} disponíveis</span>
+            </div>
+
+            <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {([
+                ["all", "Todos"],
+                ["subactivity", "Acompanhamentos"],
+                ["request", "Solicitações"],
+                ["aqs", "AQS"],
+                ["activity", "Atividades"],
+                ["project", "Projetos"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setDestinationFilter(key)}
+                  className={cn(
+                    "h-9 shrink-0 rounded-full px-3 text-xs font-semibold transition-colors",
+                    destinationFilter === key
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-2 grid gap-1">
+              {filteredDestinations.map((item) => (
+                <DestinationRow
+                  key={item.key}
+                  destination={item}
+                  selected={selectedDestinationKey === item.key}
+                  onSelect={() => chooseDestination(item)}
+                />
+              ))}
+
+              {filteredDestinations.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border px-5 py-10 text-center">
+                  <Search className="mx-auto size-5 text-muted-foreground" />
+                  <p className="mt-2 text-sm font-semibold">Nenhum destino encontrado</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Tente outro nome ou altere o filtro selecionado.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {videoProgress && sending && (
+            <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/[0.045] px-4 py-3">
+              <div className="flex items-start gap-3">
+                <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold text-foreground">Preparando vídeo</p>
+                    <span className="font-mono text-[0.65rem] text-primary">{Math.round(videoProgress.progress * 100)}%</span>
+                  </div>
+                  <p className="mt-1 text-[0.68rem] leading-relaxed text-muted-foreground">{videoProgress.message}</p>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-300"
+                      style={{ width: `${Math.round(videoProgress.progress * 100)}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {warning && (
-          <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/8 px-4 py-3 text-xs leading-relaxed text-warning">
-            <div className="flex gap-2.5">
-              <RotateCcw className="mt-0.5 size-4 shrink-0" />
-              <span>{warning}</span>
+          {warning && (
+            <div className="mt-4 rounded-2xl border border-warning/20 bg-warning/8 px-4 py-3 text-xs leading-relaxed text-warning">
+              <div className="flex gap-2.5">
+                <RotateCcw className="mt-0.5 size-4 shrink-0" />
+                <span>{warning}</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div role="alert" className="mt-3 rounded-2xl border border-destructive/20 bg-destructive/8 px-4 py-3 text-xs leading-relaxed text-destructive">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div role="alert" className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/8 px-4 py-3 text-xs leading-relaxed text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
 
-        <div className="sticky bottom-0 mt-3 bg-gradient-to-t from-background via-background to-transparent pb-2 pt-3">
-          <div className="flex gap-2 rounded-2xl bg-card p-2 ring-1 ring-foreground/10">
-            <Button variant="outline" size="lg" className="h-11 flex-1" onClick={() => void discardAndLeave()} disabled={sending}>
-              Cancelar
-            </Button>
-            <Button size="lg" className="h-11 flex-[1.5]" onClick={() => void sendEvidence()} disabled={!hasContent || sending} loading={sending} loadingText={videoProgress ? "Otimizando…" : "Anexando…"}>
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl sm:px-5">
+          <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
+            {selectedDestination ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl bg-muted/60 px-2.5 py-2">
+                <DestinationGlyph destination={selectedDestination} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold">{selectedDestination.title}</p>
+                  <p className="truncate text-[0.62rem] text-muted-foreground">{destinationLabel(selectedDestination.type)} · {selectedDestination.subtitle}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0 flex-1 px-2">
+                <p className="text-xs font-semibold">Escolha um destino</p>
+                <p className="text-[0.62rem] text-muted-foreground">Toque em uma opção acima</p>
+              </div>
+            )}
+            <Button
+              size="lg"
+              className="h-12 shrink-0 rounded-full px-5"
+              onClick={() => void sendEvidence()}
+              disabled={!hasContent || !selectedDestinationKey || sending}
+              loading={sending}
+              loadingText={videoProgress ? "Otimizando…" : "Enviando…"}
+            >
               {!sending && <Send className="size-4" />}
-              Anexar evidência
+              Enviar
             </Button>
           </div>
         </div>

@@ -143,6 +143,15 @@ export function MeetingSessionHost() {
     }
   }, [activeMeetingId, minimized])
 
+  const minimizeMeeting = React.useCallback(() => setMinimized(true), [])
+  const restoreMeeting = React.useCallback(() => setMinimized(false), [])
+  const handleRoomOpenChange = React.useCallback((next: boolean) => {
+    if (next) return
+    setActiveMeetingId(null)
+    setMinimized(false)
+    writeStoredSession(null)
+  }, [])
+
   if (!meeting || myState?.status !== "joined" || meeting.endedAt) return null
 
   return (
@@ -150,14 +159,9 @@ export function MeetingSessionHost() {
       meeting={meeting}
       open
       minimized={minimized}
-      onMinimize={() => setMinimized(true)}
-      onRestore={() => setMinimized(false)}
-      onOpenChange={(next) => {
-        if (next) return
-        setActiveMeetingId(null)
-        setMinimized(false)
-        writeStoredSession(null)
-      }}
+      onMinimize={minimizeMeeting}
+      onRestore={restoreMeeting}
+      onOpenChange={handleRoomOpenChange}
     />
   )
 }

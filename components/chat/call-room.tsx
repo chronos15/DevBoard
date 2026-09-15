@@ -1442,15 +1442,24 @@ export function CallRoom({
     if (localVideoRef.current) localVideoRef.current.srcObject = null
   }, [])
 
-  const handleMemberRemoved = React.useCallback(({ payload }: { payload: unknown }) => {
+  // V149: a moderação da V92 não pode participar da identidade do efeito WebRTC.
+  // MeetingSessionHost pode renderizar novamente enquanto chatMeetings é atualizado e,
+  // historicamente, onOpenChange era passado inline. Se o handler abaixo dependesse
+  // diretamente daquela função, o useEffect da sala seria desmontado e fecharia todos
+  // os PeerConnections mesmo sem o usuário sair da reunião.
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
+
+  const handleMemberRemovedRef = React.useRef<(({ payload }: { payload: unknown }) => void) | null>(null)
+  handleMemberRemovedRef.current = ({ payload }: { payload: unknown }) => {
     const signal = payload as MeetingMemberRemovedSignal
     if (!meeting || signal?.meetingId !== meeting.id || signal.userId !== currentUserId) return
     // Se este dispositivo era o gravador, inicia a publicação antes de fechar a sala.
     // O upload continua mesmo após o componente da chamada sair da tela.
     if (meetingRecorderRef.current) void finalizeRecordingRef.current?.()
     stopAllMedia()
-    onOpenChange(false)
-  }, [currentUserId, meeting?.id, onOpenChange, stopAllMedia])
+    onOpenChangeRef.current(false)
+  }
 
   const setupMedia = React.useCallback(async () => {
     if (!meeting) return
@@ -1745,6 +1754,8 @@ export function CallRoom({
     if (!open || !meeting || currentMeetingState?.status !== "joined" || mediaReadyMeetingId !== meeting.id) return
     let disposed = false
     let channel: RealtimeChannel | null = null
+    const lifecycleId = `${meeting.id}:${sessionIdRef.current}`
+    console.info("TaskBoard: sessão WebRTC iniciada", { meetingId: meeting.id, sessionId: sessionIdRef.current })
 
     const syncPresence = () => {
       if (!channel) return
@@ -1936,7 +1947,7 @@ export function CallRoom({
           .on("broadcast", { event: "media-state" }, ({ payload }) => handleMediaState(payload as MediaStateSignal))
           .on("broadcast", { event: "recording-state" }, ({ payload }) => handleRecordingState(payload as RecordingStateSignal))
           .on("broadcast", { event: "recording-stop-request" }, handleRecordingStopRequest)
-          .on("broadcast", { event: "member-removed" }, handleMemberRemoved)
+          .on("broadcast", { event: "member-removed" }, (message) => handleMemberRemovedRef.current?.(message))
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
@@ -1958,6 +1969,7 @@ export function CallRoom({
     })()
 
     return () => {
+      console.info("TaskBoard: sessão WebRTC finalizada", { lifecycleId })
       disposed = true
       realtimeSubscribedRef.current = false
       if (channel) {
@@ -1982,7 +1994,6 @@ export function CallRoom({
     flushPendingIce,
     getPeerRole,
     handleNativeScreenSignal,
-    handleMemberRemoved,
     bindPeerSenders,
     postSignal,
     sendOffer,

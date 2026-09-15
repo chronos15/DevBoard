@@ -66,6 +66,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Subactivity["status"] | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
   const [inlineOpen, setInlineOpen] = React.useState(false)
+  const [titleExpanded, setTitleExpanded] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [focusSaving, setFocusSaving] = React.useState(false)
   const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
@@ -232,17 +233,27 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         <div className="flex min-w-0 items-start gap-2">
           <button
             type="button"
-            onClick={() => setInlineOpen((current) => !current)}
+            onClick={() => setTitleExpanded((current) => !current)}
             className={cn(
               "min-w-0 flex-1 break-words text-left text-sm font-medium leading-snug transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary",
+              !titleExpanded && "line-clamp-3",
               terminal && "text-muted-foreground line-through",
             )}
-            title={`${sub.title} · ${inlineOpen ? "recolher resumo" : "expandir resumo"}`}
-            aria-expanded={inlineOpen}
+            title={titleExpanded ? "Recolher título" : `Expandir título · ${sub.title}`}
+            aria-expanded={titleExpanded}
           >
             {sub.title}
           </button>
-          <ChevronDown className={cn("mt-0.5 size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
+          <button
+            type="button"
+            onClick={() => setTitleExpanded((current) => !current)}
+            className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={titleExpanded ? "Recolher título" : "Expandir título"}
+            aria-label={titleExpanded ? `Recolher título de ${sub.title}` : `Expandir título de ${sub.title}`}
+            aria-expanded={titleExpanded}
+          >
+            <ChevronDown className={cn("size-3.5 transition-transform", titleExpanded && "rotate-180")} />
+          </button>
         </div>
         <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
           <WorkItemTypeBadge typeId={sub.typeId} compact />
@@ -375,6 +386,20 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           </select>
           {statusSaving && <LoaderCircle className="size-3.5 shrink-0 animate-spin text-primary" aria-label="Salvando status" />}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setInlineOpen((current) => !current)}
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            inlineOpen && "border-primary/25 bg-primary/10 text-primary",
+          )}
+          title={inlineOpen ? "Recolher resumo do acompanhamento" : "Expandir resumo do acompanhamento"}
+          aria-label={inlineOpen ? `Recolher resumo do acompanhamento de ${sub.title}` : `Expandir resumo do acompanhamento de ${sub.title}`}
+          aria-expanded={inlineOpen}
+        >
+          <ChevronDown className={cn("size-4 transition-transform", inlineOpen && "rotate-180")} />
+        </button>
 
         <div className="flex items-center gap-1.5">
           {!canManage && (

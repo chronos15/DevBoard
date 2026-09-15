@@ -13,8 +13,8 @@ export const SCREEN_ACCESS_DEFINITIONS: Array<{ key: ScreenAccessKey; label: str
   { key: "agenda", label: "Agenda", description: "Agenda e prazos do workspace." },
   { key: "chat", label: "Chat", description: "Canais, conversas e mensagens." },
   { key: "reports", label: "Relatórios", description: "Central administrativa de relatórios." },
+  { key: "settings", label: "Configurações", description: "Preferências e, para administradores, gestão da equipe e permissões." },
 ]
-
 
 export const ACTION_ACCESS_DEFINITIONS: Array<{ key: ActionAccessKey; label: string; description: string }> = [
   { key: "createProjects", label: "Adicionar projetos", description: "Permite criar novos projetos no workspace." },
@@ -46,6 +46,25 @@ export function defaultScreenPermissions(role: AccessRole): Record<ScreenAccessK
     agenda: role === "admin" || role === "developer",
     chat: true,
     reports: role === "admin",
+    settings: true,
+  }
+}
+
+export function defaultReadOnlyScreens(): Record<ScreenAccessKey, boolean> {
+  return {
+    dashboard: false,
+    developer: false,
+    projects: false,
+    followup: false,
+    requests: false,
+    requestsAqs: false,
+    requestsDev: false,
+    analysis: false,
+    hours: false,
+    agenda: false,
+    chat: false,
+    reports: false,
+    settings: false,
   }
 }
 
@@ -54,6 +73,7 @@ export function defaultMemberAccessPolicy(role: AccessRole = "member"): MemberAc
     enabled: false,
     screenPermissions: defaultScreenPermissions(role),
     actionPermissions: defaultActionPermissions(role),
+    readOnlyScreens: defaultReadOnlyScreens(),
     restrictProjects: false,
     restrictActivities: false,
     restrictSubactivities: false,
@@ -73,6 +93,7 @@ export function normalizeMemberAccessPolicy(value: unknown, role: AccessRole = "
   for (const definition of SCREEN_ACCESS_DEFINITIONS) {
     if (typeof rawScreens[definition.key] === "boolean") screenPermissions[definition.key] = Boolean(rawScreens[definition.key])
   }
+
   const rawActions = row.actionPermissions && typeof row.actionPermissions === "object"
     ? row.actionPermissions as Record<string, unknown>
     : row.action_permissions && typeof row.action_permissions === "object"
@@ -82,10 +103,22 @@ export function normalizeMemberAccessPolicy(value: unknown, role: AccessRole = "
   for (const definition of ACTION_ACCESS_DEFINITIONS) {
     if (typeof rawActions[definition.key] === "boolean") actionPermissions[definition.key] = Boolean(rawActions[definition.key])
   }
+
+  const rawReadOnly = row.readOnlyScreens && typeof row.readOnlyScreens === "object"
+    ? row.readOnlyScreens as Record<string, unknown>
+    : row.read_only_screens && typeof row.read_only_screens === "object"
+      ? row.read_only_screens as Record<string, unknown>
+      : {}
+  const readOnlyScreens = { ...defaults.readOnlyScreens }
+  for (const definition of SCREEN_ACCESS_DEFINITIONS) {
+    if (typeof rawReadOnly[definition.key] === "boolean") readOnlyScreens[definition.key] = Boolean(rawReadOnly[definition.key])
+  }
+
   return {
     enabled: row.enabled === true,
     screenPermissions,
     actionPermissions,
+    readOnlyScreens,
     restrictProjects: row.restrictProjects === true || row.restrict_projects === true,
     restrictActivities: row.restrictActivities === true || row.restrict_activities === true,
     restrictSubactivities: row.restrictSubactivities === true || row.restrict_subactivities === true,
@@ -93,13 +126,20 @@ export function normalizeMemberAccessPolicy(value: unknown, role: AccessRole = "
 }
 
 export function canAccessScreen(role: AccessRole, policy: MemberAccessPolicy | undefined, screen: ScreenAccessKey) {
-  // O perfil base continua sendo o teto de permissão. O acesso personalizado é
-  // propositalmente restritivo: ele pode esconder áreas, nunca promover a role.
-  if (role === "admin") return screen !== "developer"
   const roleAllows = defaultScreenPermissions(role)[screen]
   if (!roleAllows) return false
   if (!policy?.enabled) return true
   return policy.screenPermissions[screen] !== false
+}
+
+export function isScreenReadOnly(role: AccessRole, policy: MemberAccessPolicy | undefined, screen: ScreenAccessKey) {
+  if (!canAccessScreen(role, policy, screen)) return false
+  if (!policy?.enabled) return false
+  return policy.readOnlyScreens?.[screen] === true
+}
+
+export function canWriteScreen(role: AccessRole, policy: MemberAccessPolicy | undefined, screen: ScreenAccessKey) {
+  return canAccessScreen(role, policy, screen) && !isScreenReadOnly(role, policy, screen)
 }
 
 export function screenAccessForPath(pathname: string): ScreenAccessKey | null {
@@ -114,16 +154,23 @@ export function screenAccessForPath(pathname: string): ScreenAccessKey | null {
   if (pathname.startsWith("/horas")) return "hours"
   if (pathname.startsWith("/agenda")) return "agenda"
   if (pathname.startsWith("/chat")) return "chat"
+  if (pathname.startsWith("/config")) return "settings"
   if (pathname === "/") return "dashboard"
-  // Configurações, ajuda, compartilhar e rotas auxiliares permanecem disponíveis.
+  // Ajuda, compartilhar e rotas auxiliares permanecem disponíveis.
   return null
 }
 
+const ACTION_SCREEN: Record<ActionAccessKey, ScreenAccessKey> = {
+  createProjects: "projects",
+  editProjects: "projects",
+  createActivities: "projects",
+  createSubactivities: "projects",
+}
 
 export function canPerformAction(role: AccessRole, policy: MemberAccessPolicy | undefined, action: ActionAccessKey) {
-  if (role === "admin") return true
   const roleAllows = defaultActionPermissions(role)[action]
   if (!roleAllows) return false
   if (!policy?.enabled) return true
+  if (policy.readOnlyScreens?.[ACTION_SCREEN[action]] === true) return false
   return policy.actionPermissions[action] !== false
 }

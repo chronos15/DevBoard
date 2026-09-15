@@ -99,6 +99,7 @@ import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
@@ -983,6 +984,7 @@ export function ProjectFollowUp({
     runningSubIds,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     preferences,
     serviceRequests,
     canManageSubactivity,
@@ -1316,19 +1318,20 @@ export function ProjectFollowUp({
     currentUserRole === "developer" &&
     !selectedIsParticipant
   )
+  const moduleReadOnly = !canWriteScreen(currentUserRole, currentAccessPolicy, "followup")
   const sendEditedImageToCurrentFollowUp = React.useCallback(async (file: File) => {
-    if (!selectedSub || selectedDeveloperObserver) return false
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly) return false
     const prepared = await fileToUpload(file)
     return addFollowUpAttachments(selectedSub.id, [prepared])
   }, [addFollowUpAttachments, selectedDeveloperObserver, selectedSub])
   const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
     selectedSub ? `followup:sub:${selectedSub.id}` : null,
-    Boolean(selectedSub) && (!selectedDeveloperObserver || Boolean(replyingTo)),
+    Boolean(selectedSub) && !moduleReadOnly && (!selectedDeveloperObserver || Boolean(replyingTo)),
   )
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
 
   async function startSelectedMeeting() {
-    if (!selectedActivity || !selectedSub || selectedDeveloperObserver || meetingStarting) return
+    if (!selectedActivity || !selectedSub || selectedDeveloperObserver || moduleReadOnly || meetingStarting) return
     void primeCallAudio()
     setMeetingStarting(true)
     try {
@@ -1384,7 +1387,7 @@ export function ProjectFollowUp({
   const checklistLocked = Boolean(selectedSub && (selectedSub.status === "waiting-aqs" || statusIsTerminal(selectedSub.status)))
 
   async function addChecklistItem() {
-    if (!selectedSub || selectedDeveloperObserver || checklistLocked || checklistSavingId) return
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly || checklistLocked || checklistSavingId) return
     const content = checklistDraft.trim()
     if (!content) return
     setChecklistSavingId("new")
@@ -1403,7 +1406,7 @@ export function ProjectFollowUp({
   }
 
   async function setChecklistItemCompleted(item: SubactivityChecklistItem, completed: boolean) {
-    if (!selectedSub || selectedDeveloperObserver || checklistLocked || checklistSavingId) return
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly || checklistLocked || checklistSavingId) return
     setChecklistSavingId(item.id)
     setChecklistError("")
     const previous = checklistItems
@@ -1422,7 +1425,7 @@ export function ProjectFollowUp({
   }
 
   async function removeChecklistItem(item: SubactivityChecklistItem) {
-    if (!selectedSub || selectedDeveloperObserver || checklistLocked || checklistSavingId) return
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly || checklistLocked || checklistSavingId) return
     setChecklistSavingId(item.id)
     setChecklistError("")
     try {
@@ -2416,7 +2419,7 @@ export function ProjectFollowUp({
             <button
               key={emoji}
               type="button"
-              disabled={reactionSavingItemId === item.id}
+              disabled={moduleReadOnly || reactionSavingItemId === item.id}
               onClick={() => void setTimelineReaction(item, mine ? null : emoji)}
               title={names}
               className={cn(
@@ -2473,7 +2476,7 @@ export function ProjectFollowUp({
             <button
               key={emoji}
               type="button"
-              disabled={reactionSavingItemId === item.id}
+              disabled={moduleReadOnly || reactionSavingItemId === item.id}
               onClick={() => void setTimelineReaction(item, mine?.emoji === emoji ? null : emoji)}
               className={cn(
                 "flex size-9 items-center justify-center rounded-lg text-lg transition-colors hover:bg-muted disabled:opacity-50",
@@ -2492,7 +2495,7 @@ export function ProjectFollowUp({
   }
 
   async function setTimelineReaction(item: TimelineItem, emoji: string | null) {
-    if (!selectedSubId || reactionSavingItemId) return
+    if (!selectedSubId || moduleReadOnly || reactionSavingItemId) return
     if (item.kind === "pending-comment" || item.kind === "pending-attachment") return
     setReactionSavingItemId(item.id)
     const previous = reactions
@@ -2554,6 +2557,7 @@ export function ProjectFollowUp({
   }
 
   async function toggleCommentMark(commentId: string) {
+    if (moduleReadOnly) return
     const nextMarked = !markedCommentIds.has(commentId)
     const { error } = await supabase.rpc("toggle_followup_comment_mark", {
       p_comment_id: commentId,
@@ -2661,7 +2665,7 @@ export function ProjectFollowUp({
   }
 
   function queueFilesForPreview(files: File[]) {
-    if (!selectedSub || selectedDeveloperObserver || !files.length || recording) return
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly || !files.length || recording) return
     const merged = [...pendingFiles, ...files]
     const error = validateFiles(merged)
     if (error) {
@@ -2782,7 +2786,7 @@ export function ProjectFollowUp({
   }
 
   async function startRecording() {
-    if (!selectedSub || selectedDeveloperObserver || recording) return
+    if (!selectedSub || selectedDeveloperObserver || moduleReadOnly || recording) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setComposerError("A gravação de áudio não está disponível neste navegador.")
       return
@@ -3729,13 +3733,13 @@ export function ProjectFollowUp({
                                 <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(replyReferenceFromTimelineItem(item))} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 {comment.authorId === currentUserId && <button type="button" onClick={() => setEditingCommentId(comment.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>}
-                                {!selectedDeveloperObserver && <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
+                                {!selectedDeveloperObserver && !moduleReadOnly && <button type="button" onClick={() => void toggleCommentMark(comment.id)} className={cn("flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary", marked && "text-primary")} title={marked ? "Desfixar mensagem" : "Fixar mensagem"} aria-label={marked ? "Desfixar mensagem" : "Fixar mensagem"}><Pin className={cn("size-3.5", marked && "fill-current")} /></button>}
                                 <CopyEntityLinkButton
                                   href={followUpHref({ projectId: project.id, activityId: selectedActivity.id, subactivityId: selectedSub.id, timelineId: `comment-${comment.id}` })}
                                   label="Copiar link da mensagem"
                                   className="size-7 rounded-md"
                                 />
-                                {canDeleteComment(comment) && (
+                                {!moduleReadOnly && canDeleteComment(comment) && (
                                   <button type="button" disabled={deletingCommentId === comment.id} onClick={() => void deleteComment(comment)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
                                     {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                                   </button>
@@ -3763,7 +3767,7 @@ export function ProjectFollowUp({
                                       label="Copiar link da mensagem"
                                       className="size-8 rounded-md"
                                     />
-                                    {canDeleteComment(comment) && (
+                                    {!moduleReadOnly && canDeleteComment(comment) && (
                                       <button type="button" disabled={deletingCommentId === comment.id} onClick={() => { setCompactActionsItemId(null); void deleteComment(comment) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={currentUserRole === "admin" ? "Excluir mensagem" : "Excluir mensagem (até 30 min)"} aria-label="Excluir mensagem">
                                         {deletingCommentId === comment.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                                       </button>
@@ -3947,7 +3951,7 @@ export function ProjectFollowUp({
                       onChange={(event) => queueFilesForPreview(Array.from(event.target.files ?? []))}
                     />
 
-                    {!selectedDeveloperObserver && pendingFiles.length > 0 && (
+                    {!selectedDeveloperObserver && !moduleReadOnly && pendingFiles.length > 0 && (
                       <div className="border-b border-border bg-muted/10 px-2.5 pb-2 pt-2.5">
                         <div className="flex min-w-0 items-stretch gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
                           {pendingFiles.map((file, index) => (
@@ -3995,7 +3999,7 @@ export function ProjectFollowUp({
                       "flex gap-1.5 px-2 py-2",
                       composerMultiline ? "items-start" : "items-center",
                     )}>
-                      {!selectedDeveloperObserver && (
+                      {!selectedDeveloperObserver && !moduleReadOnly && (
                         <>
                           <Button type="button" variant="ghost" size="icon-sm" disabled={recording} onClick={() => fileInputRef.current?.click()} title="Anexar arquivos" aria-label="Anexar arquivos">
                             <Paperclip className="size-4" />
@@ -4036,9 +4040,9 @@ export function ProjectFollowUp({
                           queueFilesForPreview(files)
                         }}
                         rows={1}
-                        readOnly={selectedDeveloperObserver && !replyingTo}
-                        placeholder={selectedDeveloperObserver && !replyingTo ? "Somente leitura · responda uma mensagem para comentar" : selectedDeveloperObserver ? "Escreva seu comentário..." : `Conversar em “${compactComposerTitle(selectedSub.title)}”`}
-                        className={cn("min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-1 py-1.5 text-sm leading-relaxed outline-none placeholder:text-xs placeholder:text-muted-foreground/70", selectedDeveloperObserver && !replyingTo && "cursor-default text-muted-foreground")}
+                        readOnly={moduleReadOnly || (selectedDeveloperObserver && !replyingTo)}
+                        placeholder={moduleReadOnly ? "Somente leitura · acompanhamento disponível apenas para consulta" : selectedDeveloperObserver && !replyingTo ? "Somente leitura · responda uma mensagem para comentar" : selectedDeveloperObserver ? "Escreva seu comentário..." : `Conversar em “${compactComposerTitle(selectedSub.title)}”`}
+                        className={cn("min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-1 py-1.5 text-sm leading-relaxed outline-none placeholder:text-xs placeholder:text-muted-foreground/70", (moduleReadOnly || (selectedDeveloperObserver && !replyingTo)) && "cursor-default text-muted-foreground")}
                       />
                       {recording ? (
                         <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive/10 px-2 py-1 text-[0.65rem] font-medium text-destructive">
@@ -4046,7 +4050,7 @@ export function ProjectFollowUp({
                           {formatHMS(recordingSeconds)}
                         </div>
                       ) : null}
-                      {!selectedDeveloperObserver && (
+                      {!selectedDeveloperObserver && !moduleReadOnly && (
                         <Button
                           type="button"
                           variant={recording ? "destructive" : "ghost"}
@@ -4061,7 +4065,7 @@ export function ProjectFollowUp({
                       <Button
                         type="button"
                         size="icon-sm"
-                        disabled={(!message.trim() && pendingFiles.length === 0) || recording || (selectedDeveloperObserver && !replyingTo)}
+                        disabled={moduleReadOnly || (!message.trim() && pendingFiles.length === 0) || recording || (selectedDeveloperObserver && !replyingTo)}
                         onClick={sendComposerContent}
                         title={selectedDeveloperObserver ? "Enviar comentário" : "Enviar"}
                         aria-label={selectedDeveloperObserver ? "Enviar comentário" : "Enviar"}
@@ -4073,6 +4077,8 @@ export function ProjectFollowUp({
                   <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
                   {composerError ? (
                     <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
+                  ) : moduleReadOnly ? (
+                    <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[0.58rem] font-medium text-amber-700 dark:text-amber-300"><Eye className="size-3" /> READ ONLY · Você pode acompanhar todo o histórico, mas não comentar, mencionar, anexar ou alterar esta área.</p>
                   ) : selectedDeveloperObserver ? (
                     <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[0.58rem] text-muted-foreground/80"><Eye className="size-3" /> Observação: você pode visualizar, reagir e comentar usando “Responder”. Alterações, mensagens novas, anexos, status e cronômetro ficam bloqueados.</p>
                   ) : (
@@ -4427,7 +4433,7 @@ export function ProjectFollowUp({
               </div>
             </div>
 
-            {!checklistLocked && !selectedDeveloperObserver && (
+            {!checklistLocked && !selectedDeveloperObserver && !moduleReadOnly && (
               <div className="mb-5 flex items-start gap-2">
                 <textarea
                   value={checklistDraft}
@@ -4449,10 +4455,10 @@ export function ProjectFollowUp({
               </div>
             )}
 
-            {(checklistLocked || selectedDeveloperObserver) && (
+            {(checklistLocked || selectedDeveloperObserver || moduleReadOnly) && (
               <div className="mb-5 flex items-start gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
                 {selectedDeveloperObserver && <Eye className="mt-0.5 size-3.5 shrink-0" />}
-                <span>{selectedDeveloperObserver ? "Você está visualizando esta subatividade como observador. As anotações podem ser consultadas, mas não alteradas." : "As anotações estão em modo somente leitura enquanto a subatividade está em análise ou finalizada."}</span>
+                <span>{moduleReadOnly ? "Este módulo está configurado como somente leitura. As anotações podem ser consultadas, mas não alteradas." : selectedDeveloperObserver ? "Você está visualizando esta subatividade como observador. As anotações podem ser consultadas, mas não alteradas." : "As anotações estão em modo somente leitura enquanto a subatividade está em análise ou finalizada."}</span>
               </div>
             )}
 
@@ -4471,12 +4477,12 @@ export function ProjectFollowUp({
                 {checklistItems.map((item) => {
                   const creator = members.find((member) => member.id === item.createdBy)
                   const completed = Boolean(item.completedAt)
-                  const canDelete = !selectedDeveloperObserver && !checklistLocked && (currentUserRole === "admin" || item.createdBy === currentUserId || selectedSub?.assigneeId === currentUserId)
+                  const canDelete = !selectedDeveloperObserver && !moduleReadOnly && !checklistLocked && (currentUserRole === "admin" || item.createdBy === currentUserId || selectedSub?.assigneeId === currentUserId)
                   return (
                     <div key={item.id} className={cn("group/check flex min-w-0 items-start gap-3 rounded-xl border border-border px-3 py-3 transition-colors", completed ? "bg-muted/25" : "bg-card")}>
                       <button
                         type="button"
-                        disabled={selectedDeveloperObserver || checklistLocked || Boolean(checklistSavingId)}
+                        disabled={selectedDeveloperObserver || moduleReadOnly || checklistLocked || Boolean(checklistSavingId)}
                         onClick={() => void setChecklistItemCompleted(item, !completed)}
                         className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-60", completed ? "border-success bg-success text-success-foreground" : "border-border bg-background hover:border-primary/60 hover:text-primary")}
                         aria-label={completed ? "Marcar como pendente" : "Marcar como concluída"}

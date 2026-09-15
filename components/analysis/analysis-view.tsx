@@ -63,6 +63,7 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
+import { canWriteScreen } from "@/lib/access-control"
 
 const reviewMeta: Record<AqsReviewStatus, { label: string; shortLabel: string; dot: string; badge: string }> = {
   awaiting: {
@@ -255,6 +256,7 @@ export function AnalysisView() {
     memberPresence,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     startAqsReview,
     completeAqsReview,
     revokeAqsReview,
@@ -264,7 +266,8 @@ export function AnalysisView() {
     editSubactivityComment,
   } = useStore()
 
-  const canReview = currentUserRole === "admin" || currentUserRole === "aqs"
+  const moduleReadOnly = !canWriteScreen(currentUserRole, currentAccessPolicy, "analysis")
+  const canReview = !moduleReadOnly && (currentUserRole === "admin" || currentUserRole === "aqs")
   const [filter, setFilter] = React.useState<ReviewFilter>("active")
   const [search, setSearch] = React.useState("")
   const [selectedProjectId, setSelectedProjectId] = React.useState<string | null>(null)
@@ -357,7 +360,7 @@ export function AnalysisView() {
   )
 
   const sendEditedImageToSelected = React.useCallback(async (file: File) => {
-    if (!selected) return false
+    if (!selected || moduleReadOnly) return false
     const upload: AttachmentUploadInput = {
       name: file.name,
       mimeType: file.type || "image/png",
@@ -366,11 +369,11 @@ export function AnalysisView() {
       file,
     }
     return addSubactivityAttachments(selected.sub.id, [upload])
-  }, [addSubactivityAttachments, selected])
+  }, [addSubactivityAttachments, moduleReadOnly, selected])
 
   const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
     selected ? `followup:sub:${selected.sub.id}` : null,
-    Boolean(selected),
+    Boolean(selected) && !moduleReadOnly,
   )
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
@@ -408,7 +411,7 @@ export function AnalysisView() {
   }
 
   function selectMention(candidate: MentionCandidate) {
-    if (!mentionRange) return
+    if (moduleReadOnly || !mentionRange) return
     const token = mentionTokenForCandidate(candidate)
     const next = `${comment.slice(0, mentionRange.start)}${token} ${comment.slice(mentionRange.end)}`
     const caret = mentionRange.start + token.length + 1
@@ -667,7 +670,7 @@ export function AnalysisView() {
   }
 
   async function sendComment() {
-    if (!selected || !comment.trim() || sendingComment) return
+    if (moduleReadOnly || !selected || !comment.trim() || sendingComment) return
     setSendingComment(true)
     try {
       const content = comment.trim()
@@ -685,7 +688,7 @@ export function AnalysisView() {
   }
 
   function stageDroppedEvidence(files: File[]) {
-    if (!selected || !files.length) return
+    if (moduleReadOnly || !selected || !files.length) return
     setDroppedEvidenceFiles(files)
     setDroppedEvidenceVersion((current) => current + 1)
     setEvidenceDialogOpen(true)
@@ -927,7 +930,7 @@ export function AnalysisView() {
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-col bg-background" aria-label="Análise AQS">
       <FileDropOverlay
-        enabled={Boolean(selected)}
+        enabled={Boolean(selected) && !moduleReadOnly}
         title={selected ? `Enviar para AQS · #${selected.sub.title}` : "Enviar evidência"}
         description="Solte para adicionar às evidências desta análise. Você poderá revisar o preview antes de salvar."
         onFiles={stageDroppedEvidence}
@@ -1044,7 +1047,7 @@ export function AnalysisView() {
 
                 <span className={cn("hidden shrink-0 rounded-full px-2 py-1 text-[0.6rem] font-medium sm:inline-flex", reviewMeta[selected.review.status].badge)}>{reviewMeta[selected.review.status].shortLabel}</span>
 
-                <ActivityMeetingButton activityId={selected.activity.id} subactivityId={selected.sub.id} aqsReviewId={selected.review.id} />
+                {!moduleReadOnly && <ActivityMeetingButton activityId={selected.activity.id} subactivityId={selected.sub.id} aqsReviewId={selected.review.id} />}
 
                 {canReview && selected.review.status === "awaiting" && (
                   <Button type="button" size="sm" onClick={() => void startReview(selected.review)} loading={busy.has(selected.review.id)}>
@@ -1126,7 +1129,7 @@ export function AnalysisView() {
                                 <RichMessageText content={item.comment.content} mentions={item.comment.mentions} className="mt-1 text-sm leading-relaxed text-foreground/90" />
                               )}
                             </div>
-                            {item.comment.authorId === currentUserId && editingCommentId !== item.comment.id && (
+                            {!moduleReadOnly && item.comment.authorId === currentUserId && editingCommentId !== item.comment.id && (
                               <button type="button" onClick={() => setEditingCommentId(item.comment.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>
                             )}
                           </article>
@@ -1154,6 +1157,12 @@ export function AnalysisView() {
               </div>
 
               <div className="relative shrink-0 border-t border-border bg-card px-3 py-3 sm:px-4">
+                {moduleReadOnly ? (
+                  <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 text-xs text-amber-800 dark:text-amber-200">
+                    <ShieldCheck className="size-4 shrink-0" />
+                    <span><strong className="font-semibold">READ ONLY.</strong> Você pode acompanhar evidências, comentários e decisões, mas não comentar, mencionar, anexar ou alterar a análise.</span>
+                  </div>
+                ) : (<>
                 {canReview && selected.review.status === "evaluating" && (
                   <div className="mb-2 flex items-center gap-2 sm:hidden">
                     <Button type="button" size="sm" variant="outline" className="flex-1 text-destructive hover:text-destructive" disabled={lockedByOther || busy.has(selected.review.id)} onClick={() => { setReason(""); setRevokeTarget(selected.review) }}><RotateCcw className="size-3.5" /> Revogar</Button>
@@ -1230,6 +1239,7 @@ export function AnalysisView() {
                 </div>
                 <TypingIndicator members={typingMembers} className="mt-1.5 px-1" />
                 <p className="mt-1.5 px-1 text-[0.56rem] text-muted-foreground">Enter envia · Shift+Enter quebra a linha · use @todos, @here, @desenvolvedores, @aqs ou @admin.</p>
+                </>)}
               </div>
             </>
           ) : (

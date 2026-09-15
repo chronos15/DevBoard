@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -41,7 +41,7 @@ import {
   serviceRequestStatusTone,
   serviceRequestTypeTone,
 } from "@/lib/service-requests"
-import type { ChatMention, ServiceRequest, ServiceRequestFileInput } from "@/lib/types"
+import type { ChatMention, ScreenAccessKey, ServiceRequest, ServiceRequestFileInput } from "@/lib/types"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -58,6 +58,7 @@ import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { AnchoredTimelineViewport } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { canWriteScreen } from "@/lib/access-control"
 
 function formatDateTime(value: string) {
   const date = new Date(value)
@@ -401,7 +402,7 @@ function CompleteRequestDialog({ open, onOpenChange, requestId }: { open: boolea
   return <Dialog open={open} onOpenChange={(value) => !saving && onOpenChange(value)}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Concluir solicitação</DialogTitle><DialogDescription>Registre a build/versão em que a solução ficou disponível. Esta informação será usada no encerramento do protocolo.</DialogDescription></DialogHeader><form id="complete-request" onSubmit={submit} className="space-y-4"><label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Build / versão *</span><input value={build} onChange={(event) => setBuild(event.target.value)} placeholder="Ex: 06.05a117281f88" className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring" /></label><label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Observações finais</span><textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder="Processos adicionais para o solicitante, se houver..." className="w-full resize-none rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-ring" /></label></form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" form="complete-request" disabled={build.trim().length < 2 || saving} loading={saving} loadingText="Concluindo..."><CheckCircle2 className="size-4" /> Concluir</Button></DialogFooter></DialogContent></Dialog>
 }
 
-function RequestComposer({ request }: { request: ServiceRequest }) {
+function RequestComposer({ request, readOnly = false }: { request: ServiceRequest; readOnly?: boolean }) {
   const { members, memberPresence, currentUserId, addServiceRequestMessage } = useStore()
   const [draft, setDraft] = React.useState("")
   const [mentions, setMentions] = React.useState<ChatMention[]>([])
@@ -429,7 +430,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   }, [currentUserId, memberPresence, members, mentionQuery, request])
 
   function stageFiles(nextFiles: File[]) {
-    if (!nextFiles.length) return
+    if (readOnly || !nextFiles.length) return
     const invalid = nextFiles.find((file) => file.size <= 0 || file.size > 200 * 1024 * 1024)
     if (invalid) {
       setFileError(`O arquivo “${invalid.name || "arquivo"}” deve ter até 200 MB.`)
@@ -440,6 +441,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   }
 
   function chooseMention(candidate: MentionCandidate) {
+    if (readOnly) return
     const token = mentionTokenForCandidate(candidate)
     setDraft((current) => current.replace(/(?:^|\s)@([^\s@]{0,40})$/u, (full) => `${full.startsWith(" ") ? " " : ""}${token} `))
     setMentions((current) => mergeMentions(current, mentionsForCandidate(candidate)))
@@ -447,7 +449,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
   }
 
   async function send() {
-    if ((!draft.trim() && files.length === 0) || sending) return
+    if (readOnly || (!draft.trim() && files.length === 0) || sending) return
     setSending(true)
     try {
       const content = draft.trim()
@@ -455,6 +457,17 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
       const ok = await addServiceRequestMessage(request.id, content, validMentions, files)
       if (ok) { stopTyping(); setDraft(""); setMentions([]); setFiles([]); setFileError("") }
     } finally { setSending(false) }
+  }
+
+  if (readOnly) {
+    return (
+      <div className="border-t border-border bg-card p-3 sm:p-4">
+        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 text-xs text-amber-800 dark:text-amber-200">
+          <ShieldCheck className="size-4 shrink-0" />
+          <span><strong className="font-semibold">READ ONLY.</strong> Você pode acompanhar o protocolo e todo o histórico, mas não comentar, mencionar ou anexar arquivos.</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -483,6 +496,7 @@ function RequestComposer({ request }: { request: ServiceRequest }) {
 
 export function RequestDetail({ requestId, embedded = false, backHref = "/solicitacoes" }: { requestId: string; embedded?: boolean; backHref?: string }) {
   const router = useRouter()
+  const pathname = usePathname()
   const {
     hydrated,
     serviceRequests,
@@ -490,6 +504,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
     projects,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     startServiceRequestAqs,
     requestServiceRequestInfo,
     rejectServiceRequest,
@@ -536,9 +551,15 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
   const analysisHref = firstTechnicalWaitingAqs ? `/analise?sub=${encodeURIComponent(firstTechnicalWaitingAqs.id)}` : "/analise"
   const technicalTrackedSeconds = technicalSubs.reduce((total, sub) => total + sub.trackedSeconds, 0)
   const technicalProgress = technicalSubs.length ? Math.round((technicalDone / technicalSubs.length) * 100) : 0
-  const canAqs = currentUserRole === "admin" || currentUserRole === "aqs"
-  const canDev = currentUserRole === "admin" || currentUserRole === "developer"
-  const canOperateDev = currentUserRole === "admin" || (currentUserRole === "developer" && [request.responsibleDevId, request.executorId].includes(currentUserId))
+  const requestScreen: ScreenAccessKey = pathname.startsWith("/solicitacoes/aqs")
+    ? "requestsAqs"
+    : pathname.startsWith("/solicitacoes/dev")
+      ? "requestsDev"
+      : "requests"
+  const requestReadOnly = !canWriteScreen(currentUserRole, currentAccessPolicy, requestScreen)
+  const canAqs = !requestReadOnly && (currentUserRole === "admin" || currentUserRole === "aqs")
+  const canDev = !requestReadOnly && (currentUserRole === "admin" || currentUserRole === "developer")
+  const canOperateDev = !requestReadOnly && (currentUserRole === "admin" || (currentUserRole === "developer" && [request.responsibleDevId, request.executorId].includes(currentUserId)))
   const initialAttachments = request.attachments.filter((attachment) => !attachment.messageId)
   const isInternalRequest = request.requestType === "internal"
   const checklist = (isInternalRequest ? [] : ["order-pdf", "analysis-video", "database"]).map((category) => ({ category, ok: initialAttachments.some((attachment) => attachment.category === category) }))
@@ -576,7 +597,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
           </div>
 
           <div className={cn("flex flex-wrap items-center justify-end gap-2", embedded && "shrink-0")}>
-            <ActivityMeetingButton activityId={request.activityId} requestId={request.id} />
+            {!requestReadOnly && <ActivityMeetingButton activityId={request.activityId} requestId={request.id} />}
             {canAqs && ["received", "waiting-info"].includes(request.status) && <Button type="button" onClick={() => void quick("aqs", () => startServiceRequestAqs(request.id))} disabled={!!quickLoading} loading={quickLoading === "aqs"} loadingText="Assumindo..."><ClipboardCheck className="size-4" /> {request.status === "waiting-info" ? "Retomar análise" : "Assumir análise"}</Button>}
             {canAqs && request.status === "aqs-analysis" && <><Button type="button" variant="outline" onClick={() => setInfoOpen(true)}>Solicitar informações</Button><Button type="button" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setRejectOpen(true)}>Recusar</Button><Button type="button" onClick={() => setSendDevOpen(true)}><Code2 className="size-4" /> Enviar ao DEV</Button></>}
             {canDev && request.status === "waiting-dev" && (currentUserRole === "admin" || request.responsibleDevId === currentUserId) && <>{linkedTechnicalWork && activityHref && <Button type="button" onClick={() => router.push(activityHref)}><FolderKanban className="size-4" /> Abrir atividade</Button>}<Button type="button" variant={linkedTechnicalWork ? "outline" : "default"} onClick={() => setAssignOpen(true)}><UserRound className="size-4" /> Designar executor</Button></>}
@@ -627,7 +648,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
                   ) : (
                     <RichMessageText content={item.message.content} mentions={item.message.mentions} className="mt-1 text-sm leading-relaxed" />
                   ))}
-                  {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage onSendEditedImage={sendEditedImageToRequest} />)}</div>}
+                  {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage onSendEditedImage={requestReadOnly ? undefined : sendEditedImageToRequest} />)}</div>}
                 </div>
                 {item.message.authorId === currentUserId && item.message.content.trim() && editingMessageId !== item.message.id && (
                   <button type="button" onClick={() => setEditingMessageId(item.message.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem">
@@ -638,7 +659,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
               )
             })())}
           </AnchoredTimelineViewport>
-          <RequestComposer request={request} />
+          <RequestComposer request={request} readOnly={requestReadOnly} />
         </section>
 
         <aside className={cn("space-y-4", embedded && "hidden min-h-0 overflow-y-auto border-l border-border bg-card p-3 [scrollbar-width:thin] xl:block")}>
@@ -658,7 +679,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
             <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Checklist do protocolo</h2><span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", checklist.every((item) => item.ok) ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{checklist.filter((item) => item.ok).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((item) => <div key={item.category} className="flex items-center gap-2 text-xs"><span className={cn("flex size-5 items-center justify-center rounded-full", item.ok ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.ok ? <CheckCircle2 className="size-3" /> : <AlertTriangle className="size-3" />}</span><span>{SERVICE_REQUEST_ATTACHMENT_LABELS[item.category as keyof typeof SERVICE_REQUEST_ATTACHMENT_LABELS]}</span></div>)}</div></section>
           )}
 
-          <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact onSendEditedImage={sendEditedImageToRequest} />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
+          <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Documentos</h2><span className="font-mono text-[0.62rem] text-muted-foreground">{initialAttachments.length}</span></div><div className="mt-3 space-y-2">{initialAttachments.length ? initialAttachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact onSendEditedImage={requestReadOnly ? undefined : sendEditedImageToRequest} />) : <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Nenhum documento protocolado.</p>}</div></section>
 
           <section className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Trabalho técnico relacionado</h2>{linkedTechnicalWork && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.6rem] font-semibold text-primary">Sincronização automática</span>}</div>

@@ -17,6 +17,7 @@ import {
   Inbox,
   LifeBuoy,
   LogOut,
+  LockKeyhole,
   MessageSquareText,
   MessagesSquare,
   Settings,
@@ -28,7 +29,7 @@ import { useStore } from "@/lib/store"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
-import { canAccessScreen } from "@/lib/access-control"
+import { canAccessScreen, isScreenReadOnly } from "@/lib/access-control"
 import type { ScreenAccessKey } from "@/lib/types"
 import { TASKBOARD_VERSION_LABEL } from "@/lib/app-version"
 
@@ -59,8 +60,8 @@ const nav = [
 
 
 const secondary = [
-  { href: "/config", label: "Configurações", icon: Settings },
-  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy },
+  { href: "/config", label: "Configurações", icon: Settings, screen: "settings" as ScreenAccessKey },
+  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy, screen: null },
 ]
 
 export function Sidebar({
@@ -140,10 +141,12 @@ export function Sidebar({
             {pathname === "/" && <span className="absolute -left-[13px] h-8 w-1 rounded-r-full bg-primary" />}
           </Link>
           <div className="mt-auto flex flex-col items-center gap-2">
-            <Link href="/config" onClick={onClose} title="Configurações" aria-label="Configurações" className={focusedItemClass(pathname.startsWith("/config"))}>
-              <Settings className="size-5" />
-              {pathname.startsWith("/config") && <span className="absolute -left-[13px] h-8 w-1 rounded-r-full bg-primary" />}
-            </Link>
+            {canAccessScreen(currentUserRole, currentAccessPolicy, "settings") && (
+              <Link href="/config" onClick={onClose} title="Configurações" aria-label="Configurações" className={focusedItemClass(pathname.startsWith("/config"))}>
+                <Settings className="size-5" />
+                {pathname.startsWith("/config") && <span className="absolute -left-[13px] h-8 w-1 rounded-r-full bg-primary" />}
+              </Link>
+            )}
           </div>
         </aside>
       </>
@@ -237,7 +240,7 @@ export function Sidebar({
                 aria-label={collapsed ? item.label : undefined}
               >
                 <item.icon className="size-[1.15rem] shrink-0" />
-                <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                <span className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>{item.label}</span>{!collapsed && isScreenReadOnly(currentUserRole, currentAccessPolicy, item.screen as ScreenAccessKey) && <LockKeyhole className="size-3.5 shrink-0 opacity-70" />}
               </Link>
             ))
           ) : (
@@ -255,7 +258,7 @@ export function Sidebar({
                     aria-label={collapsed ? item.label : undefined}
                   >
                     <item.icon className="size-[1.15rem] shrink-0" />
-                    <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                    <span className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>{item.label}</span>{!collapsed && isScreenReadOnly(currentUserRole, currentAccessPolicy, item.screen as ScreenAccessKey) && <LockKeyhole className="size-3.5 shrink-0 opacity-70" />}
                   </Link>
                 )
               }
@@ -361,7 +364,7 @@ export function Sidebar({
           >
             Geral
           </p>
-          {secondary.map((item) => {
+          {secondary.filter((item) => !item.screen || canAccessScreen(currentUserRole, currentAccessPolicy, item.screen)).map((item) => {
             const active = isActive(item.href)
             return (
               <Link
@@ -373,7 +376,7 @@ export function Sidebar({
                 aria-label={collapsed ? item.label : undefined}
               >
                 <item.icon className="size-[1.15rem] shrink-0" />
-                <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
+                <span className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>{item.label}</span>{!collapsed && item.screen && isScreenReadOnly(currentUserRole, currentAccessPolicy, item.screen) && <LockKeyhole className="size-3.5 shrink-0 opacity-70" />}
               </Link>
             )
           })}

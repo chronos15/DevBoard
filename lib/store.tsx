@@ -45,7 +45,7 @@ import { DEVELOPER_TIMER_STARTED_EVENT } from "@/lib/developer/panel"
 import { primeIdleDetectionPermission } from "@/lib/idle-detection"
 import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { toUserFacingError } from "@/lib/user-facing-error"
-import { canPerformAction } from "@/lib/access-control"
+import { canPerformAction, canWriteScreen, screenAccessForPath } from "@/lib/access-control"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
@@ -81,7 +81,40 @@ import type {
   UserPreferences,
   WorkSession,
   WorkItemType,
+  ScreenAccessKey,
 } from "@/lib/types"
+
+function screenForMutation(pathname: string, rpcName?: string, fallback?: ScreenAccessKey): ScreenAccessKey | null {
+  const routeScreen = screenAccessForPath(pathname)
+
+  // Operações exclusivas de um módulo não devem herdar o estado READ ONLY da
+  // tela em que um atalho global foi usado (ex.: trocar tema no topbar).
+  if (rpcName) {
+    if (/workspace_member|preferences|update_my_profile/i.test(rpcName)) return "settings"
+    if (/service_request_unit|work_item_type/i.test(rpcName) && pathname.startsWith("/config")) return "settings"
+    if (/chat|conversation/i.test(rpcName)) return "chat"
+    if (/service_request/i.test(rpcName)) {
+      if (routeScreen === "requestsAqs" || routeScreen === "requestsDev") return routeScreen
+      return "requests"
+    }
+    if (/aqs_review|aqs_/i.test(rpcName)) return "analysis"
+    if (/support_topic|topic_/i.test(rpcName)) return "analysis"
+  }
+
+  if (routeScreen && pathname !== "/") return routeScreen
+
+  if (pathname === "/" && typeof window !== "undefined") {
+    const space = new URLSearchParams(window.location.search).get("space")
+    if (space === "project") return "followup"
+    if (space === "requests") return "requests"
+    if (space === "aqs") return "analysis"
+    if (space === "chat") return "chat"
+    if (!space) return "dashboard"
+  }
+
+  if (rpcName && /project|activity|subactivity|followup|attachment|work_item_type/i.test(rpcName)) return fallback ?? "projects"
+  return fallback ?? routeScreen
+}
 
 const PROJECT_TABLES = new Set([
   "projects",
@@ -725,8 +758,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [currentUserRole, setCurrentUserRole] = React.useState<AccessRole>("member")
   const [currentAccessPolicy, setCurrentAccessPolicy] = React.useState<MemberAccessPolicy>({
     enabled: false,
-    screenPermissions: { dashboard: true, developer: false, projects: false, followup: true, requests: true, requestsAqs: false, requestsDev: false, analysis: false, hours: false, agenda: false, chat: true, reports: false },
+    screenPermissions: { dashboard: true, developer: false, projects: false, followup: true, requests: true, requestsAqs: false, requestsDev: false, analysis: false, hours: false, agenda: false, chat: true, reports: false, settings: true },
     actionPermissions: { createProjects: false, editProjects: false, createActivities: false, createSubactivities: false },
+    readOnlyScreens: { dashboard: false, developer: false, projects: false, followup: false, requests: false, requestsAqs: false, requestsDev: false, analysis: false, hours: false, agenda: false, chat: false, reports: false, settings: false },
     restrictProjects: false, restrictActivities: false, restrictSubactivities: false,
   })
   const [members, setMembers] = React.useState<Member[]>([])
@@ -1569,14 +1603,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, runningSubKey])
 
   const canManageSubactivity = React.useCallback((sub: Subactivity) => {
+    const activeScreen = screenForMutation(pathname, undefined, "projects") ?? "projects"
+    if (!canWriteScreen(currentUserRole, currentAccessPolicy, activeScreen)) return false
     if (currentUserRole === "admin") return true
     if (currentUserRole !== "developer") return false
     if (sub.assigneeId !== currentUserId) return false
     if (sub.status === "done" || sub.status === "cancelled" || sub.status === "waiting-aqs") return false
     return true
-  }, [currentUserId, currentUserRole])
+  }, [currentAccessPolicy, currentUserId, currentUserRole, pathname])
+
+  const isWriteBlocked = React.useCallback((fallbackScreen?: ScreenAccessKey, rpcName?: string) => {
+    const screen = screenForMutation(pathname, rpcName, fallbackScreen)
+    return screen ? !canWriteScreen(currentUserRole, currentAccessPolicy, screen) : false
+  }, [currentAccessPolicy, currentUserRole, pathname])
+
+  const rejectReadOnly = React.useCallback((screen?: ScreenAccessKey) => {
+    const label = screen ? `Este módulo está configurado como somente leitura.` : "Seu acesso está configurado como somente leitura."
+    fail(new Error(label), "Ação indisponível em somente leitura")
+    return false
+  }, [fail])
 
   const callRpc = React.useCallback(async <T,>(name: string, args: Record<string, unknown>, fallback: string): Promise<T | null | undefined> => {
+    const safeDuringReadOnly = name === "leave_meeting"
+    const screen = screenForMutation(pathname, name)
+    if (!safeDuringReadOnly && screen && !canWriteScreen(currentUserRole, currentAccessPolicy, screen)) {
+      rejectReadOnly(screen)
+      return undefined
+    }
     try {
       setLastError(null)
       const { data, error } = await supabase.rpc(name, args)
@@ -1586,7 +1639,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fail(error, fallback)
       return undefined
     }
-  }, [fail, supabase])
+  }, [currentAccessPolicy, currentUserRole, fail, pathname, rejectReadOnly, supabase])
 
   const startTimerDirect = React.useCallback(async (subId: string) => {
     primeIdleDetectionPermission()
@@ -2402,6 +2455,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshAqsReviews, refreshServiceRequests, schedule])
 
   const addFollowUpComment = React.useCallback(async (subId: string, content: string, mentions: ChatMention[] = [], replyTo?: FollowUpReplyReference, messageGroupId?: string) => {
+    if (isWriteBlocked("followup")) return rejectReadOnly("followup")
     try {
       const { data, error } = await supabase.rpc("add_followup_comment_v2", {
         p_subactivity_id: subId,
@@ -2490,6 +2544,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     options?: { silent?: boolean; messageGroupId?: string },
   ) => {
     if (!workspaceId || files.length === 0) return false
+    const uploadScreen: ScreenAccessKey = target.aqsReviewId ? "analysis" : (target.subactivityId && pathname.startsWith("/compartilhar") ? "followup" : (screenForMutation(pathname) === "followup" ? "followup" : "projects"))
+    if (isWriteBlocked(uploadScreen)) return rejectReadOnly(uploadScreen)
     try {
       setLastError(null)
       for (const file of files) {
@@ -2736,6 +2792,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshChat])
 
   const deliverChatMessage = React.useCallback(async (conversationId: string, localId: string, content: string, mentions: ChatMention[], replyTo?: ChatReplyReference) => {
+    if (isWriteBlocked("chat")) return rejectReadOnly("chat")
     if (chatMessageDeliveriesRef.current.has(localId)) return false
     chatMessageDeliveriesRef.current.add(localId)
 
@@ -2814,6 +2871,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc])
 
   const sendChatMessage = React.useCallback((conversationId: string, content: string, mentions: ChatMention[] = [], replyTo?: ChatReplyReference) => {
+    if (isWriteBlocked("chat")) { rejectReadOnly("chat"); return Promise.resolve(false) }
     const text = content.trim()
     if (!text || !currentUserId) return Promise.resolve(false)
 
@@ -2871,6 +2929,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [chatConversations, deliverChatMessage])
 
   const sendChatAudio = React.useCallback(async (conversationId: string, audio: Blob, durationMs: number) => {
+    if (isWriteBlocked("chat")) return rejectReadOnly("chat")
     if (!workspaceId || !currentUserId || !audio.size) return false
     const mimeType = (audio.type || "audio/webm").split(";", 1)[0] || "audio/webm"
     const storagePath = chatAudioStoragePath(workspaceId, conversationId, currentUserId, mimeType)
@@ -2916,6 +2975,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserId, fail, supabase, workspaceId])
 
   const sendChatMedia = React.useCallback(async (conversationId: string, files: File[], caption = "") => {
+    if (isWriteBlocked("chat")) return rejectReadOnly("chat")
     if (!workspaceId || !currentUserId || !files.length) return false
     const MAX_FILE_SIZE = 50 * 1024 * 1024
     const invalid = files.find((file) => !file.size || file.size > MAX_FILE_SIZE)
@@ -3140,6 +3200,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     avatarColor?: string
     removeAvatar?: boolean
   }) => {
+    if (!canWriteScreen(currentUserRole, currentAccessPolicy, "settings")) return rejectReadOnly("settings")
     let uploadedAvatarPath: string | null = null
     const previousAvatarPath = members.find((member) => member.id === currentUserId)?.avatarPath
 
@@ -3193,9 +3254,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fail(error, "Não foi possível atualizar seu perfil")
       return false
     }
-  }, [currentUserId, fail, members, refreshMembers, supabase])
+  }, [currentAccessPolicy, currentUserId, currentUserRole, fail, members, refreshMembers, rejectReadOnly, supabase])
 
   const updatePreferences = React.useCallback(async (next: UserPreferences) => {
+    if (!canWriteScreen(currentUserRole, currentAccessPolicy, "settings")) return rejectReadOnly("settings")
     const previous = preferences
     // Preferências de interface são aplicadas de forma otimista. Isso deixa
     // densidade/cor primária instantâneas e só desfaz em caso de falha real.
@@ -3219,7 +3281,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return false
     }
     return true
-  }, [callRpc, preferences])
+  }, [callRpc, currentAccessPolicy, currentUserRole, preferences, rejectReadOnly])
 
   const setMemberRole = React.useCallback(async (memberId: string, role: AccessRole) => {
     const result = await callRpc<unknown>("set_workspace_member_role", { p_user_id: memberId, p_role: role }, "Não foi possível alterar a permissão")
@@ -3250,6 +3312,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, refreshAqsReviews, refreshNotifications, refreshProjects, refreshServiceRequests])
 
   const addSupportTopicAttachments = React.useCallback(async (topicId: string, files: File[]) => {
+    if (isWriteBlocked("analysis")) return rejectReadOnly("analysis")
     if (!workspaceId || files.length === 0) return false
     const uploaded: string[] = []
     const registered = new Set<string>()
@@ -3329,6 +3392,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [callRpc, currentUserId, currentUserRole, fail, refreshNotifications, refreshProjects, refreshSupportTopics, supportTopics])
 
   const addServiceRequestAttachments = React.useCallback(async (requestId: string, files: ServiceRequestFileInput[], messageId?: string) => {
+    if (isWriteBlocked("requests")) return rejectReadOnly("requests")
     if (!workspaceId || files.length === 0) return true
     const uploaded: string[] = []
     const registered = new Set<string>()
@@ -3403,6 +3467,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [addServiceRequestAttachments, addServiceRequestExternalResources, callRpc, refreshNotifications, refreshServiceRequests])
 
   const uploadServiceRequestUnitImage = React.useCallback(async (unitId: string, file: File) => {
+    if (isWriteBlocked("settings")) { rejectReadOnly("settings"); return null }
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
     if (!allowedTypes.has(file.type)) throw new Error("Use uma imagem JPG, PNG, WEBP ou GIF.")
     if (file.size > 3 * 1024 * 1024) throw new Error("A imagem da unidade deve ter no máximo 3 MB.")
@@ -3414,7 +3479,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })
     if (error) throw error
     return path
-  }, [currentUserId, supabase])
+  }, [currentUserId, supabase, isWriteBlocked, rejectReadOnly])
 
   const removeServiceRequestUnitImage = React.useCallback(async (path?: string | null) => {
     if (!path) return

@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import type { ChatCommandSnapshot, ChatConversation, ChatMeeting, ChatMention, ChatMessage, ChatReplyReference, MeetingMemberStatus, MeetingMode, Member, MemberPresence } from "@/lib/types"
 import { useStore } from "@/lib/store"
+import { canWriteScreen } from "@/lib/access-control"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { GroupDialog } from "@/components/chat/group-dialog"
 import { MeetingDialog } from "@/components/chat/meeting-dialog"
@@ -449,6 +450,7 @@ export function ChatView({
     chatMeetings,
     currentUserId,
     currentUserRole,
+    currentAccessPolicy,
     workspaceId,
     chatHydrated,
     ensureDirectConversation,
@@ -465,6 +467,7 @@ export function ChatView({
     answerMeetingInvite,
     joinMeeting,
   } = useStore()
+  const effectiveReadOnly = readOnly || !canWriteScreen(currentUserRole, currentAccessPolicy, "chat")
   const [tab, setTab] = React.useState<ChatTab>("conversations")
   const [query, setQuery] = React.useState("")
   const [recordingAudio, setRecordingAudio] = React.useState(false)
@@ -549,7 +552,7 @@ export function ChatView({
   const selected = myConversations.find((conversation) => conversation.id === selectedId) ?? null
   const { typingMembers, reportTyping, stopTyping } = useTypingIndicator(
     selected ? `chat:${selected.id}` : null,
-    Boolean(selected) && !readOnly,
+    Boolean(selected) && !effectiveReadOnly,
   )
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!selected || selected.kind !== "group" || !mentionRange) return []
@@ -986,7 +989,7 @@ export function ChatView({
   }
 
   async function executeSlashCommand(command: ChatSlashCommand) {
-    if (readOnly || !onExecuteSlashCommand || executingSlashCommandId) return
+    if (effectiveReadOnly || !onExecuteSlashCommand || executingSlashCommandId) return
     setExecutingSlashCommandId(command.id)
     stopTyping()
     setMessage("")
@@ -1004,7 +1007,7 @@ export function ChatView({
   }
 
   function submitMessage() {
-    if (readOnly || !selected || !message.trim()) return
+    if (effectiveReadOnly || !selected || !message.trim()) return
     const trimmed = message.trim()
     if (onExecuteSlashCommand && /^\/[^\s/]+$/.test(trimmed)) {
       const name = trimmed.slice(1).toLocaleLowerCase("pt-BR")
@@ -1038,7 +1041,7 @@ export function ChatView({
   }
 
   async function submitMedia(caption: string) {
-    if (readOnly || !selected || !stagedFiles.length || sendingMedia) return
+    if (effectiveReadOnly || !selected || !stagedFiles.length || sendingMedia) return
     stickToBottomRef.current = true
     setHasNewMessagesBelow(false)
     setSendingMedia(true)
@@ -1074,7 +1077,7 @@ export function ChatView({
   }
 
   async function startQuickMeeting(mode: MeetingMode) {
-    if (readOnly) return
+    if (effectiveReadOnly) return
     if (!selected || startingMeetingMode) return
     void primeCallAudio()
     setStartingMeetingMode(mode)
@@ -1327,7 +1330,7 @@ export function ChatView({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
-                    {!readOnly && (conversationMeeting ? (
+                    {!effectiveReadOnly && (conversationMeeting ? (
                       <Button
                         type="button"
                         size="sm"
@@ -1362,7 +1365,7 @@ export function ChatView({
                         </Button>
                       </>
                     ))}
-                    {!readOnly && !conversationOnly && selected.kind === "group" && (
+                    {!effectiveReadOnly && !conversationOnly && selected.kind === "group" && (
                       <GroupDialog group={selected} compact onSaved={(id) => setSelectedId(id)} />
                     )}
                     {!conversationOnly && (
@@ -1379,7 +1382,7 @@ export function ChatView({
                   </div>
                 </header>
 
-                {conversationMeeting && !readOnly && (
+                {conversationMeeting && !effectiveReadOnly && (
                   <button
                     type="button"
                     onClick={() => void openMeeting(conversationMeeting)}
@@ -1603,7 +1606,7 @@ export function ChatView({
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">
-                  {readOnly ? (
+                  {effectiveReadOnly ? (
                     <div className="mx-auto flex min-h-10 max-w-3xl items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-4 text-center text-xs text-muted-foreground">
                       Este canal está fechado. O histórico permanece disponível somente para consulta.
                     </div>

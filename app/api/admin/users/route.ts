@@ -28,6 +28,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Somente administradores podem adicionar usuários." }, { status: 403 })
     }
 
+    const writeCheck = await supabase.rpc("taskboard_can_write_screen", { p_screen: "settings" })
+    if (writeCheck.error) {
+      console.error("[TaskBoard/Admin Users] Falha ao validar permissão de escrita", writeCheck.error)
+      return NextResponse.json({ error: "Não foi possível validar sua permissão administrativa. Verifique se a Migration 091 foi aplicada." }, { status: 503 })
+    }
+    if (writeCheck.data !== true) {
+      return NextResponse.json({ error: "Configurações está em modo somente leitura para este administrador." }, { status: 403 })
+    }
+
     const body = await request.json().catch(() => ({})) as {
       name?: string
       email?: string

@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { AtSign, MessageSquare, Send } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { AtSign, LockKeyhole, MessageSquare, Send } from "lucide-react"
 import type { ChatMention, CommentEntry } from "@/lib/types"
 import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -16,6 +17,7 @@ import {
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
+import { canWriteScreen, screenAccessForPath } from "@/lib/access-control"
 
 function formatCommentDate(value: string) {
   const date = new Date(value)
@@ -53,7 +55,10 @@ export function CommentDialog({
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
 }) {
-  const { members, memberPresence, currentUserId } = useStore()
+  const { members, memberPresence, currentUserId, currentUserRole, currentAccessPolicy } = useStore()
+  const pathname = usePathname()
+  const screen = screenAccessForPath(pathname)
+  const readOnly = screen ? !canWriteScreen(currentUserRole, currentAccessPolicy, screen) : false
   const [internalOpen, setInternalOpen] = React.useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = React.useCallback((nextOpen: boolean) => {
@@ -105,6 +110,7 @@ export function CommentDialog({
   }
 
   async function submit() {
+    if (readOnly) return
     const clean = text.trim()
     if (!clean || sending) return
     setSending(true)
@@ -212,6 +218,12 @@ export function CommentDialog({
           </div>
 
           <div className="relative min-w-0 border-t border-border bg-card px-4 py-3 sm:px-5">
+            {readOnly ? (
+              <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 text-xs text-muted-foreground">
+                <LockKeyhole className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                <span><strong className="font-semibold text-foreground">Somente leitura.</strong> Você pode acompanhar os comentários, mas não comentar ou mencionar neste módulo.</span>
+              </div>
+            ) : <>
             {enableMentions && mentionRange && mentionCandidates.length > 0 && (
               <div className="absolute bottom-[calc(100%-0.25rem)] left-4 right-4 z-30 max-h-60 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl sm:left-5 sm:right-5">
                 <div className="px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted-foreground">Mencionar pessoa ou equipe</div>
@@ -267,6 +279,7 @@ export function CommentDialog({
               </Button>
             </div>
             <p className={cn("mt-1.5 text-[0.6rem] text-muted-foreground", enableMentions ? "pl-20" : "pl-10")}>Enter envia · Shift + Enter quebra a linha{enableMentions ? " · @todos, @here, @desenvolvedores, @aqs e @admin" : ""}</p>
+            </>}
           </div>
         </DialogContent>
       </Dialog>

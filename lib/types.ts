@@ -9,7 +9,7 @@ export type Status =
 
 export type Priority = "low" | "medium" | "high"
 export type AccessRole = "admin" | "developer" | "aqs" | "support" | "member"
-export type ScreenAccessKey = "dashboard" | "developer" | "projects" | "followup" | "requests" | "requestsAqs" | "requestsDev" | "analysis" | "hours" | "agenda" | "chat" | "reports"
+export type ScreenAccessKey = "dashboard" | "developer" | "projects" | "followup" | "requests" | "requestsAqs" | "requestsDev" | "analysis" | "hours" | "agenda" | "chat" | "reports" | "settings"
 
 export type ActionAccessKey = "createProjects" | "editProjects" | "createActivities" | "createSubactivities"
 
@@ -17,6 +17,7 @@ export type MemberAccessPolicy = {
   enabled: boolean
   screenPermissions: Record<ScreenAccessKey, boolean>
   actionPermissions: Record<ActionAccessKey, boolean>
+  readOnlyScreens: Record<ScreenAccessKey, boolean>
   restrictProjects: boolean
   restrictActivities: boolean
   restrictSubactivities: boolean

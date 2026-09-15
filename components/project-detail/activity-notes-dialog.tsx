@@ -25,7 +25,7 @@ import { createClient } from "@/lib/supabase/client"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { useStore } from "@/lib/store"
-import { canPerformAction } from "@/lib/access-control"
+import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import type { Activity, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -119,9 +119,11 @@ export function ActivityNotesDialog({
   )
   const [convertAssignee, setConvertAssignee] = React.useState(defaultAssignee)
 
-  const canManage = currentUserRole === "admin"
+  const canManage = canWriteScreen(currentUserRole, currentAccessPolicy, "projects") && (
+    currentUserRole === "admin"
     || currentUserRole === "developer"
     || project.memberIds.includes(currentUserId)
+  )
   const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
 
   const loadNotes = React.useCallback(async (quiet = false) => {

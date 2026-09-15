@@ -2,14 +2,14 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { Bell, Building2, CalendarDays, Camera, Check, ImageIcon, LayoutDashboard, Loader2, Palette, Pencil, Pipette, Plus, Power, RotateCcw, ShieldCheck, Sparkles, Tags, TimerOff, Trash2, Upload, User, UserPlus, Users, X } from "lucide-react"
+import { Bell, Building2, CalendarDays, Camera, Check, Eye, EyeOff, ImageIcon, LayoutDashboard, Loader2, LockKeyhole, Palette, Pencil, Pipette, Plus, Power, RotateCcw, ShieldCheck, Sparkles, Tags, TimerOff, Trash2, Upload, User, UserPlus, Users, X } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { AVATARS_BUCKET } from "@/lib/supabase/helpers"
 import { cn } from "@/lib/utils"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { ACCESS_ROLE_LABELS, type AccessRole, type ActionAccessKey, type Member, type MemberAccessPolicy, type ScreenAccessKey, type UserPreferences } from "@/lib/types"
-import { ACTION_ACCESS_DEFINITIONS, defaultActionPermissions, defaultScreenPermissions, SCREEN_ACCESS_DEFINITIONS } from "@/lib/access-control"
+import { ACTION_ACCESS_DEFINITIONS, canWriteScreen, defaultActionPermissions, defaultReadOnlyScreens, defaultScreenPermissions, SCREEN_ACCESS_DEFINITIONS } from "@/lib/access-control"
 import { SecurityHealthSection } from "@/components/config/security-health-section"
 import { RequestUnitIcon, RequestUnitIconPicker, normalizeRequestUnitIcon } from "@/components/requests/request-unit-icon"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
@@ -35,7 +35,7 @@ const sections = [
 type SectionId = (typeof sections)[number]["id"]
 
 const roleDescriptions: Record<AccessRole, string> = {
-  admin: "Acesso total: projetos, execução, AQS, tópicos, equipe e administração.",
+  admin: "Acesso total por padrão. Também pode receber acesso personalizado e READ ONLY por módulo para perfis de acompanhamento.",
   developer: "Acesso ao sistema e projetos; executa somente atividades e subatividades sob sua responsabilidade.",
   aqs: "Valida tarefas em Aguardando AQS, registra evidências e atua na triagem de tópicos.",
   support: "Abre e acompanha tópicos da operação, com ordem, descrição e evidências.",
@@ -512,20 +512,24 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
   disabled?: boolean
   onChange: (policy: MemberAccessPolicy) => void
 }) {
-  const isAdmin = role === "admin"
-  const effectiveEnabled = !isAdmin && policy.enabled
+  const effectiveEnabled = policy.enabled
 
   function setEnabled(enabled: boolean) {
     onChange({
       ...policy,
-      enabled: isAdmin ? false : enabled,
+      enabled,
       screenPermissions: enabled ? { ...defaultScreenPermissions(role), ...policy.screenPermissions } : policy.screenPermissions,
       actionPermissions: enabled ? { ...defaultActionPermissions(role), ...policy.actionPermissions } : policy.actionPermissions,
+      readOnlyScreens: enabled ? { ...defaultReadOnlyScreens(), ...policy.readOnlyScreens } : policy.readOnlyScreens,
     })
   }
 
-  function toggleScreen(key: ScreenAccessKey) {
-    onChange({ ...policy, screenPermissions: { ...policy.screenPermissions, [key]: !policy.screenPermissions[key] } })
+  function setScreenMode(key: ScreenAccessKey, mode: "hidden" | "read" | "full") {
+    onChange({
+      ...policy,
+      screenPermissions: { ...policy.screenPermissions, [key]: mode !== "hidden" },
+      readOnlyScreens: { ...policy.readOnlyScreens, [key]: mode === "read" },
+    })
   }
 
   function toggleAction(key: ActionAccessKey) {
@@ -536,13 +540,13 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
     <div className="space-y-4">
       <button
         type="button"
-        disabled={disabled || isAdmin}
+        disabled={disabled}
         onClick={() => setEnabled(!effectiveEnabled)}
         className={cn("flex w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-65", effectiveEnabled ? "border-primary/25 bg-primary/[0.04]" : "border-border bg-muted/20")}
       >
         <span className="min-w-0">
           <span className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4 text-primary" /> Acesso personalizado</span>
-          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{isAdmin ? "Administradores mantêm acesso integral para evitar bloqueio administrativo." : "Desativado mantém 100% das regras atuais do perfil. Ative somente para este colaborador."}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">Desativado mantém exatamente as permissões padrão da função. Ative para configurar acesso completo, somente leitura ou ocultar módulos deste usuário — inclusive se ele também for Administrador.</span>
         </span>
         <span className={cn("relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors", effectiveEnabled ? "bg-primary" : "bg-muted-foreground/25")}><span className={cn("absolute top-1 size-4 rounded-full bg-white transition-transform", effectiveEnabled ? "translate-x-6" : "translate-x-1")} /></span>
       </button>
@@ -551,27 +555,41 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
         <>
           <div className="rounded-2xl border border-border p-3 sm:p-4">
             <div className="mb-3">
-              <p className="text-sm font-semibold">Telas disponíveis</p>
-              <p className="mt-1 text-xs text-muted-foreground">Escolha exatamente quais áreas aparecem e podem ser abertas por este usuário.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold">Acesso por módulo</p>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[0.62rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> READ ONLY</span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Defina cada módulo como <strong className="font-medium text-foreground">Completo</strong>, <strong className="font-medium text-foreground">Somente leitura</strong> ou <strong className="font-medium text-foreground">Sem acesso</strong>. Somente leitura permite acompanhar todo o conteúdo visível, mas bloqueia comentários, menções, anexos, criação, edição, status, cronômetro e demais alterações.</p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-2">
               {SCREEN_ACCESS_DEFINITIONS.filter((screen) => defaultScreenPermissions(role)[screen.key]).map((screen) => {
-                const allowed = policy.screenPermissions[screen.key] !== false
+                const visible = policy.screenPermissions[screen.key] !== false
+                const readOnly = visible && policy.readOnlyScreens?.[screen.key] === true
+                const mode = !visible ? "hidden" : readOnly ? "read" : "full"
                 return (
-                  <button key={screen.key} type="button" disabled={disabled} onClick={() => toggleScreen(screen.key)} className={cn("flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:opacity-50", allowed ? "border-primary/20 bg-primary/[0.035]" : "border-border bg-muted/15")}> 
-                    <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border", allowed ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-transparent")}><Check className="size-3" /></span>
-                    <span className="min-w-0"><span className="block text-xs font-semibold">{screen.label}</span><span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{screen.description}</span></span>
-                  </button>
+                  <div key={screen.key} className="grid min-w-0 gap-3 rounded-xl border border-border bg-card/60 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold">{screen.label}</span>
+                        {mode === "read" && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.58rem] font-semibold text-amber-700 dark:text-amber-300">Somente leitura</span>}
+                      </div>
+                      <span className="mt-0.5 block text-[0.65rem] leading-relaxed text-muted-foreground">{screen.description}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+                      <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "full")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "full" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Check className="size-3.5" /><span className="hidden sm:inline">Completo</span></button>
+                      <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "read")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "read" ? "bg-card text-amber-700 shadow-sm dark:text-amber-300" : "text-muted-foreground hover:text-foreground")}><Eye className="size-3.5" /><span className="hidden sm:inline">Leitura</span></button>
+                      <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "hidden")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "hidden" ? "bg-card text-muted-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><EyeOff className="size-3.5" /><span className="hidden sm:inline">Oculto</span></button>
+                    </div>
+                  </div>
                 )
               })}
             </div>
           </div>
 
-
           <div className="rounded-2xl border border-border p-3 sm:p-4">
             <div className="mb-3">
-              <p className="text-sm font-semibold">Ações permitidas</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Controle ações estruturais sem mudar a role do usuário. Essas permissões só restringem o que a role já poderia fazer.</p>
+              <p className="text-sm font-semibold">Ações estruturais</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Permissões adicionais para ações estruturais. Se o módulo Projetos estiver em Somente leitura, estas ações serão bloqueadas mesmo quando marcadas.</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {ACTION_ACCESS_DEFINITIONS.filter((action) => defaultActionPermissions(role)[action.key]).map((action) => {
@@ -613,8 +631,9 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
 }
 
 function TeamSection() {
-  const { members, currentUserId, currentUserRole, setMemberRole, refreshAll } = useStore()
+  const { members, currentUserId, currentUserRole, currentAccessPolicy, setMemberRole, refreshAll } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
+  const settingsWritable = canWriteScreen(currentUserRole, currentAccessPolicy, "settings")
   const [teamMembers, setTeamMembers] = React.useState<ManagedTeamMember[]>([])
   const [loadingTeam, setLoadingTeam] = React.useState(false)
   const [changing, setChanging] = React.useState<string | null>(null)
@@ -622,7 +641,7 @@ function TeamSection() {
   const [editRole, setEditRole] = React.useState<AccessRole>("member")
   const [editActive, setEditActive] = React.useState(true)
   const [editSchedule, setEditSchedule] = React.useState<Record<number, number>>(fallbackWorkSchedule([1, 2, 3, 4, 5], 8))
-  const [editAccess, setEditAccess] = React.useState<MemberAccessPolicy>({ enabled: false, screenPermissions: defaultScreenPermissions("member"), actionPermissions: defaultActionPermissions("member"), restrictProjects: false, restrictActivities: false, restrictSubactivities: false })
+  const [editAccess, setEditAccess] = React.useState<MemberAccessPolicy>({ enabled: false, screenPermissions: defaultScreenPermissions("member"), actionPermissions: defaultActionPermissions("member"), readOnlyScreens: defaultReadOnlyScreens(), restrictProjects: false, restrictActivities: false, restrictSubactivities: false })
   const [editTab, setEditTab] = React.useState<"schedule" | "access">("schedule")
   const [editSaving, setEditSaving] = React.useState(false)
   const [editError, setEditError] = React.useState("")
@@ -636,9 +655,10 @@ function TeamSection() {
   const [addError, setAddError] = React.useState("")
 
   const makePolicy = React.useCallback((role: AccessRole, row?: any): MemberAccessPolicy => ({
-    enabled: role === "admin" ? false : row?.access_enabled === true,
+    enabled: row?.access_enabled === true,
     screenPermissions: { ...defaultScreenPermissions(role), ...(row?.access_screens && typeof row.access_screens === "object" ? row.access_screens : {}) },
     actionPermissions: { ...defaultActionPermissions(role), ...(row?.access_actions && typeof row.access_actions === "object" ? row.access_actions : {}) },
+    readOnlyScreens: { ...defaultReadOnlyScreens(), ...(row?.access_read_only && typeof row.access_read_only === "object" ? row.access_read_only : {}) },
     restrictProjects: row?.restrict_projects === true,
     restrictActivities: row?.restrict_activities === true,
     restrictSubactivities: row?.restrict_subactivities === true,
@@ -648,7 +668,8 @@ function TeamSection() {
     if (currentUserRole !== "admin") return
     setLoadingTeam(true)
     try {
-      const { data, error } = await supabase.rpc("list_workspace_team_members_v2")
+      let { data, error } = await supabase.rpc("list_workspace_team_members_v3")
+      if (error) ({ data, error } = await supabase.rpc("list_workspace_team_members_v2"))
       if (error) throw error
       const rows = (data ?? []).map((row: any): ManagedTeamMember => {
         const avatarPath = row.avatar_path || undefined
@@ -697,12 +718,13 @@ function TeamSection() {
         workDays,
         dailyHours,
         workSchedule,
-        accessPolicy: member.accessPolicy ?? { enabled: false, screenPermissions: defaultScreenPermissions(role), actionPermissions: defaultActionPermissions(role), restrictProjects: false, restrictActivities: false, restrictSubactivities: false },
+        accessPolicy: member.accessPolicy ?? { enabled: false, screenPermissions: defaultScreenPermissions(role), actionPermissions: defaultActionPermissions(role), readOnlyScreens: defaultReadOnlyScreens(), restrictProjects: false, restrictActivities: false, restrictSubactivities: false },
       }
     }))
   }, [currentUserRole, loadAdminTeam, members])
 
   async function changeRole(memberId: string, role: AccessRole) {
+    if (!settingsWritable) return
     if (memberId === currentUserId && currentUserRole !== "admin") return
     setChanging(memberId)
     const ok = await setMemberRole(memberId, role)
@@ -716,12 +738,13 @@ function TeamSection() {
     setEditRole(role)
     setEditActive(member.active)
     setEditSchedule({ ...member.workSchedule })
-    setEditAccess({ ...member.accessPolicy, screenPermissions: { ...member.accessPolicy.screenPermissions }, actionPermissions: { ...member.accessPolicy.actionPermissions } })
+    setEditAccess({ ...member.accessPolicy, screenPermissions: { ...member.accessPolicy.screenPermissions }, actionPermissions: { ...member.accessPolicy.actionPermissions }, readOnlyScreens: { ...member.accessPolicy.readOnlyScreens } })
     setEditTab("schedule")
     setEditError("")
   }
 
   async function saveEdit() {
+    if (!settingsWritable) { setEditError("Configurações está em modo somente leitura para este usuário."); return }
     if (!editing || editSaving) return
     if (Object.values(editSchedule).some((minutes) => !Number.isFinite(minutes) || minutes < 0 || minutes > 1440)) {
       setEditError("Revise a jornada. Cada dia deve estar entre 00:00 e 24:00.")
@@ -740,12 +763,13 @@ function TeamSection() {
       })
       if (scheduleError) throw scheduleError
 
-      const accessPayload = editRole === "admin" ? { ...editAccess, enabled: false } : editAccess
-      const { error: accessError } = await supabase.rpc("set_workspace_member_access_profile_v2", {
+      const accessPayload = editAccess
+      const { error: accessError } = await supabase.rpc("set_workspace_member_access_profile_v3", {
         p_user_id: editing.id,
         p_enabled: accessPayload.enabled,
         p_screen_permissions: accessPayload.screenPermissions,
         p_action_permissions: accessPayload.actionPermissions,
+        p_read_only_screens: accessPayload.readOnlyScreens,
         p_restrict_projects: accessPayload.restrictProjects,
         p_restrict_activities: accessPayload.restrictActivities,
         p_restrict_subactivities: accessPayload.restrictSubactivities,
@@ -777,6 +801,7 @@ function TeamSection() {
   async function addUser(event: React.FormEvent) {
     event.preventDefault()
     if (adding) return
+    if (!settingsWritable) { setAddError("Configurações está em modo somente leitura para este usuário."); return }
     setAdding(true)
     setAddError("")
     try {
@@ -817,7 +842,7 @@ function TeamSection() {
           <h2 className="text-lg font-semibold tracking-tight">Equipe</h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{currentUserRole === "admin" ? "Gerencie usuários, jornada por dia e acessos personalizados sem alterar o comportamento padrão das roles." : "Usuários confirmados da equipe e seus níveis de acesso."}</p>
         </div>
-        {currentUserRole === "admin" && (
+        {currentUserRole === "admin" && settingsWritable && (
           <button type="button" onClick={() => { resetAddForm(); setAddOpen(true) }} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90 sm:w-auto">
             <UserPlus className="size-4" /> Adicionar usuário
           </button>
@@ -836,7 +861,8 @@ function TeamSection() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="min-w-0 truncate text-sm font-semibold"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
                     <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold", member.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{member.active ? "Ativo" : "Inativo"}</span>
-                    {member.accessPolicy.enabled && member.role !== "admin" && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.58rem] font-semibold text-primary">Acesso personalizado</span>}
+                    {member.accessPolicy.enabled && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.58rem] font-semibold text-primary">Acesso personalizado</span>}
+                    {member.accessPolicy.enabled && Object.values(member.accessPolicy.readOnlyScreens ?? {}).some(Boolean) && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.58rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> READ ONLY</span>}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
                   {currentUserRole === "admin" && <p className="mt-1.5 whitespace-normal text-[0.64rem] leading-relaxed text-muted-foreground">{scheduleSummary(member)}</p>}
@@ -844,12 +870,12 @@ function TeamSection() {
                 {currentUserRole === "admin" ? (
                   <div className="col-span-2 mt-1 flex w-full items-center gap-2 border-t border-border/60 pt-3 sm:col-span-1 sm:mt-0 sm:w-auto sm:border-0 sm:pt-0">
                     <div className="relative min-w-0 flex-1 sm:w-36 sm:flex-none">
-                      <select aria-label={`Permissão de ${member.name}`} disabled={changing === member.id || !member.active} value={member.role ?? "member"} onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)} className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60">
+                      <select aria-label={`Permissão de ${member.name}`} disabled={changing === member.id || !member.active || !settingsWritable} value={member.role ?? "member"} onChange={(event) => void changeRole(member.id, event.target.value as AccessRole)} className="h-9 w-full rounded-xl border border-border bg-card px-3 text-xs font-medium outline-none focus:border-ring disabled:opacity-60">
                         <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
                       </select>
                       {changing === member.id && <Loader2 className="pointer-events-none absolute top-2.5 right-2.5 size-4 animate-spin" />}
                     </div>
-                    <button type="button" onClick={() => openEdit(member)} className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Gerenciar usuário" aria-label={`Gerenciar ${member.name}`}><Pencil className="size-4" /></button>
+                    <button type="button" onClick={() => openEdit(member)} className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title={settingsWritable ? "Gerenciar usuário" : "Visualizar configuração do usuário"} aria-label={`${settingsWritable ? "Gerenciar" : "Visualizar"} ${member.name}`}><Pencil className="size-4" /></button>
                   </div>
                 ) : (
                   <span className="col-span-2 mt-1 w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground sm:col-span-1 sm:mt-0">{ACCESS_ROLE_LABELS[member.role ?? "member"]}</span>
@@ -870,12 +896,12 @@ function TeamSection() {
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        {currentUserRole === "admin" ? "Acesso personalizado é opt-in: usuários atuais continuam com as regras de sua role até você ativar a personalização individual. Administradores mantêm acesso integral." : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
+        {currentUserRole === "admin" ? "Acesso personalizado é opt-in: a role continua sendo a base, mas qualquer usuário — inclusive outro Administrador — pode receber módulos em acesso Completo, READ ONLY ou Sem acesso. Para um Admin observador, mantenha Configurações em READ ONLY ou Sem acesso." : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
       </p>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !editSaving) setEditing(null) }}>
         <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader><DialogTitle>Gerenciar colaborador</DialogTitle><DialogDescription>Configure a jornada semanal e, opcionalmente, um nível de acesso individual.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Gerenciar colaborador</DialogTitle><DialogDescription>Configure jornada e acesso individual. O perfil personalizado também pode ser aplicado a Administradores, inclusive como observadores em READ ONLY.</DialogDescription></DialogHeader>
           {editing && (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-2xl border border-border p-3">
@@ -885,7 +911,7 @@ function TeamSection() {
               </div>
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold">Perfil base</span>
-                <select value={editRole} disabled={editSaving} onChange={(event) => { const role = event.target.value as AccessRole; setEditRole(role); setEditAccess((current) => ({ ...current, screenPermissions: current.enabled ? { ...defaultScreenPermissions(role), ...current.screenPermissions } : defaultScreenPermissions(role), actionPermissions: current.enabled ? Object.fromEntries(Object.entries(defaultActionPermissions(role)).map(([key, allowed]) => [key, allowed && current.actionPermissions[key as ActionAccessKey] !== false])) as Record<ActionAccessKey, boolean> : defaultActionPermissions(role) })) }} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
+                <select value={editRole} disabled={editSaving || !settingsWritable} onChange={(event) => { const role = event.target.value as AccessRole; setEditRole(role); setEditAccess((current) => ({ ...current, screenPermissions: current.enabled ? { ...defaultScreenPermissions(role), ...current.screenPermissions } : defaultScreenPermissions(role), actionPermissions: current.enabled ? Object.fromEntries(Object.entries(defaultActionPermissions(role)).map(([key, allowed]) => [key, allowed && current.actionPermissions[key as ActionAccessKey] !== false])) as Record<ActionAccessKey, boolean> : defaultActionPermissions(role) })) }} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50">
                   <option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option>
                 </select>
               </label>
@@ -895,9 +921,9 @@ function TeamSection() {
                 <button type="button" onClick={() => setEditTab("access")} className={cn("rounded-lg px-3 py-2 text-xs font-semibold transition-colors", editTab === "access" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>Acesso</button>
               </div>
 
-              {editTab === "schedule" ? <TeamSchedulePicker schedule={editSchedule} disabled={editSaving} onChange={setEditSchedule} /> : <AccessProfileEditor role={editRole} policy={editAccess} disabled={editSaving} onChange={setEditAccess} />}
+              {editTab === "schedule" ? <TeamSchedulePicker schedule={editSchedule} disabled={editSaving || !settingsWritable} onChange={setEditSchedule} /> : <AccessProfileEditor role={editRole} policy={editAccess} disabled={editSaving || !settingsWritable} onChange={setEditAccess} />}
 
-              <button type="button" disabled={editSaving || editing.id === currentUserId} onClick={() => setEditActive((value) => !value)} className={cn("flex w-full items-center justify-between gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50", editActive ? "border-destructive/20 bg-destructive/[0.04]" : "border-success/20 bg-success/[0.04]")}>
+              <button type="button" disabled={editSaving || !settingsWritable || editing.id === currentUserId} onClick={() => setEditActive((value) => !value)} className={cn("flex w-full items-center justify-between gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50", editActive ? "border-destructive/20 bg-destructive/[0.04]" : "border-success/20 bg-success/[0.04]")}>
                 <span><span className="block text-sm font-semibold">{editActive ? "Inativar usuário" : "Reativar usuário"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{editActive ? "O usuário perde o acesso ao workspace, mas seu histórico é preservado." : "O usuário volta a poder acessar o workspace imediatamente."}</span></span>
                 <Power className={cn("size-4 shrink-0", editActive ? "text-destructive" : "text-success")} />
               </button>
@@ -905,7 +931,7 @@ function TeamSection() {
               {editError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{editError}</p>}
             </div>
           )}
-          <DialogFooter><button type="button" disabled={editSaving} onClick={() => setEditing(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="button" disabled={editSaving} onClick={() => void saveEdit()} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editSaving && <Loader2 className="size-4 animate-spin" />} Salvar</button></DialogFooter>
+          <DialogFooter><button type="button" disabled={editSaving} onClick={() => setEditing(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="button" disabled={editSaving || !settingsWritable} onClick={() => void saveEdit()} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editSaving && <Loader2 className="size-4 animate-spin" />} Salvar</button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -919,9 +945,9 @@ function TeamSection() {
               <label><span className="mb-1.5 block text-sm font-semibold">Senha inicial</span><input required minLength={6} type="password" value={addPassword} onChange={(event) => setAddPassword(event.target.value)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50" placeholder="Mínimo 6 caracteres" /></label>
               <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold">Perfil base</span><select value={addRole} onChange={(event) => setAddRole(event.target.value as AccessRole)} disabled={adding} className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring disabled:opacity-50"><option value="admin">Administrador</option><option value="developer">Desenvolvedor</option><option value="aqs">AQS</option><option value="support">Suporte</option><option value="member">Membro</option></select></label>
             </div>
-            <TeamSchedulePicker schedule={addSchedule} disabled={adding} onChange={setAddSchedule} />
+            <TeamSchedulePicker schedule={addSchedule} disabled={adding || !settingsWritable} onChange={setAddSchedule} />
             {addError && <p className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{addError}</p>}
-            <DialogFooter><button type="button" disabled={adding} onClick={() => { setAddOpen(false); resetAddForm() }} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="submit" disabled={adding} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{adding && <Loader2 className="size-4 animate-spin" />} Criar usuário</button></DialogFooter>
+            <DialogFooter><button type="button" disabled={adding} onClick={() => { setAddOpen(false); resetAddForm() }} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancelar</button><button type="submit" disabled={adding || !settingsWritable} className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{adding && <Loader2 className="size-4 animate-spin" />} Criar usuário</button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

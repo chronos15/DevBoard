@@ -38,7 +38,7 @@ import {
 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
-import { canAccessScreen, canPerformAction } from "@/lib/access-control"
+import { canAccessScreen, canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -405,6 +405,7 @@ export function DiscordWorkspace() {
   const allowRequests = canAccessScreen(currentUserRole, currentAccessPolicy, "requests")
   const allowAnalysis = canAccessScreen(currentUserRole, currentAccessPolicy, "analysis")
   const allowChat = canAccessScreen(currentUserRole, currentAccessPolicy, "chat")
+  const chatWritable = canWriteScreen(currentUserRole, currentAccessPolicy, "chat")
   const allowCreateProjects = canPerformAction(currentUserRole, currentAccessPolicy, "createProjects")
   const allowEditProjects = canPerformAction(currentUserRole, currentAccessPolicy, "editProjects")
   const accessibleProjects = React.useMemo(() => allowFollowup ? scopeFollowUpProjects(projects, currentUserId, currentUserRole) : [], [allowFollowup, projects, currentUserId, currentUserRole])
@@ -622,6 +623,7 @@ export function DiscordWorkspace() {
   }, [mentionTarget, setLocation])
 
   async function createWorkspaceChannel() {
+    if (!chatWritable) { setCreateChannelError("Chat está configurado como somente leitura."); return }
     const name = createChannelName.trim().replace(/^#+\s*/, "")
     if (!name || createChannelBusy) return
     setCreateChannelBusy(true)
@@ -645,6 +647,7 @@ export function DiscordWorkspace() {
   }
 
   async function setChannelClosed(channel: WorkspaceChannel, closed: boolean) {
+    if (!chatWritable) { setChannelsError("Chat está configurado como somente leitura."); return }
     if (archiveBusy) return
     const fallbackOpenChannel = closed ? workspaceChannels.find((item) => item.id !== channel.id && !item.closedAt) : null
     setArchiveBusy(true)
@@ -685,6 +688,7 @@ export function DiscordWorkspace() {
   }
 
   async function uploadChannelCommandFile(index: number, file?: File | null) {
+    if (!chatWritable) { setChannelCommandError("Chat está configurado como somente leitura."); return }
     if (!file || !workspaceId || !selectedWorkspaceChannel || !currentUserId) return
     if (file.size <= 0) { setChannelCommandError("O arquivo selecionado está vazio."); return }
     if (file.size > 50 * 1024 * 1024) { setChannelCommandError(`O arquivo “${file.name}” excede o limite de 50 MB.`); return }
@@ -733,6 +737,7 @@ export function DiscordWorkspace() {
   }
 
   async function saveChannelCommand() {
+    if (!chatWritable) { setChannelCommandError("Chat está configurado como somente leitura."); return }
     if (!selectedWorkspaceChannel || channelCommandBusy) return
     const command = channelCommandName.trim().replace(/^\/+/, "").toLocaleLowerCase("pt-BR")
     const title = channelCommandTitle.trim()
@@ -771,6 +776,7 @@ export function DiscordWorkspace() {
   }
 
   async function deleteChannelCommand(command: WorkspaceChannelCommand) {
+    if (!chatWritable) { setChannelCommandError("Chat está configurado como somente leitura."); return }
     if (channelCommandBusy || !window.confirm(`Excluir /${command.command}? O histórico já publicado será mantido.`)) return
     setChannelCommandBusy(true)
     setChannelCommandError(null)
@@ -794,7 +800,7 @@ export function DiscordWorkspace() {
   }, [manageChannelCommandsOpen])
 
   const executeSelectedChannelCommand = React.useCallback(async (command: ChatSlashCommand) => {
-    if (!selectedWorkspaceChannel || selectedWorkspaceChannel.closedAt) return false
+    if (!chatWritable || !selectedWorkspaceChannel || selectedWorkspaceChannel.closedAt) return false
     try {
       const { error } = await supabase.rpc("execute_workspace_channel_command", {
         p_channel_id: selectedWorkspaceChannel.id,
@@ -807,7 +813,7 @@ export function DiscordWorkspace() {
       setChannelsError(toUserFacingError(error, `Não foi possível executar /${command.command}`))
       return false
     }
-  }, [refreshAll, selectedWorkspaceChannel, supabase])
+  }, [chatWritable, refreshAll, selectedWorkspaceChannel, supabase])
 
   const commandResults = React.useMemo<SearchResult[]>(() => {
     const q = normalize(commandQuery.trim())
@@ -1025,12 +1031,12 @@ export function DiscordWorkspace() {
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
             <Hash className="size-4 text-primary" />
             <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Canais</p><p className="truncate text-[0.58rem] text-muted-foreground">Conversas gerais do workspace</p></div>
-            {isAdmin && <Button size="icon-xs" onClick={() => setCreateChannelOpen(true)} title="Criar canal"><Plus className="size-3.5" /></Button>}
+            {isAdmin && chatWritable && <Button size="icon-xs" onClick={() => setCreateChannelOpen(true)} title="Criar canal"><Plus className="size-3.5" /></Button>}
           </div>
           <div className="p-2"><div className="relative"><Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /><input value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder="Buscar canais abertos" className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none focus:border-ring" /></div></div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
             <div className="mt-1">
-              <CategoryHeader label="Canais" open={!collapsed.has("workspace:channels")} count={filtered.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("workspace:channels") ? next.delete("workspace:channels") : next.add("workspace:channels"); return next })} actions={isAdmin ? <button type="button" onClick={() => setCreateChannelOpen(true)} title="Criar canal" className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-3.5" /></button> : undefined} />
+              <CategoryHeader label="Canais" open={!collapsed.has("workspace:channels")} count={filtered.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("workspace:channels") ? next.delete("workspace:channels") : next.add("workspace:channels"); return next })} actions={isAdmin && chatWritable ? <button type="button" onClick={() => setCreateChannelOpen(true)} title="Criar canal" className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-3.5" /></button> : undefined} />
               {!collapsed.has("workspace:channels") && <div className="space-y-0.5">{filtered.map((channel) => <ChannelButton key={channel.id} active={selectedWorkspaceChannel?.id === channel.id && !selectedWorkspaceChannel.closedAt} label={channel.name} muted={channel.description} onClick={() => { setLocation({ space: "channels", channel: channel.id }); setMobileChannelsOpen(false) }} />)}</div>}
             </div>
             {!channelsLoading && filtered.length === 0 && <div className="px-3 py-8 text-center text-xs text-muted-foreground">{isAdmin ? "Nenhum canal aberto. Crie o primeiro canal para a equipe." : "Nenhum canal aberto no momento."}</div>}
@@ -1057,7 +1063,7 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
+  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, chatWritable, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {
@@ -1072,14 +1078,14 @@ export function DiscordWorkspace() {
             <p className="truncate text-[0.58rem] text-muted-foreground">{selectedWorkspaceChannel.closedAt ? "Canal fechado · somente histórico" : selectedWorkspaceChannel.description || "Canal geral do workspace"}</p>
           </div>
           {selectedWorkspaceChannel.closedAt && <span className="hidden rounded-full bg-muted px-2 py-1 text-[0.58rem] font-medium text-muted-foreground sm:inline">Arquivado</span>}
-          {isAdmin && !selectedWorkspaceChannel.closedAt && (
+          {isAdmin && chatWritable && !selectedWorkspaceChannel.closedAt && (
             <Button type="button" size="sm" variant="ghost" onClick={() => { resetChannelCommandEditor(); setManageChannelCommandsOpen(true) }} className="h-8 gap-1.5 px-2 text-xs" title="Gerenciar comandos deste canal">
               <Terminal className="size-3.5" />
               <span className="hidden sm:inline">Comandos</span>
               {selectedChannelCommands.length > 0 && <span className="rounded-full bg-primary/10 px-1.5 font-mono text-[0.55rem] text-primary">{selectedChannelCommands.length}</span>}
             </Button>
           )}
-          {isAdmin && (
+          {isAdmin && chatWritable && (
             <Button type="button" size="sm" variant="ghost" disabled={archiveBusy} onClick={() => selectedWorkspaceChannel.closedAt ? void setChannelClosed(selectedWorkspaceChannel, false) : setArchiveTarget(selectedWorkspaceChannel)} className="h-8 gap-1.5 px-2 text-xs">
               {archiveBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : selectedWorkspaceChannel.closedAt ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
               <span className="hidden sm:inline">{selectedWorkspaceChannel.closedAt ? "Reabrir" : "Fechar"}</span>
@@ -1105,7 +1111,7 @@ export function DiscordWorkspace() {
           <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary"><Hash className="size-7" /></div>
           <h2 className="mt-4 text-lg font-semibold">Canais da equipe</h2>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">Canais gerais são compartilhados com toda a equipe e mantêm o histórico centralizado.</p>
-          {isAdmin && <Button className="mt-4" onClick={() => setCreateChannelOpen(true)}><Plus className="size-4" /> Criar primeiro canal</Button>}
+          {isAdmin && chatWritable && <Button className="mt-4" onClick={() => setCreateChannelOpen(true)}><Plus className="size-4" /> Criar primeiro canal</Button>}
         </div>
       </div>
     )

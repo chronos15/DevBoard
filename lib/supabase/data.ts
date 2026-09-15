@@ -20,6 +20,7 @@ import type {
   WorkItemType,
 } from '@/lib/types'
 import { AVATARS_BUCKET, PROJECT_ICONS_BUCKET, SERVICE_REQUEST_UNIT_ICONS_BUCKET, isAttachmentKind, mapMember } from './helpers'
+import { defaultActionPermissions, defaultReadOnlyScreens, defaultScreenPermissions } from '@/lib/access-control'
 
 export type BackendSnapshot = {
   user: User
@@ -113,60 +114,38 @@ export async function loadIdentity(supabase: SupabaseClient) {
 
 
 export async function loadMyWorkspaceAccess(supabase: SupabaseClient, role: AccessRole): Promise<MemberAccessPolicy> {
-  let { data, error } = await supabase.rpc('get_my_workspace_access_profile_v2')
+  let { data, error } = await supabase.rpc('get_my_workspace_access_profile_v3')
+  if (error) {
+    const v2 = await supabase.rpc('get_my_workspace_access_profile_v2')
+    if (!v2.error) { data = v2.data; error = null }
+  }
   if (error) {
     const legacy = await supabase.rpc('get_my_workspace_access_profile')
     if (!legacy.error) { data = legacy.data; error = null }
   }
+
   if (error) {
-    // A migration 077 adiciona esta RPC. Até ela ser aplicada, o comportamento
-    // permanece exatamente o padrão da role atual.
     return {
       enabled: false,
-      screenPermissions: {
-        dashboard: true,
-        developer: role === 'developer',
-        projects: role === 'admin' || role === 'developer',
-        followup: true,
-        requests: true,
-        requestsAqs: role === 'admin' || role === 'aqs',
-        requestsDev: role === 'admin' || role === 'developer',
-        analysis: role === 'admin' || role === 'aqs' || role === 'developer',
-        hours: role === 'admin' || role === 'developer',
-        agenda: role === 'admin' || role === 'developer',
-        chat: true,
-        reports: role === 'admin',
-      },
-      actionPermissions: {
-        createProjects: role === 'admin' || role === 'developer',
-        editProjects: role === 'admin' || role === 'developer',
-        createActivities: role === 'admin' || role === 'developer',
-        createSubactivities: role === 'admin' || role === 'developer',
-      },
+      screenPermissions: defaultScreenPermissions(role),
+      actionPermissions: defaultActionPermissions(role),
+      readOnlyScreens: defaultReadOnlyScreens(),
       restrictProjects: false,
       restrictActivities: false,
       restrictSubactivities: false,
     }
   }
+
   const row = Array.isArray(data) ? data[0] : data
-  const raw = row?.screen_permissions && typeof row.screen_permissions === 'object' ? row.screen_permissions : {}
+  const rawScreens = row?.screen_permissions && typeof row.screen_permissions === 'object' ? row.screen_permissions : {}
   const rawActions = row?.action_permissions && typeof row.action_permissions === 'object' ? row.action_permissions : {}
-  const defaults = {
-    dashboard: true, developer: role === 'developer', projects: role === 'admin' || role === 'developer',
-    followup: true, requests: true, requestsAqs: role === 'admin' || role === 'aqs', requestsDev: role === 'admin' || role === 'developer',
-    analysis: role === 'admin' || role === 'aqs' || role === 'developer', hours: role === 'admin' || role === 'developer',
-    agenda: role === 'admin' || role === 'developer', chat: true, reports: role === 'admin',
-  }
-  const defaultActions = {
-    createProjects: role === 'admin' || role === 'developer',
-    editProjects: role === 'admin' || role === 'developer',
-    createActivities: role === 'admin' || role === 'developer',
-    createSubactivities: role === 'admin' || role === 'developer',
-  }
+  const rawReadOnly = row?.read_only_screens && typeof row.read_only_screens === 'object' ? row.read_only_screens : {}
+
   return {
-    enabled: role === 'admin' ? false : row?.enabled === true,
-    screenPermissions: { ...defaults, ...raw },
-    actionPermissions: { ...defaultActions, ...rawActions },
+    enabled: row?.enabled === true,
+    screenPermissions: { ...defaultScreenPermissions(role), ...rawScreens },
+    actionPermissions: { ...defaultActionPermissions(role), ...rawActions },
+    readOnlyScreens: { ...defaultReadOnlyScreens(), ...rawReadOnly },
     restrictProjects: row?.restrict_projects === true,
     restrictActivities: row?.restrict_activities === true,
     restrictSubactivities: row?.restrict_subactivities === true,

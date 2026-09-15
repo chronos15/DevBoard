@@ -16,6 +16,7 @@ import {
   FileText,
   FileVideo,
   FolderKanban,
+  FolderTree,
   Hash,
   Layers3,
   Link2,
@@ -25,6 +26,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  UsersRound,
   X,
 } from "lucide-react"
 import { useStore } from "@/lib/store"
@@ -35,6 +37,7 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { SharePageSkeleton } from "@/components/share/share-page-skeleton"
 import { cn } from "@/lib/utils"
 import { SERVICE_REQUEST_FINAL_STATUSES, serviceRequestReference } from "@/lib/service-requests"
+import { deleteServerStagedShare, readServerStagedShare } from "@/lib/taskboard-share-cache"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -53,7 +56,6 @@ const textExtensions = new Set([
 ])
 const documentExtensions = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf"])
 
-type DestinationGroup = "work" | "request" | "aqs"
 type DestinationKind = "project" | "activity" | "subactivity"
 type ShareDestinationType = DestinationKind | "request" | "aqs"
 type DestinationFilter = "all" | ShareDestinationType
@@ -72,6 +74,10 @@ type ShareDestination = {
   aqsReviewId?: string
   projectIcon?: string
   projectIconUrl?: string
+  projectName?: string
+  projectClient?: string
+  assigneeId?: string
+  assigneeName?: string
 }
 
 type ShareHistoryEntry = {
@@ -117,17 +123,47 @@ async function readCachedShare(shareId: string) {
   if (!metadataResponse) throw new Error("O conteúdo compartilhado não está mais disponível.")
 
   const metadata = await metadataResponse.json() as SharedPayload
-  const files = await Promise.all(metadata.files.map(async (item) => {
+  const files: File[] = []
+  const missingNames: string[] = []
+
+  for (const item of metadata.files ?? []) {
     const response = await cache.match(shareCacheUrl(`${SHARE_PREFIX}${shareId}/file/${item.index}`))
-    if (!response) throw new Error(`Não foi possível recuperar “${item.name}”.`)
+    if (!response) {
+      missingNames.push(item.name)
+      continue
+    }
     const blob = await response.blob()
-    return new File([blob], item.name, {
+    files.push(new File([blob], item.name, {
       type: item.type || blob.type || "application/octet-stream",
       lastModified: item.lastModified || Date.now(),
-    })
-  }))
+    }))
+  }
 
-  return { metadata, files }
+  // Alguns Web Share Targets entregam o binário sob um campo diferente de
+  // `files`. O SW V134 coleta qualquer parte binária e, caso o metadata de uma
+  // instalação anterior esteja incompleto, também recuperamos diretamente as
+  // entradas file/N existentes no Cache Storage.
+  if (files.length === 0) {
+    const keys = await cache.keys()
+    const fileKeys = keys
+      .filter((entry) => entry.url.includes(`${SHARE_PREFIX}${shareId}/file/`))
+      .sort((a, b) => a.url.localeCompare(b.url, undefined, { numeric: true }))
+    for (let index = 0; index < fileKeys.length; index += 1) {
+      const response = await cache.match(fileKeys[index])
+      if (!response) continue
+      const blob = await response.blob()
+      if (blob.size <= 0) continue
+      const encodedName = response.headers.get("X-TaskBoard-File-Name")
+      const fileName = encodedName ? decodeURIComponent(encodedName) : `arquivo-compartilhado-${index + 1}`
+      const modified = Number(response.headers.get("X-TaskBoard-Last-Modified") || Date.now())
+      files.push(new File([blob], fileName, {
+        type: response.headers.get("Content-Type") || blob.type || "application/octet-stream",
+        lastModified: Number.isFinite(modified) ? modified : Date.now(),
+      }))
+    }
+  }
+
+  return { metadata, files, missingNames }
 }
 
 function extensionOf(name: string) {
@@ -246,8 +282,37 @@ function latestIso(values: Array<string | undefined>) {
   return values.filter(Boolean).sort().at(-1) ?? ""
 }
 
+
+function normalizeSearchValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+}
+
+function parseDestinationSearch(value: string) {
+  const trimmed = value.trim()
+  const responsibleMode = trimmed.startsWith("#")
+  if (!responsibleMode) {
+    return { responsibleMode: false, responsibleTerms: [] as string[], textTerms: [normalizeSearchValue(trimmed)].filter(Boolean) }
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean)
+  const responsibleTerms = tokens
+    .filter((token) => token.startsWith("#"))
+    .map((token) => normalizeSearchValue(token.slice(1)))
+    .filter(Boolean)
+  const textTerms = tokens
+    .filter((token) => !token.startsWith("#"))
+    .map(normalizeSearchValue)
+    .filter(Boolean)
+
+  return { responsibleMode: true, responsibleTerms, textTerms }
+}
+
 function destinationLabel(type: ShareDestinationType) {
-  if (type === "subactivity") return "Acompanhamento"
+  if (type === "subactivity") return "Subatividade"
   if (type === "activity") return "Atividade"
   if (type === "project") return "Projeto"
   if (type === "request") return "Solicitação"
@@ -255,7 +320,7 @@ function destinationLabel(type: ShareDestinationType) {
 }
 
 function DestinationGlyph({ destination }: { destination: ShareDestination }) {
-  if (destination.projectIcon || destination.projectIconUrl) {
+  if (destination.type !== "request" && (destination.projectIcon || destination.projectIconUrl)) {
     return (
       <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-foreground ring-1 ring-foreground/10">
         <ProjectIcon
@@ -290,16 +355,19 @@ function DestinationRow({
   selected,
   onSelect,
   compact = false,
+  titleOverride,
 }: {
   destination: ShareDestination
   selected: boolean
   onSelect: () => void
   compact?: boolean
+  titleOverride?: string
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      aria-pressed={selected}
       className={cn(
         "flex w-full min-w-0 items-center gap-3 rounded-2xl text-left transition-colors",
         compact ? "px-2.5 py-2" : "px-3 py-2.5",
@@ -309,7 +377,7 @@ function DestinationRow({
       <DestinationGlyph destination={destination} />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold">{destination.title}</span>
+          <span className="truncate text-sm font-semibold">{titleOverride ?? destination.title}</span>
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.56rem] font-semibold text-muted-foreground">
             {destinationLabel(destination.type)}
           </span>
@@ -334,6 +402,7 @@ export default function ShareToDevboardPage() {
   const {
     hydrated,
     projects,
+    members,
     serviceRequests,
     aqsReviews,
     currentUserId,
@@ -347,23 +416,20 @@ export default function ShareToDevboardPage() {
 
   const [loadingShare, setLoadingShare] = React.useState(true)
   const [shareId, setShareId] = React.useState("")
+  const [serverShareId, setServerShareId] = React.useState("")
   const [payload, setPayload] = React.useState<SharedPayload | null>(null)
   const [files, setFiles] = React.useState<File[]>([])
   const [includeText, setIncludeText] = React.useState(true)
-  const [destinationGroup, setDestinationGroup] = React.useState<DestinationGroup>("work")
-  const [destination, setDestination] = React.useState<DestinationKind>("subactivity")
-  const [projectId, setProjectId] = React.useState("")
-  const [activityId, setActivityId] = React.useState("")
-  const [subactivityId, setSubactivityId] = React.useState("")
-  const [requestId, setRequestId] = React.useState("")
-  const [aqsReviewId, setAqsReviewId] = React.useState("")
-  const [selectedDestinationKey, setSelectedDestinationKey] = React.useState("")
+  const [selectedDestinationKeys, setSelectedDestinationKeys] = React.useState<string[]>([])
+  const [groupByProject, setGroupByProject] = React.useState(false)
   const [destinationQuery, setDestinationQuery] = React.useState("")
   const [destinationFilter, setDestinationFilter] = React.useState<DestinationFilter>("all")
   const [shareHistory, setShareHistory] = React.useState<ShareHistoryEntry[]>([])
   const [error, setError] = React.useState("")
   const [warning, setWarning] = React.useState("")
   const [sending, setSending] = React.useState(false)
+  const [sendingDestinationIndex, setSendingDestinationIndex] = React.useState(0)
+  const [successDestinationKeys, setSuccessDestinationKeys] = React.useState<string[]>([])
   const [videoProgress, setVideoProgress] = React.useState<VideoProcessingProgress | null>(null)
   const [success, setSuccess] = React.useState(false)
 
@@ -378,15 +444,24 @@ export default function ShareToDevboardPage() {
 
     if (id) {
       void readCachedShare(id)
-        .then(({ metadata, files: receivedFiles }) => {
+        .then(({ metadata, files: receivedFiles, missingNames }) => {
           setPayload(metadata)
           setFiles(receivedFiles)
           setIncludeText(Boolean(textEvidence(metadata)))
+          if (missingNames.length) {
+            setWarning(`${missingNames.length === 1 ? "Um arquivo não pôde" : `${missingNames.length} arquivos não puderam`} ser recuperado${missingNames.length === 1 ? "" : "s"} do armazenamento temporário. Os demais itens continuam disponíveis.`)
+          }
         })
         .catch((cause) => {
           setError(cause instanceof Error ? cause.message : "Não foi possível recuperar o conteúdo compartilhado.")
         })
         .finally(() => setLoadingShare(false))
+      return
+    }
+
+    const serverId = params.get("serverShare") || ""
+    if (serverId) {
+      setServerShareId(serverId)
       return
     }
 
@@ -407,15 +482,36 @@ export default function ShareToDevboardPage() {
       }
       setPayload(metadata)
       setIncludeText(Boolean(textEvidence(metadata)))
-      setWarning(fileNames.length
-        ? `O Chrome ainda estava usando a versão anterior do PWA e não conseguiu preservar ${fileNames.length === 1 ? `o arquivo “${fileNames[0]}”` : "os arquivos recebidos"}. O TaskBoard já atualizou o receptor; compartilhe novamente.`
-        : "O receptor do PWA acabou de ser atualizado. Os próximos compartilhamentos já serão preservados localmente antes da escolha do destino.")
+      const declaredCount = Number(params.get("fileCount") || fileNames.length || 0)
+      setWarning(declaredCount > 0
+        ? `Este aparelho abriu o receptor legado antes do Service Worker assumir o compartilhamento e ${declaredCount === 1 ? "o anexo não pôde" : "os anexos não puderam"} ser preservado${declaredCount === 1 ? "" : "s"}. Abra o TaskBoard uma vez e compartilhe novamente; a V134 também possui um inbox privado de fallback para evitar este caso.`
+        : "O receptor do PWA foi atualizado. Se o compartilhamento continha um arquivo, compartilhe novamente após abrir o TaskBoard uma vez neste aparelho.")
     } else if (params.get("erro") === "recebimento") {
       setError("Não foi possível receber este compartilhamento. Tente compartilhar novamente pelo Chrome.")
     }
 
     setLoadingShare(false)
   }, [])
+
+  React.useEffect(() => {
+    if (!serverShareId || !currentUserId) return
+    const params = new URLSearchParams(window.location.search)
+    void readServerStagedShare(serverShareId, currentUserId, {
+      title: params.get("title") || "",
+      text: params.get("text") || "",
+      url: params.get("url") || "",
+    })
+      .then(({ metadata, files: receivedFiles }) => {
+        setPayload(metadata as SharedPayload)
+        setFiles(receivedFiles)
+        setIncludeText(Boolean(textEvidence(metadata)))
+        if (receivedFiles.length === 0) setWarning("O compartilhamento foi recebido, mas nenhum binário válido foi encontrado. Tente compartilhar novamente.")
+      })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Não foi possível recuperar o anexo recebido pelo dispositivo.")
+      })
+      .finally(() => setLoadingShare(false))
+  }, [currentUserId, serverShareId])
 
   const isAdmin = currentUserRole === "admin"
   const availableProjects = React.useMemo(() => projects.filter((project) =>
@@ -431,8 +527,6 @@ export default function ShareToDevboardPage() {
       || request.responsibleDevId === currentUserId
       || request.executorId === currentUserId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [currentUserId, isAdmin, serviceRequests])
-  const selectedRequest = availableRequests.find((request) => request.id === requestId)
-
   const availableAqsReviews = React.useMemo(() => aqsReviews.flatMap((review) => {
     if (review.status !== "awaiting" && review.status !== "evaluating") return []
     const project = projects.find((item) => item.id === review.projectId)
@@ -445,7 +539,7 @@ export default function ShareToDevboardPage() {
     if (!isAdmin && !follows) return []
     return [{ review, project, activity, sub }]
   }).sort((a, b) => b.review.createdAt.localeCompare(a.review.createdAt)), [aqsReviews, currentUserId, isAdmin, projects])
-  const selectedAqsReview = availableAqsReviews.find((item) => item.review.id === aqsReviewId)
+  const memberById = React.useMemo(() => new Map(members.map((member) => [member.id, member])), [members])
 
   const allDestinations = React.useMemo<ShareDestination[]>(() => {
     const items: ShareDestination[] = []
@@ -471,6 +565,8 @@ export default function ShareToDevboardPage() {
         projectId: project.id,
         projectIcon: project.icon,
         projectIconUrl: project.iconImageUrl,
+        projectName: project.name,
+        projectClient: project.client,
       })
 
       for (const activity of visibleActivities) {
@@ -488,35 +584,48 @@ export default function ShareToDevboardPage() {
           activityId: activity.id,
           projectIcon: project.icon,
           projectIconUrl: project.iconImageUrl,
+          projectName: project.name,
+          projectClient: project.client,
         })
 
         for (const sub of activitySubs) {
+          const assignee = sub.assigneeId ? memberById.get(sub.assigneeId) : undefined
           items.push({
             key: `subactivity:${sub.id}`,
             type: "subactivity",
             title: sub.title,
-            subtitle: `${project.name} · ${activity.title}`,
-            searchText: `${sub.title} ${activity.title} ${project.name} ${project.client}`.toLowerCase(),
+            subtitle: `${project.name} · ${activity.title}${assignee ? ` · ${assignee.name}` : ""}`,
+            searchText: normalizeSearchValue(`${sub.title} ${activity.title} ${project.name} ${project.client} ${assignee?.name ?? ""}`),
             updatedAt: sub.updatedAt || sub.createdAt || "",
             projectId: project.id,
             activityId: activity.id,
             subactivityId: sub.id,
             projectIcon: project.icon,
             projectIconUrl: project.iconImageUrl,
+            projectName: project.name,
+            projectClient: project.client,
+            assigneeId: sub.assigneeId || undefined,
+            assigneeName: assignee?.name,
           })
         }
       }
     }
 
     for (const request of availableRequests) {
+      const requestProject = request.projectId ? availableProjects.find((project) => project.id === request.projectId) : undefined
       items.push({
         key: `request:${request.id}`,
         type: "request",
         title: request.title,
         subtitle: `${serviceRequestReference(request)} · ${request.unit || request.module || "Solicitação"}`,
-        searchText: `${request.title} ${serviceRequestReference(request)} ${request.unit} ${request.module} ${request.subject}`.toLowerCase(),
+        searchText: normalizeSearchValue(`${request.title} ${serviceRequestReference(request)} ${request.unit} ${request.module} ${request.subject} ${requestProject?.name ?? ""}`),
         updatedAt: request.updatedAt,
         requestId: request.id,
+        projectId: requestProject?.id,
+        projectIcon: requestProject?.icon,
+        projectIconUrl: requestProject?.iconImageUrl,
+        projectName: requestProject?.name,
+        projectClient: requestProject?.client,
       })
     }
 
@@ -534,6 +643,8 @@ export default function ShareToDevboardPage() {
         aqsReviewId: review.id,
         projectIcon: project.icon,
         projectIconUrl: project.iconImageUrl,
+        projectName: project.name,
+        projectClient: project.client,
       })
     }
 
@@ -549,9 +660,17 @@ export default function ShareToDevboardPage() {
       const byDate = b.updatedAt.localeCompare(a.updatedAt)
       return byDate || rank[a.type] - rank[b.type] || a.title.localeCompare(b.title)
     })
-  }, [availableAqsReviews, availableProjects, availableRequests, currentUserId, isAdmin])
+  }, [availableAqsReviews, availableProjects, availableRequests, currentUserId, isAdmin, memberById])
 
-  const selectedDestination = allDestinations.find((item) => item.key === selectedDestinationKey)
+  const selectedDestinations = React.useMemo(() => selectedDestinationKeys
+    .map((key) => allDestinations.find((item) => item.key === key))
+    .filter((item): item is ShareDestination => Boolean(item)), [allDestinations, selectedDestinationKeys])
+
+  React.useEffect(() => {
+    if (!selectedDestinationKeys.length) return
+    const availableKeys = new Set(allDestinations.map((item) => item.key))
+    setSelectedDestinationKeys((current) => current.filter((key) => availableKeys.has(key)))
+  }, [allDestinations])
 
   React.useEffect(() => {
     if (!currentUserId) return
@@ -578,47 +697,86 @@ export default function ShareToDevboardPage() {
       .slice(0, 8)
   }, [allDestinations, frequentDestinations])
 
-  const normalizedDestinationQuery = destinationQuery.trim().toLowerCase()
+  const parsedDestinationQuery = React.useMemo(() => parseDestinationSearch(destinationQuery), [destinationQuery])
+  const effectiveDestinationFilter: DestinationFilter = parsedDestinationQuery.responsibleMode ? "subactivity" : destinationFilter
+  const normalizedDestinationQuery = normalizeSearchValue(destinationQuery)
   const filteredDestinations = React.useMemo(() => allDestinations.filter((item) => {
-    if (destinationFilter !== "all" && item.type !== destinationFilter) return false
+    if (!parsedDestinationQuery.responsibleMode && destinationFilter !== "all" && item.type !== destinationFilter) return false
+
+    if (parsedDestinationQuery.responsibleMode) {
+      if (item.type !== "subactivity") return false
+      const assigneeName = normalizeSearchValue(item.assigneeName ?? "")
+      if (parsedDestinationQuery.responsibleTerms.length > 0
+        && !parsedDestinationQuery.responsibleTerms.some((term) => assigneeName.includes(term))) return false
+      return parsedDestinationQuery.textTerms.every((term) => item.searchText.includes(term))
+    }
+
     if (!normalizedDestinationQuery) return true
-    return item.searchText.includes(normalizedDestinationQuery)
-      || item.title.toLowerCase().includes(normalizedDestinationQuery)
-      || item.subtitle.toLowerCase().includes(normalizedDestinationQuery)
-  }), [allDestinations, destinationFilter, normalizedDestinationQuery])
+    const terms = normalizedDestinationQuery.split(/\s+/).filter(Boolean)
+    const haystack = normalizeSearchValue(`${item.searchText} ${item.title} ${item.subtitle}`)
+    return terms.every((term) => haystack.includes(term))
+  }), [allDestinations, destinationFilter, normalizedDestinationQuery, parsedDestinationQuery])
+
+  const groupedDestinations = React.useMemo(() => {
+    const groups = new Map<string, {
+      key: string
+      title: string
+      subtitle: string
+      projectIcon?: string
+      projectIconUrl?: string
+      items: ShareDestination[]
+    }>()
+
+    for (const item of filteredDestinations) {
+      const projectKey = item.projectId && item.projectName ? `project:${item.projectId}` : `other:${item.type === "request" ? "requests" : "general"}`
+      let group = groups.get(projectKey)
+      if (!group) {
+        group = item.projectId && item.projectName
+          ? {
+              key: projectKey,
+              title: item.projectName,
+              subtitle: item.projectClient || "Projeto",
+              projectIcon: item.projectIcon,
+              projectIconUrl: item.projectIconUrl,
+              items: [],
+            }
+          : {
+              key: projectKey,
+              title: item.type === "request" ? "Solicitações sem projeto" : "Outros destinos",
+              subtitle: "Destinos disponíveis no workspace",
+              items: [],
+            }
+        groups.set(projectKey, group)
+      }
+      group.items.push(item)
+    }
+
+    return Array.from(groups.values())
+  }, [filteredDestinations])
 
   const sharedText = payload ? textEvidence(payload) : null
   const hasContent = files.length > 0 || Boolean(includeText && sharedText)
 
-  function chooseDestination(item: ShareDestination) {
-    setSelectedDestinationKey(item.key)
+  function toggleDestination(item: ShareDestination) {
+    setSelectedDestinationKeys((current) => current.includes(item.key)
+      ? current.filter((key) => key !== item.key)
+      : [...current, item.key])
     setError("")
-    setProjectId(item.projectId ?? "")
-    setActivityId(item.activityId ?? "")
-    setSubactivityId(item.subactivityId ?? "")
-    setRequestId(item.requestId ?? "")
-    setAqsReviewId(item.aqsReviewId ?? "")
-
-    if (item.type === "request") {
-      setDestinationGroup("request")
-      return
-    }
-    if (item.type === "aqs") {
-      setDestinationGroup("aqs")
-      return
-    }
-
-    setDestinationGroup("work")
-    setDestination(item.type)
   }
 
-  function rememberDestination(key: string) {
-    if (!currentUserId || !key) return
+  function rememberDestinations(keys: string[]) {
+    if (!currentUserId || keys.length === 0) return
     const now = new Date().toISOString()
-    const current = shareHistory.find((entry) => entry.key === key)
+    const keySet = new Set(keys)
+    const oldByKey = new Map(shareHistory.map((entry) => [entry.key, entry]))
+    const promoted = keys.map((key) => ({
+      key,
+      count: (oldByKey.get(key)?.count ?? 0) + 1,
+      lastUsedAt: now,
+    }))
     const next = [
-      { key, count: (current?.count ?? 0) + 1, lastUsedAt: now },
-      ...shareHistory.filter((entry) => entry.key !== key),
+      ...promoted,
+      ...shareHistory.filter((entry) => !keySet.has(entry.key)),
     ].slice(0, 20)
     setShareHistory(next)
     try {
@@ -630,36 +788,15 @@ export default function ShareToDevboardPage() {
 
   async function discardAndLeave() {
     if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
+    if (serverShareId && currentUserId) await deleteServerStagedShare(serverShareId, currentUserId).catch(() => undefined)
     if (window.history.length > 1) window.history.back()
     else router.replace("/")
   }
 
   async function sendEvidence() {
     if (sending || !hasContent) return
-    if (!selectedDestinationKey || !selectedDestination) {
-      setError("Escolha onde deseja enviar este conteúdo.")
-      return
-    }
-    if (destinationGroup === "work") {
-      if (!projectId) {
-        setError("Selecione o projeto de destino.")
-        return
-      }
-      if ((destination === "activity" || destination === "subactivity") && !activityId) {
-        setError("Selecione a atividade de destino.")
-        return
-      }
-      if (destination === "subactivity" && !subactivityId) {
-        setError("Selecione a subatividade de destino.")
-        return
-      }
-    } else if (destinationGroup === "request") {
-      if (!requestId || !selectedRequest) {
-        setError("Selecione uma solicitação em aberto.")
-        return
-      }
-    } else if (!aqsReviewId || !selectedAqsReview) {
-      setError("Selecione uma análise AQS em aberto.")
+    if (selectedDestinations.length === 0) {
+      setError("Escolha pelo menos um destino para enviar este conteúdo.")
       return
     }
 
@@ -678,6 +815,7 @@ export default function ShareToDevboardPage() {
     }
 
     setSending(true)
+    setSendingDestinationIndex(0)
     setVideoProgress(null)
     setError("")
     try {
@@ -691,37 +829,59 @@ export default function ShareToDevboardPage() {
         return
       }
 
-      let ok = false
-      if (destinationGroup === "request") {
-        const requestFiles = [...preparedFiles]
-        if (includeText && sharedText?.textContent) {
-          requestFiles.push(new File([sharedText.textContent], sharedText.name, { type: sharedText.mimeType }))
+      const uploads = await Promise.all(preparedFiles.map(fileToUpload))
+      if (includeText && sharedText) uploads.push(sharedText)
+
+      const requestFiles = [...preparedFiles]
+      if (includeText && sharedText?.textContent) {
+        requestFiles.push(new File([sharedText.textContent], sharedText.name, { type: sharedText.mimeType }))
+      }
+      const requestInputs = requestFiles.map((file) => ({
+        file,
+        category: (detectKind(file) === "video" ? "analysis-video" : "other") as ServiceRequestAttachmentCategory,
+      }))
+
+      const succeeded: string[] = []
+      const failed: string[] = []
+
+      for (let index = 0; index < selectedDestinations.length; index += 1) {
+        const item = selectedDestinations[index]
+        setSendingDestinationIndex(index + 1)
+        let ok = false
+        try {
+          if (item.type === "request" && item.requestId) {
+            ok = await addServiceRequestAttachments(item.requestId, requestInputs)
+          } else if (item.type === "aqs" && item.aqsReviewId) {
+            ok = await addAqsReviewAttachments(item.aqsReviewId, uploads)
+          } else if (item.type === "project" && item.projectId) {
+            ok = await addProjectAttachments(item.projectId, uploads)
+          } else if (item.type === "activity" && item.activityId) {
+            ok = await addActivityAttachments(item.activityId, uploads)
+          } else if (item.type === "subactivity" && item.subactivityId) {
+            ok = await addSubactivityAttachments(item.subactivityId, uploads)
+          }
+        } catch (cause) {
+          console.error(`[TaskBoard/PWA Share] Falha ao enviar para ${item.key}`, cause)
+          ok = false
         }
-        ok = await addServiceRequestAttachments(requestId, requestFiles.map((file) => ({
-          file,
-          category: (detectKind(file) === "video" ? "analysis-video" : "other") as ServiceRequestAttachmentCategory,
-        })))
-      } else {
-        const uploads = await Promise.all(preparedFiles.map(fileToUpload))
-        if (includeText && sharedText) uploads.push(sharedText)
-        if (destinationGroup === "aqs") {
-          ok = await addAqsReviewAttachments(aqsReviewId, uploads)
-        } else {
-          ok = destination === "project"
-            ? await addProjectAttachments(projectId, uploads)
-            : destination === "activity"
-              ? await addActivityAttachments(activityId, uploads)
-              : await addSubactivityAttachments(subactivityId, uploads)
-        }
+
+        if (ok) succeeded.push(item.key)
+        else failed.push(item.key)
       }
 
-      if (!ok) {
-        setError("Não foi possível anexar a evidência agora. Sua seleção foi mantida para tentar novamente.")
+      if (succeeded.length) rememberDestinations(succeeded)
+
+      if (failed.length) {
+        setSelectedDestinationKeys(failed)
+        setError(succeeded.length > 0
+          ? `O conteúdo foi enviado para ${succeeded.length} ${succeeded.length === 1 ? "destino" : "destinos"}, mas falhou em ${failed.length}. Mantive selecionado somente o que precisa ser tentado novamente.`
+          : "Não foi possível anexar a evidência nos destinos selecionados agora. Sua seleção foi mantida para tentar novamente.")
         return
       }
 
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
-      rememberDestination(selectedDestinationKey)
+      if (serverShareId && currentUserId) await deleteServerStagedShare(serverShareId, currentUserId).catch(() => undefined)
+      setSuccessDestinationKeys(succeeded)
       setSuccess(true)
     } catch (cause) {
       console.error("[TaskBoard/PWA Share] Falha ao preparar evidências", cause)
@@ -730,30 +890,35 @@ export default function ShareToDevboardPage() {
         : "Não foi possível preparar um dos arquivos compartilhados.")
     } finally {
       setSending(false)
+      setSendingDestinationIndex(0)
     }
   }
 
-  function openDestination() {
-    if (destinationGroup === "request") {
-      router.replace(`/solicitacoes/${requestId}`)
+  function openDestination(item: ShareDestination) {
+    if (item.type === "request" && item.requestId) {
+      router.replace(`/solicitacoes/${item.requestId}`)
       return
     }
-    if (destinationGroup === "aqs") {
-      const subId = selectedAqsReview?.sub.id ?? ""
-      router.replace(subId ? `/analise?sub=${encodeURIComponent(subId)}` : "/analise")
+    if (item.type === "aqs") {
+      router.replace(item.subactivityId ? `/analise?sub=${encodeURIComponent(item.subactivityId)}` : "/analise")
       return
     }
-    if (destination === "subactivity") {
-      const params = new URLSearchParams({ project: projectId, activity: activityId, sub: subactivityId })
+    if (item.type === "subactivity" && item.projectId && item.activityId && item.subactivityId) {
+      const params = new URLSearchParams({ project: item.projectId, activity: item.activityId, sub: item.subactivityId })
       router.replace(`/acompanhamento?${params.toString()}`)
       return
     }
-    if (destination === "activity") {
-      router.replace(`/projetos/${projectId}#activity-${activityId}`)
+    if (item.type === "activity" && item.projectId && item.activityId) {
+      router.replace(`/projetos/${item.projectId}#activity-${item.activityId}`)
       return
     }
-    router.replace(`/projetos/${projectId}`)
+    if (item.projectId) router.replace(`/projetos/${item.projectId}`)
+    else router.replace("/")
   }
+
+  const successDestinations = successDestinationKeys
+    .map((key) => allDestinations.find((item) => item.key === key))
+    .filter((item): item is ShareDestination => Boolean(item))
 
   if (!hydrated || loadingShare) {
     return <SharePageSkeleton />
@@ -768,15 +933,19 @@ export default function ShareToDevboardPage() {
           </span>
           <h1 className="mt-5 text-xl font-bold tracking-tight">Evidência anexada</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            O conteúdo foi salvo no destino escolhido e a cópia temporária recebida pelo dispositivo foi removida.
+            {successDestinations.length > 1
+              ? `O conteúdo foi salvo em ${successDestinations.length} destinos e a cópia temporária recebida pelo dispositivo foi removida.`
+              : "O conteúdo foi salvo no destino escolhido e a cópia temporária recebida pelo dispositivo foi removida."}
           </p>
-          <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <div className={cn("mt-6 grid gap-2", successDestinations.length === 1 && "sm:grid-cols-2")}>
             <Button variant="outline" size="lg" onClick={() => void discardAndLeave()}>
               <ArrowLeft className="size-4" /> Voltar
             </Button>
-            <Button size="lg" onClick={openDestination}>
-              Abrir destino
-            </Button>
+            {successDestinations.length === 1 && (
+              <Button size="lg" onClick={() => openDestination(successDestinations[0])}>
+                Abrir destino
+              </Button>
+            )}
           </div>
         </section>
       </main>
@@ -810,7 +979,7 @@ export default function ShareToDevboardPage() {
             <input
               value={destinationQuery}
               onChange={(event) => setDestinationQuery(event.target.value)}
-              placeholder="Buscar projeto, atividade, subatividade, solicitação..."
+              placeholder="Buscar destino ou use #nome para responsável..."
               className="h-11 w-full rounded-2xl border border-border bg-muted/55 pl-10 pr-10 text-sm outline-none transition-colors placeholder:text-muted-foreground/80 focus:border-primary/30 focus:bg-card focus:ring-3 focus:ring-primary/10"
               inputMode="search"
               autoComplete="off"
@@ -826,6 +995,12 @@ export default function ShareToDevboardPage() {
               </button>
             )}
           </div>
+          {parsedDestinationQuery.responsibleMode && (
+            <div className="mt-2 flex items-center gap-2 px-1 text-[0.65rem] text-muted-foreground">
+              <UsersRound className="size-3.5 shrink-0 text-primary" />
+              <span className="truncate">Filtrando subatividades por responsável · exemplo: #mau #joao</span>
+            </div>
+          )}
         </header>
 
         <div className="flex-1 px-3 pb-32 pt-3 sm:px-5">
@@ -928,8 +1103,8 @@ export default function ShareToDevboardPage() {
                   <DestinationRow
                     key={`frequent-${item.key}`}
                     destination={item}
-                    selected={selectedDestinationKey === item.key}
-                    onSelect={() => chooseDestination(item)}
+                    selected={selectedDestinationKeys.includes(item.key)}
+                    onSelect={() => toggleDestination(item)}
                     compact
                   />
                 ))}
@@ -948,8 +1123,8 @@ export default function ShareToDevboardPage() {
                   <DestinationRow
                     key={`recent-${item.key}`}
                     destination={item}
-                    selected={selectedDestinationKey === item.key}
-                    onSelect={() => chooseDestination(item)}
+                    selected={selectedDestinationKeys.includes(item.key)}
+                    onSelect={() => toggleDestination(item)}
                     compact
                   />
                 ))}
@@ -959,16 +1134,32 @@ export default function ShareToDevboardPage() {
 
           <section className="mt-5">
             <div className="flex items-center justify-between gap-3 px-1">
-              <h2 className="text-sm font-semibold">
-                {normalizedDestinationQuery ? "Resultados" : "Todos os destinos"}
-              </h2>
-              <span className="text-[0.65rem] text-muted-foreground">{filteredDestinations.length} disponíveis</span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">
+                  {normalizedDestinationQuery ? "Resultados" : "Todos os destinos"}
+                </h2>
+                <span className="text-[0.65rem] text-muted-foreground">{filteredDestinations.length} disponíveis</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGroupByProject((current) => !current)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors",
+                  groupByProject
+                    ? "bg-primary/10 text-primary ring-1 ring-primary/20"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={groupByProject}
+              >
+                <FolderTree className="size-3.5" />
+                Por projeto
+              </button>
             </div>
 
             <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {([
                 ["all", "Todos"],
-                ["subactivity", "Acompanhamentos"],
+                ["subactivity", "Subatividades"],
                 ["request", "Solicitações"],
                 ["aqs", "AQS"],
                 ["activity", "Atividades"],
@@ -977,10 +1168,13 @@ export default function ShareToDevboardPage() {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setDestinationFilter(key)}
+                  onClick={() => {
+                    setDestinationFilter(key)
+                    if (parsedDestinationQuery.responsibleMode && key !== "subactivity") setDestinationQuery("")
+                  }}
                   className={cn(
                     "h-9 shrink-0 rounded-full px-3 text-xs font-semibold transition-colors",
-                    destinationFilter === key
+                    effectiveDestinationFilter === key
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:text-foreground",
                   )}
@@ -990,22 +1184,70 @@ export default function ShareToDevboardPage() {
               ))}
             </div>
 
-            <div className="mt-2 grid gap-1">
-              {filteredDestinations.map((item) => (
-                <DestinationRow
-                  key={item.key}
-                  destination={item}
-                  selected={selectedDestinationKey === item.key}
-                  onSelect={() => chooseDestination(item)}
-                />
-              ))}
+            <div className="mt-2">
+              {groupByProject ? (
+                <div className="space-y-3">
+                  {groupedDestinations.map((group) => (
+                    <section key={group.key} className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/8">
+                      <div className="flex items-center gap-2.5 border-b border-border/60 bg-muted/25 px-3 py-2.5">
+                        {group.projectIcon || group.projectIconUrl ? (
+                          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/8">
+                            <ProjectIcon
+                              icon={group.projectIcon}
+                              imageUrl={group.projectIconUrl}
+                              className="size-4"
+                              imageClassName="size-full rounded-none object-cover"
+                            />
+                          </span>
+                        ) : (
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                            <FolderKanban className="size-4" />
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{group.title}</p>
+                          <p className="truncate text-[0.62rem] text-muted-foreground">{group.subtitle}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.58rem] font-semibold text-muted-foreground">
+                          {group.items.length}
+                        </span>
+                      </div>
+                      <div className="grid gap-0.5 p-1.5">
+                        {group.items.map((item) => (
+                          <DestinationRow
+                            key={item.key}
+                            destination={item}
+                            selected={selectedDestinationKeys.includes(item.key)}
+                            onSelect={() => toggleDestination(item)}
+                            compact
+                            titleOverride={item.type === "project" ? "Anexar no projeto" : undefined}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-1">
+                  {filteredDestinations.map((item) => (
+                    <DestinationRow
+                      key={item.key}
+                      destination={item}
+                      selected={selectedDestinationKeys.includes(item.key)}
+                      onSelect={() => toggleDestination(item)}
+                    />
+                  ))}
+                </div>
+              )}
 
               {filteredDestinations.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-border px-5 py-10 text-center">
                   <Search className="mx-auto size-5 text-muted-foreground" />
                   <p className="mt-2 text-sm font-semibold">Nenhum destino encontrado</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    Tente outro nome ou altere o filtro selecionado.
+                    {parsedDestinationQuery.responsibleMode
+                      ? "Nenhuma subatividade foi encontrada para os responsáveis informados."
+                      : "Tente outro nome ou altere o filtro selecionado."}
                   </p>
                 </div>
               )}
@@ -1051,27 +1293,44 @@ export default function ShareToDevboardPage() {
 
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl sm:px-5">
           <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
-            {selectedDestination ? (
+            {selectedDestinations.length === 1 ? (
               <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl bg-muted/60 px-2.5 py-2">
-                <DestinationGlyph destination={selectedDestination} />
+                <DestinationGlyph destination={selectedDestinations[0]} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold">{selectedDestination.title}</p>
-                  <p className="truncate text-[0.62rem] text-muted-foreground">{destinationLabel(selectedDestination.type)} · {selectedDestination.subtitle}</p>
+                  <p className="truncate text-xs font-semibold">{selectedDestinations[0].title}</p>
+                  <p className="truncate text-[0.62rem] text-muted-foreground">{destinationLabel(selectedDestinations[0].type)} · {selectedDestinations[0].subtitle}</p>
+                </div>
+              </div>
+            ) : selectedDestinations.length > 1 ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl bg-primary/[0.06] px-3 py-2 ring-1 ring-primary/15">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <UsersRound className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold">{selectedDestinations.length} destinos selecionados</p>
+                  <p className="truncate text-[0.62rem] text-muted-foreground">
+                    {selectedDestinations.slice(0, 3).map((item) => item.title).join(" · ")}
+                    {selectedDestinations.length > 3 ? ` · +${selectedDestinations.length - 3}` : ""}
+                  </p>
                 </div>
               </div>
             ) : (
               <div className="min-w-0 flex-1 px-2">
-                <p className="text-xs font-semibold">Escolha um destino</p>
-                <p className="text-[0.62rem] text-muted-foreground">Toque em uma opção acima</p>
+                <p className="text-xs font-semibold">Escolha um ou mais destinos</p>
+                <p className="text-[0.62rem] text-muted-foreground">Toque novamente para remover uma seleção</p>
               </div>
             )}
             <Button
               size="lg"
               className="h-12 shrink-0 rounded-full px-5"
               onClick={() => void sendEvidence()}
-              disabled={!hasContent || !selectedDestinationKey || sending}
+              disabled={!hasContent || selectedDestinations.length === 0 || sending}
               loading={sending}
-              loadingText={videoProgress ? "Otimizando…" : "Enviando…"}
+              loadingText={videoProgress
+                ? "Otimizando…"
+                : selectedDestinations.length > 1 && sendingDestinationIndex > 0
+                  ? `${sendingDestinationIndex}/${selectedDestinations.length}`
+                  : "Enviando…"}
             >
               {!sending && <Send className="size-4" />}
               Enviar

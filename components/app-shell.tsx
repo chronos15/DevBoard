@@ -315,6 +315,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = React.useState(false)
   const pathname = usePathname()
 
+  React.useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
+    void navigator.serviceWorker.register("/devboard-sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update().catch(() => undefined))
+      .catch(() => undefined)
+  }, [])
+
   if (BARE_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))) {
     return <>{children}</>
   }

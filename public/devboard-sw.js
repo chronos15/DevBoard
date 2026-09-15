@@ -48,7 +48,12 @@ async function handleShareTarget(request) {
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-  const files = formData.getAll("files").filter((entry) => entry instanceof File && entry.size > 0)
+  const files = []
+  for (const [, entry] of formData.entries()) {
+    if (typeof entry === "string") continue
+    if (!entry || typeof entry.size !== "number" || entry.size <= 0) continue
+    files.push(entry)
+  }
   const title = String(formData.get("title") || "").trim()
   const text = String(formData.get("text") || "").trim()
   const url = String(formData.get("url") || "").trim()
@@ -78,7 +83,13 @@ async function handleShareTarget(request) {
 
   await Promise.all(files.map((file, index) => cache.put(
     shareCacheUrl(`${DEVBOARD_SHARE_PREFIX}${shareId}/file/${index}`),
-    new Response(file, { headers: { "Content-Type": file.type || "application/octet-stream" } }),
+    new Response(file, {
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-TaskBoard-File-Name": encodeURIComponent(file.name || `arquivo-${index + 1}`),
+        "X-TaskBoard-Last-Modified": String(file.lastModified || Date.now()),
+      },
+    }),
   )))
 
   const target = new URL("/compartilhar", self.location.origin)

@@ -379,6 +379,22 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   )
 }
 
+function activityContextDescription(activity: Activity, linkedRequest?: ServiceRequest, sourceTopicTitle?: string) {
+  const details = [
+    activity.relatedModule ? `Módulo ${activity.relatedModule}` : undefined,
+    activity.subject ? `Assunto ${activity.subject}` : undefined,
+    activity.responsibleDepartment ? `Departamento ${activity.responsibleDepartment}` : undefined,
+    activity.linkedOs ? `O.S. ${activity.linkedOs}` : undefined,
+    activity.build ? `Build ${activity.build}` : undefined,
+  ].filter(Boolean) as string[]
+
+  if (details.length > 0) return details.join(" · ")
+  if (linkedRequest?.title?.trim()) return linkedRequest.title.trim()
+  if (sourceTopicTitle?.trim()) return sourceTopicTitle.trim()
+  return null
+}
+
+
 export function ActivityItem({
   activity,
   projectId,
@@ -450,6 +466,7 @@ export function ActivityItem({
   const hasRunningSubactivity = allSubs.some((sub) => sub.status === "in-progress")
   const filtering = visibleSubactivities !== undefined
   const sourceTopic = supportTopics.find((topic) => topic.activityId === activity.id)
+  const activityDescription = activityContextDescription(activity, linkedRequest, sourceTopic?.title)
 
   async function copyActivityLink() {
     const href = new URL(`/projetos/${projectId}#activity-${activity.id}`, window.location.origin).toString()
@@ -492,7 +509,7 @@ export function ActivityItem({
         id={`activity-${activity.id}`}
         ref={activityRef}
         className={cn(
-          "overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/8 transition-shadow",
+          "overflow-hidden rounded-[1.35rem] border border-border/70 bg-card shadow-sm ring-1 ring-foreground/5 transition-shadow",
           focusedActivity && "ring-2 ring-inset ring-primary/35",
         )}
       >
@@ -505,84 +522,78 @@ export function ActivityItem({
             <span className="text-xs font-semibold text-chart-3">Executando</span>
           </div>
         )}
-        <div className="flex min-w-0 flex-col items-stretch xl:flex-row">
+        <div className="flex min-w-0 items-start gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
           <button
             onClick={() => setOpen((o) => !o)}
-            className="flex min-w-0 flex-1 items-start gap-2 px-3 py-3.5 text-left transition-colors hover:bg-muted/40 sm:gap-3 sm:px-4 sm:py-4"
+            className="flex min-w-0 flex-1 items-start gap-2 text-left transition-colors hover:bg-muted/35"
           >
             <ChevronDown
               className={cn(
-                "size-4 shrink-0 text-muted-foreground transition-transform",
+                "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
                 open && "rotate-180",
               )}
             />
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-start gap-1.5 sm:gap-2">
+              <div className="flex min-w-0 items-start gap-2">
                 <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground sm:text-sm">
                   {activityNumber}-
                 </span>
-                <h3 className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug sm:text-[0.95rem] xl:truncate" title={activity.title}>{activity.title}</h3>
-              </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <h3 className="min-w-0 break-words text-sm font-semibold leading-snug text-foreground sm:text-[0.98rem]" title={activity.title}>
+                    {activity.title}
+                  </h3>
 
-              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-                <div className="min-w-0 shrink-0"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
-                {linkedRequest && <span className="max-w-full truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary sm:text-[0.6rem]">{serviceRequestReference(linkedRequest)}</span>}
-                {(activity.assigneeIds?.length ?? 0) > 0 && (
-                  <div className="shrink-0"><MemberStack ids={activity.assigneeIds ?? []} max={1} /></div>
-                )}
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums sm:text-[0.65rem]">
-                  {done}/{allSubs.length}
-                </span>
-                {filtering && visibleSubs.length !== allSubs.length && (
-                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary sm:text-[0.65rem]">
-                    {visibleSubs.length} no filtro
-                  </span>
-                )}
-              </div>
+                  {activityDescription && (
+                    <p className="break-words text-[0.72rem] leading-5 text-muted-foreground sm:text-[0.76rem]">
+                      {activityDescription}
+                    </p>
+                  )}
 
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 xl:hidden">
-                <div className="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-muted sm:max-w-40">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                    <div className="min-w-0 shrink-0"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
+                    {linkedRequest && <span className="max-w-full truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary sm:text-[0.6rem]">{serviceRequestReference(linkedRequest)}</span>}
+                    {(activity.assigneeIds?.length ?? 0) > 0 && (
+                      <div className="shrink-0"><MemberStack ids={activity.assigneeIds ?? []} max={1} /></div>
+                    )}
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums sm:text-[0.65rem]">
+                      {done}/{allSubs.length}
+                    </span>
+                    {filtering && visibleSubs.length !== allSubs.length && (
+                      <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary sm:text-[0.65rem]">
+                        {visibleSubs.length} no filtro
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
+                    <div className="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-muted sm:max-w-44">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <span className="w-9 shrink-0 text-right font-mono text-xs font-medium tabular-nums text-muted-foreground">
+                      {progress}%
+                    </span>
+                    <span className="shrink-0 font-mono text-[0.72rem] tabular-nums text-muted-foreground">
+                      {formatHM(tracked)}
+                    </span>
+                  </div>
                 </div>
-                <span className="w-9 shrink-0 text-right font-mono text-xs font-medium tabular-nums text-muted-foreground">
-                  {progress}%
-                </span>
-                <span className="shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
-                  {formatHM(tracked)}
-                </span>
               </div>
             </div>
-
-            <div className="hidden items-center gap-2 xl:flex">
-              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <span className="w-9 text-right font-mono text-xs font-medium tabular-nums text-muted-foreground">
-                {progress}%
-              </span>
-            </div>
-
-            <span className="ml-1 hidden w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground xl:block">
-              {formatHM(tracked)}
-            </span>
           </button>
 
-          <div className="hidden shrink-0 items-center border-l border-border px-1 sm:hidden">
+          <div className="shrink-0 self-start">
             <DropdownMenu open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
               <DropdownMenuTrigger
-                className="flex size-10 items-center justify-center rounded-xl text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex size-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:size-10"
                 aria-label={`Ações da atividade ${activity.title}`}
                 title="Ações"
               >
-                <EllipsisVertical className="size-5" />
+                <EllipsisVertical className="size-4 sm:size-5" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="w-52 p-1.5">
+              <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="w-56 p-1.5">
                 <DropdownMenuItem
                   className="h-10 cursor-pointer gap-2 px-2.5"
                   onClick={() => { setMobileActionsOpen(false); setInfoOpen(true) }}
@@ -604,7 +615,7 @@ export function ActivityItem({
                   onClick={() => { setMobileActionsOpen(false); setAttachmentsOpen(true) }}
                 >
                   <Paperclip className="size-4" />
-                  <span className="min-w-0 flex-1">Anexos</span>
+                  <span className="min-w-0 flex-1">Arquivos</span>
                   {(activity.attachments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{activity.attachments?.length ?? 0}</span>}
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -630,99 +641,6 @@ export function ActivityItem({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
-            <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-11 rounded-none" />
-          </div>
-
-          {currentProject && (
-            <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
-              <ActivityNotesDialog activity={activity} project={currentProject} compact triggerClassName="m-auto size-11 rounded-none" />
-            </div>
-          )}
-
-          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
-            <AttachmentDialog
-              title={`Arquivos · ${activity.title}`}
-              description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
-              attachments={activity.attachments ?? []}
-              onAdd={(files) => addActivityAttachments(activity.id, files)}
-              onSetActive={(attachmentId, active) =>
-                void setActivityAttachmentActive(activity.id, attachmentId, active)
-              }
-              compact
-              buttonLabel="Arquivos"
-              className="m-auto h-full min-h-11 rounded-none px-2.5"
-            />
-          </div>
-
-          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
-            <CopyEntityLinkButton
-              href={`/projetos/${projectId}#activity-${activity.id}`}
-              label={`Copiar link da atividade ${activity.title}`}
-              className="m-auto size-11 rounded-none"
-            />
-          </div>
-
-          {canDelete && canManageStructure && (
-            <button
-              type="button"
-              onClick={() => setDeleteOpen(true)}
-              className="hidden w-12 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive xl:flex"
-              aria-label={`Excluir atividade ${activity.title}`}
-              title="Excluir atividade"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border px-3 py-2 sm:px-4 xl:hidden">
-          <button
-            type="button"
-            onClick={() => setInfoOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Info className="size-3.5" />
-            Informações
-          </button>
-          {currentProject && (
-            <button
-              type="button"
-              onClick={() => setNotesOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <NotebookPen className="size-3.5" />
-              Anotações
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setAttachmentsOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Paperclip className="size-3.5" />
-            Arquivos
-            {(activity.attachments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{activity.attachments?.length ?? 0}</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => { void copyActivityLink() }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            {linkCopied ? <Check className="size-3.5 text-success" /> : <Link2 className="size-3.5" />}
-            {linkCopied ? "Link copiado" : "Copiar link"}
-          </button>
-          {canDelete && canManageStructure && (
-            <button
-              type="button"
-              onClick={() => setDeleteOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-1.5 text-[0.68rem] font-medium text-destructive transition-colors hover:bg-destructive/10"
-            >
-              <Trash2 className="size-3.5" />
-              Excluir
-            </button>
-          )}
         </div>
 
         <ActivityInfoDialog

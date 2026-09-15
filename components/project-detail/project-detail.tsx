@@ -364,19 +364,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               </div>
 
-              <div className="flex w-full min-w-0 flex-col gap-2 xl:w-auto xl:flex-row xl:items-center">
+              <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center xl:w-auto xl:flex-nowrap">
                 {canCreateActivity && (
                   <FollowUpAddActivityDialog
                     projectId={project.id}
                     trigger="button"
-                    className="h-9 w-full rounded-xl px-3 shadow-sm sm:w-auto"
+                    className="h-9 w-full rounded-xl px-3 shadow-sm lg:w-auto"
                   />
                 )}
-                <div className="flex w-full min-w-0 shrink-0 flex-wrap rounded-xl bg-muted p-1 xl:w-fit xl:flex-nowrap">
+                <div className="flex w-full min-w-0 shrink-0 gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:w-auto lg:flex-nowrap">
                   <button
                     type="button"
                     onClick={() => changeView("list")}
-                    className={cn("flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:min-w-0 xl:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium transition-colors lg:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   >
                     <List className="size-3.5" />
                     Lista
@@ -384,7 +384,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={() => changeView("kanban")}
-                    className={cn("flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:min-w-0 xl:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium transition-colors lg:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   >
                     <Columns3 className="size-3.5" />
                     Kanban
@@ -392,7 +392,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={openFollowUp}
-                    className="flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm xl:min-w-0 xl:flex-none"
+                    className="flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm lg:flex-none"
                     title="Abrir página de acompanhamento"
                   >
                     <MessageSquareText className="size-3.5" />
@@ -403,8 +403,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
             </div>
 
-            <div className="mt-2.5 flex min-w-0 flex-col gap-2 border-t border-border/70 pt-2.5 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex max-w-full flex-wrap gap-1">
+            <div className="mt-2.5 flex min-w-0 flex-col gap-2 border-t border-border/70 pt-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
+              <div className="flex max-w-full gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex-wrap lg:overflow-visible lg:pb-0">
                 {activityFilters.map((filter) => (
                   <button
                     key={filter.key}
@@ -422,8 +422,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 ))}
               </div>
 
-              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:justify-end">
-                <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[178px]">
+              <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:flex-wrap md:justify-end">
+                <label className="relative flex h-8 w-full min-w-0 items-center md:w-auto md:min-w-[178px]">
                   <UserRound className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
                   <select
                     data-select-chevron="custom"
@@ -443,7 +443,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </label>
 
                 {viewMode === "list" && (
-                  <label className="relative flex h-8 w-full min-w-0 items-center sm:w-auto sm:min-w-[154px]">
+                  <label className="relative flex h-8 w-full min-w-0 items-center md:w-auto md:min-w-[154px]">
                     <ArrowUpDown className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
                     <select
                       data-select-chevron="custom"

@@ -398,7 +398,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           aria-label={inlineOpen ? `Recolher resumo do acompanhamento de ${sub.title}` : `Expandir resumo do acompanhamento de ${sub.title}`}
           aria-expanded={inlineOpen}
         >
-          <ChevronDown className={cn("size-4 transition-transform", inlineOpen && "rotate-180")} />
+          <MessageSquareText className="size-4" />
         </button>
 
         <div className="flex items-center gap-1.5">

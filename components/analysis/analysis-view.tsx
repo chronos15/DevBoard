@@ -1160,7 +1160,7 @@ export function AnalysisView() {
                 {moduleReadOnly ? (
                   <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 text-xs text-amber-800 dark:text-amber-200">
                     <ShieldCheck className="size-4 shrink-0" />
-                    <span><strong className="font-semibold">READ ONLY.</strong> Você pode acompanhar evidências, comentários e decisões, mas não comentar, mencionar, anexar ou alterar a análise.</span>
+                    <span><strong className="font-semibold">SOMENTE LEITURA.</strong> Você pode acompanhar evidências, comentários e decisões, mas não comentar, mencionar, anexar ou alterar a análise.</span>
                   </div>
                 ) : (<>
                 {canReview && selected.review.status === "evaluating" && (

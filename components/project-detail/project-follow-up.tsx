@@ -4078,7 +4078,7 @@ export function ProjectFollowUp({
                   {composerError ? (
                     <p className="mt-1.5 px-1 text-[0.62rem] font-medium text-destructive">{composerError}</p>
                   ) : moduleReadOnly ? (
-                    <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[0.58rem] font-medium text-amber-700 dark:text-amber-300"><Eye className="size-3" /> READ ONLY · Você pode acompanhar todo o histórico, mas não comentar, mencionar, anexar ou alterar esta área.</p>
+                    <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[0.58rem] font-medium text-amber-700 dark:text-amber-300"><Eye className="size-3" /> SOMENTE LEITURA · Você pode acompanhar todo o histórico, mas não comentar, mencionar, anexar ou alterar esta área.</p>
                   ) : selectedDeveloperObserver ? (
                     <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[0.58rem] text-muted-foreground/80"><Eye className="size-3" /> Observação: você pode visualizar, reagir e comentar usando “Responder”. Alterações, mensagens novas, anexos, status e cronômetro ficam bloqueados.</p>
                   ) : (

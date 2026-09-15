@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V162"
+const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V163"
 const taskboardBuildDate = (() => {
   const explicitBuildDate = process.env.TASKBOARD_BUILD_DATE?.trim()
   if (explicitBuildDate) return explicitBuildDate

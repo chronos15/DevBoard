@@ -35,7 +35,7 @@ const sections = [
 type SectionId = (typeof sections)[number]["id"]
 
 const roleDescriptions: Record<AccessRole, string> = {
-  admin: "Acesso total por padrão. Também pode receber acesso personalizado e READ ONLY por módulo para perfis de acompanhamento.",
+  admin: "Acesso total por padrão. Também pode receber acesso personalizado e SOMENTE LEITURA por módulo para perfis de acompanhamento.",
   developer: "Acesso ao sistema e projetos; executa somente atividades e subatividades sob sua responsabilidade.",
   aqs: "Valida tarefas em Aguardando AQS, registra evidências e atua na triagem de tópicos.",
   support: "Abre e acompanha tópicos da operação, com ordem, descrição e evidências.",
@@ -557,7 +557,7 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
             <div className="mb-3">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-semibold">Acesso por módulo</p>
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[0.62rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> READ ONLY</span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[0.62rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> SOMENTE LEITURA</span>
               </div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Defina cada módulo como <strong className="font-medium text-foreground">Completo</strong>, <strong className="font-medium text-foreground">Somente leitura</strong> ou <strong className="font-medium text-foreground">Sem acesso</strong>. Somente leitura permite acompanhar todo o conteúdo visível, mas bloqueia comentários, menções, anexos, criação, edição, status, cronômetro e demais alterações.</p>
             </div>
@@ -577,7 +577,7 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
                     </div>
                     <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
                       <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "full")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "full" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Check className="size-3.5" /><span className="hidden sm:inline">Completo</span></button>
-                      <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "read")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "read" ? "bg-card text-amber-700 shadow-sm dark:text-amber-300" : "text-muted-foreground hover:text-foreground")}><Eye className="size-3.5" /><span className="hidden sm:inline">Leitura</span></button>
+                      <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "read")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "read" ? "bg-card text-amber-700 shadow-sm dark:text-amber-300" : "text-muted-foreground hover:text-foreground")}><Eye className="size-3.5" /><span className="hidden sm:inline">Somente leitura</span></button>
                       <button type="button" disabled={disabled} onClick={() => setScreenMode(screen.key, "hidden")} className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[0.65rem] font-semibold transition-colors disabled:opacity-50", mode === "hidden" ? "bg-card text-muted-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><EyeOff className="size-3.5" /><span className="hidden sm:inline">Oculto</span></button>
                     </div>
                   </div>
@@ -862,7 +862,7 @@ function TeamSection() {
                     <p className="min-w-0 truncate text-sm font-semibold"><MemberName member={member} suffix={member.id === currentUserId ? " · você" : ""} /></p>
                     <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold", member.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{member.active ? "Ativo" : "Inativo"}</span>
                     {member.accessPolicy.enabled && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.58rem] font-semibold text-primary">Acesso personalizado</span>}
-                    {member.accessPolicy.enabled && Object.values(member.accessPolicy.readOnlyScreens ?? {}).some(Boolean) && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.58rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> READ ONLY</span>}
+                    {member.accessPolicy.enabled && Object.values(member.accessPolicy.readOnlyScreens ?? {}).some(Boolean) && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.58rem] font-semibold text-amber-700 dark:text-amber-300"><LockKeyhole className="size-3" /> SOMENTE LEITURA</span>}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{member.email ?? "Conta sem e-mail"}</p>
                   {currentUserRole === "admin" && <p className="mt-1.5 whitespace-normal text-[0.64rem] leading-relaxed text-muted-foreground">{scheduleSummary(member)}</p>}
@@ -896,12 +896,12 @@ function TeamSection() {
       </div>
 
       <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-        {currentUserRole === "admin" ? "Acesso personalizado é opt-in: a role continua sendo a base, mas qualquer usuário — inclusive outro Administrador — pode receber módulos em acesso Completo, READ ONLY ou Sem acesso. Para um Admin observador, mantenha Configurações em READ ONLY ou Sem acesso." : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
+        {currentUserRole === "admin" ? "Acesso personalizado é opt-in: a role continua sendo a base, mas qualquer usuário — inclusive outro Administrador — pode receber módulos em acesso Completo, SOMENTE LEITURA ou Sem acesso. Para um Admin observador, mantenha Configurações em SOMENTE LEITURA ou Sem acesso." : "Apenas Administradores podem alterar permissões, jornada ou status dos usuários."}
       </p>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !editSaving) setEditing(null) }}>
         <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader><DialogTitle>Gerenciar colaborador</DialogTitle><DialogDescription>Configure jornada e acesso individual. O perfil personalizado também pode ser aplicado a Administradores, inclusive como observadores em READ ONLY.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Gerenciar colaborador</DialogTitle><DialogDescription>Configure jornada e acesso individual. O perfil personalizado também pode ser aplicado a Administradores, inclusive como observadores em SOMENTE LEITURA.</DialogDescription></DialogHeader>
           {editing && (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-2xl border border-border p-3">

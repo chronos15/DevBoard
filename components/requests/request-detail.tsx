@@ -464,7 +464,7 @@ function RequestComposer({ request, readOnly = false }: { request: ServiceReques
       <div className="border-t border-border bg-card p-3 sm:p-4">
         <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 text-xs text-amber-800 dark:text-amber-200">
           <ShieldCheck className="size-4 shrink-0" />
-          <span><strong className="font-semibold">READ ONLY.</strong> Você pode acompanhar o protocolo e todo o histórico, mas não comentar, mencionar ou anexar arquivos.</span>
+          <span><strong className="font-semibold">SOMENTE LEITURA.</strong> Você pode acompanhar o protocolo e todo o histórico, mas não comentar, mencionar ou anexar arquivos.</span>
         </div>
       </div>
     )

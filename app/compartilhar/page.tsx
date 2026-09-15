@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   Check,
-  CheckCircle2,
   ClipboardCheck,
   ClipboardList,
   Clock3,
@@ -429,9 +428,7 @@ export default function ShareToDevboardPage() {
   const [warning, setWarning] = React.useState("")
   const [sending, setSending] = React.useState(false)
   const [sendingDestinationIndex, setSendingDestinationIndex] = React.useState(0)
-  const [successDestinationKeys, setSuccessDestinationKeys] = React.useState<string[]>([])
   const [videoProgress, setVideoProgress] = React.useState<VideoProcessingProgress | null>(null)
-  const [success, setSuccess] = React.useState(false)
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -800,6 +797,11 @@ export default function ShareToDevboardPage() {
       return
     }
 
+    // V136: preserva a ordem real de seleção. Em um compartilhamento múltiplo,
+    // o destino aberto ao final é exatamente o último que o usuário marcou,
+    // independentemente da ordem em que os workers paralelos terminarem.
+    const destinationToOpen = selectedDestinations[selectedDestinations.length - 1]
+
     const singleVideo = isSingleVideoSelection(files)
     if (!singleVideo) {
       const totalBytes = files.reduce((sum, file) => sum + file.size, 0) + (includeText && sharedText ? sharedText.size : 0)
@@ -921,8 +923,11 @@ export default function ShareToDevboardPage() {
 
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
       if (serverShareId && currentUserId) await deleteServerStagedShare(serverShareId, currentUserId).catch(() => undefined)
-      setSuccessDestinationKeys(succeeded)
-      setSuccess(true)
+
+      // Sucesso total: não exibe uma etapa intermediária. O compartilhamento
+      // termina levando o usuário direto ao destino, como no fluxo do Discord.
+      // Para múltiplos destinos, abre o último destino selecionado.
+      openDestination(destinationToOpen)
     } catch (cause) {
       console.error("[TaskBoard/PWA Share] Falha ao preparar evidências", cause)
       setError(cause instanceof Error
@@ -956,40 +961,8 @@ export default function ShareToDevboardPage() {
     else router.replace("/")
   }
 
-  const successDestinations = successDestinationKeys
-    .map((key) => allDestinations.find((item) => item.key === key))
-    .filter((item): item is ShareDestination => Boolean(item))
-
   if (!hydrated || loadingShare) {
     return <SharePageSkeleton />
-  }
-
-  if (success) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 sm:px-6">
-        <section className="w-full max-w-md rounded-3xl bg-card p-6 text-center ring-1 ring-foreground/10 sm:p-8">
-          <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-success/10 text-success">
-            <CheckCircle2 className="size-7" />
-          </span>
-          <h1 className="mt-5 text-xl font-bold tracking-tight">Evidência anexada</h1>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {successDestinations.length > 1
-              ? `O conteúdo foi salvo em ${successDestinations.length} destinos e a cópia temporária recebida pelo dispositivo foi removida.`
-              : "O conteúdo foi salvo no destino escolhido e a cópia temporária recebida pelo dispositivo foi removida."}
-          </p>
-          <div className={cn("mt-6 grid gap-2", successDestinations.length === 1 && "sm:grid-cols-2")}>
-            <Button variant="outline" size="lg" onClick={() => void discardAndLeave()}>
-              <ArrowLeft className="size-4" /> Voltar
-            </Button>
-            {successDestinations.length === 1 && (
-              <Button size="lg" onClick={() => openDestination(successDestinations[0])}>
-                Abrir destino
-              </Button>
-            )}
-          </div>
-        </section>
-      </main>
-    )
   }
 
   return (

@@ -30,7 +30,7 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 import { canAccessScreen } from "@/lib/access-control"
 import type { ScreenAccessKey } from "@/lib/types"
-import { TASKBOARD_BUILD, TASKBOARD_VERSION, TASKBOARD_VERSION_LABEL } from "@/lib/app-version"
+import { TASKBOARD_VERSION_LABEL } from "@/lib/app-version"
 
 const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
@@ -414,7 +414,7 @@ export function Sidebar({
             title={TASKBOARD_VERSION_LABEL}
             aria-label={`TaskBoard ${TASKBOARD_VERSION_LABEL}`}
           >
-            {TASKBOARD_VERSION} <span aria-hidden>·</span> build {TASKBOARD_BUILD}
+            {TASKBOARD_VERSION_LABEL}
           </div>
         </div>
       </aside>

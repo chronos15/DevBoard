@@ -48,3 +48,11 @@ Nenhuma migration nova.
 - `next.config.mjs`
 - `WEBRTC_VALIDACAO.md`
 - `V140_FIX_NOTES.md`
+
+## Hotfix de build — compatibilidade V139/V140
+
+- Corrigida incompatibilidade entre `components/sidebar.tsx` e `lib/app-version.ts` que fazia o Turbopack falhar com `Export TASKBOARD_BUILD doesn't exist in target module`.
+- O sidebar usa somente `TASKBOARD_VERSION_LABEL`, mantendo o formato `V140 - dd/MM HH:mm`.
+- `lib/app-version.ts` mantém `TASKBOARD_BUILD` como alias retrocompatível de `TASKBOARD_BUILD_DATE`, evitando quebra caso algum arquivo antigo ainda use o nome anterior.
+- `next.config.mjs` também publica `NEXT_PUBLIC_TASKBOARD_BUILD` como alias legado.
+- Não há alteração de banco/migration neste hotfix.

@@ -30,6 +30,8 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_TASKBOARD_VERSION: taskboardVersion,
     NEXT_PUBLIC_TASKBOARD_BUILD_DATE: taskboardBuildDate,
+    // Alias legado da primeira implementação da V139.
+    NEXT_PUBLIC_TASKBOARD_BUILD: taskboardBuildDate,
   },
   async headers() {
     return [

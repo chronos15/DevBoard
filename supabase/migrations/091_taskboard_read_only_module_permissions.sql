@@ -285,6 +285,7 @@ begin
   if auth.uid() is null or v_workspace is null then raise exception 'Não autenticado'; end if;
   if not public.is_workspace_admin(v_workspace) then raise exception 'Somente administradores podem gerenciar a equipe'; end if;
 
+ //
   return query
   select wm.user_id,p.email,p.name,p.initials,p.color,p.avatar_path,wm.role::text,wm.active,
     coalesce(wm.work_days,array[1,2,3,4,5]::smallint[]),coalesce(wm.daily_hours,8.00::numeric),

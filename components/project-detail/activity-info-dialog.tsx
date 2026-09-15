@@ -6,6 +6,8 @@ import {
   Boxes,
   Building2,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   Clock3,
   Flag,
@@ -53,6 +55,38 @@ export function ActivityInfoDialog({
     if (controlledOpen === undefined) setInternalOpen(nextOpen)
     onOpenChange?.(nextOpen)
   }, [controlledOpen, onOpenChange])
+
+  const [titleExpanded, setTitleExpanded] = React.useState(false)
+  const [titleCanExpand, setTitleCanExpand] = React.useState(false)
+  const titleRef = React.useRef<HTMLHeadingElement>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    setTitleExpanded(false)
+    setTitleCanExpand(false)
+  }, [open, activity.title])
+
+  React.useLayoutEffect(() => {
+    if (!open || titleExpanded) return
+    const titleElement = titleRef.current
+    if (!titleElement) return
+
+    const measure = () => {
+      const overflowing = titleElement.scrollHeight > titleElement.clientHeight + 1
+      setTitleCanExpand(overflowing)
+    }
+
+    const frame = window.requestAnimationFrame(measure)
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null
+    observer?.observe(titleElement)
+    window.addEventListener("resize", measure)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener("resize", measure)
+    }
+  }, [open, activity.title, titleExpanded])
 
   const total = activity.subactivities.length
   const done = activity.subactivities.filter((sub) => sub.status === "done").length
@@ -121,9 +155,28 @@ export function ActivityInfoDialog({
                 )}
               </div>
 
-              <DialogTitle className="mt-2 block w-full max-w-none whitespace-normal break-words [overflow-wrap:anywhere] pr-1 text-xl font-semibold leading-[1.18] tracking-tight sm:text-2xl sm:leading-[1.2]">
-                {activity.title}
-              </DialogTitle>
+              <div className="mt-2 min-w-0">
+                <DialogTitle
+                  ref={titleRef}
+                  className={cn(
+                    "block w-full max-w-none whitespace-normal break-words [overflow-wrap:anywhere] pr-1 text-xl font-semibold leading-[1.18] tracking-tight sm:text-2xl sm:leading-[1.2]",
+                    !titleExpanded && "line-clamp-3",
+                  )}
+                >
+                  {activity.title}
+                </DialogTitle>
+                {(titleCanExpand || titleExpanded) && (
+                  <button
+                    type="button"
+                    onClick={() => setTitleExpanded((current) => !current)}
+                    className="mt-2 inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[0.68rem] font-semibold text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                    aria-expanded={titleExpanded}
+                  >
+                    {titleExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                    {titleExpanded ? "Recolher título" : "Expandir título"}
+                  </button>
+                )}
+              </div>
 
               {headerContextItems.length > 0 && (
                 <div className="mt-3 flex min-w-0 flex-wrap gap-x-3 gap-y-1.5 text-[0.67rem] leading-relaxed text-muted-foreground">

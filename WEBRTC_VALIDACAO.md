@@ -222,3 +222,19 @@ Teste mínimo:
 5. valide `candidato TURN relay disponível` e, quando necessário, `candidato TURN relay remoto recebido`;
 6. aguarde pelo menos 10 s antes de concluir que a primeira rota falhou;
 7. somente após falha persistente deve ocorrer um ICE restart controlado.
+
+## V148 — sinalização WebSocket única (hard reset pré-V111)
+
+A V148 remove o caminho experimental de sinalização WebRTC por `httpSend()` + `meeting_webrtc_signal_send/pull` do fluxo ativo da chamada. `offer`, `answer`, candidatos ICE e `restart-request` voltam a usar somente o Broadcast do canal Realtime quando o canal está em `SUBSCRIBED`, preservando a ordem e o comportamento da base funcional anterior à V111.
+
+Durante o primeiro handshake não há ICE restart automático. A recuperação por restart só é habilitada depois que aquele peer já atingiu `connectionState = connected` pelo menos uma vez.
+
+Logs úteis no teste:
+
+- `TaskBoard: offer WebRTC recebida`
+- `TaskBoard: answer WebRTC recebida`
+- `TaskBoard: candidato TURN relay remoto recebido` (quando TURN é usado)
+- `TaskBoard: track remota recebida` com `kind: audio` e `kind: video`
+- `TaskBoard: estado do peer` com `state: connected`
+
+A migration 090 pode permanecer aplicada, mas não participa do handshake/mídia da V148.

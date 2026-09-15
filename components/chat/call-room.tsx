@@ -629,6 +629,7 @@ export function CallRoom({
   const signalFallbackStateRef = React.useRef<"unknown" | "available" | "unavailable">("unknown")
   const peerHealthRef = React.useRef<Map<string, { inboundBytes: number; outboundBytes: number; stalledChecks: number }>>(new Map())
   const lastIceRestartRef = React.useRef<Map<string, number>>(new Map())
+  const peerConnectedOnceRef = React.useRef<Set<string>>(new Set())
   const presencePublishTimerRef = React.useRef<number | null>(null)
   const iceServersRef = React.useRef<RTCIceServer[]>([])
   const iceFallbackServersRef = React.useRef<RTCIceServer[]>([])
@@ -767,21 +768,20 @@ export function CallRoom({
 
   const sendMeetingBroadcast = React.useCallback(async (event: string, payload: unknown) => {
     const channel = channelRef.current
-    if (!channel) return false
+    // A sinalização da reunião só sai quando o canal está realmente SUBSCRIBED.
+    // Isso restaura o comportamento estável da V110 e evita o fallback automático
+    // para REST que altera timing/ordem de offer/answer/ICE.
+    if (!channel || !realtimeSubscribedRef.current) return false
 
     try {
-      // V146: toda mensagem Broadcast da reunião usa REST de forma explícita.
-      // O supabase-js 2.112 avisa quando channel.send() precisa fazer esse mesmo
-      // fallback implicitamente durante uma reconexão. httpSend() elimina a
-      // corrida de estado do socket e mantém o receptor no canal WebSocket.
-      const result = await channel.httpSend(event, payload)
-      // supabase-js 2.112.x retorna { success: boolean } em httpSend(),
-      // enquanto send() retornava a string "ok". Aceitamos os dois formatos
-      // para manter compatibilidade caso a SDK seja atualizada/downgradeada.
-      if (typeof result === "string") return result === "ok"
-      return Boolean(result && typeof result === "object" && "success" in result && result.success)
+      const result = await channel.send({
+        type: "broadcast",
+        event,
+        payload,
+      })
+      return result === "ok"
     } catch (error) {
-      console.warn("TaskBoard: falha ao enviar Broadcast HTTP da reunião", { event, error })
+      console.warn("TaskBoard: falha ao enviar Broadcast WebSocket da reunião", { event, error })
       return false
     }
   }, [])
@@ -860,55 +860,17 @@ export function CallRoom({
 
   const postSignal = React.useCallback(async (signal: Omit<CallSignal, "meetingId" | "fromSession" | "fromUserId" | "signalKey">) => {
     if (!meeting) return false
-
-    const signalKey = makeSignalKey()
-    const payload: CallSignal = {
+    const sent = await sendMeetingBroadcast("webrtc-signal", {
       ...signal,
-      signalKey,
       meetingId: meeting.id,
       fromSession: sessionIdRef.current,
       fromUserId: currentUserId,
-    }
-
-    // V146: o caminho de Broadcast do WebRTC é explicitamente HTTP. Isso evita
-    // o fallback implícito/depreciado de channel.send() e entrega o sinal mesmo
-    // se o socket local estiver numa janela curta de reconexão. O receptor
-    // continua recebendo pelo canal privado normalmente.
-    const httpPromise = sendMeetingBroadcast("webrtc-signal", payload)
-
-    // O RPC permanece como segundo caminho independente e persistente. Se o
-    // Broadcast REST ou o websocket remoto perderem uma mensagem, o poller
-    // recupera o mesmo sinal pela chave deduplicada.
-    const persistedPromise = signalFallbackStateRef.current === "unavailable"
-      ? Promise.resolve(false)
-      : supabase.rpc("meeting_webrtc_signal_send", {
-          p_meeting_id: meeting.id,
-          p_signal_key: signalKey,
-          p_from_session: sessionIdRef.current,
-          p_to_session: signal.toSession,
-          p_signal_type: signal.type,
-          p_sdp: signal.sdp ?? null,
-          p_candidate: signal.candidate ?? null,
-        }).then(({ error }) => {
-          if (!error) {
-            signalFallbackStateRef.current = "available"
-            return true
-          }
-          if (isMissingMeetingSignalFallback(error)) signalFallbackStateRef.current = "unavailable"
-          else console.warn("TaskBoard: falha ao persistir sinal WebRTC", { type: signal.type, error })
-          return false
-        }).catch((error) => {
-          console.warn("TaskBoard: exceção ao persistir sinal WebRTC", { type: signal.type, error })
-          return false
-        })
-
-    const [httpOk, persistedOk] = await Promise.all([httpPromise, persistedPromise])
-    if (!httpOk && !persistedOk) {
+    } satisfies CallSignal)
+    if (!sent) {
       setMediaError("A sinalização da reunião não pôde ser entregue. Tentando reconectar...")
-      return false
     }
-    return true
-  }, [currentUserId, meeting?.id, sendMeetingBroadcast, supabase])
+    return sent
+  }, [currentUserId, meeting?.id, sendMeetingBroadcast])
 
   const postNativeScreenSignal = React.useCallback(async (signal: NativeScreenSignal) => {
     if (!meeting) return false
@@ -1115,6 +1077,7 @@ export function CallRoom({
     signalQueuesRef.current.delete(sessionId)
     peerHealthRef.current.delete(sessionId)
     lastIceRestartRef.current.delete(sessionId)
+    peerConnectedOnceRef.current.delete(sessionId)
     relayCandidateSeenRef.current.delete(sessionId)
     for (const key of Array.from(iceErrorKeysRef.current)) {
       if (key.startsWith(`${sessionId}|`)) iceErrorKeysRef.current.delete(key)
@@ -1163,10 +1126,9 @@ export function CallRoom({
     peerPruneTimersRef.current.clear()
     livePresenceSessionsRef.current.clear()
     signalQueuesRef.current.clear()
-    processedSignalKeysRef.current.clear()
-    lastPersistedSignalIdRef.current = 0
     peerHealthRef.current.clear()
     lastIceRestartRef.current.clear()
+    peerConnectedOnceRef.current.clear()
     iceErrorKeysRef.current.clear()
     relayCandidateSeenRef.current.clear()
     remoteRelayCandidateSeenRef.current.clear()
@@ -1221,10 +1183,8 @@ export function CallRoom({
     const existing = peerRoleRef.current.get(remoteSession)
     if (existing) return existing
     const created: PeerRoleState = {
-      // Comparação binária/lexicográfica, independente do locale do dispositivo.
-      // `localeCompare()` pode usar collation diferente entre Android/Windows e
-      // fazer os dois lados se considerarem offerer (ou answerer), travando em
-      // "Conectando mídia" sem nunca trocar SDP.
+      // UUIDs usam somente ASCII; a comparação simples cria exatamente um
+      // offerer por par, sem depender do locale do dispositivo.
       offerer: sessionIdRef.current < remoteSession,
       initialOfferSent: false,
       offerInFlight: false,
@@ -1292,26 +1252,21 @@ export function CallRoom({
   const requestIceRestart = React.useCallback((remoteSession: string, peer: RTCPeerConnection, force = false) => {
     if (peer.connectionState === "closed" || peer.signalingState === "closed") return
 
-    const role = getPeerRole(remoteSession)
+    // Não reinicia ICE durante o primeiro handshake. Antes da V111 a chamada
+    // completava a negociação inicial sem watchdog/restart concorrente. Somente
+    // um peer que já esteve conectado pode entrar na rotina automática de recovery.
+    if (!peerConnectedOnceRef.current.has(remoteSession)) return
+    if (peer.signalingState !== "stable" || !peer.localDescription || !peer.remoteDescription) return
+
     const transportFailed = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
     if (!force && !transportFailed) return
-
-    // Nunca inicia uma nova offer enquanto outra negociação está em andamento.
-    // O comportamento anterior deixava um restart pendente em have-local-offer;
-    // quando a answer chegava e o estado virava stable, outra offer era criada
-    // imediatamente, produzindo um loop offer -> answer -> iceRestart.
-    if (
-      role.offerInFlight ||
-      peer.signalingState !== "stable" ||
-      !peer.localDescription ||
-      !peer.remoteDescription
-    ) return
 
     const now = Date.now()
     const lastRestart = lastIceRestartRef.current.get(remoteSession) ?? 0
     if (now - lastRestart < 10_000) return
     lastIceRestartRef.current.set(remoteSession, now)
 
+    const role = getPeerRole(remoteSession)
     if (role.offerer) {
       void sendOffer(remoteSession, peer, true)
       return
@@ -1337,8 +1292,7 @@ export function CallRoom({
     setPeerStates((current) => ({ ...current, [remoteSession]: peer.connectionState }))
     setRemoteStreams((current) => ({ ...current, [remoteSession]: remoteStream }))
 
-    // Somente o offerer cria os m-lines. O answerer os recebe via setRemoteDescription.
-    // Ambos os m-lines existem desde o início mesmo que câmera/mic estejam desligados.
+    // Base funcional pré-V111: um único offerer cria os m-lines sendrecv.
     if (role.offerer) {
       const audioTransceiver = peer.addTransceiver("audio", { direction: "sendrecv" })
       const videoTransceiver = peer.addTransceiver("video", { direction: "sendrecv" })
@@ -1355,35 +1309,32 @@ export function CallRoom({
       if (!liveRemoteStream.getTracks().some((currentTrack) => currentTrack.id === track.id)) {
         liveRemoteStream.addTrack(track)
       }
-
       const refreshTrack = () => {
         setRemoteStreams((current) => ({ ...current, [remoteSession]: liveRemoteStream }))
       }
       track.addEventListener("unmute", refreshTrack)
       track.addEventListener("mute", refreshTrack)
       track.addEventListener("ended", refreshTrack, { once: true })
-
-      // event.streams pode vir vazio com transceivers streamless. O MediaStream estável
-      // acima garante que áudio e vídeo sempre terminem no mesmo tile remoto.
       setRemoteStreams((current) => ({ ...current, [remoteSession]: liveRemoteStream }))
+      console.info("TaskBoard: track remota recebida", {
+        remoteSession,
+        kind: track.kind,
+        readyState: track.readyState,
+        muted: track.muted,
+      })
     }
 
     peer.onicecandidate = (event) => {
       if (!event.candidate) return
-      if (event.candidate.type === "relay") {
-        if (!relayCandidateSeenRef.current.has(remoteSession)) {
-          relayCandidateSeenRef.current.add(remoteSession)
-          console.info("TaskBoard: candidato TURN relay disponível", {
-            remoteSession,
-            protocol: event.candidate.protocol,
-            relayProtocol: (event.candidate as RTCIceCandidate & { relayProtocol?: string }).relayProtocol,
-            url: event.url,
-          })
-        }
+      if (event.candidate.type === "relay" && !relayCandidateSeenRef.current.has(remoteSession)) {
+        relayCandidateSeenRef.current.add(remoteSession)
+        console.info("TaskBoard: candidato TURN relay disponível", {
+          remoteSession,
+          protocol: event.candidate.protocol,
+          relayProtocol: (event.candidate as RTCIceCandidate & { relayProtocol?: string }).relayProtocol,
+          url: event.url,
+        })
       }
-      // V146: trickle ICE normal, como na base V110. Cada candidato é
-      // sinalizado assim que nasce; TURN/STUN podem continuar coletando sem
-      // segurar a offer/answer por vários segundos.
       void postSignal({
         type: "ice",
         toSession: remoteSession,
@@ -1395,82 +1346,71 @@ export function CallRoom({
       const detail = event as RTCPeerConnectionIceErrorEvent
       const code = Number(detail.errorCode ?? 0)
       const url = String(detail.url ?? "")
-      const address = String(detail.address ?? "")
-      const key = `${remoteSession}|${url}|${code}|${address}`
-      if (!iceErrorKeysRef.current.has(key)) {
-        iceErrorKeysRef.current.add(key)
-        const iceLog = code === 701 ? console.debug : console.warn
-        iceLog("TaskBoard: erro ICE", {
-          remoteSession,
-          errorCode: code,
-          errorText: detail.errorText,
-          url,
-          address: detail.address,
-          port: detail.port,
-        })
-      }
-
-      // 401/438 indicam credencial TURN recusada/expirada; diferente de 701,
-      // que pode ocorrer apenas em uma das rotas (ex.: TCP/IPv6) enquanto UDP funciona.
-      if ((code === 401 || code === 438) && /^turns?:/i.test(url)) {
-        setMediaError("O servidor TURN recusou a credencial da chamada. Gere novas credenciais TURN e tente novamente.")
-      }
-    }
-
-    const scheduleTransportRestart = (delay: number) => {
-      const previousTimer = restartTimersRef.current.get(remoteSession)
-      if (previousTimer) window.clearTimeout(previousTimer)
-      const timer = window.setTimeout(() => {
-        restartTimersRef.current.delete(remoteSession)
-        if (peer.connectionState === "closed" || peer.signalingState === "closed") return
-        const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
-        if (!stillBroken) return
-        // Se a offer/answer ainda estiver em andamento ou ainda houver gathering,
-        // dá tempo para candidatos tardios chegarem em vez de reiniciar a negociação.
-        if (peer.signalingState !== "stable" || peer.iceGatheringState === "gathering") {
-          scheduleTransportRestart(2500)
-          return
-        }
-        requestIceRestart(remoteSession, peer)
-      }, delay)
-      restartTimersRef.current.set(remoteSession, timer)
+      // 701 em uma interface IPv6/TCP é uma tentativa individual; não derruba
+      // a chamada se UDP/IPv4/relay conseguir formar um candidate pair.
+      const logger = code === 701 ? console.debug : console.warn
+      logger("TaskBoard: erro ICE", {
+        remoteSession,
+        errorCode: code,
+        errorText: detail.errorText,
+        url,
+        address: detail.address,
+        port: detail.port,
+      })
     }
 
     peer.oniceconnectionstatechange = () => {
-      if (peer.iceConnectionState === "failed") scheduleTransportRestart(4500)
+      console.info("TaskBoard: estado ICE", {
+        remoteSession,
+        iceConnectionState: peer.iceConnectionState,
+        signalingState: peer.signalingState,
+      })
+      if (peer.iceConnectionState === "failed" && peerConnectedOnceRef.current.has(remoteSession)) {
+        requestIceRestart(remoteSession, peer)
+      }
     }
 
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState
       setPeerStates((current) => ({ ...current, [remoteSession]: state }))
+      console.info("TaskBoard: estado do peer", { remoteSession, state, ice: peer.iceConnectionState })
       if (state === "connected") {
-        setMediaError((current) => current.includes("TURN") || current.includes("ICE") || current.includes("mídia") ? "" : current)
+        peerConnectedOnceRef.current.add(remoteSession)
+        setMediaError((current) => current.includes("TURN") || current.includes("ICE") || current.includes("mídia") || current.includes("sinalização") ? "" : current)
         void inspectPeerRoute(remoteSession, peer)
         const timer = restartTimersRef.current.get(remoteSession)
         if (timer) window.clearTimeout(timer)
         restartTimersRef.current.delete(remoteSession)
-      } else if (state === "disconnected") {
-        scheduleTransportRestart(8000)
+      } else if (state === "disconnected" && peerConnectedOnceRef.current.has(remoteSession)) {
+        const oldTimer = restartTimersRef.current.get(remoteSession)
+        if (oldTimer) window.clearTimeout(oldTimer)
+        const timer = window.setTimeout(() => {
+          if (peer.connectionState === "disconnected" || peer.connectionState === "failed") {
+            requestIceRestart(remoteSession, peer)
+          }
+        }, 8000)
+        restartTimersRef.current.set(remoteSession, timer)
       } else if (state === "failed") {
-        setMediaError(
-          "A conexão de áudio e vídeo foi interrompida. O TaskBoard está tentando restabelecer a reunião automaticamente.",
-        )
-        scheduleTransportRestart(4500)
+        if (peerConnectedOnceRef.current.has(remoteSession)) {
+          setMediaError("A conexão de áudio e vídeo foi interrompida. O TaskBoard está tentando restabelecer a reunião automaticamente.")
+          requestIceRestart(remoteSession, peer)
+        } else {
+          // Não entra em loop durante o primeiro handshake. Os logs de ICE/SDP
+          // permanecem disponíveis e o peer aguarda os candidatos já sinalizados.
+          setMediaError("Não foi possível estabelecer a rota de mídia com este participante.")
+        }
       } else if (state === "closed") {
         closePeer(remoteSession)
       }
     }
 
-    // V146: sem troca dinâmica para relay-only. A configuração completa de
-    // STUN/TURN já está no peer desde a criação, como na V110.
-
-    // A oferta inicial é criada uma única vez e somente pelo papel determinístico.
     if (role.offerer) {
       window.setTimeout(() => {
         if (!role.initialOfferSent && peer.connectionState !== "closed") void sendOffer(remoteSession, peer)
       }, 0)
     }
 
+    void remoteUserId
     return peer
   }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
 
@@ -1588,9 +1528,6 @@ export function CallRoom({
     setMemberQuery("")
     setPresences({})
     remoteMediaStateRef.current.clear()
-    processedSignalKeysRef.current.clear()
-    lastPersistedSignalIdRef.current = 0
-    signalFallbackStateRef.current = "unknown"
     localMediaRevisionRef.current = 0
     joinedAtRef.current = new Date().toISOString()
     presenceStateRef.current.mediaRevision = 0
@@ -1843,12 +1780,6 @@ export function CallRoom({
         const role = getPeerRole(presence.sessionId)
         if (role.offerer && !role.initialOfferSent && !role.offerInFlight && peer.signalingState === "stable") {
           void sendOffer(presence.sessionId, peer)
-        } else if (!role.offerer && !peer.remoteDescription && !offerRequestSentRef.current.has(presence.sessionId)) {
-          // Se o offerer entrou alguns ms antes e sua primeira oferta saiu quando
-          // este cliente ainda não estava pronto, o answerer pede uma nova oferta.
-          // Usa o mesmo restart-request já existente na V110, sem criar protocolo novo.
-          offerRequestSentRef.current.add(presence.sessionId)
-          void postSignal({ type: "restart-request", toSession: presence.sessionId })
         }
       }
       // Presence pode ficar vazio por alguns segundos ao trocar de rede, voltar do
@@ -1898,15 +1829,6 @@ export function CallRoom({
     const handleSignal = (signal: CallSignal) => {
       if (signal.meetingId !== meeting.id) return
       if (signal.toSession !== sessionIdRef.current || signal.fromSession === sessionIdRef.current) return
-      if (signal.signalKey) {
-        if (processedSignalKeysRef.current.has(signal.signalKey)) return
-        processedSignalKeysRef.current.add(signal.signalKey)
-        // Mantém o conjunto limitado em reuniões muito longas.
-        if (processedSignalKeysRef.current.size > 2500) {
-          const recent = Array.from(processedSignalKeysRef.current).slice(-1200)
-          processedSignalKeysRef.current = new Set(recent)
-        }
-      }
       const peer = ensurePeer(signal.fromSession, signal.fromUserId)
       if (!peer) return
 
@@ -1915,13 +1837,9 @@ export function CallRoom({
           const role = getPeerRole(signal.fromSession)
 
           if (signal.type === "offer" && signal.sdp) {
-            // Base V110: apenas o answerer aceita a offer determinística.
+            // Base pré-V111: somente o answerer aceita a offer determinística.
             if (role.offerer) return
-            console.log("TaskBoard: offer WebRTC recebida", { remoteSession: signal.fromSession })
-            offerRequestSentRef.current.delete(signal.fromSession)
-            const staleRestartTimer = restartTimersRef.current.get(signal.fromSession)
-            if (staleRestartTimer) window.clearTimeout(staleRestartTimer)
-            restartTimersRef.current.delete(signal.fromSession)
+            console.info("TaskBoard: offer WebRTC recebida", { remoteSession: signal.fromSession })
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
@@ -1932,35 +1850,16 @@ export function CallRoom({
             if (peer.localDescription) {
               await postSignal({ type: "answer", toSession: signal.fromSession, sdp: peer.localDescription })
             }
-            window.setTimeout(() => {
-              const livePeer = peersRef.current.get(signal.fromSession)
-              if (livePeer !== peer || peer.connectionState === "connected" || peer.connectionState === "closed") return
-              const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
-              if (stillBroken && peer.signalingState === "stable" && peer.iceGatheringState !== "gathering") {
-                requestIceRestart(signal.fromSession, peer)
-              }
-            }, 6500)
             return
           }
 
           if (signal.type === "answer" && signal.sdp) {
             if (!role.offerer || peer.signalingState !== "have-local-offer") return
-            console.log("TaskBoard: answer WebRTC recebida", { remoteSession: signal.fromSession })
-            const staleRestartTimer = restartTimersRef.current.get(signal.fromSession)
-            if (staleRestartTimer) window.clearTimeout(staleRestartTimer)
-            restartTimersRef.current.delete(signal.fromSession)
+            console.info("TaskBoard: answer WebRTC recebida", { remoteSession: signal.fromSession })
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
             await flushPendingIce(signal.fromSession, peer)
-            window.setTimeout(() => {
-              const livePeer = peersRef.current.get(signal.fromSession)
-              if (livePeer !== peer || peer.connectionState === "connected" || peer.connectionState === "closed") return
-              const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
-              if (stillBroken && peer.signalingState === "stable" && peer.iceGatheringState !== "gathering") {
-                requestIceRestart(signal.fromSession, peer)
-              }
-            }, 6500)
             return
           }
 
@@ -1979,104 +1878,30 @@ export function CallRoom({
             try {
               await peer.addIceCandidate(signal.candidate)
             } catch (error) {
-              console.warn("TaskBoard: ICE candidate aguardará a próxima remoteDescription", error)
-              const queue = pendingIceRef.current.get(signal.fromSession) ?? []
-              queue.push(signal.candidate)
-              pendingIceRef.current.set(signal.fromSession, queue)
+              console.warn("TaskBoard: ICE candidate rejeitado", { remoteSession: signal.fromSession, error })
             }
             return
           }
 
           if (signal.type === "restart-request") {
-            if (!role.offerer) return
-            if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
-              // O outro participante pode ter entrado depois da primeira offer.
-              // Reenvia a mesma descrição em vez de empilhar uma nova negociação.
-              void postSignal({ type: "offer", toSession: signal.fromSession, sdp: peer.localDescription })
-              return
-            }
-            if (peer.signalingState === "stable") {
-              const isRecovery = Boolean(peer.localDescription && peer.remoteDescription)
-              void sendOffer(signal.fromSession, peer, isRecovery)
+            if (role.offerer && peerConnectedOnceRef.current.has(signal.fromSession)) {
+              void sendOffer(signal.fromSession, peer, true)
             }
           }
         } catch (error) {
           console.warn("TaskBoard: falha ao processar sinal WebRTC", signal.type, error)
           if (peer.connectionState !== "connected") {
-            setMediaError("A conexão de áudio e vídeo encontrou um problema. O TaskBoard tentará restabelecê-la.")
+            setMediaError("A conexão de áudio e vídeo encontrou um problema durante a negociação.")
           }
         }
       })
     }
 
-    let signalPollTimer: number | null = null
-    let signalPolling = false
-    let signalPollStopped = false
 
-    const scheduleSignalPoll = (delay = 700) => {
-      if (disposed || signalPollStopped || signalFallbackStateRef.current === "unavailable") return
-      if (signalPollTimer !== null) window.clearTimeout(signalPollTimer)
-      signalPollTimer = window.setTimeout(() => {
-        signalPollTimer = null
-        void pollPersistedSignals()
-      }, delay)
-    }
 
-    const pollPersistedSignals = async () => {
-      if (disposed || signalPollStopped || signalPolling || signalFallbackStateRef.current === "unavailable") return
-      signalPolling = true
-      try {
-        const { data, error } = await supabase.rpc("meeting_webrtc_signal_pull", {
-          p_meeting_id: meeting.id,
-          p_to_session: sessionIdRef.current,
-          p_after_id: lastPersistedSignalIdRef.current,
-        })
-        if (error) {
-          if (isMissingMeetingSignalFallback(error)) {
-            signalFallbackStateRef.current = "unavailable"
-            signalPollStopped = true
-            return
-          }
-          scheduleSignalPoll(1600)
-          return
-        }
+    // V148: a sinalização persistente da migration 090 fica desativada.
+    // A reunião volta a usar um único transporte ordenado: Broadcast WebSocket.
 
-        signalFallbackStateRef.current = "available"
-        const rows = Array.isArray(data) ? data as Array<{
-          id?: number | string
-          signal_key?: string
-          signal_type?: CallSignal["type"]
-          from_session?: string
-          from_user_id?: string
-          to_session?: string
-          sdp?: RTCSessionDescriptionInit | null
-          candidate?: RTCIceCandidateInit | null
-        }> : []
-
-        for (const row of rows) {
-          const rowId = Number(row.id ?? 0)
-          if (Number.isFinite(rowId) && rowId > lastPersistedSignalIdRef.current) {
-            lastPersistedSignalIdRef.current = rowId
-          }
-          if (!row.signal_type || !row.from_session || !row.from_user_id || !row.to_session) continue
-          handleSignal({
-            type: row.signal_type,
-            meetingId: meeting.id,
-            signalKey: row.signal_key,
-            fromSession: row.from_session,
-            fromUserId: row.from_user_id,
-            toSession: row.to_session,
-            sdp: row.sdp ?? undefined,
-            candidate: row.candidate ?? undefined,
-          })
-        }
-        scheduleSignalPoll(rows.length > 0 ? 180 : 700)
-      } catch {
-        scheduleSignalPoll(1600)
-      } finally {
-        signalPolling = false
-      }
-    }
 
     void (async () => {
       try {
@@ -2118,19 +1943,8 @@ export function CallRoom({
               realtimeSubscribedRef.current = true
               setMediaError((current) => current.startsWith("Falha na sala") ? "" : current)
               publishPresence()
-              signalPollStopped = false
-              scheduleSignalPoll(80)
               window.setTimeout(() => broadcastMediaStateBurst(), 120)
               if (meetingRecorderRef.current) window.setTimeout(() => void broadcastRecordingState("recording"), 180)
-              // Depois de uma reconexão do Realtime, conserva peers conectados e
-              // reinicia apenas os que realmente perderam a rota de mídia.
-              window.setTimeout(() => {
-                peersRef.current.forEach((peer, sessionId) => {
-                  if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
-                    requestIceRestart(sessionId, peer)
-                  }
-                })
-              }, 900)
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
               realtimeSubscribedRef.current = false
               console.warn("TaskBoard: Realtime channel", status, error)
@@ -2145,9 +1959,6 @@ export function CallRoom({
 
     return () => {
       disposed = true
-      signalPollStopped = true
-      if (signalPollTimer !== null) window.clearTimeout(signalPollTimer)
-      signalPollTimer = null
       realtimeSubscribedRef.current = false
       if (channel) {
         void channel.untrack()
@@ -2763,7 +2574,7 @@ export function CallRoom({
           userId,
           removedBy: currentUserId,
           sentAt: new Date().toISOString(),
-        } satisfies MeetingMemberRemovedSignal, !realtimeSubscribedRef.current)
+        } satisfies MeetingMemberRemovedSignal)
       } catch {}
       await refreshAll()
     } catch (error) {

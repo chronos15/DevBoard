@@ -167,3 +167,8 @@ Durante o teste, o console agora informa:
 Um `icecandidateerror` 701 de um endpoint específico não prova falha total se outro endpoint/candidate funcionar. O aceite deve ser feito pelo `connectionState=connected` e pela rota selecionada em **Conectividade WebRTC**.
 
 Não há migration nova. Mantenha a migration 090 aplicada.
+
+
+## V145 — SDP com ICE embutido
+
+O handshake principal aguarda o ICE gathering antes de enviar offer/answer. Isso faz com que candidatos host/srflx/relay já viajem dentro do SDP e reduz a dependência de trickle ICE. Em falha da primeira tentativa, o peer muda para TURN relay-only e faz um ICE restart controlado.

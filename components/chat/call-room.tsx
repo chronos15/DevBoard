@@ -126,6 +126,9 @@ type PeerRoleState = {
   /** SDP offer/answer já foi concluído para a geração ICE atual. Enquanto isso
    *  for true, não criamos novas ofertas só porque ICE ainda está checking. */
   negotiationComplete: boolean
+  /** O localDescription atual já teve uma janela para concluir ICE gathering.
+   *  Antes disso não reenviamos SDP parcial em resposta a `ready`. */
+  localDescriptionReady: boolean
 }
 
 type PanelMode = "participants" | "chat" | "settings" | null
@@ -138,6 +141,39 @@ function makeSessionId() {
 function makeSignalKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
   return `signal-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function sdpCandidateStats(description?: RTCSessionDescription | RTCSessionDescriptionInit | null) {
+  const sdp = description?.sdp ?? ""
+  const candidates = sdp.match(/^a=candidate:/gm)?.length ?? 0
+  const relays = sdp.match(/^a=candidate:.* typ relay(?: |$)/gm)?.length ?? 0
+  return { candidates, relays }
+}
+
+/**
+ * Espera o Chromium incorporar os candidatos ICE no `localDescription` antes
+ * de enviar offer/answer. Assim o handshake principal não depende de trickle
+ * ICE/Broadcast para transportar a rota TURN; candidatos tardios continuam
+ * sendo enviados separadamente como redundância.
+ */
+function waitForIceGatheringComplete(peer: RTCPeerConnection, timeoutMs = 7000) {
+  if (peer.iceGatheringState === "complete") return Promise.resolve(true)
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (complete: boolean) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      peer.removeEventListener("icegatheringstatechange", onStateChange)
+      resolve(complete)
+    }
+    const onStateChange = () => {
+      if (peer.iceGatheringState === "complete") finish(true)
+    }
+    const timer = window.setTimeout(() => finish(peer.iceGatheringState === "complete"), timeoutMs)
+    peer.addEventListener("icegatheringstatechange", onStateChange)
+  })
 }
 
 function isMissingMeetingSignalFallback(error: unknown) {
@@ -1238,6 +1274,7 @@ export function CallRoom({
       offerInFlight: false,
       restartPending: false,
       negotiationComplete: false,
+      localDescriptionReady: false,
     }
     peerRoleRef.current.set(remoteSession, created)
     return created
@@ -1285,9 +1322,12 @@ export function CallRoom({
     }
 
     try {
-      peer.setConfiguration({ iceServers: fallback })
+      // Se a tentativa direta/UDP não formou um candidate pair mesmo havendo
+      // TURN disponível, o fallback passa a ser relay-only. Isso evita ficar
+      // preso testando host/srflx quebrados em CGNAT, IPv6 parcial ou redes móveis.
+      peer.setConfiguration({ iceServers: fallback, iceTransportPolicy: "relay" })
       iceFallbackEnabledRef.current.add(remoteSession)
-      console.info("TaskBoard: ampliando rotas ICE para TCP/TLS", { remoteSession, reason })
+      console.info("TaskBoard: fallback TURN relay-only ativado", { remoteSession, reason })
       return true
     } catch (error) {
       console.warn("TaskBoard: não foi possível habilitar fallback ICE", { remoteSession, reason, error })
@@ -1311,9 +1351,23 @@ export function CallRoom({
     role.offerInFlight = true
     try {
       await bindPeerSenders(remoteSession, peer)
+      role.localDescriptionReady = false
       const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : undefined)
       await peer.setLocalDescription(offer)
       if (!peer.localDescription) return
+
+      const gatheringComplete = await waitForIceGatheringComplete(peer)
+      if (peer.connectionState === "closed" || peer.signalingState === "closed" || !peer.localDescription) return
+      role.localDescriptionReady = true
+      const stats = sdpCandidateStats(peer.localDescription)
+      console.info("TaskBoard: offer WebRTC pronta", {
+        remoteSession,
+        iceRestart,
+        gatheringComplete,
+        iceGatheringState: peer.iceGatheringState,
+        candidates: stats.candidates,
+        relayCandidates: stats.relays,
+      })
       const sent = await postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
       if (sent) role.initialOfferSent = true
     } catch (error) {
@@ -1334,6 +1388,7 @@ export function CallRoom({
 
     const role = getPeerRole(remoteSession)
     role.negotiationComplete = false
+    role.localDescriptionReady = false
     // Se a rota UDP/direta falhou, a partir do primeiro restart libera também
     // TCP/TLS do provedor TURN. Isso mantém o fast-path limpo e ainda suporta
     // redes corporativas que bloqueiam UDP.
@@ -1413,11 +1468,16 @@ export function CallRoom({
           })
         }
       }
-      void postSignal({
-        type: "ice",
-        toSession: remoteSession,
-        candidate: event.candidate.toJSON(),
-      })
+      // O handshake inicial usa SDP com candidatos embutidos. Se algum
+      // candidato surgir depois da janela de gathering, envia por trickle como
+      // redundância sem tornar a chamada dependente deste evento.
+      if (role.localDescriptionReady) {
+        void postSignal({
+          type: "ice",
+          toSession: remoteSession,
+          candidate: event.candidate.toJSON(),
+        })
+      }
     }
 
     peer.onicecandidateerror = (event) => {
@@ -1952,7 +2012,11 @@ export function CallRoom({
 
           if (signal.type === "ready") {
             if (!role.offerer || role.negotiationComplete || peer.connectionState === "connected") return
-            if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
+            if (
+              role.localDescriptionReady &&
+              peer.signalingState === "have-local-offer" &&
+              peer.localDescription?.type === "offer"
+            ) {
               await postSignal({ type: "offer", toSession: signal.fromSession, sdp: peer.localDescription })
             } else if (peer.signalingState === "stable" && !role.offerInFlight) {
               await sendOffer(signal.fromSession, peer)
@@ -1979,6 +2043,13 @@ export function CallRoom({
             }
 
             role.negotiationComplete = false
+            role.localDescriptionReady = false
+            const remoteOfferStats = sdpCandidateStats(signal.sdp)
+            console.info("TaskBoard: offer WebRTC recebida", {
+              remoteSession: signal.fromSession,
+              candidates: remoteOfferStats.candidates,
+              relayCandidates: remoteOfferStats.relays,
+            })
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
@@ -1987,6 +2058,17 @@ export function CallRoom({
             const answer = await peer.createAnswer()
             await peer.setLocalDescription(answer)
             if (peer.localDescription) {
+              const gatheringComplete = await waitForIceGatheringComplete(peer)
+              if (peer.connectionState === "closed" || !peer.localDescription) return
+              role.localDescriptionReady = true
+              const localAnswerStats = sdpCandidateStats(peer.localDescription)
+              console.info("TaskBoard: answer WebRTC pronta", {
+                remoteSession: signal.fromSession,
+                gatheringComplete,
+                iceGatheringState: peer.iceGatheringState,
+                candidates: localAnswerStats.candidates,
+                relayCandidates: localAnswerStats.relays,
+              })
               role.negotiationComplete = true
               await postSignal({ type: "answer", toSession: signal.fromSession, sdp: peer.localDescription })
             }
@@ -2001,6 +2083,12 @@ export function CallRoom({
               peer.remoteDescription.sdp === signal.sdp.sdp
             ) return
             if (peer.signalingState !== "have-local-offer") return
+            const remoteAnswerStats = sdpCandidateStats(signal.sdp)
+            console.info("TaskBoard: answer WebRTC recebida", {
+              remoteSession: signal.fromSession,
+              candidates: remoteAnswerStats.candidates,
+              relayCandidates: remoteAnswerStats.relays,
+            })
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
@@ -2034,6 +2122,7 @@ export function CallRoom({
           if (signal.type === "restart-request") {
             if (role.offerer) {
               role.negotiationComplete = false
+              role.localDescriptionReady = false
               void sendOffer(signal.fromSession, peer, true)
             }
           }
@@ -2227,10 +2316,9 @@ export function CallRoom({
         if (role.negotiationComplete) return
 
         if (role.offerer) {
-          if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
-            // Reenvia o MESMO SDP apenas enquanto a answer ainda não chegou.
-            // Não cria novas ofertas em `stable` depois de offer/answer, pois isso
-            // reiniciava continuamente a negociação antes de ICE concluir.
+          if (role.localDescriptionReady && peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
+            // Reenvia o MESMO SDP somente depois da janela de ICE gathering, para
+            // nunca substituir a offer completa por uma versão parcial sem TURN.
             void postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
           } else if (!role.initialOfferSent && peer.signalingState === "stable" && !role.offerInFlight) {
             void sendOffer(remoteSession, peer)

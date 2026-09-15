@@ -782,6 +782,18 @@ export function ActivityItem({
 
         {open && (
           <div className="border-t border-border px-2 pb-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 px-1 py-2">
+              {canCreateSubactivity && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
+              <button
+                type="button"
+                onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title={`Abrir acompanhamento de ${activity.title}`}
+              >
+                <MessageSquareText className="size-3.5" />
+                Acompanhamento
+              </button>
+            </div>
             {linkedRequest && (
               <Link href={`/solicitacoes/${linkedRequest.id}`} className="mx-1 mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.045] px-3 py-2.5 text-left transition-colors hover:bg-primary/[0.07]">
                 <ClipboardCheck className="size-4 shrink-0 text-primary" />
@@ -815,18 +827,6 @@ export function ActivityItem({
                     : "Nenhuma subatividade corresponde ao filtro selecionado."}
                 </p>
               )}
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 px-1 pt-1">
-              {canCreateSubactivity && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
-              <button
-                type="button"
-                onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title={`Abrir acompanhamento de ${activity.title}`}
-              >
-                <MessageSquareText className="size-3.5" />
-                Acompanhamento
-              </button>
             </div>
           </div>
         )}

@@ -350,59 +350,58 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       >
         <div className="min-w-0 space-y-3 lg:order-1">
           <div className="rounded-2xl border border-border bg-card/60 p-2.5 shadow-sm sm:p-3">
-            <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex min-w-0 items-center gap-2.5 px-1">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <ListTree className="size-4" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="text-sm font-semibold">Atividades</h2>
-                    <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground">{project.activities.length}</span>
+            <div className="min-w-0 space-y-2.5">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-2.5 px-1">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <ListTree className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <h2 className="text-sm font-semibold">Atividades</h2>
+                      <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[0.65rem] text-muted-foreground">{project.activities.length}</span>
+                    </div>
+                    <p className="mt-0.5 break-words text-[0.65rem] leading-relaxed text-muted-foreground">Organize, filtre e acompanhe o trabalho deste projeto.</p>
                   </div>
-                  <p className="hidden text-[0.65rem] text-muted-foreground sm:block">Organize, filtre e acompanhe o trabalho deste projeto.</p>
                 </div>
-              </div>
 
-              <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center xl:w-auto xl:flex-nowrap">
                 {canCreateActivity && (
                   <FollowUpAddActivityDialog
                     projectId={project.id}
                     trigger="button"
-                    className="h-9 w-full rounded-xl px-3 shadow-sm lg:w-auto"
+                    className="h-9 w-full shrink-0 rounded-xl px-3 shadow-sm sm:w-auto"
                   />
                 )}
-                <div className="flex w-full min-w-0 shrink-0 gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:w-auto lg:flex-nowrap">
-                  <button
-                    type="button"
-                    onClick={() => changeView("list")}
-                    className={cn("flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium transition-colors lg:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-                  >
-                    <List className="size-3.5" />
-                    Lista
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => changeView("kanban")}
-                    className={cn("flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium transition-colors lg:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-                  >
-                    <Columns3 className="size-3.5" />
-                    Kanban
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openFollowUp}
-                    className="flex h-8 min-w-max flex-1 items-center justify-center gap-1.5 rounded-lg px-3 whitespace-nowrap text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm lg:flex-none"
-                    title="Abrir página de acompanhamento"
-                  >
-                    <MessageSquareText className="size-3.5" />
-                    <span className="hidden md:inline">Acompanhamento</span>
-                    <span className="md:hidden">Acompanhar</span>
-                  </button>
-                </div>
               </div>
-            </div>
 
+              <div className="grid w-full min-w-0 grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+                <button
+                  type="button"
+                  onClick={() => changeView("list")}
+                  className={cn("flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[0.7rem] font-medium transition-colors sm:px-3 sm:text-xs", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <List className="size-3.5 shrink-0" />
+                  <span className="min-w-0">Lista</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeView("kanban")}
+                  className={cn("flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[0.7rem] font-medium transition-colors sm:px-3 sm:text-xs", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <Columns3 className="size-3.5 shrink-0" />
+                  <span className="min-w-0">Kanban</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openFollowUp}
+                  className="flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:px-3 sm:text-xs"
+                  title="Abrir página de acompanhamento"
+                >
+                  <MessageSquareText className="size-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Acompanhamento</span>
+                  <span className="sm:hidden">Acompanhar</span>
+                </button>
+              </div>
             <div className="mt-2.5 flex min-w-0 flex-col gap-2 border-t border-border/70 pt-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
               <div className="flex max-w-full gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex-wrap lg:overflow-visible lg:pb-0">
                 {activityFilters.map((filter) => (
@@ -411,7 +410,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                     type="button"
                     onClick={() => setActivityFilter(filter.key)}
                     className={cn(
-                      "rounded-full border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
+                      "shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
                       activityFilter === filter.key
                         ? "border-primary/25 bg-primary/10 text-primary"
                         : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -461,6 +460,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </div>
             </div>
           </div>
+        </div>
 
           {viewMode === "list" ? (
             <>

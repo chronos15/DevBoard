@@ -36,6 +36,9 @@ export function CommentDialog({
   className,
   enableMentions = false,
   mentionAudienceUserIds,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   title: string
   description: string
@@ -46,9 +49,17 @@ export function CommentDialog({
   enableMentions?: boolean
   /** Destinatários já vinculados ao tópico usados exclusivamente pelo @todos. */
   mentionAudienceUserIds?: string[]
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
   const { members, memberPresence, currentUserId } = useStore()
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = React.useCallback((nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }, [controlledOpen, onOpenChange])
   const [text, setText] = React.useState("")
   const [mentions, setMentions] = React.useState<ChatMention[]>([])
   const [mentionRange, setMentionRange] = React.useState<{ start: number; end: number; query: string } | null>(null)
@@ -112,34 +123,36 @@ export function CommentDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          compact
-            ? "inline-flex h-7 min-w-7 cursor-pointer items-center justify-center gap-1 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            : "flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted",
-          className,
-        )}
-        aria-label={`Comentários de ${title}`}
-        title="Comentários"
-      >
-        <MessageSquare className={compact ? "size-3.5" : "size-3.5"} />
-        {compact ? (
-          comments.length > 0 && (
-            <span className="font-mono text-[0.62rem] tabular-nums">{comments.length}</span>
-          )
-        ) : (
-          <>
-            <span>Comentários</span>
-            {comments.length > 0 && (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
-                {comments.length}
-              </span>
-            )}
-          </>
-        )}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={cn(
+            compact
+              ? "inline-flex h-7 min-w-7 cursor-pointer items-center justify-center gap-1 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              : "flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted",
+            className,
+          )}
+          aria-label={`Comentários de ${title}`}
+          title="Comentários"
+        >
+          <MessageSquare className={compact ? "size-3.5" : "size-3.5"} />
+          {compact ? (
+            comments.length > 0 && (
+              <span className="font-mono text-[0.62rem] tabular-nums">{comments.length}</span>
+            )
+          ) : (
+            <>
+              <span>Comentários</span>
+              {comments.length > 0 && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
+                  {comments.length}
+                </span>
+              )}
+            </>
+          )}
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="grid min-w-0 max-h-[88dvh] w-[calc(100dvw-1.5rem)] max-w-[calc(100dvw-1.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-xl">

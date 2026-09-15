@@ -27,7 +27,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { ActivityInfoDialog } from "@/components/project-detail/activity-info-dialog"
 import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
@@ -70,6 +69,10 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [focusSaving, setFocusSaving] = React.useState(false)
   const [attachmentsOpen, setAttachmentsOpen] = React.useState(false)
+  const [commentsOpen, setCommentsOpen] = React.useState(false)
+  const [editOpen, setEditOpen] = React.useState(false)
+  const [actionsOpen, setActionsOpen] = React.useState(false)
+  const [subLinkCopied, setSubLinkCopied] = React.useState(false)
   const [droppedAttachmentFiles, setDroppedAttachmentFiles] = React.useState<File[]>([])
   const [droppedAttachmentVersion, setDroppedAttachmentVersion] = React.useState(0)
 
@@ -143,6 +146,29 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     }
   }
 
+  async function copySubactivityLink() {
+    const href = new URL(`/projetos/${projectId}#sub-${sub.id}`, window.location.origin).toString()
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(href)
+      } else {
+        const area = document.createElement("textarea")
+        area.value = href
+        area.setAttribute("readonly", "")
+        area.style.position = "fixed"
+        area.style.opacity = "0"
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand("copy")
+        area.remove()
+      }
+      setSubLinkCopied(true)
+      window.setTimeout(() => setSubLinkCopied(false), 1600)
+    } catch {
+      setSubLinkCopied(false)
+    }
+  }
+
   return (
     <div className={cn("min-w-0", inlineOpen && "pb-2")}>
     <FileDropOverlay
@@ -165,7 +191,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         setInlineOpen((current) => !current)
       }}
       className={cn(
-        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-colors sm:flex-nowrap sm:px-3",
+        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-colors sm:px-3",
         running ? "bg-primary/[0.06]" : "hover:bg-muted/50",
         cancelled && "opacity-70",
         focused && "bg-primary/[0.08] ring-2 ring-inset ring-primary/30",
@@ -208,7 +234,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
             type="button"
             onClick={() => setInlineOpen((current) => !current)}
             className={cn(
-              "min-w-0 flex-1 break-words text-left text-sm font-medium leading-snug transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary xl:truncate",
+              "min-w-0 flex-1 break-words text-left text-sm font-medium leading-snug transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary",
               terminal && "text-muted-foreground line-through",
             )}
             title={`${sub.title} · ${inlineOpen ? "recolher resumo" : "expandir resumo"}`}
@@ -250,84 +276,93 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         </div>
       </div>
 
-      <div data-subactivity-row-control="true" className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 pl-7 sm:w-auto sm:flex-nowrap sm:justify-end sm:pl-0">
-        {currentUserRole === "admin" && (
-          <>
-            <Button
-              type="button"
-              variant={sub.isFocus ? "secondary" : "ghost"}
-              size="icon-sm"
-              disabled={focusSaving}
+      <div data-subactivity-row-control="true" className="shrink-0 self-start">
+        <DropdownMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+          <DropdownMenuTrigger
+            className="flex size-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`Ações da subatividade ${sub.title}`}
+            title="Ações"
+          >
+            <EllipsisVertical className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="w-56 p-1.5">
+            {currentUserRole === "admin" && (
+              <>
+                <DropdownMenuItem
+                  className="h-10 cursor-pointer gap-2 px-2.5"
+                  disabled={focusSaving}
+                  onClick={() => {
+                    setActionsOpen(false)
+                    if (focusSaving) return
+                    setFocusSaving(true)
+                    void setSubactivityFocus(sub.id, !Boolean(sub.isFocus)).finally(() => setFocusSaving(false))
+                  }}
+                >
+                  <Star className={cn("size-4", sub.isFocus && "fill-current text-amber-500")} />
+                  <span>{sub.isFocus ? "Remover do foco" : "Marcar como foco"}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="h-10 cursor-pointer gap-2 px-2.5"
+                  onClick={() => { setActionsOpen(false); setEditOpen(true) }}
+                >
+                  <NotebookPen className="size-4" />
+                  <span>Editar subatividade</span>
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuItem
+              className="h-10 cursor-pointer gap-2 px-2.5"
               onClick={() => {
-                if (focusSaving) return
-                setFocusSaving(true)
-                void setSubactivityFocus(sub.id, !Boolean(sub.isFocus)).finally(() => setFocusSaving(false))
+                setActionsOpen(false)
+                void copySubactivityLink()
               }}
-              className={cn(sub.isFocus && "text-amber-600 dark:text-amber-400")}
-              title={sub.isFocus ? "Remover do Foco de hoje" : "Marcar como Foco de hoje"}
-              aria-label={sub.isFocus ? "Remover subatividade do foco" : "Marcar subatividade como foco"}
             >
-              {focusSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Star className={cn("size-3.5", sub.isFocus && "fill-current")} />}
-            </Button>
-            <EditSubactivityDialog subactivity={sub} compact />
-          </>
-        )}
-        <CopyEntityLinkButton
-          href={`/projetos/${projectId}#sub-${sub.id}`}
-          label={`Copiar link da subatividade ${sub.title}`}
-        />
-        <Button
-          type="button"
-          variant={sub.brainstormMode ? "secondary" : "ghost"}
-          size="icon-sm"
-          disabled={!canManage || brainstormSaving || (sub.status !== "in-progress" && !sub.brainstormMode)}
-          onClick={() => {
-            if (brainstormSaving) return
-            setBrainstormSaving(true)
-            void setSubactivityBrainstorm(sub.id, !Boolean(sub.brainstormMode)).finally(() => setBrainstormSaving(false))
-          }}
-          className={cn(sub.brainstormMode && "text-primary")}
-          title={sub.brainstormMode ? "Encerrar brainstorm (Ctrl + Shift + B)" : sub.status === "in-progress" ? "Ativar brainstorm: não pausar por inatividade (Ctrl + Shift + B)" : "Inicie a subatividade para ativar o brainstorm"}
-          aria-label={sub.brainstormMode ? "Encerrar modo brainstorm" : "Ativar modo brainstorm"}
-        >
-          {brainstormSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <BrainCircuit className="size-3.5" />}
-        </Button>
-        <CommentDialog
-          title={`Comentários · ${sub.title}`}
-          description="Discussão da subatividade. Todos os usuários podem comentar, mesmo quando a tarefa pertence a outro responsável."
-          comments={sub.comments ?? []}
-          onAdd={(content, mentions) => addSubactivityComment(sub.id, content, mentions)}
-          enableMentions
-          mentionAudienceUserIds={Array.from(new Set([sub.assigneeId, ...(sub.memberIds ?? [])].filter(Boolean)))}
-          compact
-        />
-        <AttachmentDialog
-          title={`Arquivos · ${sub.title}`}
-          description="Mídias, documentação, SQL e arquivos da subatividade. Qualquer usuário pode adicionar e visualizar."
-          attachments={sub.attachments ?? []}
-          onAdd={(files) => addSubactivityAttachments(sub.id, files)}
-          onSetActive={(attachmentId, active) =>
-            void setSubactivityAttachmentActive(sub.id, attachmentId, active)
-          }
-          compact
-          buttonLabel="Arquivos"
-          open={attachmentsOpen}
-          onOpenChange={(open) => {
-            setAttachmentsOpen(open)
-            if (open) setDroppedAttachmentFiles([])
-          }}
-          incomingFiles={droppedAttachmentFiles}
-          incomingVersion={droppedAttachmentVersion}
-        />
+              {subLinkCopied ? <Check className="size-4 text-success" /> : <Link2 className="size-4" />}
+              <span>{subLinkCopied ? "Link copiado" : "Copiar link"}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="h-10 cursor-pointer gap-2 px-2.5"
+              disabled={!canManage || brainstormSaving || (sub.status !== "in-progress" && !sub.brainstormMode)}
+              onClick={() => {
+                setActionsOpen(false)
+                if (brainstormSaving) return
+                setBrainstormSaving(true)
+                void setSubactivityBrainstorm(sub.id, !Boolean(sub.brainstormMode)).finally(() => setBrainstormSaving(false))
+              }}
+            >
+              <BrainCircuit className={cn("size-4", sub.brainstormMode && "text-primary")} />
+              <span>{sub.brainstormMode ? "Encerrar brainstorm" : "Ativar brainstorm"}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="h-10 cursor-pointer gap-2 px-2.5"
+              onClick={() => { setActionsOpen(false); setCommentsOpen(true) }}
+            >
+              <MessageSquareText className="size-4" />
+              <span className="min-w-0 flex-1">Comentários</span>
+              {(sub.comments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{sub.comments?.length ?? 0}</span>}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="h-10 cursor-pointer gap-2 px-2.5"
+              onClick={() => { setActionsOpen(false); setAttachmentsOpen(true) }}
+            >
+              <Paperclip className="size-4" />
+              <span className="min-w-0 flex-1">Arquivos</span>
+              {(sub.attachments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{sub.attachments?.length ?? 0}</span>}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
-        <div className="flex items-center gap-1">
+      <div data-subactivity-row-control="true" className="flex min-w-0 w-full flex-wrap items-center gap-2 pl-7 sm:gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
           <select
             value={sub.status}
             disabled={!canManage || statusSaving}
             onChange={(e) => requestStatus(e.target.value as Subactivity["status"])}
             aria-label={`Status de ${sub.title}`}
             className={cn(
-              "h-7 max-w-full min-w-0 rounded-full border-0 px-2 text-[0.65rem] font-medium outline-none ring-0 sm:max-w-32",
+              "h-8 max-w-full min-w-0 flex-1 rounded-full border-0 px-2.5 text-[0.65rem] font-medium outline-none ring-0 sm:max-w-36 sm:flex-none",
               canManage ? "cursor-pointer" : "cursor-not-allowed opacity-55",
               meta.className,
             )}
@@ -353,6 +388,47 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
 
         {!terminal && sub.status !== "waiting-aqs" && <TimerButton subId={sub.id} size="sm" />}
       </div>
+
+      <CommentDialog
+        title={`Comentários · ${sub.title}`}
+        description="Discussão da subatividade. Todos os usuários podem comentar, mesmo quando a tarefa pertence a outro responsável."
+        comments={sub.comments ?? []}
+        onAdd={(content, mentions) => addSubactivityComment(sub.id, content, mentions)}
+        enableMentions
+        mentionAudienceUserIds={Array.from(new Set([sub.assigneeId, ...(sub.memberIds ?? [])].filter(Boolean)))}
+        compact
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+        hideTrigger
+      />
+      {currentUserRole === "admin" && (
+        <EditSubactivityDialog
+          subactivity={sub}
+          compact
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          hideTrigger
+        />
+      )}
+      <AttachmentDialog
+        title={`Arquivos · ${sub.title}`}
+        description="Mídias, documentação, SQL e arquivos da subatividade. Qualquer usuário pode adicionar e visualizar."
+        attachments={sub.attachments ?? []}
+        onAdd={(files) => addSubactivityAttachments(sub.id, files)}
+        onSetActive={(attachmentId, active) =>
+          void setSubactivityAttachmentActive(sub.id, attachmentId, active)
+        }
+        compact
+        buttonLabel="Arquivos"
+        open={attachmentsOpen}
+        onOpenChange={(open) => {
+          setAttachmentsOpen(open)
+          if (!open) setDroppedAttachmentFiles([])
+        }}
+        incomingFiles={droppedAttachmentFiles}
+        incomingVersion={droppedAttachmentVersion}
+        hideTrigger
+      />
     </div>
 
     {inlineOpen && <SubactivityInlineSummary projectId={projectId} sub={sub} />}

@@ -76,6 +76,13 @@ export function ActivityInfoDialog({
     { icon: Tags, label: "Assunto", value: activity.subject },
     { icon: Building2, label: "Departamento responsável", value: activity.responsibleDepartment },
   ]
+  const headerContextItems = [
+    activity.relatedModule ? `Módulo: ${activity.relatedModule}` : undefined,
+    activity.subject ? `Assunto: ${activity.subject}` : undefined,
+    activity.responsibleDepartment ? `Departamento: ${activity.responsibleDepartment}` : undefined,
+    activity.linkedOs ? `O.S.: ${activity.linkedOs}` : undefined,
+    activity.build ? `Build: ${activity.build}` : undefined,
+  ].filter(Boolean) as string[]
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -97,35 +104,50 @@ export function ActivityInfoDialog({
         className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-0 sm:h-auto sm:max-h-[92dvh] sm:max-w-[1180px]"
         showCloseButton
       >
-        <DialogHeader className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/[0.07] via-background to-background px-5 py-5 pr-14 sm:px-7 sm:py-6">
+        <DialogHeader className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/[0.07] via-background to-background px-4 py-4 pr-12 sm:px-6 sm:py-5 sm:pr-14">
           <div className="absolute -right-14 -top-16 size-44 rounded-full bg-primary/[0.06] blur-2xl" aria-hidden="true" />
-          <div className="relative flex min-w-0 items-start gap-3.5">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+          <div className="relative flex min-w-0 items-start gap-3 sm:gap-4">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm sm:size-11">
               <ActivityIcon className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 text-[0.67rem] font-medium text-muted-foreground">
-                <span>{project?.name ?? "Projeto"}</span>
-                {project?.client && <><span>•</span><span>{project.client}</span></>}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.67rem] font-medium leading-relaxed text-muted-foreground">
+                <span className="break-words">{project?.name ?? "Projeto"}</span>
+                {project?.client && (
+                  <>
+                    <span aria-hidden="true">•</span>
+                    <span className="break-words">{project.client}</span>
+                  </>
+                )}
               </div>
-              <DialogTitle className="mt-1 max-w-4xl text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
+
+              <DialogTitle className="mt-1.5 max-w-none break-words pr-1 text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
                 {activity.title}
               </DialogTitle>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+
+              {headerContextItems.length > 0 && (
+                <div className="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[0.67rem] leading-relaxed text-muted-foreground">
+                  {headerContextItems.map((item) => (
+                    <span key={item} className="break-words">{item}</span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                 {type && (
-                  <span className="rounded-full border border-primary/15 bg-primary/10 px-2.5 py-1 text-[0.65rem] font-semibold text-primary">
+                  <span className="max-w-full break-words rounded-full border border-primary/15 bg-primary/10 px-2.5 py-1 text-[0.65rem] font-semibold text-primary">
                     {type.name}
                   </span>
                 )}
                 {activityPriority ? (
-                  <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-semibold", activityPriority.className)}>
-                    <Flag className="size-3" />
-                    Prioridade {activityPriority.label.toLowerCase()}
+                  <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-semibold", activityPriority.className)}>
+                    <Flag className="size-3 shrink-0" />
+                    <span className="break-words">Prioridade {activityPriority.label.toLowerCase()}</span>
                   </span>
                 ) : (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-[0.65rem] font-medium text-muted-foreground">Sem prioridade definida</span>
+                  <span className="max-w-full break-words rounded-full bg-muted px-2.5 py-1 text-[0.65rem] font-medium text-muted-foreground">Sem prioridade definida</span>
                 )}
-                <span className="rounded-full border border-border bg-background/80 px-2.5 py-1 text-[0.65rem] font-medium text-muted-foreground">
+                <span className="max-w-full break-words rounded-full border border-border bg-background/80 px-2.5 py-1 text-[0.65rem] font-medium text-muted-foreground">
                   {done}/{total} concluída{total === 1 ? "" : "s"}
                 </span>
               </div>

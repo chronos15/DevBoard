@@ -261,40 +261,12 @@ object NativeScreenShareManager {
             override fun onStandardizedIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
                 if (newState == PeerConnection.PeerConnectionState.FAILED) {
-                    // FAILED é uma perda definitiva desta rota. Recria apenas o peer
-                    // afetado, sem tocar na captura MediaProjection nem nos demais.
                     mainHandler.postDelayed({
-                        val current = peers[recipient.sessionId]
-                        if (
-                            started &&
-                            recipients.containsKey(recipient.sessionId) &&
-                            current != null &&
-                            current.connectionState() == PeerConnection.PeerConnectionState.FAILED
-                        ) {
+                        if (started && recipients.containsKey(recipient.sessionId)) {
                             closePeer(recipient.sessionId, notify = false)
                             createSenderPeer(recipient)
                         }
-                    }, 1200)
-                    return
-                }
-
-                if (newState == PeerConnection.PeerConnectionState.DISCONNECTED) {
-                    // DISCONNECTED é frequentemente transitório em Android (troca de
-                    // Wi-Fi/4G, Doze ou retorno do background). A V111 recriava em 1,8 s,
-                    // gerando ciclos de offer/answer e impressão de "prints" congelados.
-                    // Aguarda uma janela real de perda antes de substituir o peer.
-                    mainHandler.postDelayed({
-                        val current = peers[recipient.sessionId]
-                        if (
-                            started &&
-                            recipients.containsKey(recipient.sessionId) &&
-                            current != null &&
-                            current.connectionState() == PeerConnection.PeerConnectionState.DISCONNECTED
-                        ) {
-                            closePeer(recipient.sessionId, notify = false)
-                            createSenderPeer(recipient)
-                        }
-                    }, 8000)
+                    }, 1500)
                 }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit

@@ -103,7 +103,7 @@ type MeetingMemberRemovedSignal = {
 }
 
 type CallSignal = {
-  type: "offer" | "answer" | "ice" | "restart-request" | "renegotiate-request" | "media-resync-request"
+  type: "offer" | "answer" | "ice" | "restart-request"
   meetingId: string
   fromSession: string
   fromUserId: string
@@ -122,7 +122,6 @@ type PeerRoleState = {
   initialOfferSent: boolean
   offerInFlight: boolean
   restartPending: boolean
-  renegotiatePending: boolean
 }
 
 type PanelMode = "participants" | "chat" | "settings" | null
@@ -183,8 +182,6 @@ function ParticipantTile({
   prioritized,
   compact,
   onPrioritize,
-  videoRecoveryKey,
-  onVideoStalled,
   deafened,
 }: {
   member: Member
@@ -202,8 +199,6 @@ function ParticipantTile({
   prioritized?: boolean
   compact?: boolean
   onPrioritize?: () => void
-  videoRecoveryKey?: string
-  onVideoStalled?: (sessionId: string) => void
   deafened?: boolean
 }) {
   const tileRef = React.useRef<HTMLDivElement | null>(null)
@@ -397,51 +392,6 @@ function ParticipantTile({
       if (timeoutId !== null) window.clearTimeout(timeoutId)
     }
   }, [camOn, mediaTick, own, remoteScreenStream, remoteStream, remoteVideoSource])
-
-  React.useEffect(() => {
-    if (own || !connected || !camOn || !remoteVideoSource || !videoRecoveryKey || !onVideoStalled) return
-    const element = remoteVideoRef.current
-    if (!element || typeof element.requestVideoFrameCallback !== "function") return
-
-    let cancelled = false
-    let frameId: number | null = null
-    let lastFrameAt = Date.now()
-    let lastRecoveryAt = 0
-
-    const watchFrame = () => {
-      if (cancelled) return
-      frameId = element.requestVideoFrameCallback(() => {
-        lastFrameAt = Date.now()
-        watchFrame()
-      })
-    }
-    const resetWatchdog = () => {
-      lastFrameAt = Date.now()
-    }
-    watchFrame()
-    document.addEventListener("visibilitychange", resetWatchdog)
-
-    const health = window.setInterval(() => {
-      // requestVideoFrameCallback é naturalmente suspenso/atrasado quando a aba/PWA
-      // fica em background. A V111 tratava esse atraso como congelamento real e
-      // podia reiniciar uma conexão perfeitamente saudável ao voltar para a sala.
-      if (cancelled || document.visibilityState !== "visible" || !videoPlaying || !remoteHasVideo) return
-      const now = Date.now()
-      if (now - lastFrameAt < 12_000 || now - lastRecoveryAt < 20_000) return
-      lastRecoveryAt = now
-      lastFrameAt = now
-      onVideoStalled(videoRecoveryKey)
-    }, 2500)
-
-    return () => {
-      cancelled = true
-      document.removeEventListener("visibilitychange", resetWatchdog)
-      window.clearInterval(health)
-      if (frameId !== null && typeof element.cancelVideoFrameCallback === "function") {
-        element.cancelVideoFrameCallback(frameId)
-      }
-    }
-  }, [camOn, connected, onVideoStalled, own, remoteHasVideo, remoteVideoSource, videoPlaying, videoRecoveryKey])
 
   // mediaTick é proposital: MediaStream/MediaStreamTrack mudam internamente sem trocar
   // a referência do objeto. A leitura abaixo precisa ser refeita em mute/unmute/addtrack.
@@ -646,7 +596,6 @@ export function CallRoom({
   const [remoteRecordingActive, setRemoteRecordingActive] = React.useState(false)
   const localStreamRef = React.useRef<MediaStream | null>(null)
   const screenStreamRef = React.useRef<MediaStream | null>(null)
-  const mediaSessionActiveRef = React.useRef(false)
   const localVideoRef = React.useRef<HTMLVideoElement | null>(null)
   const channelRef = React.useRef<RealtimeChannel | null>(null)
   const peersRef = React.useRef<Map<string, RTCPeerConnection>>(new Map())
@@ -659,23 +608,11 @@ export function CallRoom({
   const remoteMediaStreamsRef = React.useRef<Map<string, MediaStream>>(new Map())
   const remoteMediaStateRef = React.useRef<Map<string, MediaStateSignal>>(new Map())
   const restartTimersRef = React.useRef<Map<string, number>>(new Map())
-  const offerAnswerTimersRef = React.useRef<Map<string, number>>(new Map())
   const peerPruneTimersRef = React.useRef<Map<string, number>>(new Map())
   const livePresenceSessionsRef = React.useRef<Set<string>>(new Set())
   const signalQueuesRef = React.useRef<Map<string, Promise<void>>>(new Map())
-  const peerHealthRef = React.useRef<Map<string, {
-    inboundBytes: number
-    outboundBytes: number
-    inboundVideoBytes: number
-    outboundVideoBytes: number
-    inboundVideoFrames: number
-    outboundVideoFrames: number
-    stalledChecks: number
-    videoStalledChecks: number
-    recoveries: number
-  }>>(new Map())
+  const peerHealthRef = React.useRef<Map<string, { inboundBytes: number; outboundBytes: number; stalledChecks: number }>>(new Map())
   const lastIceRestartRef = React.useRef<Map<string, number>>(new Map())
-  const lastMediaRenegotiateRef = React.useRef<Map<string, number>>(new Map())
   const presencePublishTimerRef = React.useRef<number | null>(null)
   const iceServersRef = React.useRef<RTCIceServer[]>([])
   const iceHasTurnRef = React.useRef(false)
@@ -951,10 +888,7 @@ export function CallRoom({
 
   const ensureNativeScreenReceiverPeer = React.useCallback((fromSession: string, fromUserId: string) => {
     const existing = nativeScreenPeersRef.current.get(fromSession)
-    if (existing) {
-      if (!["failed", "closed", "disconnected"].includes(existing.connectionState)) return existing
-      closeNativeScreenPeer(fromSession)
-    }
+    if (existing) return existing
     if (!meeting) return null
 
     const peer = new RTCPeerConnection({ iceServers: iceServersRef.current })
@@ -986,17 +920,6 @@ export function CallRoom({
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "failed" || peer.connectionState === "closed") {
         closeNativeScreenPeer(fromSession)
-        return
-      }
-      if (peer.connectionState === "disconnected") {
-        // DISCONNECTED costuma ser transitório em troca de Wi-Fi/4G ou ao retornar
-        // do background. Recriar em ~2 s (V111) fazia o compartilhamento entrar
-        // em ciclo de ofertas. Só substitui se a perda persistir.
-        window.setTimeout(() => {
-          if (nativeScreenPeersRef.current.get(fromSession) === peer && peer.connectionState === "disconnected") {
-            closeNativeScreenPeer(fromSession)
-          }
-        }, 8000)
       }
     }
 
@@ -1071,26 +994,17 @@ export function CallRoom({
   }, [closeNativeScreenPeer, currentUserId, ensureNativeScreenReceiverPeer, meeting?.id, nativeScreenSharing, postNativeScreenSignal])
 
   const syncPeerTracks = React.useCallback(() => {
-    const audioTrack = localStreamRef.current?.getAudioTracks().find((track) => track.readyState === "live") ?? null
-    const videoTrack = screenStreamRef.current?.getVideoTracks().find((track) => track.readyState === "live")
-      ?? localStreamRef.current?.getVideoTracks().find((track) => track.readyState === "live")
-      ?? null
+    const audioTrack = localStreamRef.current?.getAudioTracks()[0] ?? null
+    const videoTrack = screenStreamRef.current?.getVideoTracks()[0] ?? localStreamRef.current?.getVideoTracks()[0] ?? null
     peerSendersRef.current.forEach((senders, remoteSession) => {
-      const replaceIfChanged = (sender: RTCRtpSender, nextTrack: MediaStreamTrack | null, kind: "áudio" | "vídeo") => {
-        const currentTrack = sender.track
-        if (currentTrack === nextTrack) return
-        if (currentTrack && nextTrack && currentTrack.id === nextTrack.id && currentTrack.readyState === "live") return
-        void sender.replaceTrack(nextTrack).catch((error) => {
-          console.warn(`TaskBoard: não foi possível substituir a track de ${kind}`, remoteSession, error)
-          setMediaError(
-            kind === "áudio"
-              ? "O navegador não conseguiu sincronizar o microfone com um participante."
-              : "O navegador não conseguiu sincronizar a câmera com um participante.",
-          )
-        })
-      }
-      replaceIfChanged(senders.audio, audioTrack, "áudio")
-      replaceIfChanged(senders.video, videoTrack, "vídeo")
+      void senders.audio.replaceTrack(audioTrack).catch((error) => {
+        console.warn("TaskBoard: não foi possível substituir a track de áudio", remoteSession, error)
+        setMediaError("O navegador não conseguiu sincronizar o microfone com um participante.")
+      })
+      void senders.video.replaceTrack(videoTrack).catch((error) => {
+        console.warn("TaskBoard: não foi possível substituir a track de vídeo", remoteSession, error)
+        setMediaError("O navegador não conseguiu sincronizar a câmera com um participante.")
+      })
     })
   }, [])
 
@@ -1153,16 +1067,12 @@ export function CallRoom({
     const timer = restartTimersRef.current.get(sessionId)
     if (timer) window.clearTimeout(timer)
     restartTimersRef.current.delete(sessionId)
-    const offerTimer = offerAnswerTimersRef.current.get(sessionId)
-    if (offerTimer) window.clearTimeout(offerTimer)
-    offerAnswerTimersRef.current.delete(sessionId)
     const pruneTimer = peerPruneTimersRef.current.get(sessionId)
     if (pruneTimer) window.clearTimeout(pruneTimer)
     peerPruneTimersRef.current.delete(sessionId)
     signalQueuesRef.current.delete(sessionId)
     peerHealthRef.current.delete(sessionId)
     lastIceRestartRef.current.delete(sessionId)
-    lastMediaRenegotiateRef.current.delete(sessionId)
     const peer = peersRef.current.get(sessionId)
     if (peer) peer.close()
     peersRef.current.delete(sessionId)
@@ -1200,15 +1110,12 @@ export function CallRoom({
     }
     restartTimersRef.current.forEach((timer) => window.clearTimeout(timer))
     restartTimersRef.current.clear()
-    offerAnswerTimersRef.current.forEach((timer) => window.clearTimeout(timer))
-    offerAnswerTimersRef.current.clear()
     peerPruneTimersRef.current.forEach((timer) => window.clearTimeout(timer))
     peerPruneTimersRef.current.clear()
     livePresenceSessionsRef.current.clear()
     signalQueuesRef.current.clear()
     peerHealthRef.current.clear()
     lastIceRestartRef.current.clear()
-    lastMediaRenegotiateRef.current.clear()
     nativeScreenPeersRef.current.forEach((peer) => peer.close())
     nativeScreenPeersRef.current.clear()
     nativeScreenPendingIceRef.current.clear()
@@ -1242,38 +1149,15 @@ export function CallRoom({
   const syncRemoteReceiverTracks = React.useCallback((remoteSession: string, peer: RTCPeerConnection) => {
     const stream = remoteMediaStreamsRef.current.get(remoteSession)
     if (!stream) return
-
-    const receiverTracks = peer.getReceivers()
-      .map((receiver) => receiver.track)
-      .filter((track): track is MediaStreamTrack => Boolean(track && track.readyState !== "ended"))
-    const receiverIds = new Set(receiverTracks.map((track) => track.id))
     let changed = false
-
-    // Mantém no MediaStream somente as tracks que ainda pertencem ao peer atual.
-    // Depois de renegociações/recriações antigas, uma track de vídeo obsoleta podia
-    // permanecer como a primeira do stream e o <video> acabava exibindo preto.
-    for (const currentTrack of stream.getTracks()) {
-      if (currentTrack.readyState === "ended" || !receiverIds.has(currentTrack.id)) {
-        stream.removeTrack(currentTrack)
-        changed = true
-      }
-    }
-
-    for (const track of receiverTracks) {
-      // Há um único m-line por tipo neste peer. Se o navegador trocar o objeto da
-      // track durante renegociação, remove a anterior do mesmo tipo antes de anexar.
-      for (const currentTrack of stream.getTracks()) {
-        if (currentTrack.kind === track.kind && currentTrack.id !== track.id) {
-          stream.removeTrack(currentTrack)
-          changed = true
-        }
-      }
+    for (const receiver of peer.getReceivers()) {
+      const track = receiver.track
+      if (!track || track.readyState === "ended") continue
       if (!stream.getTracks().some((currentTrack) => currentTrack.id === track.id)) {
         stream.addTrack(track)
         changed = true
       }
     }
-
     if (changed || stream.getTracks().length > 0) {
       setRemoteStreams((current) => ({ ...current, [remoteSession]: stream }))
     }
@@ -1288,7 +1172,6 @@ export function CallRoom({
       initialOfferSent: false,
       offerInFlight: false,
       restartPending: false,
-      renegotiatePending: false,
     }
     peerRoleRef.current.set(remoteSession, created)
     return created
@@ -1309,21 +1192,11 @@ export function CallRoom({
       video: videoTransceiver.sender,
     })
 
-    const audioTrack = localStreamRef.current?.getAudioTracks().find((track) => track.readyState === "live") ?? null
-    const videoTrack = screenStreamRef.current?.getVideoTracks().find((track) => track.readyState === "live")
-      ?? localStreamRef.current?.getVideoTracks().find((track) => track.readyState === "live")
-      ?? null
-    const replaceOnlyWhenNeeded = (sender: RTCRtpSender, nextTrack: MediaStreamTrack | null) => {
-      const currentTrack = sender.track
-      if (currentTrack === nextTrack) return Promise.resolve()
-      if (currentTrack && nextTrack && currentTrack.id === nextTrack.id && currentTrack.readyState === "live") {
-        return Promise.resolve()
-      }
-      return sender.replaceTrack(nextTrack)
-    }
+    const audioTrack = localStreamRef.current?.getAudioTracks()[0] ?? null
+    const videoTrack = screenStreamRef.current?.getVideoTracks()[0] ?? localStreamRef.current?.getVideoTracks()[0] ?? null
     const results = await Promise.allSettled([
-      replaceOnlyWhenNeeded(audioTransceiver.sender, audioTrack),
-      replaceOnlyWhenNeeded(videoTransceiver.sender, videoTrack),
+      audioTransceiver.sender.replaceTrack(audioTrack),
+      videoTransceiver.sender.replaceTrack(videoTrack),
     ])
     const failed = results.some((result) => result.status === "rejected")
     if (failed) {
@@ -1333,21 +1206,11 @@ export function CallRoom({
     return true
   }, [])
 
-  const resyncPeerMedia = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection) => {
-    if (peer.connectionState === "closed") return
-    // V111 destacava a track com replaceTrack(null) antes de recolocá-la. Em alguns
-    // Chrome/Android isso encerra o fluxo de frames até surgir um novo keyframe e o
-    // participante remoto fica preto. A ressincronização agora é não destrutiva:
-    // apenas garante que os senders apontem para as tracks locais atuais.
-    await bindPeerSenders(remoteSession, peer)
-  }, [bindPeerSenders])
-
   const sendOffer = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection, iceRestart = false) => {
     const role = getPeerRole(remoteSession)
     if (!role.offerer || peer.connectionState === "closed" || peer.signalingState === "closed") return
     if (role.offerInFlight || peer.signalingState !== "stable") {
-      if (iceRestart) role.restartPending = true
-      else role.renegotiatePending = true
+      role.restartPending = role.restartPending || iceRestart
       return
     }
 
@@ -1358,52 +1221,13 @@ export function CallRoom({
       await peer.setLocalDescription(offer)
       if (!peer.localDescription) return
       const sent = await postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
-      if (!sent) {
-        // Se o Broadcast falhar depois de setLocalDescription(), o peer ficaria preso
-        // em have-local-offer e nunca mais enviaria a oferta inicial. Faz rollback
-        // para voltar ao estado estável e deixar a fila reenviar automaticamente.
-        if (iceRestart) role.restartPending = true
-        else role.renegotiatePending = true
-        try { await peer.setLocalDescription({ type: "rollback" }) } catch {}
-        return
-      }
-
-      role.initialOfferSent = true
-      if (iceRestart) role.restartPending = false
-      else role.renegotiatePending = false
-
-      const previousTimer = offerAnswerTimersRef.current.get(remoteSession)
-      if (previousTimer) window.clearTimeout(previousTimer)
-      const answerTimer = window.setTimeout(() => {
-        if (peersRef.current.get(remoteSession) !== peer || peer.signalingState !== "have-local-offer") return
-        // Uma answer perdida não pode deixar o participante eternamente em preto.
-        // Volta a stable e repete a mesma classe de negociação com cooldown.
-        if (iceRestart) role.restartPending = true
-        else role.renegotiatePending = true
-        void peer.setLocalDescription({ type: "rollback" }).catch((error) => {
-          console.warn("TaskBoard: não foi possível liberar uma oferta WebRTC sem resposta", remoteSession, error)
-        })
-      }, 10_000)
-      offerAnswerTimersRef.current.set(remoteSession, answerTimer)
+      if (sent) role.initialOfferSent = true
     } catch (error) {
       console.warn("TaskBoard: falha ao criar oferta determinística WebRTC", error)
       setMediaError("Não foi possível conectar o áudio e o vídeo com um participante. O TaskBoard tentará novamente.")
-      if (iceRestart) role.restartPending = true
-      else role.renegotiatePending = true
+      role.restartPending = true
     } finally {
       role.offerInFlight = false
-      // O rollback de uma oferta cujo Broadcast falhou pode voltar a `stable`
-      // enquanto offerInFlight ainda era true; nesse caso o evento de signaling
-      // não agenda a repetição. Confere a fila novamente ao sair da tentativa.
-      if (role.offerer && peer.signalingState === "stable") {
-        if (role.restartPending) {
-          role.restartPending = false
-          window.setTimeout(() => void sendOffer(remoteSession, peer, true), 1200)
-        } else if (role.renegotiatePending) {
-          role.renegotiatePending = false
-          window.setTimeout(() => void sendOffer(remoteSession, peer, false), 1200)
-        }
-      }
     }
   }, [bindPeerSenders, getPeerRole, postSignal])
 
@@ -1411,7 +1235,7 @@ export function CallRoom({
     if (peer.connectionState === "closed") return
     const now = Date.now()
     const lastRestart = lastIceRestartRef.current.get(remoteSession) ?? 0
-    if (now - lastRestart < 15_000) return
+    if (now - lastRestart < 5000) return
     lastIceRestartRef.current.set(remoteSession, now)
 
     const role = getPeerRole(remoteSession)
@@ -1420,21 +1244,6 @@ export function CallRoom({
       return
     }
     void postSignal({ type: "restart-request", toSession: remoteSession })
-  }, [getPeerRole, postSignal, sendOffer])
-
-  const requestMediaRenegotiation = React.useCallback((remoteSession: string, peer: RTCPeerConnection) => {
-    if (peer.connectionState === "closed" || peer.signalingState === "closed") return
-    const now = Date.now()
-    const last = lastMediaRenegotiateRef.current.get(remoteSession) ?? 0
-    if (now - last < 20_000) return
-    lastMediaRenegotiateRef.current.set(remoteSession, now)
-
-    const role = getPeerRole(remoteSession)
-    if (role.offerer) {
-      void sendOffer(remoteSession, peer, false)
-      return
-    }
-    void postSignal({ type: "renegotiate-request", toSession: remoteSession })
   }, [getPeerRole, postSignal, sendOffer])
 
   const ensurePeer = React.useCallback((remoteSession: string, remoteUserId: string) => {
@@ -1468,26 +1277,14 @@ export function CallRoom({
     }
 
     peer.onsignalingstatechange = () => {
-      if (!role.offerer || peer.signalingState !== "stable" || role.offerInFlight) return
-      if (role.restartPending) {
-        role.restartPending = false
-        window.setTimeout(() => void sendOffer(remoteSession, peer, true), 120)
-        return
-      }
-      if (role.renegotiatePending) {
-        role.renegotiatePending = false
-        window.setTimeout(() => void sendOffer(remoteSession, peer, false), 120)
-      }
+      if (!role.offerer || peer.signalingState !== "stable" || role.offerInFlight || !role.restartPending) return
+      role.restartPending = false
+      window.setTimeout(() => void sendOffer(remoteSession, peer, true), 100)
     }
 
     peer.ontrack = (event) => {
       const liveRemoteStream = remoteMediaStreamsRef.current.get(remoteSession) ?? remoteStream
       const track = event.track
-      for (const currentTrack of liveRemoteStream.getTracks()) {
-        if (currentTrack.kind === track.kind && currentTrack.id !== track.id) {
-          liveRemoteStream.removeTrack(currentTrack)
-        }
-      }
       if (!liveRemoteStream.getTracks().some((currentTrack) => currentTrack.id === track.id)) {
         liveRemoteStream.addTrack(track)
       }
@@ -1537,7 +1334,7 @@ export function CallRoom({
           if (peer.connectionState === "disconnected" || peer.connectionState === "failed") {
             requestIceRestart(remoteSession, peer)
           }
-        }, 8000)
+        }, 3000)
         restartTimersRef.current.set(remoteSession, timer)
       } else if (state === "failed") {
         setMediaError(
@@ -1558,30 +1355,6 @@ export function CallRoom({
 
     return peer
   }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
-
-  const recoverParticipantVideo = React.useCallback((sessionId: string) => {
-    const presence = presences[sessionId]
-    if (!presence) return
-
-    const nativeScreen = nativeScreenStreams[sessionId]
-    const hasNativeScreen = Boolean(
-      presence.screenSharing && nativeScreen?.getVideoTracks().some((track) => track.readyState === "live"),
-    )
-    if (hasNativeScreen) {
-      // Fecha apenas o receiver nativo congelado. O bridge Android detecta a
-      // desconexão e recria seu peer/offer para este participante.
-      closeNativeScreenPeer(sessionId)
-      return
-    }
-
-    const peer = peersRef.current.get(sessionId)
-    if (!peer || peer.connectionState === "closed") return
-    syncRemoteReceiverTracks(sessionId, peer)
-    // Um frame parado não significa rota ICE quebrada. Primeiro pede apenas uma
-    // ressincronização segura da mídia; o health-check decide por renegociação
-    // somente se a ausência de frames persistir.
-    void postSignal({ type: "media-resync-request", toSession: sessionId })
-  }, [closeNativeScreenPeer, nativeScreenStreams, postSignal, presences, syncRemoteReceiverTracks])
 
   const updateLocalVideo = React.useCallback(() => {
     if (!localVideoRef.current) return
@@ -1604,10 +1377,6 @@ export function CallRoom({
   }, [])
 
   const stopAllMedia = React.useCallback(() => {
-    // Desarma qualquer recuperação automática antes de parar as tracks. Caso
-    // contrário, o evento `ended` disparado pelo próprio fechamento da sala pode
-    // reacender câmera/microfone depois que o usuário já saiu da reunião.
-    mediaSessionActiveRef.current = false
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     screenStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
@@ -1652,9 +1421,7 @@ export function CallRoom({
             }
           : false,
       })
-      mediaSessionActiveRef.current = true
       localStreamRef.current = stream
-      stream.getTracks().forEach((track) => armLocalTrackRecovery(track))
       const initialMicEnabled = stream.getAudioTracks().some((track) => track.enabled)
       const initialCameraEnabled = stream.getVideoTracks().some((track) => track.enabled)
       setMicEnabled(initialMicEnabled)
@@ -1670,7 +1437,6 @@ export function CallRoom({
       syncPeerTracks()
       await refreshDevices()
     } catch (error) {
-      mediaSessionActiveRef.current = false
       setMediaError(toUserFacingError(
         error,
         "Não foi possível acessar a câmera ou o microfone. Verifique as permissões do navegador",
@@ -1824,7 +1590,7 @@ export function CallRoom({
 
   React.useEffect(() => {
     const recorder = meetingRecorderRef.current
-    if (!recorder || !meeting || meeting.createdBy !== currentUserId) return
+    if (!recorder || !meeting) return
 
     const sources: MeetingRecordingSource[] = []
     for (const member of meetingMembers) {
@@ -1866,7 +1632,7 @@ export function CallRoom({
       })
     }
     recorder.updateSources(sources)
-  }, [cameraEnabled, currentUserId, meeting?.createdBy, meeting?.id, meetingMembers, nativeScreenStreams, presences, remoteStreams, screenSharing, selectedCamera, selectedMic])
+  }, [cameraEnabled, currentUserId, meeting?.id, meetingMembers, nativeScreenStreams, presences, remoteStreams, screenSharing, selectedCamera, selectedMic])
 
   React.useEffect(() => {
     return () => {
@@ -1879,18 +1645,16 @@ export function CallRoom({
         recordingClaimTimerRef.current = null
       }
       const recorder = meetingRecorderRef.current
-      if (recorder && meeting?.createdBy === currentUserId && recordingContextRef.current?.hasContext) {
+      if (recorder && recordingContextRef.current?.hasContext) {
         void finalizeRecordingRef.current?.()
       } else if (recorder) {
-        // Defesa adicional: um participante nunca publica gravação, mesmo se um
-        // estado antigo de cliente deixar um MediaRecorder residual em memória.
         void recorder.stop()
       }
       meetingRecorderRef.current = null
       recordingContextRef.current = null
       recordingFinalizePromiseRef.current = null
     }
-  }, [currentUserId, meeting?.createdBy, meeting?.id])
+  }, [meeting?.id])
 
   React.useEffect(() => {
     if (!open || !meeting || currentMeetingState?.status !== "joined") return
@@ -2000,7 +1764,7 @@ export function CallRoom({
     }
 
     const handleRecordingStopRequest = () => {
-      if (meeting.createdBy !== currentUserId || !meetingRecorderRef.current) return
+      if (!meetingRecorderRef.current) return
       void finalizeRecordingRef.current?.()
     }
 
@@ -2011,9 +1775,6 @@ export function CallRoom({
       if (!peer) return
 
       enqueuePeerSignal(signal.fromSession, async () => {
-        // O peer pode ter sido substituído enquanto este sinal aguardava na fila.
-        // Nunca aplica SDP/candidate atrasado em uma instância já fechada.
-        if (peersRef.current.get(signal.fromSession) !== peer || peer.connectionState === "closed") return
         try {
           const role = getPeerRole(signal.fromSession)
 
@@ -2036,15 +1797,11 @@ export function CallRoom({
 
           if (signal.type === "answer" && signal.sdp) {
             if (!role.offerer || peer.signalingState !== "have-local-offer") return
-            const answerTimer = offerAnswerTimersRef.current.get(signal.fromSession)
-            if (answerTimer) window.clearTimeout(answerTimer)
-            offerAnswerTimersRef.current.delete(signal.fromSession)
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
             await flushPendingIce(signal.fromSession, peer)
             role.restartPending = false
-            role.renegotiatePending = false
             return
           }
 
@@ -2068,18 +1825,9 @@ export function CallRoom({
             return
           }
 
-          if (signal.type === "media-resync-request") {
-            await resyncPeerMedia(signal.fromSession, peer)
-            return
-          }
 
           if (signal.type === "restart-request") {
-            if (role.offerer) requestIceRestart(signal.fromSession, peer)
-            return
-          }
-
-          if (signal.type === "renegotiate-request") {
-            if (role.offerer) requestMediaRenegotiation(signal.fromSession, peer)
+            if (role.offerer) void sendOffer(signal.fromSession, peer, true)
           }
         } catch (error) {
           console.warn("TaskBoard: falha ao processar sinal WebRTC", signal.type, error)
@@ -2176,8 +1924,6 @@ export function CallRoom({
     postSignal,
     sendOffer,
     requestIceRestart,
-    requestMediaRenegotiation,
-    resyncPeerMedia,
     publishPresence,
     schedulePeerPrune,
     supabase,
@@ -2203,106 +1949,36 @@ export function CallRoom({
     updateLocalVideo()
   }, [cameraEnabled, screenSharing, updateLocalVideo])
 
-  function armLocalTrackRecovery(track: MediaStreamTrack) {
-    // Algumas implementações Android/PWA encerram a MediaStreamTrack sem derrubar
-    // o PeerConnection (troca de câmera, dispositivo removido, retomada do app).
-    // Nesse cenário a conexão continua `connected`, mas o remoto enxerga um card
-    // preto. Recupera somente a fonte local esperada e mantém o mesmo transceiver.
-    track.onended = () => {
-      if (!mediaSessionActiveRef.current) return
-      window.setTimeout(() => {
-        if (!mediaSessionActiveRef.current || document.visibilityState !== "visible") return
-        const expected = presenceStateRef.current
-        if (track.kind === "audio") {
-          const hasLiveAudio = Boolean(localStreamRef.current?.getAudioTracks().some((item) => item.readyState === "live"))
-          if (expected.micEnabled && !hasLiveAudio) {
-            void ensureAudioTrack().then(() => refreshDevices()).catch(() => {
-              setMediaError("O microfone foi desconectado e não pôde ser reativado automaticamente.")
-            })
-          }
-          return
-        }
-
-        const hasLiveVideo = Boolean(localStreamRef.current?.getVideoTracks().some((item) => item.readyState === "live"))
-        if (expected.cameraEnabled && !expected.screenSharing && !hasLiveVideo) {
-          void ensureVideoTrack().then(() => refreshDevices()).catch(() => {
-            setMediaError("A câmera foi desconectada e não pôde ser reativada automaticamente.")
-          })
-        }
-      }, 700)
-    }
-  }
-
-  async function acquireAudioTrack() {
-    const preferred = selectedMic
-      ? { deviceId: { exact: selectedMic }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-    try {
-      return await navigator.mediaDevices.getUserMedia({ audio: preferred, video: false })
-    } catch (error) {
-      if (!selectedMic) throw error
-      // Se o dispositivo escolhido sumiu (fone Bluetooth/USB, por exemplo), não
-      // mantém a reunião muda: tenta o dispositivo padrão antes de desistir.
-      return navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      })
-    }
-  }
-
   async function ensureAudioTrack() {
-    const existing = localStreamRef.current?.getAudioTracks().find((track) => track.readyState === "live")
-    if (existing) return existing
-    localStreamRef.current?.getAudioTracks().forEach((track) => {
-      if (track.readyState === "ended") localStreamRef.current?.removeTrack(track)
-    })
+    if (localStreamRef.current?.getAudioTracks().length) return localStreamRef.current.getAudioTracks()[0]
     if (!navigator.mediaDevices?.getUserMedia) return null
-    const stream = await acquireAudioTrack()
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: selectedMic
+        ? { deviceId: { exact: selectedMic }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        : { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    })
     const track = stream.getAudioTracks()[0]
     if (!localStreamRef.current) localStreamRef.current = new MediaStream()
-    if (track) {
-      track.enabled = presenceStateRef.current.micEnabled
-      armLocalTrackRecovery(track)
-      localStreamRef.current.addTrack(track)
-    }
+    if (track) localStreamRef.current.addTrack(track)
     syncPeerTracks()
     // O transceiver de áudio já existe desde o início da chamada; replaceTrack()
     // passa a enviar a mídia sem reiniciar ICE nem criar uma segunda negociação.
     return track ?? null
   }
 
-  async function acquireVideoTrack() {
-    const preferred = selectedCamera
-      ? { deviceId: { exact: selectedCamera }, width: { ideal: 1280 }, height: { ideal: 720 } }
-      : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
-    try {
-      return await navigator.mediaDevices.getUserMedia({ audio: false, video: preferred })
-    } catch (error) {
-      if (!selectedCamera) throw error
-      // A câmera selecionada pode desaparecer ao alternar USB/Bluetooth/PWA. Usa
-      // a câmera padrão como fallback sem reconstruir o PeerConnection.
-      return navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      })
-    }
-  }
-
   async function ensureVideoTrack() {
-    const existing = localStreamRef.current?.getVideoTracks().find((track) => track.readyState === "live")
-    if (existing) return existing
-    localStreamRef.current?.getVideoTracks().forEach((track) => {
-      if (track.readyState === "ended") localStreamRef.current?.removeTrack(track)
-    })
+    if (localStreamRef.current?.getVideoTracks().length) return localStreamRef.current.getVideoTracks()[0]
     if (!navigator.mediaDevices?.getUserMedia) return null
-    const stream = await acquireVideoTrack()
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: selectedCamera
+        ? { deviceId: { exact: selectedCamera }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+    })
     const track = stream.getVideoTracks()[0]
     if (!localStreamRef.current) localStreamRef.current = new MediaStream()
-    if (track) {
-      track.enabled = presenceStateRef.current.cameraEnabled
-      armLocalTrackRecovery(track)
-      localStreamRef.current.addTrack(track)
-    }
+    if (track) localStreamRef.current.addTrack(track)
     updateLocalVideo()
     syncPeerTracks()
     // O transceiver de vídeo já foi negociado desde o início; basta substituir
@@ -2431,7 +2107,6 @@ export function CallRoom({
       }
       if (next) {
         next.enabled = presenceStateRef.current.micEnabled
-        armLocalTrackRecovery(next)
         localStreamRef.current.addTrack(next)
       }
       syncPeerTracks()
@@ -2459,7 +2134,6 @@ export function CallRoom({
       }
       if (next) {
         next.enabled = presenceStateRef.current.cameraEnabled
-        armLocalTrackRecovery(next)
         localStreamRef.current.addTrack(next)
       }
       updateLocalVideo()
@@ -2553,137 +2227,63 @@ export function CallRoom({
     if (!open || !meeting || currentMeetingState?.status !== "joined") return
 
     const interval = window.setInterval(() => {
-      // Não diagnostica congelamento enquanto o navegador está em background.
-      // Chrome/PWA reduz timers, decode e requestVideoFrameCallback nessa condição.
-      if (document.visibilityState !== "visible") return
-
       peersRef.current.forEach((peer, sessionId) => {
         if (peer.connectionState !== "connected") return
 
         void peer.getStats().then((stats) => {
           let inboundBytes = 0
           let outboundBytes = 0
-          let inboundVideoBytes = 0
-          let outboundVideoBytes = 0
-          let inboundVideoFrames = 0
-          let outboundVideoFrames = 0
-
           stats.forEach((report) => {
-            const kind = String(report.kind ?? report.mediaType ?? "")
             if (report.type === "inbound-rtp" && !report.isRemote) {
-              const bytes = Number(report.bytesReceived ?? 0)
-              inboundBytes += bytes
-              if (kind === "video") {
-                inboundVideoBytes += bytes
-                inboundVideoFrames += Number(report.framesDecoded ?? report.framesReceived ?? 0)
-              }
+              inboundBytes += Number(report.bytesReceived ?? 0)
             } else if (report.type === "outbound-rtp" && !report.isRemote) {
-              const bytes = Number(report.bytesSent ?? 0)
-              outboundBytes += bytes
-              if (kind === "video") {
-                outboundVideoBytes += bytes
-                outboundVideoFrames += Number(report.framesEncoded ?? report.framesSent ?? 0)
-              }
+              outboundBytes += Number(report.bytesSent ?? 0)
             }
           })
-
           const previous = peerHealthRef.current.get(sessionId)
-          const remote = presences[sessionId]
+          const remote = remoteMediaStateRef.current.get(sessionId)
+          const inboundExpected = Boolean(
+            remote?.micEnabled || remote?.cameraEnabled || remote?.screenSharing,
+          )
           const local = presenceStateRef.current
-          const hasNativeRemoteScreen = Boolean(
-            nativeScreenStreams[sessionId]?.getVideoTracks().some((track) => track.readyState === "live"),
+          const outboundExpected = Boolean(
+            local.micEnabled || local.cameraEnabled || local.screenSharing,
           )
-          const inboundExpected = Boolean(remote?.micEnabled || remote?.cameraEnabled || remote?.screenSharing)
-          const outboundExpected = Boolean(local.micEnabled || local.cameraEnabled || local.screenSharing)
-          // Compartilhamento nativo Android trafega em outro PeerConnection.
-          const inboundVideoExpected = Boolean(
-            remote?.cameraEnabled || (remote?.screenSharing && !hasNativeRemoteScreen),
+          const inboundStalled = Boolean(
+            previous && inboundExpected && inboundBytes <= previous.inboundBytes,
           )
-          const outboundVideoExpected = Boolean(
-            local.cameraEnabled || (local.screenSharing && !nativeScreenSharing),
+          const outboundStalled = Boolean(
+            previous && outboundExpected && outboundBytes <= previous.outboundBytes,
           )
-
-          const inboundStalled = Boolean(previous && inboundExpected && inboundBytes <= previous.inboundBytes)
-          const outboundStalled = Boolean(previous && outboundExpected && outboundBytes <= previous.outboundBytes)
-          const inboundVideoStalled = Boolean(
-            previous
-            && inboundVideoExpected
-            && inboundVideoBytes <= previous.inboundVideoBytes
-            && inboundVideoFrames <= previous.inboundVideoFrames,
-          )
-          const outboundVideoStalled = Boolean(
-            previous
-            && outboundVideoExpected
-            && outboundVideoBytes <= previous.outboundVideoBytes
-            && outboundVideoFrames <= previous.outboundVideoFrames,
-          )
-
           const stalledChecks = inboundStalled || outboundStalled
             ? (previous?.stalledChecks ?? 0) + 1
             : 0
-          const videoStalledChecks = inboundVideoStalled || outboundVideoStalled
-            ? (previous?.videoStalledChecks ?? 0) + 1
-            : 0
-          const recoveries = previous?.recoveries ?? 0
-
           peerHealthRef.current.set(sessionId, {
             inboundBytes,
             outboundBytes,
-            inboundVideoBytes,
-            outboundVideoBytes,
-            inboundVideoFrames,
-            outboundVideoFrames,
             stalledChecks,
-            videoStalledChecks,
-            recoveries,
           })
 
           syncRemoteReceiverTracks(sessionId, peer)
-
-          // V140: uma câmera congelada não derruba mais a rota ICE nem recria o peer.
-          // Primeiro pede rebind não destrutivo; se os frames seguirem parados por
-          // uma janela longa, renegocia SDP mantendo o mesmo PeerConnection.
-          if (videoStalledChecks === 3) {
-            void postSignal({ type: "media-resync-request", toSession: sessionId })
+          // Quatro verificações de 5 s evitam reiniciar por jitter momentâneo.
+          // Quando RTP realmente para por ~20 s, recupera a rota ICE automaticamente.
+          if (stalledChecks >= 4) {
             peerHealthRef.current.set(sessionId, {
               inboundBytes,
               outboundBytes,
-              inboundVideoBytes,
-              outboundVideoBytes,
-              inboundVideoFrames,
-              outboundVideoFrames,
-              stalledChecks,
-              videoStalledChecks,
-              recoveries: recoveries + 1,
+              stalledChecks: 0,
             })
-          } else if (videoStalledChecks >= 6) {
-            requestMediaRenegotiation(sessionId, peer)
-          }
-
-          // ICE restart só é usado quando a conectividade realmente caiu. Se RTP
-          // parou com ICE ainda conectado, uma renegociação de mídia é mais segura.
-          if (stalledChecks >= 5) {
-            if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-              requestIceRestart(sessionId, peer)
-            } else {
-              requestMediaRenegotiation(sessionId, peer)
-            }
+            requestIceRestart(sessionId, peer)
           }
         }).catch(() => undefined)
       })
-    }, 4000)
-
+    }, 5000)
     return () => window.clearInterval(interval)
   }, [
-    currentMeetingState?.status,
-    meeting?.id,
-    nativeScreenSharing,
-    nativeScreenStreams,
     open,
-    postSignal,
-    presences,
+    meeting?.id,
+    currentMeetingState?.status,
     requestIceRestart,
-    requestMediaRenegotiation,
     syncRemoteReceiverTracks,
   ])
 
@@ -3307,8 +2907,6 @@ export function CallRoom({
                       prioritized={prioritized}
                       compact={compact}
                       onPrioritize={minimized ? undefined : () => setFocusedMemberId((current) => current === member.id ? null : member.id)}
-                      videoRecoveryKey={presence?.sessionId}
-                      onVideoStalled={recoverParticipantVideo}
                       deafened={deafened}
                     />
                   </div>

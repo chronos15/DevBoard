@@ -60,7 +60,7 @@ No Supabase, verifique também os logs do Realtime. O Devboard usa Broadcast par
 
 ## Estabilidade de rede / mobile
 
-Esta versão mantém peers WebRTC por uma janela de tolerância quando o Supabase Presence oscila durante troca de Wi‑Fi/4G, background/foreground ou reconexão do socket. A sinalização SDP/ICE é processada em fila por peer para impedir concorrência entre `offer`, `answer` e candidatos ICE. O health-check periódico recupera primeiro a mídia por rebind/renegociação e reserva ICE restart para falha real de transporte.
+Esta versão mantém peers WebRTC por uma janela de tolerância quando o Supabase Presence oscila durante troca de Wi‑Fi/4G, background/foreground ou reconexão do socket. A sinalização SDP/ICE é processada em fila por peer para impedir concorrência entre `offer`, `answer` e candidatos ICE. Na V141, o health-check volta ao comportamento da V110: monitora progresso agregado de RTP e solicita ICE restart somente após quatro verificações consecutivas (~20 s) sem progresso esperado.
 
 Teste recomendado:
 
@@ -76,7 +76,7 @@ O Devboard usa `navigator.mediaDevices.getDisplayMedia()` quando a API existe. O
 
 No Chrome Android/Android WebView, a API de captura de tela do sistema ainda não é exposta ao conteúdo web. Nesse ambiente o Devboard mostra uma mensagem específica em vez do erro genérico de contexto. Captura da tela inteira do aparelho Android exigirá um cliente Android nativo (por exemplo, usando MediaProjection) ou um wrapper com ponte nativa; uma PWA/web pura não consegue contornar a ausência da API do navegador.
 
-## V140 — estabilidade de vídeo e gravação owner-only
+## V140 — estabilidade de vídeo e gravação owner-only (histórico; substituído pela V141)
 
 A V140 corrige a estratégia de recuperação introduzida na V111. O problema não era apenas detectar vídeo parado; a recuperação anterior podia ser destrutiva demais para uma conexão que ainda estava saudável.
 
@@ -119,3 +119,19 @@ Não há migration nova na V140.
 8. Encerre a reunião por participante e por owner. Somente o owner deve produzir/uploadar/publicar a gravação.
 
 Para chamadas entre redes diferentes, o TURN continua sendo necessário quando uma rota direta não é possível. Confira em **Áudio e vídeo → Conectividade WebRTC** se a Edge Function `webrtc-ice-servers` está retornando TURN.
+
+## V141 — retorno controlado ao núcleo WebRTC da V110
+
+A V141 substitui a estratégia experimental de recuperação de vídeo introduzida na V111 e modificada novamente na V140. Como a reunião era estável até a V110, o fluxo de mídia/sinalização voltou à base conhecida como funcional, sem rollback dos demais módulos do TaskBoard.
+
+Comportamento efetivo da V141:
+
+- não existe `media-resync-request`;
+- não existe `replaceTrack(null) -> track` para tentar forçar keyframe;
+- um card sem avanço visual não destrói/recria o peer;
+- o health-check volta a observar RTP total em intervalos de 5 s e solicita ICE restart após quatro verificações consecutivas sem progresso;
+- `DISCONNECTED` do compartilhamento nativo Android não recria o peer imediatamente;
+- o receiver nativo só é fechado automaticamente em `failed` ou `closed`;
+- a gravação continua **owner-only**, protegida no frontend e pela migration 087.
+
+Para validar a regressão, priorize primeiro um teste simples com dois navegadores/dispositivos, câmera e microfone ligados por alguns minutos. Depois teste câmera on/off, background/foreground, troca de rede e compartilhamento de tela. Isso ajuda a separar falha de negociação/mídia de limitações de TURN/rede.

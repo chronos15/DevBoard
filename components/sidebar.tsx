@@ -30,6 +30,7 @@ import { ProjectIcon } from "@/components/projects/project-icon"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 import { canAccessScreen } from "@/lib/access-control"
 import type { ScreenAccessKey } from "@/lib/types"
+import { TASKBOARD_BUILD, TASKBOARD_VERSION, TASKBOARD_VERSION_LABEL } from "@/lib/app-version"
 
 const SIDEBAR_COLLAPSED_KEY = "devboard-sidebar-collapsed-v1"
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "cadence-sidebar-collapsed-v1"
@@ -405,6 +406,16 @@ export function Sidebar({
             <LogOut className="size-[1.15rem] shrink-0" />
             <span className={cn(collapsed && "lg:hidden")}>Sair</span>
           </button>
+          <div
+            className={cn(
+              "-mt-0.5 select-none px-3 text-center font-mono text-[0.52rem] leading-none tracking-[0.04em] text-sidebar-foreground/35",
+              collapsed && "lg:hidden",
+            )}
+            title={TASKBOARD_VERSION_LABEL}
+            aria-label={`TaskBoard ${TASKBOARD_VERSION_LABEL}`}
+          >
+            {TASKBOARD_VERSION} <span aria-hidden>·</span> build {TASKBOARD_BUILD}
+          </div>
         </div>
       </aside>
     </>

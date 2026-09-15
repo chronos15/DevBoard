@@ -196,3 +196,29 @@ Teste mínimo:
 5. em seguida devem aparecer answer e candidatos ICE; o card remoto deve mudar de `Conectando mídia` para conectado;
 6. o aviso `Realtime send() is automatically falling back to REST API` não deve mais ser originado pelo módulo de reunião;
 7. mantenha a migration 090 aplicada. Não existe migration nova na V146.
+
+## V147 — fim do loop offer/answer/ICE restart
+
+A V147 corrige um ciclo interno que podia impedir a chamada de estabilizar mesmo com TURN funcional. O padrão observado era `answer recebida` seguido imediatamente por nova `offer` com `iceRestart: true` enquanto a negociação anterior ainda estava sendo concluída.
+
+Comportamento efetivo:
+
+- não existe mais `restartPending`;
+- `signalingstatechange` não cria offer automaticamente;
+- ICE restart só pode ocorrer com `signalingState === stable`, `localDescription` e `remoteDescription` válidas;
+- `failed` espera 4,5 s e `disconnected` espera 8 s antes da recuperação;
+- se o ICE ainda estiver em `gathering`, o restart é adiado;
+- timers antigos de restart são cancelados antes de aplicar offer/answer;
+- um `restart-request` recebido durante `have-local-offer` apenas reenvia a offer atual, sem empilhar outra negociação;
+- o console informa `TaskBoard: candidato TURN relay remoto recebido` quando o candidate relay do outro lado efetivamente chega;
+- erros 701 de rotas específicas ficam em nível debug quando há outras rotas disponíveis.
+
+Teste mínimo:
+
+1. crie uma reunião nova após o deploy;
+2. abra em dois usuários/dispositivos;
+3. confirme que aparece apenas uma offer inicial e uma answer correspondente;
+4. não deve existir sequência contínua `answer -> offer iceRestart -> answer -> offer iceRestart`;
+5. valide `candidato TURN relay disponível` e, quando necessário, `candidato TURN relay remoto recebido`;
+6. aguarde pelo menos 10 s antes de concluir que a primeira rota falhou;
+7. somente após falha persistente deve ocorrer um ICE restart controlado.

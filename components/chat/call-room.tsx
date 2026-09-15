@@ -122,7 +122,6 @@ type PeerRoleState = {
   offerer: boolean
   initialOfferSent: boolean
   offerInFlight: boolean
-  restartPending: boolean
 }
 
 type PanelMode = "participants" | "chat" | "settings" | null
@@ -637,6 +636,7 @@ export function CallRoom({
   const offerRequestSentRef = React.useRef<Set<string>>(new Set())
   const iceErrorKeysRef = React.useRef<Set<string>>(new Set())
   const relayCandidateSeenRef = React.useRef<Set<string>>(new Set())
+  const remoteRelayCandidateSeenRef = React.useRef<Set<string>>(new Set())
   const sessionIdRef = React.useRef(makeSessionId())
   const authTokenRef = React.useRef<string | null>(null)
   const joinedAtRef = React.useRef(new Date().toISOString())
@@ -1119,6 +1119,8 @@ export function CallRoom({
     for (const key of Array.from(iceErrorKeysRef.current)) {
       if (key.startsWith(`${sessionId}|`)) iceErrorKeysRef.current.delete(key)
     }
+    relayCandidateSeenRef.current.delete(sessionId)
+    remoteRelayCandidateSeenRef.current.delete(sessionId)
     const peer = peersRef.current.get(sessionId)
     if (peer) peer.close()
     peersRef.current.delete(sessionId)
@@ -1167,6 +1169,7 @@ export function CallRoom({
     lastIceRestartRef.current.clear()
     iceErrorKeysRef.current.clear()
     relayCandidateSeenRef.current.clear()
+    remoteRelayCandidateSeenRef.current.clear()
     nativeScreenPeersRef.current.forEach((peer) => peer.close())
     nativeScreenPeersRef.current.clear()
     nativeScreenPendingIceRef.current.clear()
@@ -1225,7 +1228,6 @@ export function CallRoom({
       offerer: sessionIdRef.current < remoteSession,
       initialOfferSent: false,
       offerInFlight: false,
-      restartPending: false,
     }
     peerRoleRef.current.set(remoteSession, created)
     return created
@@ -1263,10 +1265,7 @@ export function CallRoom({
   const sendOffer = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection, iceRestart = false) => {
     const role = getPeerRole(remoteSession)
     if (!role.offerer || peer.connectionState === "closed" || peer.signalingState === "closed") return
-    if (role.offerInFlight || peer.signalingState !== "stable") {
-      role.restartPending = role.restartPending || iceRestart
-      return
-    }
+    if (role.offerInFlight || peer.signalingState !== "stable") return
 
     role.offerInFlight = true
     try {
@@ -1285,20 +1284,34 @@ export function CallRoom({
     } catch (error) {
       console.warn("TaskBoard: falha ao criar oferta WebRTC", error)
       setMediaError("Não foi possível conectar o áudio e o vídeo com um participante. O TaskBoard tentará novamente.")
-      role.restartPending = true
     } finally {
       role.offerInFlight = false
     }
   }, [bindPeerSenders, getPeerRole, postSignal])
 
-  const requestIceRestart = React.useCallback((remoteSession: string, peer: RTCPeerConnection) => {
-    if (peer.connectionState === "closed") return
-    const now = Date.now()
-    const lastRestart = lastIceRestartRef.current.get(remoteSession) ?? 0
-    if (now - lastRestart < 5000) return
-    lastIceRestartRef.current.set(remoteSession, now)
+  const requestIceRestart = React.useCallback((remoteSession: string, peer: RTCPeerConnection, force = false) => {
+    if (peer.connectionState === "closed" || peer.signalingState === "closed") return
 
     const role = getPeerRole(remoteSession)
+    const transportFailed = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
+    if (!force && !transportFailed) return
+
+    // Nunca inicia uma nova offer enquanto outra negociação está em andamento.
+    // O comportamento anterior deixava um restart pendente em have-local-offer;
+    // quando a answer chegava e o estado virava stable, outra offer era criada
+    // imediatamente, produzindo um loop offer -> answer -> iceRestart.
+    if (
+      role.offerInFlight ||
+      peer.signalingState !== "stable" ||
+      !peer.localDescription ||
+      !peer.remoteDescription
+    ) return
+
+    const now = Date.now()
+    const lastRestart = lastIceRestartRef.current.get(remoteSession) ?? 0
+    if (now - lastRestart < 10_000) return
+    lastIceRestartRef.current.set(remoteSession, now)
+
     if (role.offerer) {
       void sendOffer(remoteSession, peer, true)
       return
@@ -1334,12 +1347,6 @@ export function CallRoom({
         video: videoTransceiver.sender,
       })
       void bindPeerSenders(remoteSession, peer)
-    }
-
-    peer.onsignalingstatechange = () => {
-      if (!role.offerer || peer.signalingState !== "stable" || role.offerInFlight || !role.restartPending) return
-      role.restartPending = false
-      window.setTimeout(() => void sendOffer(remoteSession, peer, true), 100)
     }
 
     peer.ontrack = (event) => {
@@ -1392,7 +1399,8 @@ export function CallRoom({
       const key = `${remoteSession}|${url}|${code}|${address}`
       if (!iceErrorKeysRef.current.has(key)) {
         iceErrorKeysRef.current.add(key)
-        console.warn("TaskBoard: erro ICE", {
+        const iceLog = code === 701 ? console.debug : console.warn
+        iceLog("TaskBoard: erro ICE", {
           remoteSession,
           errorCode: code,
           errorText: detail.errorText,
@@ -1409,8 +1417,27 @@ export function CallRoom({
       }
     }
 
+    const scheduleTransportRestart = (delay: number) => {
+      const previousTimer = restartTimersRef.current.get(remoteSession)
+      if (previousTimer) window.clearTimeout(previousTimer)
+      const timer = window.setTimeout(() => {
+        restartTimersRef.current.delete(remoteSession)
+        if (peer.connectionState === "closed" || peer.signalingState === "closed") return
+        const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
+        if (!stillBroken) return
+        // Se a offer/answer ainda estiver em andamento ou ainda houver gathering,
+        // dá tempo para candidatos tardios chegarem em vez de reiniciar a negociação.
+        if (peer.signalingState !== "stable" || peer.iceGatheringState === "gathering") {
+          scheduleTransportRestart(2500)
+          return
+        }
+        requestIceRestart(remoteSession, peer)
+      }, delay)
+      restartTimersRef.current.set(remoteSession, timer)
+    }
+
     peer.oniceconnectionstatechange = () => {
-      if (peer.iceConnectionState === "failed") requestIceRestart(remoteSession, peer)
+      if (peer.iceConnectionState === "failed") scheduleTransportRestart(4500)
     }
 
     peer.onconnectionstatechange = () => {
@@ -1423,19 +1450,12 @@ export function CallRoom({
         if (timer) window.clearTimeout(timer)
         restartTimersRef.current.delete(remoteSession)
       } else if (state === "disconnected") {
-        const oldTimer = restartTimersRef.current.get(remoteSession)
-        if (oldTimer) window.clearTimeout(oldTimer)
-        const timer = window.setTimeout(() => {
-          if (peer.connectionState === "disconnected" || peer.connectionState === "failed") {
-            requestIceRestart(remoteSession, peer)
-          }
-        }, 3000)
-        restartTimersRef.current.set(remoteSession, timer)
+        scheduleTransportRestart(8000)
       } else if (state === "failed") {
         setMediaError(
           "A conexão de áudio e vídeo foi interrompida. O TaskBoard está tentando restabelecer a reunião automaticamente.",
         )
-        requestIceRestart(remoteSession, peer)
+        scheduleTransportRestart(4500)
       } else if (state === "closed") {
         closePeer(remoteSession)
       }
@@ -1899,6 +1919,9 @@ export function CallRoom({
             if (role.offerer) return
             console.log("TaskBoard: offer WebRTC recebida", { remoteSession: signal.fromSession })
             offerRequestSentRef.current.delete(signal.fromSession)
+            const staleRestartTimer = restartTimersRef.current.get(signal.fromSession)
+            if (staleRestartTimer) window.clearTimeout(staleRestartTimer)
+            restartTimersRef.current.delete(signal.fromSession)
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
@@ -1909,21 +1932,44 @@ export function CallRoom({
             if (peer.localDescription) {
               await postSignal({ type: "answer", toSession: signal.fromSession, sdp: peer.localDescription })
             }
+            window.setTimeout(() => {
+              const livePeer = peersRef.current.get(signal.fromSession)
+              if (livePeer !== peer || peer.connectionState === "connected" || peer.connectionState === "closed") return
+              const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
+              if (stillBroken && peer.signalingState === "stable" && peer.iceGatheringState !== "gathering") {
+                requestIceRestart(signal.fromSession, peer)
+              }
+            }, 6500)
             return
           }
 
           if (signal.type === "answer" && signal.sdp) {
             if (!role.offerer || peer.signalingState !== "have-local-offer") return
             console.log("TaskBoard: answer WebRTC recebida", { remoteSession: signal.fromSession })
+            const staleRestartTimer = restartTimersRef.current.get(signal.fromSession)
+            if (staleRestartTimer) window.clearTimeout(staleRestartTimer)
+            restartTimersRef.current.delete(signal.fromSession)
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
             await flushPendingIce(signal.fromSession, peer)
-            role.restartPending = false
+            window.setTimeout(() => {
+              const livePeer = peersRef.current.get(signal.fromSession)
+              if (livePeer !== peer || peer.connectionState === "connected" || peer.connectionState === "closed") return
+              const stillBroken = peer.iceConnectionState === "failed" || peer.connectionState === "failed" || peer.connectionState === "disconnected"
+              if (stillBroken && peer.signalingState === "stable" && peer.iceGatheringState !== "gathering") {
+                requestIceRestart(signal.fromSession, peer)
+              }
+            }, 6500)
             return
           }
 
           if (signal.type === "ice" && signal.candidate) {
+            const candidateText = String(signal.candidate.candidate ?? "")
+            if (/\styp\s+relay\b/i.test(candidateText) && !remoteRelayCandidateSeenRef.current.has(signal.fromSession)) {
+              remoteRelayCandidateSeenRef.current.add(signal.fromSession)
+              console.info("TaskBoard: candidato TURN relay remoto recebido", { remoteSession: signal.fromSession })
+            }
             if (!peer.remoteDescription) {
               const queue = pendingIceRef.current.get(signal.fromSession) ?? []
               queue.push(signal.candidate)
@@ -1942,7 +1988,17 @@ export function CallRoom({
           }
 
           if (signal.type === "restart-request") {
-            if (role.offerer) void sendOffer(signal.fromSession, peer, true)
+            if (!role.offerer) return
+            if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
+              // O outro participante pode ter entrado depois da primeira offer.
+              // Reenvia a mesma descrição em vez de empilhar uma nova negociação.
+              void postSignal({ type: "offer", toSession: signal.fromSession, sdp: peer.localDescription })
+              return
+            }
+            if (peer.signalingState === "stable") {
+              const isRecovery = Boolean(peer.localDescription && peer.remoteDescription)
+              void sendOffer(signal.fromSession, peer, isRecovery)
+            }
           }
         } catch (error) {
           console.warn("TaskBoard: falha ao processar sinal WebRTC", signal.type, error)
@@ -2382,7 +2438,7 @@ export function CallRoom({
             peer.connectionState === "failed" ||
             peer.connectionState === "disconnected"
           ) {
-            requestIceRestart(sessionId, peer)
+            requestIceRestart(sessionId, peer, forceIceRestart)
           }
         })
       } finally {
@@ -2469,7 +2525,7 @@ export function CallRoom({
               outboundBytes,
               stalledChecks: 0,
             })
-            requestIceRestart(sessionId, peer)
+            requestIceRestart(sessionId, peer, true)
           }
         }).catch(() => undefined)
       })

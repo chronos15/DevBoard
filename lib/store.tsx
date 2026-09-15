@@ -736,7 +736,7 @@ function currentPresenceLocation() {
   else if (pathname.startsWith("/chat")) screenLabel = "Mensagens"
   else if (pathname.startsWith("/horas")) screenLabel = "Controle de horas"
   else if (pathname.startsWith("/agenda")) screenLabel = "Agenda"
-  else if (pathname.startsWith("/relatorios")) screenLabel = "Relatórios"
+  else if (pathname.startsWith("/relatorios")) screenLabel = "Administrativo"
   else if (pathname.startsWith("/dev")) screenLabel = "Painel DEV"
   else if (pathname.startsWith("/config")) screenLabel = "Configurações"
   else if (pathname.startsWith("/topicos")) screenLabel = "Tópicos"

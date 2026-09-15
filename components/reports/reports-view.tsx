@@ -1087,7 +1087,7 @@ ${ganttPrintHtml}
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold">Central de relatórios</h2>
+                <h2 className="text-sm font-semibold">Central administrativa</h2>
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[0.6rem] font-semibold text-muted-foreground">
                   ADMIN · CONTROLE TOTAL
                 </span>
@@ -1145,8 +1145,8 @@ ${ganttPrintHtml}
           setFiltersOpen(open)
         }}
       >
-        <DialogContent className="max-h-[min(92vh,780px)] max-w-[calc(100%-1.5rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl">
-          <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+        <DialogContent className="grid h-[min(92dvh,780px)] max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="shrink-0 border-b border-border px-4 py-3.5 pr-12 sm:px-5 sm:py-4 sm:pr-14">
             <div className="flex items-center gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
                 <SlidersHorizontal className="size-4" />
@@ -1160,7 +1160,7 @@ ${ganttPrintHtml}
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-4 [scrollbar-gutter:stable] sm:px-5">
             <div className="grid gap-4">
               <section className="rounded-xl border border-border bg-muted/10 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -1321,7 +1321,7 @@ ${ganttPrintHtml}
             </div>
           </div>
 
-          <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
             <button
               type="button"
               onClick={resetDraftFilters}
@@ -1465,6 +1465,7 @@ ${ganttPrintHtml}
           <div className="flex shrink-0 flex-wrap items-center gap-3 text-[0.65rem] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><span className="h-2 w-6 rounded-full bg-primary/15" />Janela de execução</span>
             <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded bg-primary/80" />Dia com horas</span>
+            <span className="sm:hidden">Deslize horizontalmente para navegar pelos dias.</span>
           </div>
         </div>
 
@@ -1478,10 +1479,10 @@ ${ganttPrintHtml}
         ) : ganttRows.length === 0 ? (
           <div className="py-8"><EmptyReportState /></div>
         ) : (
-          <div className="max-h-[36rem] overflow-auto">
-            <div style={{ minWidth: `${320 + visibleGanttDays.length * 30}px` }}>
+          <div className="max-h-[36rem] w-full max-w-full overflow-x-auto overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+            <div className="w-max" style={{ minWidth: `${Math.max(640, 256 + visibleGanttDays.length * 30)}px` }}>
               <div className="sticky top-0 z-30 flex border-b border-border bg-card shadow-[0_1px_0_var(--border)]">
-                <div className="sticky left-0 z-40 flex w-80 shrink-0 items-center border-r border-border bg-card px-4 py-2.5 lg:px-5">
+                <div className="sticky left-0 z-40 flex w-64 shrink-0 items-center border-r border-border bg-card px-3 py-2.5 sm:w-80 sm:px-4 lg:px-5">
                   <span className="font-mono text-[0.58rem] font-semibold tracking-widest text-muted-foreground uppercase">Escopo</span>
                 </div>
                 <div className="flex">
@@ -1511,7 +1512,7 @@ ${ganttPrintHtml}
                 const maxDaySeconds = Math.max(1, ...daily.values())
                 return (
                   <div key={item.subactivityId} className="flex min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/10">
-                    <div className="sticky left-0 z-20 flex w-80 shrink-0 items-center gap-2.5 border-r border-border bg-card px-4 py-2 lg:px-5">
+                    <div className="sticky left-0 z-20 flex w-64 shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-80 sm:gap-2.5 sm:px-4 lg:px-5">
                       <MemberAvatar member={member} className="size-7 shrink-0 rounded-lg text-[0.58rem] ring-0" />
                       <div className="min-w-0">
                         <p className="truncate text-[0.62rem] font-medium text-muted-foreground" title={item.projectName}>{item.projectName}</p>

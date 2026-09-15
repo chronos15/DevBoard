@@ -32,11 +32,11 @@ const topics = [
   },
   {
     icon: BarChart3,
-    title: "Relatórios",
+    title: "Administrativo",
     desc: "Interprete métricas de horas e desempenho da equipe.",
     tone: "text-chart-4",
     bg: "bg-chart-4/12",
-    search: "relatórios",
+    search: "administrativo relatórios",
   },
   {
     icon: Users,
@@ -63,7 +63,7 @@ const faqs = [
   },
   {
     q: "É possível exportar os relatórios?",
-    a: "Na página de Relatórios use o botão Exportar no topo para baixar um resumo de horas e progresso respeitando o seu nível de acesso.",
+    a: "No módulo Administrativo use as opções de exportação para baixar os relatórios de horas e progresso respeitando o seu nível de acesso.",
   },
   {
     q: "Como convidar novos membros para o time?",

@@ -12,7 +12,7 @@ export const SCREEN_ACCESS_DEFINITIONS: Array<{ key: ScreenAccessKey; label: str
   { key: "hours", label: "Controle de horas", description: "Apontamentos e histórico de horas." },
   { key: "agenda", label: "Agenda", description: "Agenda e prazos do workspace." },
   { key: "chat", label: "Chat", description: "Canais, conversas e mensagens." },
-  { key: "reports", label: "Relatórios", description: "Central administrativa de relatórios." },
+  { key: "reports", label: "Administrativo", description: "Central administrativa de relatórios." },
   { key: "settings", label: "Configurações", description: "Preferências e, para administradores, gestão da equipe e permissões." },
 ]
 

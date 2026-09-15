@@ -55,7 +55,7 @@ const nav = [
   { href: "/horas", label: "Controle de horas", icon: Clock3, roles: ["admin","developer"], screen: "hours" },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["admin","developer"], screen: "agenda" },
   { href: "/chat", label: "Chat", icon: MessagesSquare, roles: ["admin","developer","aqs","support","member"], screen: "chat" },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin"], screen: "reports" },
+  { href: "/relatorios", label: "Administrativo", icon: BarChart3, roles: ["admin"], screen: "reports" },
 ] as const
 
 

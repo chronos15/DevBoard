@@ -70,6 +70,7 @@ import type { ActivityFilter } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { serviceRequestReference } from "@/lib/service-requests"
 import { createClient } from "@/lib/supabase/client"
+import { clearActiveFollowUpContext, publishActiveFollowUpContext } from "@/lib/active-follow-up-context"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
@@ -1236,11 +1237,48 @@ export function ProjectFollowUp({
   }, [project.id, selectedSub, unreadFollowUpNotifications])
 
   React.useEffect(() => {
+    if (!selectedSub || !selectedActivity) {
+      clearActiveFollowUpContext(currentUserId)
+      return
+    }
+
+    const publish = () => {
+      if (document.visibilityState !== "visible") {
+        clearActiveFollowUpContext(currentUserId)
+        return
+      }
+      publishActiveFollowUpContext({
+        userId: currentUserId,
+        projectId: project.id,
+        activityId: selectedActivity.id,
+        subactivityId: selectedSub.id,
+      })
+    }
+
+    publish()
+    const heartbeat = window.setInterval(publish, 5_000)
+    window.addEventListener("focus", publish)
+    window.addEventListener("pageshow", publish)
+    document.addEventListener("visibilitychange", publish)
+
+    return () => {
+      window.clearInterval(heartbeat)
+      window.removeEventListener("focus", publish)
+      window.removeEventListener("pageshow", publish)
+      document.removeEventListener("visibilitychange", publish)
+      clearActiveFollowUpContext(currentUserId)
+    }
+  }, [currentUserId, project.id, selectedActivity, selectedSub])
+
+  React.useEffect(() => {
     if (!selectedSub || !selectedActivity || !selectedUnreadIdsKey) return
     let timer: number | null = null
 
     const scheduleRead = () => {
-      if (document.visibilityState !== "visible" || !document.hasFocus()) return
+      // document.hasFocus() não é confiável em alguns PWAs Android. Se a página
+      // está visível e esta subatividade está selecionada, ela já está sendo
+      // acompanhada e pode ser consolidada como lida.
+      if (document.visibilityState !== "visible") return
       if (timer) window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         void markFollowUpContextRead({
@@ -1248,7 +1286,7 @@ export function ProjectFollowUp({
           activityId: selectedActivity.id,
           subactivityId: selectedSub.id,
         })
-      }, 650)
+      }, 250)
     }
 
     const onVisibility = () => {

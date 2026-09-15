@@ -5,6 +5,7 @@ import { BellRing } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
+import { isFollowUpContextActive } from "@/lib/active-follow-up-context"
 
 const SW_PATH = "/devboard-sw.js"
 
@@ -129,6 +130,20 @@ export function BrowserNotifications() {
         ? `${notification.id}:${notification.createdAt}`
         : notification.id
       if (shownRef.current.has(shownKey)) continue
+
+      // Se a própria subatividade já está aberta e visível em qualquer aba/PWA
+      // deste usuário, a atualização já está sendo acompanhada. Marcamos a chave
+      // como processada para impedir que uma corrida entre Realtime e read_at
+      // faça o aviso aparecer alguns milissegundos depois.
+      if (isFollowUpContextActive({
+        projectId: notification.projectId,
+        activityId: notification.activityId,
+        subactivityId: notification.subactivityId,
+      }, currentUserId)) {
+        shownRef.current.add(shownKey)
+        continue
+      }
+
       shownRef.current.add(shownKey)
       const actor = members.find((member) => member.id === notification.actorId)
       const params = new URLSearchParams({ project: notification.projectId! })

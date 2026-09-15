@@ -43,20 +43,53 @@ async function cleanupExpiredShares(cache) {
 }
 
 async function handleShareTarget(request) {
+  // Mantemos uma cópia intacta do POST. Alguns WebViews/versões do Chrome no
+  // Android conseguem entregar o multipart ao servidor, mas expõem o arquivo
+  // como vazio (ou nem o materializam) ao chamar formData() no Service Worker.
+  // Nesses casos fazemos passthrough do POST original para /share-target, onde
+  // o receptor do Next/Supabase preserva o binário no inbox temporário.
+  const serverFallbackRequest = request.clone()
   const formData = await request.formData()
   const shareId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
   const files = []
-  for (const [, entry] of formData.entries()) {
-    if (typeof entry === "string") continue
+  let receivedBinaryPart = false
+  let suspiciousFileField = false
+  for (const [name, entry] of formData.entries()) {
+    if (typeof entry === "string") {
+      if (/^(files?|attachments?|anexos?|image|video|audio|document)$/i.test(name) && entry.trim()) {
+        suspiciousFileField = true
+      }
+      continue
+    }
+    receivedBinaryPart = true
     if (!entry || typeof entry.size !== "number" || entry.size <= 0) continue
     files.push(entry)
   }
   const title = String(formData.get("title") || "").trim()
   const text = String(formData.get("text") || "").trim()
   const url = String(formData.get("url") || "").trim()
+
+  // Arquivo anunciado pelo multipart, mas não materializado no SW, ou share sem
+  // texto/link que muito provavelmente é um arquivo vindo da galeria/WhatsApp.
+  // O fetch usa a cópia não consumida da requisição para dar uma segunda chance
+  // ao parser do servidor sem alterar o fluxo dos aparelhos que já funcionam.
+  const shouldTryServerFallback = files.length === 0
+    && (receivedBinaryPart || suspiciousFileField || (!text && !url))
+  if (shouldTryServerFallback) {
+    try {
+      const response = await fetch(serverFallbackRequest)
+      // Se o fetch interno tiver seguido o 303 do Next, devolvemos um novo 303
+      // para que a navegação do PWA também atualize a URL para /compartilhar.
+      if (response.redirected && response.url) return Response.redirect(response.url, 303)
+      return response
+    } catch {
+      // Offline/erro de rede: seguimos para o cache local e mantemos título/texto.
+    }
+  }
+
   const cache = await caches.open(DEVBOARD_SHARE_CACHE)
 
   await cleanupExpiredShares(cache)

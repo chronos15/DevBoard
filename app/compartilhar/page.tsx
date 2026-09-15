@@ -841,33 +841,73 @@ export default function ShareToDevboardPage() {
         category: (detectKind(file) === "video" ? "analysis-video" : "other") as ServiceRequestAttachmentCategory,
       }))
 
-      const succeeded: string[] = []
-      const failed: string[] = []
+      const results = new Array<boolean>(selectedDestinations.length).fill(false)
+      let nextDestinationIndex = 0
+      let completedDestinations = 0
 
-      for (let index = 0; index < selectedDestinations.length; index += 1) {
-        const item = selectedDestinations[index]
-        setSendingDestinationIndex(index + 1)
-        let ok = false
-        try {
-          if (item.type === "request" && item.requestId) {
-            ok = await addServiceRequestAttachments(item.requestId, requestInputs)
-          } else if (item.type === "aqs" && item.aqsReviewId) {
-            ok = await addAqsReviewAttachments(item.aqsReviewId, uploads)
-          } else if (item.type === "project" && item.projectId) {
-            ok = await addProjectAttachments(item.projectId, uploads)
-          } else if (item.type === "activity" && item.activityId) {
-            ok = await addActivityAttachments(item.activityId, uploads)
-          } else if (item.type === "subactivity" && item.subactivityId) {
-            ok = await addSubactivityAttachments(item.subactivityId, uploads)
-          }
-        } catch (cause) {
-          console.error(`[TaskBoard/PWA Share] Falha ao enviar para ${item.key}`, cause)
-          ok = false
+      // V135: o envio múltiplo usa um pool pequeno de concorrência em vez de
+      // bloquear destino por destino. Mantemos as mesmas funções/RPCs e o
+      // mesmo tratamento individual de falha, mudando apenas a orquestração.
+      // Arquivos grandes usam menos concorrência para não saturar memória/rede
+      // em PWA mobile; anexos leves podem aproveitar até 4 destinos em paralelo.
+      const preparedBytes = preparedFiles.reduce((sum, file) => sum + file.size, 0)
+        + (includeText && sharedText ? sharedText.size : 0)
+      const destinationConcurrency = Math.min(
+        selectedDestinations.length,
+        preparedBytes >= 75 * 1024 * 1024 ? 2
+          : preparedBytes >= 20 * 1024 * 1024 ? 3
+            : 4,
+      )
+
+      async function sendToDestination(item: ShareDestination) {
+        if (item.type === "request" && item.requestId) {
+          return addServiceRequestAttachments(item.requestId, requestInputs)
         }
-
-        if (ok) succeeded.push(item.key)
-        else failed.push(item.key)
+        if (item.type === "aqs" && item.aqsReviewId) {
+          return addAqsReviewAttachments(item.aqsReviewId, uploads)
+        }
+        if (item.type === "project" && item.projectId) {
+          return addProjectAttachments(item.projectId, uploads)
+        }
+        if (item.type === "activity" && item.activityId) {
+          return addActivityAttachments(item.activityId, uploads)
+        }
+        if (item.type === "subactivity" && item.subactivityId) {
+          return addSubactivityAttachments(item.subactivityId, uploads)
+        }
+        return false
       }
+
+      async function destinationWorker() {
+        while (true) {
+          const index = nextDestinationIndex
+          nextDestinationIndex += 1
+          if (index >= selectedDestinations.length) return
+
+          const item = selectedDestinations[index]
+          let ok = false
+          try {
+            ok = await sendToDestination(item)
+          } catch (cause) {
+            console.error(`[TaskBoard/PWA Share] Falha ao enviar para ${item.key}`, cause)
+          } finally {
+            results[index] = ok
+            completedDestinations += 1
+            setSendingDestinationIndex(completedDestinations)
+          }
+        }
+      }
+
+      await Promise.all(
+        Array.from({ length: destinationConcurrency }, () => destinationWorker()),
+      )
+
+      const succeeded = selectedDestinations
+        .filter((_, index) => results[index])
+        .map((item) => item.key)
+      const failed = selectedDestinations
+        .filter((_, index) => !results[index])
+        .map((item) => item.key)
 
       if (succeeded.length) rememberDestinations(succeeded)
 

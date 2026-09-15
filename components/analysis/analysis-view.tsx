@@ -49,6 +49,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { formatDecimalHoursAsHHMM } from "@/lib/duration-input"
 import { createClient } from "@/lib/supabase/client"
 import { ATTACHMENTS_BUCKET } from "@/lib/supabase/helpers"
 import { inferAttachmentKind } from "@/lib/attachment-preview"
@@ -904,7 +905,7 @@ export function AnalysisView() {
         <h2 className="text-xs font-semibold">Informações</h2>
         <dl className="mt-3 space-y-2 text-[0.64rem]">
           <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Tempo trabalhado</dt><dd className="font-mono font-medium">{formatHMS(selected.sub.trackedSeconds)}</dd></div>
-          <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Estimativa</dt><dd className="font-mono font-medium">{selected.sub.estimatedHours || 0}h</dd></div>
+          <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Estimativa</dt><dd className="font-mono font-medium">{formatDecimalHoursAsHHMM(selected.sub.estimatedHours)}</dd></div>
           <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Comentários</dt><dd className="font-mono font-medium">{selected.sub.comments?.length ?? 0}</dd></div>
           <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Evidências</dt><dd className="font-mono font-medium">{selected.sub.attachments?.filter((item) => item.active).length ?? 0}</dd></div>
         </dl>

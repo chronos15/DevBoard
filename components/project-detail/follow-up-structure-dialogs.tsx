@@ -16,6 +16,7 @@ import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Priority, Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { normalizeHHMMInput, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
 
 function executionMembersOnly<T extends { role?: string }>(members: T[]) {
   return members.filter((member) => member.role === "developer" || member.role === "admin")
@@ -375,7 +376,7 @@ export function FollowUpAddSubactivityDialog({
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
-  const [hours, setHours] = React.useState("4")
+  const [hours, setHours] = React.useState("04:00")
   const [assigneeId, setAssigneeId] = React.useState(
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
@@ -397,21 +398,24 @@ export function FollowUpAddSubactivityDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (!title.trim() || !assigneeId || saving) return
+    const normalizedEstimate = normalizeHHMMOnBlur(hours)
+    const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
+    if (!title.trim() || !assigneeId || !parsedEstimate || saving) return
+    if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     if (!aqsRequired && (status === "done" || status === "cancelled") && !window.confirm(`Criar esta subatividade já como “${statusMeta[status].label}”?`)) return
 
     setSaving(true)
     try {
       const ok = await addSubactivity(projectId, activityId, {
         title: title.trim(),
-        estimatedHours: Math.max(0, Number(hours) || 0),
+        estimatedHours: parsedEstimate.hours,
         assigneeId,
         status,
         typeId: typeId || null,
       })
       if (!ok) return
       setTitle("")
-      setHours("4")
+      setHours("04:00")
       setStatus("backlog")
       setTypeId("")
       setOpen(false)
@@ -463,15 +467,18 @@ export function FollowUpAddSubactivityDialog({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
+              <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
               <input
-                type="number"
-                min={0}
-                step={0.5}
+                type="text"
+                inputMode="text"
                 value={hours}
-                onChange={(event) => setHours(event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                onChange={(event) => setHours(normalizeHHMMInput(event.target.value))}
+                onBlur={() => setHours((current) => normalizeHHMMOnBlur(current))}
+                placeholder="Ex.: 04:00"
+                aria-invalid={hours.trim().length > 0 && !parseHHMMToDecimalHours(hours)}
+                className="h-10 w-full rounded-xl border border-border bg-card px-3 font-mono text-sm tabular-nums outline-none focus:border-ring"
               />
+              <p className="text-[0.66rem] leading-snug text-muted-foreground">Use HH:mm. Ex.: 01:30, 04:00 ou 12:45.</p>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Situação</label>
@@ -525,7 +532,7 @@ export function FollowUpAddSubactivityDialog({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-          <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId} loading={saving} loadingText="Criando...">
+          <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId || !parseHHMMToDecimalHours(normalizeHHMMOnBlur(hours))} loading={saving} loadingText="Criando...">
             <Plus className="size-4" /> Criar subatividade
           </Button>
         </DialogFooter>

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { formatDecimalHoursAsHHMM, normalizeHHMMInput, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
 
 export function EditSubactivityDialog({
   subactivity,
@@ -44,7 +45,7 @@ export function EditSubactivityDialog({
     onOpenChange?.(value)
   }, [controlledOpen, onOpenChange])
   const [title, setTitle] = React.useState(subactivity.title)
-  const [hours, setHours] = React.useState(String(subactivity.estimatedHours ?? 0))
+  const [hours, setHours] = React.useState(formatDecimalHoursAsHHMM(subactivity.estimatedHours))
   const [assigneeId, setAssigneeId] = React.useState(subactivity.assigneeId)
   const [typeId, setTypeId] = React.useState(subactivity.typeId ?? "")
   const [saving, setSaving] = React.useState(false)
@@ -64,7 +65,7 @@ export function EditSubactivityDialog({
 
   const reset = React.useCallback(() => {
     setTitle(subactivity.title)
-    setHours(String(subactivity.estimatedHours ?? 0))
+    setHours(formatDecimalHoursAsHHMM(subactivity.estimatedHours))
     setAssigneeId(subactivity.assigneeId)
     setTypeId(subactivity.typeId ?? "")
   }, [subactivity.assigneeId, subactivity.estimatedHours, subactivity.title, subactivity.typeId])
@@ -77,16 +78,19 @@ export function EditSubactivityDialog({
 
   const running = subactivity.status === "in-progress"
   const assigneeChanged = assigneeId !== subactivity.assigneeId
-  const valid = Boolean(title.trim() && assigneeId && Number.isFinite(Number(hours)) && Number(hours) >= 0)
+  const normalizedEstimate = normalizeHHMMOnBlur(hours)
+  const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
+  const valid = Boolean(title.trim() && assigneeId && parsedEstimate)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (!valid || saving || (running && assigneeChanged)) return
+    if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     setSaving(true)
     try {
       const ok = await updateSubactivity(subactivity.id, {
         title: title.trim(),
-        estimatedHours: Math.max(0, Number(hours) || 0),
+        estimatedHours: parsedEstimate?.hours ?? 0,
         assigneeId,
         typeId: typeId || null,
       })
@@ -141,15 +145,18 @@ export function EditSubactivityDialog({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
+              <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
               <input
-                type="number"
-                min={0}
-                step={0.25}
+                type="text"
+                inputMode="text"
                 value={hours}
-                onChange={(event) => setHours(event.target.value)}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                onChange={(event) => setHours(normalizeHHMMInput(event.target.value))}
+                onBlur={() => setHours((current) => normalizeHHMMOnBlur(current))}
+                placeholder="Ex.: 04:00"
+                aria-invalid={hours.trim().length > 0 && !parsedEstimate}
+                className="h-10 rounded-xl border border-border bg-card px-3 font-mono text-sm tabular-nums outline-none focus:border-ring"
               />
+              <span className="text-[0.66rem] leading-snug text-muted-foreground">Use HH:mm. Ex.: 01:30, 04:00 ou 12:45.</span>
             </div>
 
             <div className="flex flex-col gap-1.5">

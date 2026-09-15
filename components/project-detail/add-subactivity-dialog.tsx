@@ -16,6 +16,7 @@ import { useStore } from "@/lib/store"
 import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
+import { normalizeHHMMInput, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
 
 export function AddSubactivityDialog({
   projectId,
@@ -31,7 +32,7 @@ export function AddSubactivityDialog({
   const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
-  const [hours, setHours] = React.useState("4")
+  const [hours, setHours] = React.useState("04:00")
   const [assignee, setAssignee] = React.useState(
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
@@ -49,19 +50,22 @@ export function AddSubactivityDialog({
   }, [aqsRequired, assignee, currentUserId, currentUserRole, executionMembers, status])
 
   async function saveSubactivity() {
-    if (!title.trim() || !assignee || saving) return
+    const normalizedEstimate = normalizeHHMMOnBlur(hours)
+    const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
+    if (!title.trim() || !assignee || !parsedEstimate || saving) return
+    if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     setSaving(true)
     try {
       const ok = await addSubactivity(projectId, activityId, {
         title: title.trim(),
-        estimatedHours: Math.max(0, Number(hours) || 0),
+        estimatedHours: parsedEstimate.hours,
         assigneeId: assignee,
         status,
         typeId: typeId || null,
       })
       if (!ok) return
       setTitle("")
-      setHours("4")
+      setHours("04:00")
       setStatus("backlog")
       setTypeId("")
       setTerminalConfirmOpen(false)
@@ -73,7 +77,9 @@ export function AddSubactivityDialog({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!title.trim() || !assignee) return
+    const normalizedEstimate = normalizeHHMMOnBlur(hours)
+    if (!title.trim() || !assignee || !parseHHMMToDecimalHours(normalizedEstimate)) return
+    if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     if (!aqsRequired && (status === "done" || status === "cancelled")) {
       setTerminalConfirmOpen(true)
       return
@@ -123,15 +129,18 @@ export function AddSubactivityDialog({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Estimativa (h)</label>
+              <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
               <input
-                type="number"
-                min={0}
-                step={0.5}
+                type="text"
+                inputMode="text"
                 value={hours}
-                onChange={(e) => setHours(e.target.value)}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                onChange={(e) => setHours(normalizeHHMMInput(e.target.value))}
+                onBlur={() => setHours((current) => normalizeHHMMOnBlur(current))}
+                placeholder="Ex.: 04:00"
+                aria-invalid={hours.trim().length > 0 && !parseHHMMToDecimalHours(hours)}
+                className="h-10 rounded-xl border border-border bg-card px-3 font-mono text-sm tabular-nums outline-none focus:border-ring"
               />
+              <span className="text-[0.66rem] leading-snug text-muted-foreground">Use HH:mm. Ex.: 01:30, 04:00 ou 12:45.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">Situação</label>
@@ -200,7 +209,7 @@ export function AddSubactivityDialog({
 
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
-          <Button type="submit" form="add-sub-form" loading={saving} loadingText="Adicionando...">Adicionar</Button>
+          <Button type="submit" form="add-sub-form" disabled={!title.trim() || !assignee || !parseHHMMToDecimalHours(normalizeHHMMOnBlur(hours))} loading={saving} loadingText="Adicionando...">Adicionar</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

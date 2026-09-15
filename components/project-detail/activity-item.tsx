@@ -44,6 +44,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { formatDecimalHoursAsHHMM } from "@/lib/duration-input"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { sub: Subactivity; projectId: string; linkedRequest?: ServiceRequest; focused?: boolean }) {
@@ -285,7 +286,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
               running ? "text-orange-600 dark:text-orange-300" : "text-muted-foreground",
             )}
           >
-            {formatHMS(sub.trackedSeconds)} / {sub.estimatedHours}h
+            {formatHMS(sub.trackedSeconds)} / {formatDecimalHoursAsHHMM(sub.estimatedHours)}
           </span>
         </div>
       </div>
@@ -744,6 +745,21 @@ export function ActivityItem({
                 {visibleSubs.length} no filtro
               </span>
             )}
+
+            {open && (
+              <div className="ml-auto hidden shrink-0 items-center gap-1 2xl:flex">
+                {canCreateSubactivity && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
+                <button
+                  type="button"
+                  onClick={() => openProjectFollowUp({ projectId, activityId: activity.id })}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title={`Abrir acompanhamento de ${activity.title}`}
+                >
+                  <MessageSquareText className="size-3.5" />
+                  Acompanhamento
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -782,7 +798,7 @@ export function ActivityItem({
 
         {open && (
           <div className="border-t border-border px-2 pb-2">
-            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 px-1 py-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 px-1 py-2 2xl:hidden">
               {canCreateSubactivity && <AddSubactivityDialog projectId={projectId} activityId={activity.id} aqsRequired={Boolean(linkedRequest)} />}
               <button
                 type="button"

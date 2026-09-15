@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store"
 import { formatHMS, formatHours } from "@/lib/project-utils"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { formatDecimalHoursAsHHMM } from "@/lib/duration-input"
 import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 
 export function FocusedRunningTimer() {
@@ -97,7 +98,7 @@ export function FocusedRunningTimer() {
                   </div>
                   {estimatedSeconds > 0 && (
                     <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
-                      {formatHours(found.sub.trackedSeconds)} trabalhadas / {found.sub.estimatedHours}h estimadas
+                      {formatHours(found.sub.trackedSeconds)} trabalhadas / {formatDecimalHoursAsHHMM(found.sub.estimatedHours)} estimadas
                     </p>
                   )}
                 </div>

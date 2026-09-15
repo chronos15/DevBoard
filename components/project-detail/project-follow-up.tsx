@@ -110,6 +110,46 @@ import {
   type VideoProcessingProgress,
 } from "@/lib/video-attachment-processor"
 
+const FOLLOW_UP_STATUS_VISUAL: Record<Status, { dotClassName: string; textClassName: string; badgeClassName: string }> = {
+  backlog: {
+    dotClassName: "bg-slate-400",
+    textClassName: "text-slate-600 dark:text-slate-300",
+    badgeClassName: "bg-slate-500/10 text-slate-600 ring-1 ring-slate-500/20 dark:text-slate-300",
+  },
+  waiting: {
+    dotClassName: "bg-amber-500",
+    textClassName: "text-amber-700 dark:text-amber-300",
+    badgeClassName: "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-300",
+  },
+  "in-progress": {
+    dotClassName: "bg-sky-500",
+    textClassName: "text-sky-700 dark:text-sky-300",
+    badgeClassName: "bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/25 dark:text-sky-300",
+  },
+  paused: {
+    dotClassName: "bg-orange-500",
+    textClassName: "text-orange-700 dark:text-orange-300",
+    badgeClassName: "bg-orange-500/10 text-orange-700 ring-1 ring-orange-500/25 dark:text-orange-300",
+  },
+  "waiting-aqs": {
+    dotClassName: "bg-violet-500",
+    textClassName: "text-violet-700 dark:text-violet-300",
+    badgeClassName: "bg-violet-500/10 text-violet-700 ring-1 ring-violet-500/25 dark:text-violet-300",
+  },
+  done: {
+    dotClassName: "bg-emerald-500",
+    textClassName: "text-emerald-700 dark:text-emerald-300",
+    badgeClassName: "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/25 dark:text-emerald-300",
+  },
+  cancelled: {
+    dotClassName: "bg-rose-500",
+    textClassName: "text-rose-700 dark:text-rose-300",
+    badgeClassName: "bg-rose-500/10 text-rose-700 ring-1 ring-rose-500/25 dark:text-rose-300",
+  },
+}
+
+const FOLLOW_UP_STATUS_RANK = new Map<Status, number>(statusOrder.map((status, index) => [status, index]))
+
 const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 const FOLLOW_UP_NAV_MIN_WIDTH = 240
@@ -1166,9 +1206,11 @@ export function ProjectFollowUp({
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
       ...activity,
-      visibleSubs: activity.subactivities.filter((sub) =>
-        matchesActivityFilter(sub.status, filter) && (assigneeId === "all" || sub.assigneeId === assigneeId),
-      ),
+      visibleSubs: activity.subactivities
+        .filter((sub) =>
+          matchesActivityFilter(sub.status, filter) && (assigneeId === "all" || sub.assigneeId === assigneeId),
+        )
+        .sort((a, b) => (FOLLOW_UP_STATUS_RANK.get(a.status) ?? 999) - (FOLLOW_UP_STATUS_RANK.get(b.status) ?? 999)),
     })).filter((activity) => activity.visibleSubs.length > 0 || (filter === "all" && assigneeId === "all")),
     [assigneeId, filter, project.activities],
   )
@@ -2999,8 +3041,8 @@ export function ProjectFollowUp({
                 <div className="ml-2 border-l border-border pl-1.5">
                   {activity.visibleSubs.length ? activity.visibleSubs.map((sub) => {
                     const meta = statusMeta[sub.status]
+                    const tone = FOLLOW_UP_STATUS_VISUAL[sub.status]
                     const selected = sub.id === selectedSubId
-                    const running = runningSubIds.includes(sub.id)
                     const assignee = members.find((member) => member.id === sub.assigneeId)
                     const subUnread = unreadMaps.bySubactivity.get(sub.id)
                     return (
@@ -3022,11 +3064,11 @@ export function ProjectFollowUp({
                             selected ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
                           )}
                         >
-                          <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-success" : meta.columnClassName)} />
+                          <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} title={meta.label} />
                           <div className="min-w-0 flex-1">
                             <p className={cn("truncate text-[0.72rem]", selected && "font-medium")}>{sub.title}</p>
                             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                              <span className="truncate">{meta.label}</span>
+                              <span className={cn("truncate font-medium", tone.textClassName)}>{meta.label}</span>
                               <span>·</span>
                               <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
                             </div>
@@ -3282,12 +3324,12 @@ export function ProjectFollowUp({
                     <strong className="min-w-0 text-xs leading-tight sm:text-sm max-[760px]:line-clamp-2 min-[761px]:truncate">{selectedSub.title}</strong>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[0.6rem] text-muted-foreground min-[900px]:hidden">
-                    <span className={cn("size-1.5 rounded-full", selectedRunning ? "bg-success" : statusMeta[selectedSub.status].columnClassName)} />
-                    <span>{statusMeta[selectedSub.status].label}</span>
+                    <span className={cn("size-2.5 rounded-full shadow-sm ring-2 ring-background", FOLLOW_UP_STATUS_VISUAL[selectedSub.status].dotClassName)} />
+                    <span className={cn("font-medium", FOLLOW_UP_STATUS_VISUAL[selectedSub.status].textClassName)}>{statusMeta[selectedSub.status].label}</span>
                   </div>
                 </div>
                 <div className="hidden items-center gap-1.5 min-[900px]:flex">
-                  <span className={cn("rounded-full px-2 py-1 text-[0.62rem] font-medium", statusMeta[selectedSub.status].className)}>
+                  <span className={cn("rounded-full px-2.5 py-1 text-[0.62rem] font-semibold", FOLLOW_UP_STATUS_VISUAL[selectedSub.status].badgeClassName)}>
                     {statusMeta[selectedSub.status].label}
                   </span>
                   <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.62rem] text-muted-foreground tabular-nums">{formatHMS(selectedSub.trackedSeconds)}</span>
@@ -4303,6 +4345,7 @@ export function ProjectFollowUp({
               {linkedRequest && <div className="mx-1 mb-1 rounded-lg bg-primary/[0.07] px-2 py-1.5 text-[0.58rem] leading-snug text-primary">{serviceRequestReference(linkedRequest)} · conclusão somente via AQS</div>}
               {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
                 const meta = statusMeta[status]
+                const tone = FOLLOW_UP_STATUS_VISUAL[status]
                 const active = status === selectedSub.status
                 return (
                   <button
@@ -4321,8 +4364,8 @@ export function ProjectFollowUp({
                       status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
                     )}
                   >
-                    <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
-                    <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                    <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} />
+                    <span className={cn("min-w-0 flex-1 truncate font-medium", tone.textClassName)}>{meta.label}</span>
                     {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
                   </button>
                 )
@@ -4347,6 +4390,7 @@ export function ProjectFollowUp({
           <div className="my-1 h-px bg-border" />
           {statusOrder.filter((status) => !linkedRequest || status === selectedSub.status || (status !== "done" && status !== "cancelled")).map((status) => {
             const meta = statusMeta[status]
+            const tone = FOLLOW_UP_STATUS_VISUAL[status]
             const active = status === selectedSub.status
             return (
               <button
@@ -4365,8 +4409,8 @@ export function ProjectFollowUp({
                   status === "cancelled" && !active && "text-destructive hover:bg-destructive/10",
                 )}
               >
-                <span className={cn("size-2 shrink-0 rounded-full", meta.columnClassName)} />
-                <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} />
+                <span className={cn("min-w-0 flex-1 truncate font-medium", tone.textClassName)}>{meta.label}</span>
                 {active && <span className="text-[0.55rem] text-muted-foreground">atual</span>}
               </button>
             )

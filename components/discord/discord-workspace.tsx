@@ -39,7 +39,7 @@ import {
 import { useStore } from "@/lib/store"
 import { scopeFollowUpProjects } from "@/lib/follow-up-access"
 import { canAccessScreen, canPerformAction, canWriteScreen } from "@/lib/access-control"
-import { formatHMS, statusMeta } from "@/lib/project-utils"
+import { formatHMS, statusMeta, statusOrder } from "@/lib/project-utils"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -121,6 +121,18 @@ type SearchResult = {
 }
 
 const CLOSED_REQUEST_STATUSES = new Set(["completed", "rejected", "cancelled"])
+
+const RESUMIDO_STATUS_VISUAL: Record<Project["activities"][number]["subactivities"][number]["status"], { dotClassName: string; textClassName: string }> = {
+  backlog: { dotClassName: "bg-slate-400", textClassName: "text-slate-600 dark:text-slate-300" },
+  waiting: { dotClassName: "bg-amber-500", textClassName: "text-amber-700 dark:text-amber-300" },
+  "in-progress": { dotClassName: "bg-sky-500", textClassName: "text-sky-700 dark:text-sky-300" },
+  paused: { dotClassName: "bg-orange-500", textClassName: "text-orange-700 dark:text-orange-300" },
+  "waiting-aqs": { dotClassName: "bg-violet-500", textClassName: "text-violet-700 dark:text-violet-300" },
+  done: { dotClassName: "bg-emerald-500", textClassName: "text-emerald-700 dark:text-emerald-300" },
+  cancelled: { dotClassName: "bg-rose-500", textClassName: "text-rose-700 dark:text-rose-300" },
+}
+
+const RESUMIDO_STATUS_RANK = new Map(statusOrder.map((status, index) => [status, index]))
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR")
@@ -907,7 +919,9 @@ export function DiscordWorkspace() {
             <div className="space-y-0.5">
               {selectedProject.activities.map((activity, index) => {
                 const activityMatches = !q || normalize(activity.title).includes(q)
-                const subs = activity.subactivities.filter((sub) => !q || activityMatches || normalize(sub.title).includes(q))
+                const subs = activity.subactivities
+                  .filter((sub) => !q || activityMatches || normalize(sub.title).includes(q))
+                  .sort((a, b) => (RESUMIDO_STATUS_RANK.get(a.status) ?? 999) - (RESUMIDO_STATUS_RANK.get(b.status) ?? 999))
                 if (q && !activityMatches && !subs.length) return null
                 const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
                 const toggleActivity = () => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })
@@ -963,8 +977,8 @@ export function DiscordWorkspace() {
                           const active = !requestedRequestId && !requestedReviewId && projectSelection?.subactivityId === sub.id
                           const observer = currentUserRole === "developer" && sub.assigneeId !== currentUserId && !sub.memberIds?.includes(currentUserId)
                           const meta = statusMeta[sub.status]
+                          const tone = RESUMIDO_STATUS_VISUAL[sub.status]
                           const assignee = members.find((member) => member.id === sub.assigneeId)
-                          const running = sub.status === "in-progress"
                           const subUnread = selectedProjectUnreadMaps.bySubactivity.get(sub.id)
                           return (
                             <button
@@ -976,14 +990,14 @@ export function DiscordWorkspace() {
                                 active ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
                               )}
                             >
-                              <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-success" : meta.columnClassName)} />
+                              <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} title={meta.label} />
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-1.5">
                                   <p className={cn("min-w-0 flex-1 truncate text-[0.72rem]", active && "font-semibold")}>{sub.title}</p>
                                   {sub.brainstormMode && <BrainCircuit className="size-3.5 shrink-0 text-primary" aria-label="Brainstorm ativo" />}
                                 </div>
                                 <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
-                                  <span className="truncate">{meta.label}</span>
+                                  <span className={cn("truncate font-medium", tone.textClassName)}>{meta.label}</span>
                                   <span>·</span>
                                   <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
                                   {observer && <span className="inline-flex items-center gap-1" title="Somente leitura: você pode visualizar, responder e reagir"><Eye className="size-3" aria-hidden="true" /><span className="sr-only">Somente leitura</span></span>}

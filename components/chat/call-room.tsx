@@ -123,6 +123,9 @@ type PeerRoleState = {
   initialOfferSent: boolean
   offerInFlight: boolean
   restartPending: boolean
+  /** SDP offer/answer já foi concluído para a geração ICE atual. Enquanto isso
+   *  for true, não criamos novas ofertas só porque ICE ainda está checking. */
+  negotiationComplete: boolean
 }
 
 type PanelMode = "participants" | "chat" | "settings" | null
@@ -631,7 +634,12 @@ export function CallRoom({
   const lastIceRestartRef = React.useRef<Map<string, number>>(new Map())
   const presencePublishTimerRef = React.useRef<number | null>(null)
   const iceServersRef = React.useRef<RTCIceServer[]>([])
+  const iceFallbackServersRef = React.useRef<RTCIceServer[]>([])
   const iceHasTurnRef = React.useRef(false)
+  const iceFallbackEnabledRef = React.useRef<Set<string>>(new Set())
+  const iceFallbackTimersRef = React.useRef<Map<string, number>>(new Map())
+  const iceErrorKeysRef = React.useRef<Set<string>>(new Set())
+  const relayCandidateSeenRef = React.useRef<Set<string>>(new Set())
   const sessionIdRef = React.useRef(makeSessionId())
   const authTokenRef = React.useRef<string | null>(null)
   const joinedAtRef = React.useRef(new Date().toISOString())
@@ -1112,6 +1120,14 @@ export function CallRoom({
     signalQueuesRef.current.delete(sessionId)
     peerHealthRef.current.delete(sessionId)
     lastIceRestartRef.current.delete(sessionId)
+    const fallbackTimer = iceFallbackTimersRef.current.get(sessionId)
+    if (fallbackTimer) window.clearTimeout(fallbackTimer)
+    iceFallbackTimersRef.current.delete(sessionId)
+    iceFallbackEnabledRef.current.delete(sessionId)
+    relayCandidateSeenRef.current.delete(sessionId)
+    for (const key of Array.from(iceErrorKeysRef.current)) {
+      if (key.startsWith(`${sessionId}|`)) iceErrorKeysRef.current.delete(key)
+    }
     const peer = peersRef.current.get(sessionId)
     if (peer) peer.close()
     peersRef.current.delete(sessionId)
@@ -1157,6 +1173,11 @@ export function CallRoom({
     lastPersistedSignalIdRef.current = 0
     peerHealthRef.current.clear()
     lastIceRestartRef.current.clear()
+    iceFallbackTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    iceFallbackTimersRef.current.clear()
+    iceFallbackEnabledRef.current.clear()
+    iceErrorKeysRef.current.clear()
+    relayCandidateSeenRef.current.clear()
     nativeScreenPeersRef.current.forEach((peer) => peer.close())
     nativeScreenPeersRef.current.clear()
     nativeScreenPendingIceRef.current.clear()
@@ -1216,6 +1237,7 @@ export function CallRoom({
       initialOfferSent: false,
       offerInFlight: false,
       restartPending: false,
+      negotiationComplete: false,
     }
     peerRoleRef.current.set(remoteSession, created)
     return created
@@ -1250,9 +1272,37 @@ export function CallRoom({
     return true
   }, [])
 
+  const promoteIceFallback = React.useCallback((remoteSession: string, peer: RTCPeerConnection, reason: string) => {
+    if (!iceHasTurnRef.current || iceFallbackEnabledRef.current.has(remoteSession)) return false
+    if (peer.connectionState === "connected" || peer.connectionState === "closed" || peer.signalingState === "closed") return false
+    const fallback = iceFallbackServersRef.current
+    if (fallback.length === 0) return false
+
+    const currentUrls = peer.getConfiguration().iceServers ?? []
+    if (JSON.stringify(currentUrls) === JSON.stringify(fallback)) {
+      iceFallbackEnabledRef.current.add(remoteSession)
+      return false
+    }
+
+    try {
+      peer.setConfiguration({ iceServers: fallback })
+      iceFallbackEnabledRef.current.add(remoteSession)
+      console.info("TaskBoard: ampliando rotas ICE para TCP/TLS", { remoteSession, reason })
+      return true
+    } catch (error) {
+      console.warn("TaskBoard: não foi possível habilitar fallback ICE", { remoteSession, reason, error })
+      return false
+    }
+  }, [])
+
   const sendOffer = React.useCallback(async (remoteSession: string, peer: RTCPeerConnection, iceRestart = false) => {
     const role = getPeerRole(remoteSession)
     if (!role.offerer || peer.connectionState === "closed" || peer.signalingState === "closed") return
+    // Depois que offer/answer fechou, ICE precisa de tempo para testar os pares.
+    // Criar uma nova oferta a cada poucos segundos reinicia a negociação e pode
+    // impedir o estado `checking` de chegar a `connected`.
+    if (!iceRestart && role.negotiationComplete) return
+    if (iceRestart) role.negotiationComplete = false
     if (role.offerInFlight || peer.signalingState !== "stable") {
       role.restartPending = role.restartPending || iceRestart
       return
@@ -1283,12 +1333,17 @@ export function CallRoom({
     lastIceRestartRef.current.set(remoteSession, now)
 
     const role = getPeerRole(remoteSession)
+    role.negotiationComplete = false
+    // Se a rota UDP/direta falhou, a partir do primeiro restart libera também
+    // TCP/TLS do provedor TURN. Isso mantém o fast-path limpo e ainda suporta
+    // redes corporativas que bloqueiam UDP.
+    promoteIceFallback(remoteSession, peer, "ice-restart")
     if (role.offerer) {
       void sendOffer(remoteSession, peer, true)
       return
     }
     void postSignal({ type: "restart-request", toSession: remoteSession })
-  }, [getPeerRole, postSignal, sendOffer])
+  }, [getPeerRole, postSignal, promoteIceFallback, sendOffer])
 
   const ensurePeer = React.useCallback((remoteSession: string, remoteUserId: string) => {
     const existing = peersRef.current.get(remoteSession)
@@ -1347,6 +1402,17 @@ export function CallRoom({
 
     peer.onicecandidate = (event) => {
       if (!event.candidate) return
+      if (event.candidate.type === "relay") {
+        if (!relayCandidateSeenRef.current.has(remoteSession)) {
+          relayCandidateSeenRef.current.add(remoteSession)
+          console.info("TaskBoard: candidato TURN relay disponível", {
+            remoteSession,
+            protocol: event.candidate.protocol,
+            relayProtocol: (event.candidate as RTCIceCandidate & { relayProtocol?: string }).relayProtocol,
+            url: event.url,
+          })
+        }
+      }
       void postSignal({
         type: "ice",
         toSession: remoteSession,
@@ -1355,7 +1421,28 @@ export function CallRoom({
     }
 
     peer.onicecandidateerror = (event) => {
-      console.warn("TaskBoard: erro ICE", event)
+      const detail = event as RTCPeerConnectionIceErrorEvent
+      const code = Number(detail.errorCode ?? 0)
+      const url = String(detail.url ?? "")
+      const address = String(detail.address ?? "")
+      const key = `${remoteSession}|${url}|${code}|${address}`
+      if (!iceErrorKeysRef.current.has(key)) {
+        iceErrorKeysRef.current.add(key)
+        console.warn("TaskBoard: erro ICE", {
+          remoteSession,
+          errorCode: code,
+          errorText: detail.errorText,
+          url,
+          address: detail.address,
+          port: detail.port,
+        })
+      }
+
+      // 401/438 indicam credencial TURN recusada/expirada; diferente de 701,
+      // que pode ocorrer apenas em uma das rotas (ex.: TCP/IPv6) enquanto UDP funciona.
+      if ((code === 401 || code === 438) && /^turns?:/i.test(url)) {
+        setMediaError("O servidor TURN recusou a credencial da chamada. Gere novas credenciais TURN e tente novamente.")
+      }
     }
 
     peer.oniceconnectionstatechange = () => {
@@ -1366,11 +1453,15 @@ export function CallRoom({
       const state = peer.connectionState
       setPeerStates((current) => ({ ...current, [remoteSession]: state }))
       if (state === "connected") {
+        role.negotiationComplete = true
         setMediaError((current) => current.includes("TURN") || current.includes("ICE") || current.includes("mídia") ? "" : current)
         void inspectPeerRoute(remoteSession, peer)
         const timer = restartTimersRef.current.get(remoteSession)
         if (timer) window.clearTimeout(timer)
         restartTimersRef.current.delete(remoteSession)
+        const fallbackTimer = iceFallbackTimersRef.current.get(remoteSession)
+        if (fallbackTimer) window.clearTimeout(fallbackTimer)
+        iceFallbackTimersRef.current.delete(remoteSession)
       } else if (state === "disconnected") {
         const oldTimer = restartTimersRef.current.get(remoteSession)
         if (oldTimer) window.clearTimeout(oldTimer)
@@ -1390,6 +1481,27 @@ export function CallRoom({
       }
     }
 
+    // Fast-path: STUN + TURN/UDP. Se SDP já foi trocado mas nenhum par ICE
+    // conectar em alguns segundos, libera TCP/TLS e faz um único ICE restart.
+    if (iceHasTurnRef.current && iceFallbackServersRef.current.length > 0) {
+      const attemptFallback = () => {
+        iceFallbackTimersRef.current.delete(remoteSession)
+        if (peer.connectionState === "connected" || peer.connectionState === "closed") return
+        // Ainda sem SDP remoto = sinalização ainda não terminou; não mistura um
+        // problema de signaling com troca de transporte. Reavalia depois.
+        if (!peer.remoteDescription) {
+          const retryTimer = window.setTimeout(attemptFallback, 4000)
+          iceFallbackTimersRef.current.set(remoteSession, retryTimer)
+          return
+        }
+        if (promoteIceFallback(remoteSession, peer, relayCandidateSeenRef.current.has(remoteSession) ? "udp-sem-par-valido" : "sem-relay-udp")) {
+          requestIceRestart(remoteSession, peer)
+        }
+      }
+      const fallbackTimer = window.setTimeout(attemptFallback, 8000)
+      iceFallbackTimersRef.current.set(remoteSession, fallbackTimer)
+    }
+
     // A oferta inicial é criada uma única vez e somente pelo papel determinístico.
     if (role.offerer) {
       window.setTimeout(() => {
@@ -1398,7 +1510,7 @@ export function CallRoom({
     }
 
     return peer
-  }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
+  }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, promoteIceFallback, requestIceRestart, sendOffer])
 
   const updateLocalVideo = React.useCallback(() => {
     if (!localVideoRef.current) return
@@ -1769,9 +1881,9 @@ export function CallRoom({
         const role = getPeerRole(presence.sessionId)
         if (role.offerer && !role.initialOfferSent && !role.offerInFlight && peer.signalingState === "stable") {
           void sendOffer(presence.sessionId, peer)
-        } else if (!role.offerer && peer.connectionState !== "connected") {
-          // O answerer anuncia que está pronto. Isso remove a dependência de um
-          // único Presence sync / Broadcast chegar no instante exato da entrada.
+        } else if (!role.offerer && !role.negotiationComplete && !peer.remoteDescription && peer.connectionState !== "connected") {
+          // O answerer anuncia que está pronto somente até receber a primeira offer.
+          // Depois disso deixa ICE testar os pares sem reiniciar SDP.
           void postSignal({ type: "ready", toSession: presence.sessionId })
         }
       }
@@ -1839,7 +1951,7 @@ export function CallRoom({
           const role = getPeerRole(signal.fromSession)
 
           if (signal.type === "ready") {
-            if (!role.offerer || peer.connectionState === "connected") return
+            if (!role.offerer || role.negotiationComplete || peer.connectionState === "connected") return
             if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
               await postSignal({ type: "offer", toSession: signal.fromSession, sdp: peer.localDescription })
             } else if (peer.signalingState === "stable" && !role.offerInFlight) {
@@ -1852,6 +1964,21 @@ export function CallRoom({
             // Apenas o lado não-offerer aceita offers. Se chegar um offer invertido/stale,
             // ele é ignorado em vez de disputar o signalingState com o peer determinístico.
             if (role.offerer) return
+
+            // O offerer pode reenviar exatamente o mesmo SDP quando o Broadcast/DB
+            // perdeu o answer. Não reaplica a mesma offer nem reinicia ICE: apenas
+            // devolve a answer já criada.
+            if (
+              peer.remoteDescription?.type === "offer" &&
+              peer.remoteDescription.sdp === signal.sdp.sdp &&
+              peer.localDescription?.type === "answer"
+            ) {
+              role.negotiationComplete = true
+              await postSignal({ type: "answer", toSession: signal.fromSession, sdp: peer.localDescription })
+              return
+            }
+
+            role.negotiationComplete = false
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
@@ -1860,18 +1987,26 @@ export function CallRoom({
             const answer = await peer.createAnswer()
             await peer.setLocalDescription(answer)
             if (peer.localDescription) {
+              role.negotiationComplete = true
               await postSignal({ type: "answer", toSession: signal.fromSession, sdp: peer.localDescription })
             }
             return
           }
 
           if (signal.type === "answer" && signal.sdp) {
-            if (!role.offerer || peer.signalingState !== "have-local-offer") return
+            if (!role.offerer) return
+            if (
+              role.negotiationComplete &&
+              peer.remoteDescription?.type === "answer" &&
+              peer.remoteDescription.sdp === signal.sdp.sdp
+            ) return
+            if (peer.signalingState !== "have-local-offer") return
             await peer.setRemoteDescription(signal.sdp)
             await bindPeerSenders(signal.fromSession, peer)
             syncRemoteReceiverTracks(signal.fromSession, peer)
             await flushPendingIce(signal.fromSession, peer)
             role.restartPending = false
+            role.negotiationComplete = true
             return
           }
 
@@ -1897,7 +2032,10 @@ export function CallRoom({
 
 
           if (signal.type === "restart-request") {
-            if (role.offerer) void sendOffer(signal.fromSession, peer, true)
+            if (role.offerer) {
+              role.negotiationComplete = false
+              void sendOffer(signal.fromSession, peer, true)
+            }
           }
         } catch (error) {
           console.warn("TaskBoard: falha ao processar sinal WebRTC", signal.type, error)
@@ -1982,7 +2120,10 @@ export function CallRoom({
         const iceConfig = await loadWebRtcIceConfig(supabase)
         if (disposed) return
         iceServersRef.current = iceConfig.iceServers
-        configureAndroidScreenShare(iceConfig.iceServers)
+        iceFallbackServersRef.current = iceConfig.fallbackIceServers
+        // A ponte nativa não sofre do mesmo bug/ruído de TCP/IPv6 do Chromium;
+        // mantém a lista completa para ter UDP/TCP/TLS disponíveis.
+        configureAndroidScreenShare(iceConfig.fallbackIceServers)
         iceHasTurnRef.current = iceConfig.hasTurn
         setIceTransport({ hasTurn: iceConfig.hasTurn, source: iceConfig.source, warning: iceConfig.warning })
 
@@ -2083,22 +2224,25 @@ export function CallRoom({
       peersRef.current.forEach((peer, remoteSession) => {
         if (peer.connectionState === "connected" || peer.connectionState === "closed") return
         const role = getPeerRole(remoteSession)
+        if (role.negotiationComplete) return
+
         if (role.offerer) {
           if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
-            // Reenvia o SDP atual. Conforme o ICE gathering avança, localDescription
-            // passa a carregar candidatos adicionais, cobrindo também perda de ICE.
+            // Reenvia o MESMO SDP apenas enquanto a answer ainda não chegou.
+            // Não cria novas ofertas em `stable` depois de offer/answer, pois isso
+            // reiniciava continuamente a negociação antes de ICE concluir.
             void postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
-          } else if (peer.signalingState === "stable" && !role.offerInFlight) {
+          } else if (!role.initialOfferSent && peer.signalingState === "stable" && !role.offerInFlight) {
             void sendOffer(remoteSession, peer)
           }
-        } else {
+        } else if (!peer.remoteDescription) {
           void postSignal({ type: "ready", toSession: remoteSession })
         }
       })
     }
 
-    const first = window.setTimeout(retryHandshake, 900)
-    const interval = window.setInterval(retryHandshake, 2500)
+    const first = window.setTimeout(retryHandshake, 1000)
+    const interval = window.setInterval(retryHandshake, 4000)
     return () => {
       window.clearTimeout(first)
       window.clearInterval(interval)
@@ -2204,7 +2348,7 @@ export function CallRoom({
     }
 
     if (hasAndroidNativeScreenShare() && meeting) {
-      configureAndroidScreenShare(iceServersRef.current)
+      configureAndroidScreenShare(iceFallbackServersRef.current.length ? iceFallbackServersRef.current : iceServersRef.current)
       syncAndroidScreenRecipients(
         Object.values(presences)
           .filter((presence) => presence.sessionId !== sessionIdRef.current)

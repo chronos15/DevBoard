@@ -150,3 +150,20 @@ A V143 adiciona um handshake `ready`, retry de SDP e a migration 090 como fallba
 7. Se aparecer aviso de ausência de TURN, teste também com TURN configurado para separar sinalização de limitação de NAT/CGNAT.
 
 O fallback do banco não transporta áudio/vídeo. Ele guarda somente `offer`, `answer`, ICE, `ready` e restart por uma janela curta, com acesso restrito a membros efetivamente `joined` na reunião.
+
+
+## V144 — ICE/TURN UDP-first e negociação SDP estável
+
+A V144 corrige dois pontos do diagnóstico visto em produção:
+
+- depois de `offer/answer`, o handshake não gera novas offers enquanto ICE está apenas `checking`;
+- o navegador começa com STUN + TURN/UDP e somente promove TCP/TLS se a rota inicial não conectar.
+
+Durante o teste, o console agora informa:
+
+- `TaskBoard: candidato TURN relay disponível` quando o navegador realmente conseguiu gerar candidate relay;
+- `TaskBoard: erro ICE` com `errorCode`, `errorText`, URL, endereço e porta, deduplicado por rota.
+
+Um `icecandidateerror` 701 de um endpoint específico não prova falha total se outro endpoint/candidate funcionar. O aceite deve ser feito pelo `connectionState=connected` e pela rota selecionada em **Conectividade WebRTC**.
+
+Não há migration nova. Mantenha a migration 090 aplicada.

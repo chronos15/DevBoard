@@ -625,35 +625,34 @@ export function ActivityItem({
                     </p>
                   )}
 
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-2.5">
                     <div className="min-w-0 shrink-0"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums sm:text-[0.65rem]">
+                      {done}/{allSubs.length}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:w-24">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <span className="w-8 text-right font-mono text-[0.7rem] font-medium tabular-nums text-muted-foreground">
+                        {progress}%
+                      </span>
+                      <span className="font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                        {formatHM(tracked)}
+                      </span>
+                    </div>
                     {linkedRequest && <span className="max-w-full truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary sm:text-[0.6rem]">{serviceRequestReference(linkedRequest)}</span>}
                     {(activity.assigneeIds?.length ?? 0) > 0 && (
                       <div className="shrink-0"><MemberStack ids={activity.assigneeIds ?? []} max={1} /></div>
                     )}
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums sm:text-[0.65rem]">
-                      {done}/{allSubs.length}
-                    </span>
                     {filtering && visibleSubs.length !== allSubs.length && (
                       <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary sm:text-[0.65rem]">
                         {visibleSubs.length} no filtro
                       </span>
                     )}
-                  </div>
-
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
-                    <div className="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-muted sm:max-w-44">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                    <span className="w-9 shrink-0 text-right font-mono text-xs font-medium tabular-nums text-muted-foreground">
-                      {progress}%
-                    </span>
-                    <span className="shrink-0 font-mono text-[0.72rem] tabular-nums text-muted-foreground">
-                      {formatHM(tracked)}
-                    </span>
                   </div>
                 </div>
               </div>

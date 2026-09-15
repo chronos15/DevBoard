@@ -103,13 +103,14 @@ type MeetingMemberRemovedSignal = {
 }
 
 type CallSignal = {
-  type: "offer" | "answer" | "ice" | "restart-request"
+  type: "offer" | "answer" | "ice" | "restart-request" | "ready"
   meetingId: string
   fromSession: string
   fromUserId: string
   toSession: string
   sdp?: RTCSessionDescriptionInit
   candidate?: RTCIceCandidateInit
+  signalKey?: string
 }
 
 type PeerSenders = {
@@ -129,6 +130,18 @@ type PanelMode = "participants" | "chat" | "settings" | null
 function makeSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
   return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function makeSignalKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `signal-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isMissingMeetingSignalFallback(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const value = error as { code?: string; message?: string; details?: string }
+  const text = `${value.message ?? ""} ${value.details ?? ""}`
+  return value.code === "PGRST202" || /meeting_webrtc_signal_(send|pull)|could not find the function/i.test(text)
 }
 
 function formatDuration(totalSeconds: number) {
@@ -611,6 +624,9 @@ export function CallRoom({
   const peerPruneTimersRef = React.useRef<Map<string, number>>(new Map())
   const livePresenceSessionsRef = React.useRef<Set<string>>(new Set())
   const signalQueuesRef = React.useRef<Map<string, Promise<void>>>(new Map())
+  const processedSignalKeysRef = React.useRef<Set<string>>(new Set())
+  const lastPersistedSignalIdRef = React.useRef(0)
+  const signalFallbackStateRef = React.useRef<"unknown" | "available" | "unavailable">("unknown")
   const peerHealthRef = React.useRef<Map<string, { inboundBytes: number; outboundBytes: number; stalledChecks: number }>>(new Map())
   const lastIceRestartRef = React.useRef<Map<string, number>>(new Map())
   const presencePublishTimerRef = React.useRef<number | null>(null)
@@ -834,29 +850,52 @@ export function CallRoom({
     schedulePresenceReconcile()
   }, [broadcastMediaStateBurst, currentUserId, schedulePresenceReconcile])
 
-  const postSignal = React.useCallback(async (signal: Omit<CallSignal, "meetingId" | "fromSession" | "fromUserId">) => {
-    if (!meeting || !channelRef.current) return false
-    try {
-      const result = await channelRef.current.send({
-        type: "broadcast",
-        event: "webrtc-signal",
-        payload: {
-          ...signal,
-          meetingId: meeting.id,
-          fromSession: sessionIdRef.current,
-          fromUserId: currentUserId,
-        } satisfies CallSignal,
-      })
-      if (result !== "ok") {
-        setMediaError("A conexão da chamada demorou mais que o esperado. Tentando reconectar...")
-        return false
-      }
-      return true
-    } catch {
-      setMediaError("Não foi possível manter a conexão da reunião. Tentando reconectar...")
+  const postSignal = React.useCallback(async (signal: Omit<CallSignal, "meetingId" | "fromSession" | "fromUserId" | "signalKey">) => {
+    if (!meeting) return false
+
+    const signalKey = makeSignalKey()
+    const payload: CallSignal = {
+      ...signal,
+      signalKey,
+      meetingId: meeting.id,
+      fromSession: sessionIdRef.current,
+      fromUserId: currentUserId,
+    }
+
+    const broadcastPromise = channelRef.current
+      ? channelRef.current.send({
+          type: "broadcast",
+          event: "webrtc-signal",
+          payload,
+        }).then((result) => result === "ok").catch(() => false)
+      : Promise.resolve(false)
+
+    const fallbackPromise = signalFallbackStateRef.current === "unavailable"
+      ? Promise.resolve(false)
+      : supabase.rpc("meeting_webrtc_signal_send", {
+          p_meeting_id: meeting.id,
+          p_signal_key: signalKey,
+          p_from_session: sessionIdRef.current,
+          p_to_session: signal.toSession,
+          p_signal_type: signal.type,
+          p_sdp: signal.sdp ?? null,
+          p_candidate: signal.candidate ?? null,
+        }).then(({ error }) => {
+          if (!error) {
+            signalFallbackStateRef.current = "available"
+            return true
+          }
+          if (isMissingMeetingSignalFallback(error)) signalFallbackStateRef.current = "unavailable"
+          return false
+        }).catch(() => false)
+
+    const [broadcastOk, fallbackOk] = await Promise.all([broadcastPromise, fallbackPromise])
+    if (!broadcastOk && !fallbackOk) {
+      setMediaError("A sinalização da reunião demorou mais que o esperado. Tentando reconectar...")
       return false
     }
-  }, [meeting?.id, currentUserId])
+    return true
+  }, [currentUserId, meeting?.id, supabase])
 
   const postNativeScreenSignal = React.useCallback(async (signal: NativeScreenSignal) => {
     if (!meeting || !channelRef.current) return false
@@ -1114,6 +1153,8 @@ export function CallRoom({
     peerPruneTimersRef.current.clear()
     livePresenceSessionsRef.current.clear()
     signalQueuesRef.current.clear()
+    processedSignalKeysRef.current.clear()
+    lastPersistedSignalIdRef.current = 0
     peerHealthRef.current.clear()
     lastIceRestartRef.current.clear()
     nativeScreenPeersRef.current.forEach((peer) => peer.close())
@@ -1167,8 +1208,11 @@ export function CallRoom({
     const existing = peerRoleRef.current.get(remoteSession)
     if (existing) return existing
     const created: PeerRoleState = {
-      // Um único offerer por par elimina glare/rollback e deixa o SDP idêntico nos dois lados.
-      offerer: sessionIdRef.current.localeCompare(remoteSession) < 0,
+      // Comparação binária/lexicográfica, independente do locale do dispositivo.
+      // `localeCompare()` pode usar collation diferente entre Android/Windows e
+      // fazer os dois lados se considerarem offerer (ou answerer), travando em
+      // "Conectando mídia" sem nunca trocar SDP.
+      offerer: sessionIdRef.current < remoteSession,
       initialOfferSent: false,
       offerInFlight: false,
       restartPending: false,
@@ -1470,6 +1514,9 @@ export function CallRoom({
     setMemberQuery("")
     setPresences({})
     remoteMediaStateRef.current.clear()
+    processedSignalKeysRef.current.clear()
+    lastPersistedSignalIdRef.current = 0
+    signalFallbackStateRef.current = "unknown"
     localMediaRevisionRef.current = 0
     joinedAtRef.current = new Date().toISOString()
     presenceStateRef.current.mediaRevision = 0
@@ -1722,6 +1769,10 @@ export function CallRoom({
         const role = getPeerRole(presence.sessionId)
         if (role.offerer && !role.initialOfferSent && !role.offerInFlight && peer.signalingState === "stable") {
           void sendOffer(presence.sessionId, peer)
+        } else if (!role.offerer && peer.connectionState !== "connected") {
+          // O answerer anuncia que está pronto. Isso remove a dependência de um
+          // único Presence sync / Broadcast chegar no instante exato da entrada.
+          void postSignal({ type: "ready", toSession: presence.sessionId })
         }
       }
       // Presence pode ficar vazio por alguns segundos ao trocar de rede, voltar do
@@ -1771,12 +1822,31 @@ export function CallRoom({
     const handleSignal = (signal: CallSignal) => {
       if (signal.meetingId !== meeting.id) return
       if (signal.toSession !== sessionIdRef.current || signal.fromSession === sessionIdRef.current) return
+      if (signal.signalKey) {
+        if (processedSignalKeysRef.current.has(signal.signalKey)) return
+        processedSignalKeysRef.current.add(signal.signalKey)
+        // Mantém o conjunto limitado em reuniões muito longas.
+        if (processedSignalKeysRef.current.size > 2500) {
+          const recent = Array.from(processedSignalKeysRef.current).slice(-1200)
+          processedSignalKeysRef.current = new Set(recent)
+        }
+      }
       const peer = ensurePeer(signal.fromSession, signal.fromUserId)
       if (!peer) return
 
       enqueuePeerSignal(signal.fromSession, async () => {
         try {
           const role = getPeerRole(signal.fromSession)
+
+          if (signal.type === "ready") {
+            if (!role.offerer || peer.connectionState === "connected") return
+            if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
+              await postSignal({ type: "offer", toSession: signal.fromSession, sdp: peer.localDescription })
+            } else if (peer.signalingState === "stable" && !role.offerInFlight) {
+              await sendOffer(signal.fromSession, peer)
+            }
+            return
+          }
 
           if (signal.type === "offer" && signal.sdp) {
             // Apenas o lado não-offerer aceita offers. Se chegar um offer invertido/stale,
@@ -1838,6 +1908,75 @@ export function CallRoom({
       })
     }
 
+    let signalPollTimer: number | null = null
+    let signalPolling = false
+    let signalPollStopped = false
+
+    const scheduleSignalPoll = (delay = 700) => {
+      if (disposed || signalPollStopped || signalFallbackStateRef.current === "unavailable") return
+      if (signalPollTimer !== null) window.clearTimeout(signalPollTimer)
+      signalPollTimer = window.setTimeout(() => {
+        signalPollTimer = null
+        void pollPersistedSignals()
+      }, delay)
+    }
+
+    const pollPersistedSignals = async () => {
+      if (disposed || signalPollStopped || signalPolling || signalFallbackStateRef.current === "unavailable") return
+      signalPolling = true
+      try {
+        const { data, error } = await supabase.rpc("meeting_webrtc_signal_pull", {
+          p_meeting_id: meeting.id,
+          p_to_session: sessionIdRef.current,
+          p_after_id: lastPersistedSignalIdRef.current,
+        })
+        if (error) {
+          if (isMissingMeetingSignalFallback(error)) {
+            signalFallbackStateRef.current = "unavailable"
+            signalPollStopped = true
+            return
+          }
+          scheduleSignalPoll(1600)
+          return
+        }
+
+        signalFallbackStateRef.current = "available"
+        const rows = Array.isArray(data) ? data as Array<{
+          id?: number | string
+          signal_key?: string
+          signal_type?: CallSignal["type"]
+          from_session?: string
+          from_user_id?: string
+          to_session?: string
+          sdp?: RTCSessionDescriptionInit | null
+          candidate?: RTCIceCandidateInit | null
+        }> : []
+
+        for (const row of rows) {
+          const rowId = Number(row.id ?? 0)
+          if (Number.isFinite(rowId) && rowId > lastPersistedSignalIdRef.current) {
+            lastPersistedSignalIdRef.current = rowId
+          }
+          if (!row.signal_type || !row.from_session || !row.from_user_id || !row.to_session) continue
+          handleSignal({
+            type: row.signal_type,
+            meetingId: meeting.id,
+            signalKey: row.signal_key,
+            fromSession: row.from_session,
+            fromUserId: row.from_user_id,
+            toSession: row.to_session,
+            sdp: row.sdp ?? undefined,
+            candidate: row.candidate ?? undefined,
+          })
+        }
+        scheduleSignalPoll(rows.length > 0 ? 180 : 700)
+      } catch {
+        scheduleSignalPoll(1600)
+      } finally {
+        signalPolling = false
+      }
+    }
+
     void (async () => {
       try {
         const iceConfig = await loadWebRtcIceConfig(supabase)
@@ -1873,6 +2012,8 @@ export function CallRoom({
             if (status === "SUBSCRIBED") {
               setMediaError((current) => current.startsWith("Falha na sala") ? "" : current)
               publishPresence()
+              signalPollStopped = false
+              scheduleSignalPoll(80)
               window.setTimeout(() => broadcastMediaStateBurst(), 120)
               if (meetingRecorderRef.current) window.setTimeout(() => void broadcastRecordingState("recording"), 180)
               // Depois de uma reconexão do Realtime, conserva peers conectados e
@@ -1897,6 +2038,9 @@ export function CallRoom({
 
     return () => {
       disposed = true
+      signalPollStopped = true
+      if (signalPollTimer !== null) window.clearTimeout(signalPollTimer)
+      signalPollTimer = null
       if (channel) {
         void channel.untrack()
         if (channelRef.current === channel) channelRef.current = null
@@ -1930,6 +2074,36 @@ export function CallRoom({
     mediaReadyMeetingId,
     syncRemoteReceiverTracks,
   ])
+
+
+  React.useEffect(() => {
+    if (!open || !meeting || currentMeetingState?.status !== "joined" || mediaReadyMeetingId !== meeting.id) return
+
+    const retryHandshake = () => {
+      peersRef.current.forEach((peer, remoteSession) => {
+        if (peer.connectionState === "connected" || peer.connectionState === "closed") return
+        const role = getPeerRole(remoteSession)
+        if (role.offerer) {
+          if (peer.signalingState === "have-local-offer" && peer.localDescription?.type === "offer") {
+            // Reenvia o SDP atual. Conforme o ICE gathering avança, localDescription
+            // passa a carregar candidatos adicionais, cobrindo também perda de ICE.
+            void postSignal({ type: "offer", toSession: remoteSession, sdp: peer.localDescription })
+          } else if (peer.signalingState === "stable" && !role.offerInFlight) {
+            void sendOffer(remoteSession, peer)
+          }
+        } else {
+          void postSignal({ type: "ready", toSession: remoteSession })
+        }
+      })
+    }
+
+    const first = window.setTimeout(retryHandshake, 900)
+    const interval = window.setInterval(retryHandshake, 2500)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(interval)
+    }
+  }, [currentMeetingState?.status, getPeerRole, mediaReadyMeetingId, meeting?.id, open, postSignal, sendOffer])
 
 
   React.useEffect(() => {

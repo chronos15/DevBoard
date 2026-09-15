@@ -999,3 +999,16 @@ A 078 amplia `workspace_member_access_profiles` com `action_permissions`, manten
 A migration cria versões V2 das RPCs administrativas de perfil (`get_my_workspace_access_profile_v2`, `set_workspace_member_access_profile_v2` e `list_workspace_team_members_v2`) para não quebrar clientes antigos. As operações estruturais são protegidas também no servidor, portanto esconder um botão no frontend não é a única barreira.
 
 Também são adicionadas a `projects` as listas `modules`, `subjects` e `responsible_departments`, gravadas pela RPC `set_project_context`. A identidade visual e o versionamento do projeto passam a respeitar `editProjects` quando o perfil personalizado estiver ativo.
+
+
+## V143 — fallback confiável para sinalização das reuniões
+
+Depois da migration 089, execute:
+
+```text
+supabase/migrations/090_taskboard_reliable_meeting_signaling.sql
+```
+
+O Realtime Broadcast continua sendo o caminho principal para `offer`, `answer`, candidatos ICE e pedidos de restart. A migration 090 adiciona somente uma fila efêmera de fallback. Cada sinal recebe uma chave única, é deduplicado no cliente e fica disponível por até 15 minutos para a sessão de destino. Isso cobre perda de Broadcast durante entrada, reconexão do WebSocket ou troca de rede sem transformar o banco em transporte permanente de mídia.
+
+A mídia continua **100% WebRTC**; o Supabase guarda apenas pequenos objetos de sinalização SDP/ICE. TURN continua necessário quando não existir rota P2P direta.

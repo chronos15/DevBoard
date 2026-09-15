@@ -135,3 +135,18 @@ Comportamento efetivo da V141:
 - a gravação continua **owner-only**, protegida no frontend e pela migration 087.
 
 Para validar a regressão, priorize primeiro um teste simples com dois navegadores/dispositivos, câmera e microfone ligados por alguns minutos. Depois teste câmera on/off, background/foreground, troca de rede e compartilhamento de tela. Isso ajuda a separar falha de negociação/mídia de limitações de TURN/rede.
+
+
+## V143 — teste de sinalização confiável
+
+A V143 adiciona um handshake `ready`, retry de SDP e a migration 090 como fallback persistente para sinais WebRTC. O cenário principal de aceite é o caso em que ambos aparecem como conectados à sala, mas a mídia remota não inicia.
+
+1. Aplique `090_taskboard_reliable_meeting_signaling.sql`.
+2. Abra a mesma reunião em desktop e Android/Chrome.
+3. Confirme `2/2 na sala`.
+4. Em poucos segundos, os dois lados devem sair de **Conectando mídia** e receber áudio/vídeo remoto.
+5. Recarregue um dos lados durante a chamada; a nova sessão deve renegociar sem exigir recriar a reunião.
+6. Troque Wi‑Fi/4G e valide a renegociação.
+7. Se aparecer aviso de ausência de TURN, teste também com TURN configurado para separar sinalização de limitação de NAT/CGNAT.
+
+O fallback do banco não transporta áudio/vídeo. Ele guarda somente `offer`, `answer`, ICE, `ready` e restart por uma janela curta, com acesso restrito a membros efetivamente `joined` na reunião.

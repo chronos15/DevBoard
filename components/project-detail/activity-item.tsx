@@ -203,12 +203,12 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
       </button>
 
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-start gap-2">
           <button
             type="button"
             onClick={() => setInlineOpen((current) => !current)}
             className={cn(
-              "min-w-0 truncate text-left text-sm font-medium transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary",
+              "min-w-0 flex-1 break-words text-left text-sm font-medium leading-snug transition-colors hover:text-primary focus-visible:outline-none focus-visible:text-primary xl:truncate",
               terminal && "text-muted-foreground line-through",
             )}
             title={`${sub.title} · ${inlineOpen ? "recolher resumo" : "expandir resumo"}`}
@@ -216,10 +216,12 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           >
             {sub.title}
           </button>
+          <ChevronDown className={cn("mt-0.5 size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
+        </div>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
           <WorkItemTypeBadge typeId={sub.typeId} compact />
           {sub.brainstormMode && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary"><BrainCircuit className="size-3" /> Brainstorm</span>}
           {sub.isFocus && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-600 dark:text-amber-400"><Star className="size-3 fill-current" /> Foco</span>}
-          <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground/60 transition-transform", inlineOpen && "rotate-180")} />
         </div>
         {sub.needsAttention && (
           <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-lg bg-chart-4/15 px-2 py-1 text-[0.68rem] font-medium text-chart-4">
@@ -503,10 +505,10 @@ export function ActivityItem({
             <span className="text-xs font-semibold text-chart-3">Executando</span>
           </div>
         )}
-        <div className="flex min-w-0 items-stretch">
+        <div className="flex min-w-0 flex-col items-stretch xl:flex-row">
           <button
             onClick={() => setOpen((o) => !o)}
-            className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3.5 text-left transition-colors hover:bg-muted/40 sm:gap-3 sm:px-4 sm:py-4"
+            className="flex min-w-0 flex-1 items-start gap-2 px-3 py-3.5 text-left transition-colors hover:bg-muted/40 sm:gap-3 sm:px-4 sm:py-4"
           >
             <ChevronDown
               className={cn(
@@ -515,37 +517,46 @@ export function ActivityItem({
               )}
             />
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+              <div className="flex min-w-0 items-start gap-1.5 sm:gap-2">
                 <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground sm:text-sm">
                   {activityNumber}-
                 </span>
-                <h3 className="min-w-0 flex-1 truncate font-semibold" title={activity.title}>{activity.title}</h3>
-                <div className="hidden shrink-0 sm:block"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
-                {linkedRequest && <span className="hidden rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-semibold text-primary sm:inline-flex">{serviceRequestReference(linkedRequest)}</span>}
+                <h3 className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug sm:text-[0.95rem] xl:truncate" title={activity.title}>{activity.title}</h3>
+              </div>
+
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                <div className="min-w-0 shrink-0"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
+                {linkedRequest && <span className="max-w-full truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary sm:text-[0.6rem]">{serviceRequestReference(linkedRequest)}</span>}
                 {(activity.assigneeIds?.length ?? 0) > 0 && (
-                  <div className="hidden shrink-0 sm:block"><MemberStack ids={activity.assigneeIds ?? []} max={2} /></div>
+                  <div className="shrink-0"><MemberStack ids={activity.assigneeIds ?? []} max={1} /></div>
                 )}
-                <span className="hidden rounded-full bg-muted px-1.5 py-0.5 text-[0.65rem] font-medium text-muted-foreground tabular-nums sm:inline-flex">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums sm:text-[0.65rem]">
                   {done}/{allSubs.length}
                 </span>
                 {filtering && visibleSubs.length !== allSubs.length && (
-                  <span className="hidden rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-primary sm:inline-flex">
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary sm:text-[0.65rem]">
                     {visibleSubs.length} no filtro
                   </span>
                 )}
               </div>
 
-              <div className="mt-1.5 flex min-w-0 items-center gap-2 overflow-hidden sm:hidden">
-                <div className="min-w-0 shrink"><WorkItemTypeBadge typeId={activity.typeId} compact /></div>
-                {linkedRequest && <span className="max-w-28 truncate rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[0.58rem] font-semibold text-primary">{serviceRequestReference(linkedRequest)}</span>}
-                {(activity.assigneeIds?.length ?? 0) > 0 && <MemberStack ids={activity.assigneeIds ?? []} max={1} />}
-                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] font-medium text-muted-foreground tabular-nums">{done}/{allSubs.length}</span>
-                {filtering && visibleSubs.length !== allSubs.length && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">{visibleSubs.length} filtro</span>}
-                <span className="ml-auto shrink-0 font-mono text-[0.62rem] tabular-nums text-muted-foreground">{formatHM(tracked)}</span>
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 xl:hidden">
+                <div className="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-muted sm:max-w-40">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="w-9 shrink-0 text-right font-mono text-xs font-medium tabular-nums text-muted-foreground">
+                  {progress}%
+                </span>
+                <span className="shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                  {formatHM(tracked)}
+                </span>
               </div>
             </div>
 
-            <div className="hidden items-center gap-2 sm:flex">
+            <div className="hidden items-center gap-2 xl:flex">
               <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-all"
@@ -557,12 +568,12 @@ export function ActivityItem({
               </span>
             </div>
 
-            <span className="ml-1 hidden w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:block">
+            <span className="ml-1 hidden w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground xl:block">
               {formatHM(tracked)}
             </span>
           </button>
 
-          <div className="flex shrink-0 items-center border-l border-border px-1 sm:hidden">
+          <div className="hidden shrink-0 items-center border-l border-border px-1 sm:hidden">
             <DropdownMenu open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
               <DropdownMenuTrigger
                 className="flex size-10 items-center justify-center rounded-xl text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -620,17 +631,17 @@ export function ActivityItem({
             </DropdownMenu>
           </div>
 
-          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
             <ActivityInfoDialog activity={activity} project={currentProject} triggerClassName="m-auto size-11 rounded-none" />
           </div>
 
           {currentProject && (
-            <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+            <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
               <ActivityNotesDialog activity={activity} project={currentProject} compact triggerClassName="m-auto size-11 rounded-none" />
             </div>
           )}
 
-          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
             <AttachmentDialog
               title={`Arquivos · ${activity.title}`}
               description="Mídias, documentos e evidências vinculados diretamente a esta atividade."
@@ -645,7 +656,7 @@ export function ActivityItem({
             />
           </div>
 
-          <div className="hidden shrink-0 items-stretch border-l border-border sm:flex">
+          <div className="hidden shrink-0 items-stretch border-l border-border xl:flex">
             <CopyEntityLinkButton
               href={`/projetos/${projectId}#activity-${activity.id}`}
               label={`Copiar link da atividade ${activity.title}`}
@@ -657,11 +668,59 @@ export function ActivityItem({
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
-              className="hidden w-12 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive sm:flex"
+              className="hidden w-12 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive xl:flex"
               aria-label={`Excluir atividade ${activity.title}`}
               title="Excluir atividade"
             >
               <Trash2 className="size-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border px-3 py-2 sm:px-4 xl:hidden">
+          <button
+            type="button"
+            onClick={() => setInfoOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Info className="size-3.5" />
+            Informações
+          </button>
+          {currentProject && (
+            <button
+              type="button"
+              onClick={() => setNotesOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <NotebookPen className="size-3.5" />
+              Anotações
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setAttachmentsOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Paperclip className="size-3.5" />
+            Arquivos
+            {(activity.attachments?.length ?? 0) > 0 && <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">{activity.attachments?.length ?? 0}</span>}
+          </button>
+          <button
+            type="button"
+            onClick={() => { void copyActivityLink() }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {linkCopied ? <Check className="size-3.5 text-success" /> : <Link2 className="size-3.5" />}
+            {linkCopied ? "Link copiado" : "Copiar link"}
+          </button>
+          {canDelete && canManageStructure && (
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-1.5 text-[0.68rem] font-medium text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <Trash2 className="size-3.5" />
+              Excluir
             </button>
           )}
         </div>

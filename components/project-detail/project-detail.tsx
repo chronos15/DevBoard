@@ -350,7 +350,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       >
         <div className="min-w-0 space-y-3 lg:order-1">
           <div className="rounded-2xl border border-border bg-card/60 p-2.5 shadow-sm sm:p-3">
-            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-center gap-2.5 px-1">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <ListTree className="size-4" />
@@ -364,7 +364,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               </div>
 
-              <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <div className="flex w-full min-w-0 flex-col gap-2 xl:w-auto xl:flex-row xl:items-center">
                 {canCreateActivity && (
                   <FollowUpAddActivityDialog
                     projectId={project.id}
@@ -372,11 +372,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                     className="h-9 w-full rounded-xl px-3 shadow-sm sm:w-auto"
                   />
                 )}
-                <div className="inline-flex w-full min-w-0 shrink-0 rounded-xl bg-muted p-1 sm:w-fit">
+                <div className="flex w-full min-w-0 shrink-0 flex-wrap rounded-xl bg-muted p-1 xl:w-fit xl:flex-nowrap">
                   <button
                     type="button"
                     onClick={() => changeView("list")}
-                    className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:min-w-0 xl:flex-none", viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   >
                     <List className="size-3.5" />
                     Lista
@@ -384,7 +384,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={() => changeView("kanban")}
-                    className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors sm:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors xl:min-w-0 xl:flex-none", viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   >
                     <Columns3 className="size-3.5" />
                     Kanban
@@ -392,7 +392,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={openFollowUp}
-                    className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm sm:flex-none"
+                    className="flex h-8 min-w-[132px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground hover:shadow-sm xl:min-w-0 xl:flex-none"
                     title="Abrir página de acompanhamento"
                   >
                     <MessageSquareText className="size-3.5" />

@@ -260,27 +260,41 @@ object NativeScreenShareManager {
             override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
             override fun onStandardizedIceConnectionChange(newState: PeerConnection.IceConnectionState?) = Unit
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
-                if (
-                    newState == PeerConnection.PeerConnectionState.FAILED ||
-                    newState == PeerConnection.PeerConnectionState.DISCONNECTED
-                ) {
-                    // A captura pode continuar viva enquanto apenas a rota WebRTC
-                    // daquele participante congela. Recria somente esse peer para
-                    // voltar a enviar frames contínuos, em vez de deixar a tela remota
-                    // parada como uma captura estática.
+                if (newState == PeerConnection.PeerConnectionState.FAILED) {
+                    // FAILED é uma perda definitiva desta rota. Recria apenas o peer
+                    // afetado, sem tocar na captura MediaProjection nem nos demais.
                     mainHandler.postDelayed({
                         val current = peers[recipient.sessionId]
                         if (
                             started &&
                             recipients.containsKey(recipient.sessionId) &&
                             current != null &&
-                            (current.connectionState() == PeerConnection.PeerConnectionState.FAILED ||
-                             current.connectionState() == PeerConnection.PeerConnectionState.DISCONNECTED)
+                            current.connectionState() == PeerConnection.PeerConnectionState.FAILED
                         ) {
                             closePeer(recipient.sessionId, notify = false)
                             createSenderPeer(recipient)
                         }
-                    }, 1800)
+                    }, 1200)
+                    return
+                }
+
+                if (newState == PeerConnection.PeerConnectionState.DISCONNECTED) {
+                    // DISCONNECTED é frequentemente transitório em Android (troca de
+                    // Wi-Fi/4G, Doze ou retorno do background). A V111 recriava em 1,8 s,
+                    // gerando ciclos de offer/answer e impressão de "prints" congelados.
+                    // Aguarda uma janela real de perda antes de substituir o peer.
+                    mainHandler.postDelayed({
+                        val current = peers[recipient.sessionId]
+                        if (
+                            started &&
+                            recipients.containsKey(recipient.sessionId) &&
+                            current != null &&
+                            current.connectionState() == PeerConnection.PeerConnectionState.DISCONNECTED
+                        ) {
+                            closePeer(recipient.sessionId, notify = false)
+                            createSenderPeer(recipient)
+                        }
+                    }, 8000)
                 }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit

@@ -60,7 +60,7 @@ No Supabase, verifique também os logs do Realtime. O Devboard usa Broadcast par
 
 ## Estabilidade de rede / mobile
 
-Esta versão mantém peers WebRTC por uma janela de tolerância quando o Supabase Presence oscila durante troca de Wi‑Fi/4G, background/foreground ou reconexão do socket. A sinalização SDP/ICE é processada em fila por peer para impedir concorrência entre `offer`, `answer` e candidatos ICE. A chamada também executa health-check periódico do RTP e solicita ICE restart somente quando a mídia realmente deixa de trafegar por uma janela sustentada.
+Esta versão mantém peers WebRTC por uma janela de tolerância quando o Supabase Presence oscila durante troca de Wi‑Fi/4G, background/foreground ou reconexão do socket. A sinalização SDP/ICE é processada em fila por peer para impedir concorrência entre `offer`, `answer` e candidatos ICE. O health-check periódico recupera primeiro a mídia por rebind/renegociação e reserva ICE restart para falha real de transporte.
 
 Teste recomendado:
 
@@ -76,21 +76,46 @@ O Devboard usa `navigator.mediaDevices.getDisplayMedia()` quando a API existe. O
 
 No Chrome Android/Android WebView, a API de captura de tela do sistema ainda não é exposta ao conteúdo web. Nesse ambiente o Devboard mostra uma mensagem específica em vez do erro genérico de contexto. Captura da tela inteira do aparelho Android exigirá um cliente Android nativo (por exemplo, usando MediaProjection) ou um wrapper com ponte nativa; uma PWA/web pura não consegue contornar a ausência da API do navegador.
 
-## V111 — vídeo congelado/preto e gravação owner-only
+## V140 — estabilidade de vídeo e gravação owner-only
 
-A V111 separa a saúde do RTP de **vídeo** da saúde geral de áudio. Isso evita o caso em que o áudio continua chegando e mascara uma câmera/tela congelada.
+A V140 corrige a estratégia de recuperação introduzida na V111. O problema não era apenas detectar vídeo parado; a recuperação anterior podia ser destrutiva demais para uma conexão que ainda estava saudável.
 
-Fluxo de recuperação por participante:
+### O que mudou no vídeo
 
-1. detecta ausência sustentada de bytes de vídeo enquanto câmera/tela deveriam estar ativas;
-2. solicita ressincronização da track ao emissor e ICE restart;
-3. se o vídeo continuar parado, recria somente o `RTCPeerConnection` daquele participante;
-4. o restante da sala permanece conectado.
-
-No Android nativo, peers de `MediaProjection` em `DISCONNECTED` também são recriados automaticamente. Uma nova oferta recebida não reutiliza peer nativo já desconectado.
+- `replaceTrack(null) -> track` foi removido da recuperação. A track não é mais destacada do sender só para tentar gerar keyframe.
+- congelamento visual não executa ICE restart imediatamente; ICE restart fica reservado para falha real de transporte (`failed` ou `disconnected` persistente);
+- o health-check considera **frames codificados/decodificados + bytes**, não apenas bytes;
+- o watchdog não trata background/minimização do PWA como travamento de vídeo;
+- após uma janela sustentada sem frames, a recuperação usa primeiro rebind seguro e depois uma renegociação SDP normal, preservando o mesmo `RTCPeerConnection`;
+- peer conectado não é mais destruído/recriado somente por vídeo parado;
+- tracks remotas antigas/encerradas são removidas do `MediaStream`, evitando que o `<video>` continue preso em uma track obsoleta/preta;
+- tracks locais encerradas inesperadamente são readquiridas sem recriar o peer; se o dispositivo escolhido sumiu, o TaskBoard tenta o dispositivo padrão;
+- `replaceTrack()` não é repetido quando o sender já aponta para a mesma track viva, evitando resets desnecessários do encoder;
+- sinalização atrasada não é aplicada em uma instância de peer que já foi substituída;
+- uma oferta sem resposta possui timeout/rollback. Se `offer`/`answer` se perder no Realtime, a conexão volta a `stable` e tenta negociar novamente em vez de ficar presa em `have-local-offer`;
+- `DISCONNECTED` ganhou tolerância maior antes de recuperação, tanto no peer principal quanto no compartilhamento nativo Android.
 
 ### Gravação
 
-Somente `meetings.created_by` (owner/criador da reunião) pode criar, manter e publicar a gravação automática. Convidados não executam `MediaRecorder`, não assumem a gravação por timeout e não enviam partes do vídeo ao Storage.
+A regra continua estritamente **owner-only**:
 
-Para chamadas fora da mesma rede, o TURN continua sendo requisito importante. Confirme em **Áudio e vídeo → Conectividade WebRTC** que a Edge Function `webrtc-ice-servers` está retornando servidores TURN quando a rota direta não for possível.
+- somente `meetings.created_by` cria `BrowserMeetingRecorder`;
+- somente o owner alimenta as fontes da gravação;
+- somente o owner atende pedido de finalização/publicação;
+- um recorder residual em cliente não-owner é interrompido e nunca publicado;
+- a migration 087 continua protegendo a mesma regra no banco por trigger/RPC.
+
+Não há migration nova na V140.
+
+### Cenários mínimos de validação
+
+1. Owner inicia reunião em uma subatividade e dois usuários entram em seguida. Todos devem ver/escutar todos.
+2. Deixe câmera parada por pelo menos 30 s. Não deve ocorrer ciclo de reconexão nem card preto.
+3. Minimize o PWA por 10–20 s e retorne. A chamada deve preservar o peer e recuperar mídia sem restart imediato.
+4. Troque Wi-Fi por 4G/5G. `DISCONNECTED` transitório deve aguardar; falha persistente deve recuperar por ICE restart.
+5. Ligue/desligue câmera repetidamente; a mesma m-line deve ser reutilizada sem tela preta.
+6. Compartilhe tela em Android nativo e provoque troca de rede. O peer nativo não deve recriar em loop a cada oscilação curta.
+7. Durante a chamada, desconecte/troque uma câmera ou microfone USB/Bluetooth. A fonte deve recuperar sem recriar a conexão inteira.
+8. Encerre a reunião por participante e por owner. Somente o owner deve produzir/uploadar/publicar a gravação.
+
+Para chamadas entre redes diferentes, o TURN continua sendo necessário quando uma rota direta não é possível. Confira em **Áudio e vídeo → Conectividade WebRTC** se a Edge Function `webrtc-ice-servers` está retornando TURN.

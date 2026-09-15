@@ -88,6 +88,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const cancelled = sub.status === "cancelled"
   const terminal = done || cancelled
   const running = runningSubIds.includes(sub.id)
+  const inProgress = sub.status === "in-progress"
   const canManage = canManageSubactivity(sub)
   const meta = statusMeta[sub.status]
   const estimateSeconds = sub.estimatedHours * 3600
@@ -192,8 +193,10 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         setInlineOpen((current) => !current)
       }}
       className={cn(
-        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-colors sm:px-3",
-        running ? "bg-primary/[0.06]" : "hover:bg-muted/50",
+        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-all sm:px-3",
+        inProgress
+          ? "rounded-2xl border border-orange-500/25 bg-orange-500/[0.08] shadow-sm dark:border-orange-400/25 dark:bg-orange-400/[0.10]"
+          : "hover:bg-muted/50",
         cancelled && "opacity-70",
         focused && "bg-primary/[0.08] ring-2 ring-inset ring-primary/30",
       )}
@@ -279,7 +282,7 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
           <span
             className={cn(
               "font-mono text-[0.7rem] tabular-nums",
-              running ? "text-primary" : "text-muted-foreground",
+              running ? "text-orange-600 dark:text-orange-300" : "text-muted-foreground",
             )}
           >
             {formatHMS(sub.trackedSeconds)} / {sub.estimatedHours}h
@@ -375,7 +378,9 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
             className={cn(
               "h-8 max-w-full min-w-0 flex-1 rounded-full border-0 px-2.5 text-[0.65rem] font-medium outline-none ring-0 sm:max-w-36 sm:flex-none",
               canManage ? "cursor-pointer" : "cursor-not-allowed opacity-55",
-              meta.className,
+              sub.status === "in-progress"
+                ? "bg-orange-100 text-orange-700 dark:bg-orange-400/15 dark:text-orange-300"
+                : meta.className,
             )}
           >
             {availableStatuses.map((status) => (
@@ -614,12 +619,12 @@ export function ActivityItem({
         )}
       >
         {hasRunningSubactivity && (
-          <div className="flex items-center gap-2 border-b border-chart-3/15 bg-chart-3/[0.06] px-3 py-2 sm:px-4">
-            <span className="relative flex size-2 shrink-0">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-chart-3 opacity-40" />
-              <span className="relative inline-flex size-2 rounded-full bg-chart-3" />
+          <div className="flex items-center gap-2 border-b border-orange-500/20 bg-orange-100/80 px-3 py-2 text-orange-700 dark:border-orange-400/20 dark:bg-orange-400/12 dark:text-orange-300 sm:px-4">
+            <span className="relative flex size-2.5 shrink-0">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-orange-500 opacity-35 dark:bg-orange-300" />
+              <span className="relative inline-flex size-2.5 rounded-full bg-orange-500 dark:bg-orange-300" />
             </span>
-            <span className="text-xs font-semibold text-chart-3">Executando</span>
+            <span className="text-xs font-semibold">Executando</span>
           </div>
         )}
         <div className="min-w-0 px-3 py-3 sm:px-4 sm:py-4">

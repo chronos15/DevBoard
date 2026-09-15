@@ -172,3 +172,27 @@ Não há migration nova. Mantenha a migration 090 aplicada.
 ## V145 — SDP com ICE embutido
 
 O handshake principal aguarda o ICE gathering antes de enviar offer/answer. Isso faz com que candidatos host/srflx/relay já viajem dentro do SDP e reduz a dependência de trickle ICE. Em falha da primeira tentativa, o peer muda para TURN relay-only e faz um ICE restart controlado.
+
+## V146 — sinalização explícita por HTTP + trickle ICE da V110
+
+A V146 substitui a estratégia da V145 de aguardar o ICE gathering e o fallback relay-only. O diagnóstico em produção mostrou que o Cloudflare TURN está gerando candidatos `relay`, enquanto o supabase-js avisava que `channel.send()` estava fazendo fallback implícito para REST durante a sinalização.
+
+Comportamento efetivo:
+
+- o `RTCPeerConnection` recebe desde o início a lista completa devolvida pela Edge Function (STUN + TURN UDP/TCP/TLS), como na base V110;
+- offer/answer são enviados imediatamente após `setLocalDescription()`;
+- candidatos ICE são enviados por trickle ICE conforme são gerados;
+- Broadcast da reunião usa `channel.httpSend()` explicitamente, evitando o fallback implícito/depreciado de `send()`;
+- offer/answer/ICE continuam sendo persistidos também pela RPC da migration 090 e recuperados pelo poller, como caminho redundante;
+- quando o lado answerer detecta o outro participante mas ainda não recebeu offer, envia uma única `restart-request`, garantindo que o offerer publique novamente o SDP;
+- não existe handshake `ready`, espera de ICE gathering, troca automática para relay-only ou retry de SDP em loop.
+
+Teste mínimo:
+
+1. encerre qualquer sala criada antes do deploy;
+2. abra uma reunião nova com dois usuários distintos;
+3. confirme `2/2 na sala`;
+4. no console, deve aparecer `TaskBoard: enviando offer WebRTC` em um lado e `TaskBoard: offer WebRTC recebida` no outro;
+5. em seguida devem aparecer answer e candidatos ICE; o card remoto deve mudar de `Conectando mídia` para conectado;
+6. o aviso `Realtime send() is automatically falling back to REST API` não deve mais ser originado pelo módulo de reunião;
+7. mantenha a migration 090 aplicada. Não existe migration nova na V146.

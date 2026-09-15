@@ -2,61 +2,17 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Activity, ChevronDown, CircleOff, Clock3, Eye, Gauge, UsersRound } from "lucide-react"
+import { Activity, ArrowRight, ChevronDown, CircleOff, Clock3, Eye, Gauge, UsersRound } from "lucide-react"
 import { MemberAvatar } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { followUpHref } from "@/lib/follow-up-launcher"
 import { formatHMS, statusMeta } from "@/lib/project-utils"
-import { ACCESS_ROLE_LABELS, type Member, type Project, type Subactivity, type WorkSession } from "@/lib/types"
+import { recentWork, workForMember, workLastMovement } from "@/lib/member-work-activity"
+import { MemberWorkDashboardDialog } from "@/components/dashboard/member-work-dashboard-dialog"
+import { ACCESS_ROLE_LABELS, type Member, type WorkSession } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const IDLE_AFTER_MS = 2 * 60 * 1000
-const OPEN_STATUSES = new Set(["backlog", "waiting", "waiting-aqs", "in-progress", "paused"])
-
-type WorkRef = {
-  project: Project
-  activityId: string
-  activityTitle: string
-  subactivity: Subactivity
-}
-
-function workForMember(projects: Project[], memberId: string) {
-  const work: WorkRef[] = []
-  for (const project of projects) {
-    for (const activity of project.activities) {
-      for (const subactivity of activity.subactivities) {
-        if (!OPEN_STATUSES.has(subactivity.status)) continue
-        // O card Equipe representa responsabilidade real, não participação no tópico.
-        // memberIds também contém autores de comentários/menções, então não deve
-        // ser usado para decidir quais subatividades pertencem ao usuário aqui.
-        if (subactivity.assigneeId !== memberId) continue
-        work.push({ project, activityId: activity.id, activityTitle: activity.title, subactivity })
-      }
-    }
-  }
-  return work
-}
-
-function workLastChangedAt(item: WorkRef) {
-  const candidates = [
-    item.subactivity.updatedAt,
-    item.subactivity.createdAt,
-    ...(item.subactivity.comments ?? []).map((comment) => comment.createdAt),
-    ...(item.subactivity.attachments ?? []).map((attachment) => attachment.statusChangedAt ?? attachment.createdAt),
-  ]
-  return candidates.reduce((latest, value) => {
-    if (!value) return latest
-    const timestamp = new Date(value).getTime()
-    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest
-  }, 0)
-}
-
-function recentWork(items: WorkRef[]) {
-  return [...items]
-    .sort((a, b) => workLastChangedAt(b) - workLastChangedAt(a))
-    .slice(0, 3)
-}
-
 function shortElapsed(iso: string | undefined, now: number) {
   if (!iso) return "agora"
   const value = new Date(iso).getTime()
@@ -98,10 +54,11 @@ function effectiveSecondsToday(sessions: WorkSession[], memberId: string, now: n
 }
 
 export function WorkspaceActivityStatus() {
-  const { members, memberPresence, presenceReady, projects, workSessions, currentUserRole } = useStore()
+  const { members, memberPresence, presenceReady, projects, workSessions, currentUserId, currentUserRole } = useStore()
   const [now, setNow] = React.useState(() => Date.now())
   const [expandedMemberId, setExpandedMemberId] = React.useState<string | null>(null)
   const [view, setView] = React.useState<"presence" | "effective">("presence")
+  const [dashboardMemberId, setDashboardMemberId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15000)
@@ -111,10 +68,11 @@ export function WorkspaceActivityStatus() {
   const rows = React.useMemo(() => members.map((member) => {
     const presence = memberPresence[member.id]
     const work = workForMember(projects, member.id)
+    const activeWork = work.filter((item) => item.subactivity.status !== "done")
     const running = work.find((item) => item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id)
     const lastActiveTime = presence?.lastActiveAt ? new Date(presence.lastActiveAt).getTime() : 0
     const idle = Boolean(presence?.online && lastActiveTime && now - lastActiveTime >= IDLE_AFTER_MS)
-    return { member, presence, work, running, idle }
+    return { member, presence, work, activeWork, running, idle }
   }).sort((a, b) => {
     const score = (row: typeof a) => row.running ? 0 : row.presence?.online && !row.idle ? 1 : row.presence?.online ? 2 : 3
     return score(a) - score(b) || a.member.name.localeCompare(b.member.name, "pt-BR")
@@ -138,7 +96,10 @@ export function WorkspaceActivityStatus() {
     return { member, seconds, running, scheduledToday, targetSeconds }
   }).sort((a, b) => b.seconds - a.seconds || a.member.name.localeCompare(b.member.name, "pt-BR")), [members, now, projects, workSessions])
 
+  const dashboardMember = members.find((member) => member.id === dashboardMemberId) ?? null
+
   return (
+    <>
     <section className="flex h-full min-h-[360px] min-w-0 flex-col rounded-2xl bg-card p-4 ring-1 ring-foreground/8 sm:p-5 xl:h-[420px] xl:min-h-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -146,7 +107,7 @@ export function WorkspaceActivityStatus() {
             <UsersRound className="size-4 shrink-0 text-primary" />
             <h2 className="text-base font-semibold">Equipe</h2>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{view === "presence" ? "Status de todos os usuários do workspace em tempo real." : "Horas efetivadas hoje em subatividades executadas."}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{view === "presence" ? "Presença e últimas movimentações operacionais da equipe." : "Horas efetivadas hoje em subatividades executadas."}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {view === "presence" && (!presenceReady ? (
@@ -173,10 +134,11 @@ export function WorkspaceActivityStatus() {
 
       {view === "presence" ? (
       <div className="mt-4 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
-        {rows.map(({ member, presence, work, running, idle }) => {
+        {rows.map(({ member, presence, work, activeWork, running, idle }) => {
           const screen = presence?.screenLabel || "TaskBoard"
           const online = Boolean(presence?.online)
-          const noTasks = work.length === 0
+          const noTasks = activeWork.length === 0
+          const canViewMore = currentUserRole === "admin" || member.id === currentUserId
           const expanded = expandedMemberId === member.id
           const latest = recentWork(work)
 
@@ -222,7 +184,7 @@ export function WorkspaceActivityStatus() {
                         {noTasks ? "Sem tarefas abertas" : idle ? `Parado em ${screen}` : `Navegando em ${screen}`}
                       </p>
                       <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground">
-                        {noTasks ? screen : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
+                        {noTasks ? screen : `${activeWork.length} tarefa${activeWork.length === 1 ? "" : "s"} ativa${activeWork.length === 1 ? "" : "s"}`}
                         {presence?.lastActiveAt ? ` · interação há ${shortElapsed(presence.lastActiveAt, now)}` : ""}
                       </p>
                     </>
@@ -235,7 +197,7 @@ export function WorkspaceActivityStatus() {
                     <>
                       <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">Offline</p>
                       <p className="mt-0.5 truncate text-[0.64rem] text-muted-foreground/75">
-                        {noTasks ? "Sem tarefas abertas" : `${work.length} tarefa${work.length === 1 ? "" : "s"} aberta${work.length === 1 ? "" : "s"}`}
+                        {noTasks ? "Sem tarefas abertas" : `${activeWork.length} tarefa${activeWork.length === 1 ? "" : "s"} ativa${activeWork.length === 1 ? "" : "s"}`}
                       </p>
                     </>
                   )}
@@ -262,7 +224,7 @@ export function WorkspaceActivityStatus() {
               {expanded && (
                 <div className="border-t border-border/70 px-2.5 pb-2.5 pt-2">
                   <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
-                    <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Últimas tarefas alteradas</span>
+                    <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Últimas movimentações</span>
                     <span className="font-mono text-[0.6rem] tabular-nums text-muted-foreground">{Math.min(work.length, 3)}/{work.length}</span>
                   </div>
 
@@ -271,8 +233,8 @@ export function WorkspaceActivityStatus() {
                       {latest.map((item) => {
                         const isRunning = item.subactivity.status === "in-progress" && item.subactivity.assigneeId === member.id
                         const meta = statusMeta[item.subactivity.status]
-                        const lastChangedAt = workLastChangedAt(item)
-                        const changedAgo = lastChangedAt ? shortElapsed(new Date(lastChangedAt).toISOString(), now) : "agora"
+                        const movement = workLastMovement(item)
+                        const changedAgo = movement.at ? shortElapsed(new Date(movement.at).toISOString(), now) : "agora"
                         return (
                           <Link
                             key={item.subactivity.id}
@@ -282,7 +244,7 @@ export function WorkspaceActivityStatus() {
                             <span className={cn("size-1.5 shrink-0 rounded-full", isRunning ? "bg-primary" : meta.dot)} />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[0.72rem] font-medium group-hover:text-primary">{item.subactivity.title}</span>
-                              <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">{item.project.name} · {item.activityTitle} · alterada há {changedAgo}</span>
+                              <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">{item.project.name} · {item.activityTitle} · {movement.label.toLocaleLowerCase("pt-BR")} há {changedAgo}</span>
                             </span>
                             <span className={cn(
                               "shrink-0 rounded-full px-1.5 py-0.5 text-[0.56rem] font-semibold",
@@ -296,8 +258,22 @@ export function WorkspaceActivityStatus() {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-[0.68rem] text-muted-foreground">
-                      Nenhuma atividade ou subatividade aberta para este usuário.
+                      Nenhuma movimentação operacional para este usuário. Itens em backlog não aparecem aqui.
                     </div>
+                  )}
+
+                  {canViewMore && (
+                    <button
+                      type="button"
+                      onClick={() => setDashboardMemberId(member.id)}
+                      className="mt-1.5 flex w-full items-center justify-between gap-3 rounded-lg border border-dashed border-primary/25 bg-primary/[0.035] px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[0.7rem] font-semibold text-primary">Mais</span>
+                        <span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">Dashboard, cronologia e Gantt de {member.name}</span>
+                      </span>
+                      <ArrowRight className="size-4 shrink-0 text-primary" />
+                    </button>
                   )}
                 </div>
               )}
@@ -363,5 +339,14 @@ export function WorkspaceActivityStatus() {
         </div>
       )}
     </section>
+    <MemberWorkDashboardDialog
+      member={dashboardMember}
+      projects={projects}
+      workSessions={workSessions}
+      presence={dashboardMember ? memberPresence[dashboardMember.id] : undefined}
+      open={Boolean(dashboardMember)}
+      onOpenChange={(open) => { if (!open) setDashboardMemberId(null) }}
+    />
+    </>
   )
 }

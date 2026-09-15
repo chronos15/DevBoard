@@ -67,26 +67,81 @@ export function ActivityInfoDialog({
   }, [open, activity.title])
 
   React.useLayoutEffect(() => {
-    if (!open || titleExpanded) return
+    if (!open) return
     const titleElement = titleRef.current
     if (!titleElement) return
 
+    let disposed = false
+
     const measure = () => {
-      const overflowing = titleElement.scrollHeight > titleElement.clientHeight + 1
-      setTitleCanExpand(overflowing)
+      if (disposed || !titleRef.current) return
+      const element = titleRef.current
+      const styles = window.getComputedStyle(element)
+      const width = element.getBoundingClientRect().width
+      if (width <= 0) return
+
+      // `line-clamp` altera a própria caixa renderizada e, em alguns browsers,
+      // também mascara scrollHeight/clientHeight. Medimos uma cópia sem clamp
+      // para descobrir a altura natural do título na MESMA largura real.
+      const mirror = document.createElement("div")
+      mirror.textContent = activity.title
+      Object.assign(mirror.style, {
+        position: "fixed",
+        left: "-100000px",
+        top: "0",
+        visibility: "hidden",
+        pointerEvents: "none",
+        zIndex: "-1",
+        width: `${width}px`,
+        maxWidth: `${width}px`,
+        height: "auto",
+        maxHeight: "none",
+        overflow: "visible",
+        display: "block",
+        whiteSpace: "normal",
+        wordBreak: styles.wordBreak,
+        overflowWrap: styles.overflowWrap,
+        fontFamily: styles.fontFamily,
+        fontSize: styles.fontSize,
+        fontStyle: styles.fontStyle,
+        fontWeight: styles.fontWeight,
+        fontStretch: styles.fontStretch,
+        lineHeight: styles.lineHeight,
+        letterSpacing: styles.letterSpacing,
+        textTransform: styles.textTransform,
+      })
+      document.body.appendChild(mirror)
+
+      const fontSize = Number.parseFloat(styles.fontSize) || 16
+      const parsedLineHeight = Number.parseFloat(styles.lineHeight)
+      const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.2
+      const naturalHeight = mirror.getBoundingClientRect().height
+      mirror.remove()
+
+      const canExpand = naturalHeight > lineHeight * 3 + 1
+      setTitleCanExpand(canExpand)
+      if (!canExpand) setTitleExpanded(false)
     }
 
     const frame = window.requestAnimationFrame(measure)
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null
     observer?.observe(titleElement)
+    if (titleElement.parentElement) observer?.observe(titleElement.parentElement)
     window.addEventListener("resize", measure)
 
+    // Fontes web podem terminar de carregar depois do primeiro layout e alterar
+    // a quantidade de linhas. Recalcula quando isso acontecer.
+    void document.fonts?.ready.then(() => {
+      if (!disposed) measure()
+    })
+
     return () => {
+      disposed = true
       window.cancelAnimationFrame(frame)
       observer?.disconnect()
       window.removeEventListener("resize", measure)
     }
-  }, [open, activity.title, titleExpanded])
+  }, [open, activity.title])
 
   const total = activity.subactivities.length
   const done = activity.subactivities.filter((sub) => sub.status === "done").length

@@ -60,6 +60,7 @@ import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 
@@ -285,6 +286,10 @@ export function AnalysisView() {
   const [droppedEvidenceVersion, setDroppedEvidenceVersion] = React.useState(0)
   const commentRef = React.useRef<HTMLTextAreaElement>(null)
   const timelineRef = React.useRef<HTMLDivElement>(null)
+  const timelineContentRef = React.useRef<HTMLDivElement>(null)
+  const stickTimelineToBottomRef = React.useRef(true)
+  const lastTimelineItemRef = React.useRef<string | null>(null)
+  const [hasNewTimelineItems, setHasNewTimelineItems] = React.useState(false)
   const [vcsChangesBySubactivity, setVcsChangesBySubactivity] = React.useState<Record<string, DeveloperTaskVcsChange[]>>({})
 
   const locatedReviews = React.useMemo<LocatedReview[]>(() => {
@@ -516,11 +521,31 @@ export function AnalysisView() {
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
   }, [selected])
 
+  function scrollTimelineToBottom(behavior: ScrollBehavior = "auto") {
+    const viewport = timelineRef.current
+    if (!viewport) return
+    const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    if (behavior === "smooth" && typeof viewport.scrollTo === "function") viewport.scrollTo({ top, behavior })
+    else viewport.scrollTop = top
+    stickTimelineToBottomRef.current = true
+    setHasNewTimelineItems(false)
+  }
+
+  function handleTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
+    const viewport = event.currentTarget
+    const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 96
+    stickTimelineToBottomRef.current = nearBottom
+    if (nearBottom) setHasNewTimelineItems(false)
+  }
+
   React.useEffect(() => {
     if (!selectedReviewId) return
+    stickTimelineToBottomRef.current = true
+    setHasNewTimelineItems(false)
+    lastTimelineItemRef.current = null
     window.requestAnimationFrame(() => {
-      const viewport = timelineRef.current
-      if (viewport) viewport.scrollTop = viewport.scrollHeight
+      scrollTimelineToBottom("auto")
+      window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
     })
   }, [selectedReviewId])
 
@@ -586,6 +611,28 @@ export function AnalysisView() {
     }
     return items.sort((a, b) => safeTime(a.createdAt) - safeTime(b.createdAt))
   }, [selected])
+
+  const lastTimelineItemId = timeline.at(-1)?.id ?? null
+
+  React.useEffect(() => {
+    const previous = lastTimelineItemRef.current
+    if (previous === lastTimelineItemId) return
+    lastTimelineItemRef.current = lastTimelineItemId
+    if (!previous) return
+    if (stickTimelineToBottomRef.current) window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
+    else setHasNewTimelineItems(true)
+  }, [lastTimelineItemId])
+
+  React.useEffect(() => {
+    const content = timelineContentRef.current
+    if (!content || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => {
+      if (stickTimelineToBottomRef.current) window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
+    })
+    observer.observe(content)
+    if (timelineRef.current) observer.observe(timelineRef.current)
+    return () => observer.disconnect()
+  }, [selectedReviewId])
 
   async function withBusy(id: string, action: () => Promise<boolean>) {
     setBusy((current) => new Set(current).add(id))
@@ -1025,8 +1072,9 @@ export function AnalysisView() {
                 </div>
               )}
 
-              <div ref={timelineRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]">
-                <div className="w-full min-w-0">
+              <div className="relative min-h-0 flex-1">
+              <div ref={timelineRef} onScroll={handleTimelineScroll} className="h-full min-h-0 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]">
+                <div ref={timelineContentRef} className="w-full min-w-0">
                   <div className="mb-5 border-b border-border pb-5">
                     <div className="flex items-start gap-3">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ClipboardCheck className="size-5" /></span>
@@ -1101,6 +1149,8 @@ export function AnalysisView() {
                     })}
                   </div>
                 </div>
+              </div>
+              <TimelineJumpToLatest visible={hasNewTimelineItems} onClick={() => scrollTimelineToBottom("smooth")} label="Novas mensagens" />
               </div>
 
               <div className="relative shrink-0 border-t border-border bg-card px-3 py-3 sm:px-4">

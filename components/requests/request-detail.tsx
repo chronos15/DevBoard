@@ -56,6 +56,7 @@ import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { AnchoredTimelineViewport } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 
 function formatDateTime(value: string) {
@@ -545,6 +546,11 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
     ...request.events.map((event) => ({ kind: "event" as const, createdAt: event.createdAt, event })),
     ...request.messages.map((message) => ({ kind: "message" as const, createdAt: message.createdAt, message })),
   ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const lastTimelineKey = (() => {
+    const last = timeline.at(-1)
+    if (!last) return null
+    return last.kind === "event" ? `event:${last.event.id}` : `message:${last.message.id}`
+  })()
 
   async function quick(key: string, action: () => Promise<boolean>) {
     if (quickLoading) return
@@ -594,7 +600,12 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
       <div className={cn("grid min-h-0", embedded ? "flex-1 gap-0 overflow-hidden xl:grid-cols-[minmax(0,1fr)_300px]" : "gap-4 xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <section className={cn("flex min-w-0 flex-col overflow-hidden bg-card", embedded ? "min-h-0" : "min-h-[620px] rounded-2xl border border-border")}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><div><h2 className="text-sm font-semibold">Histórico do protocolo</h2><p className="mt-0.5 text-[0.68rem] text-muted-foreground">Comunicação e mudanças de estado entre solicitante, AQS e DEV.</p></div><MessageSquareText className="size-4 text-muted-foreground" /></div>
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3 sm:p-4">
+          <AnchoredTimelineViewport
+            scopeKey={request.id}
+            changeKey={lastTimelineKey}
+            className="p-3 sm:p-4 [scrollbar-width:thin]"
+            contentClassName="space-y-1"
+          >
             {timeline.length === 0 ? <div className="py-16 text-center text-sm text-muted-foreground">Nenhum registro ainda.</div> : timeline.map((item) => item.kind === "event" ? (
               <div key={`event-${item.event.id}`} className="flex gap-3 rounded-xl px-2 py-3 hover:bg-muted/25">
                 <span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full", item.event.type.startsWith("technical-") ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}><RequestEventIcon type={item.event.type} /></span>
@@ -626,7 +637,7 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
               </div>
               )
             })())}
-          </div>
+          </AnchoredTimelineViewport>
           <RequestComposer request={request} />
         </section>
 

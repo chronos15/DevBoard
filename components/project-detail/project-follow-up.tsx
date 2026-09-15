@@ -94,6 +94,7 @@ import { InlineTextAttachment } from "@/components/attachments/inline-text-attac
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
+import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -740,11 +741,23 @@ function AttachmentCard({
   const displayHref = localPreview?.url ?? href
   const [imageOpen, setImageOpen] = React.useState(false)
   const [fileOpen, setFileOpen] = React.useState(false)
+  const [visualReady, setVisualReady] = React.useState(false)
+  const [measuredSize, setMeasuredSize] = React.useState<{ width: number; height: number } | null>(null)
   const effectiveKind = inferAttachmentKind({
     name: attachment.name,
     mimeType: attachment.mimeType,
     kind: attachment.kind,
   })
+
+  React.useEffect(() => {
+    setVisualReady(false)
+    setMeasuredSize(null)
+  }, [displayHref, effectiveKind])
+
+  const measuredPreview = measuredSize && displayHref
+    ? { key: attachment.id, kind: effectiveKind, url: displayHref, width: measuredSize.width, height: measuredSize.height } as LocalMediaPreview
+    : undefined
+  const effectivePreview = localPreview ?? measuredPreview
 
   if (effectiveKind === "image") {
     return (
@@ -754,11 +767,11 @@ function AttachmentCard({
           onClick={() => displayHref && setImageOpen(true)}
           disabled={!displayHref}
           className={cn(
-            "mt-2 block max-w-full overflow-hidden rounded-xl border border-border bg-muted/25 text-left align-top transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            localPreview ? "w-auto" : "w-fit",
+            "relative mt-2 block max-w-full overflow-hidden rounded-xl border border-border bg-muted/25 text-left align-top transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            effectivePreview ? "w-auto" : "w-fit",
             displayHref ? "cursor-zoom-in hover:border-primary/35" : "cursor-default",
           )}
-          style={localMediaBoxStyle(localPreview, 420)}
+          style={localMediaBoxStyle(effectivePreview, 420) ?? (!visualReady && displayHref ? { width: "min(100%, 18rem)", aspectRatio: "4 / 3" } : undefined)}
           title={displayHref ? "Ampliar imagem" : undefined}
           aria-label={displayHref ? `Ampliar ${attachment.name}` : attachment.name}
         >
@@ -766,13 +779,28 @@ function AttachmentCard({
             <img
               src={displayHref}
               alt={attachment.name}
-              onLoad={onMediaReady}
-              className={cn("block object-contain", localPreview ? "h-full w-full" : "h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)]")}
+              onLoad={(event) => {
+                const image = event.currentTarget
+                setMeasuredSize({ width: image.naturalWidth, height: image.naturalHeight })
+                setVisualReady(true)
+                onMediaReady?.()
+              }}
+              className={cn(
+                "block object-contain transition-opacity duration-150",
+                effectivePreview ? "h-full w-full" : "h-auto w-auto max-h-[420px] max-w-[min(100%,42rem)]",
+                visualReady ? "opacity-100" : "opacity-0",
+              )}
             />
           ) : (
             <div className="flex h-28 w-44 max-w-full items-center justify-center text-muted-foreground/55">
               <FileImage className="size-7" />
             </div>
+          )}
+          {displayHref && !visualReady && (
+            <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-[0.65rem] text-muted-foreground">
+              <LoaderCircle className="size-4 animate-spin" />
+              Carregando imagem…
+            </span>
           )}
         </button>
         <ImageViewerDialog
@@ -792,8 +820,8 @@ function AttachmentCard({
   if (effectiveKind === "video") {
     return (
       <div
-        className={cn("mt-2 max-w-full overflow-hidden rounded-xl border border-border bg-black", localPreview ? "w-auto" : "w-fit")}
-        style={localMediaBoxStyle(localPreview, 520)}
+        className={cn("relative mt-2 max-w-full overflow-hidden rounded-xl border border-border", visualReady ? "bg-black" : "bg-muted/35", effectivePreview ? "w-auto" : "w-fit")}
+        style={localMediaBoxStyle(effectivePreview, 520) ?? (!visualReady && displayHref ? { width: "min(100%, 20rem)", aspectRatio: "16 / 9" } : undefined)}
       >
         {displayHref ? (
           <video
@@ -801,12 +829,27 @@ function AttachmentCard({
             controls
             playsInline
             preload="metadata"
-            onLoadedMetadata={onMediaReady}
-            className={cn("block object-contain", localPreview ? "h-full w-full" : "h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]")}
+            onLoadedMetadata={(event) => {
+              const video = event.currentTarget
+              setMeasuredSize({ width: video.videoWidth, height: video.videoHeight })
+              setVisualReady(true)
+              onMediaReady?.()
+            }}
+            className={cn(
+              "block object-contain transition-opacity duration-150",
+              effectivePreview ? "h-full w-full" : "h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]",
+              visualReady ? "opacity-100" : "opacity-0",
+            )}
           />
         ) : (
           <div className="flex h-36 w-60 max-w-full items-center justify-center text-muted-foreground/55">
             <FileVideo className="size-7" />
+          </div>
+        )}
+        {displayHref && !visualReady && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-[0.65rem] text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin" />
+            Carregando vídeo…
           </div>
         )}
       </div>
@@ -971,7 +1014,10 @@ export function ProjectFollowUp({
   const statusMenuPortalRef = React.useRef<HTMLDivElement>(null)
   const reactionPickerRef = React.useRef<HTMLDivElement>(null)
   const timelineViewportRef = React.useRef<HTMLDivElement>(null)
+  const timelineContentRef = React.useRef<HTMLDivElement>(null)
   const timelineEndRef = React.useRef<HTMLDivElement>(null)
+  const stickTimelineToBottomRef = React.useRef(true)
+  const lastTimelineItemRef = React.useRef<string | null>(null)
   const lastInitialBottomSubRef = React.useRef<string | null>(null)
   const pendingTimelineFocusRef = React.useRef<string | null>(initialTimelineId ?? null)
   const initialBottomLockRef = React.useRef(false)
@@ -1007,6 +1053,7 @@ export function ProjectFollowUp({
   const [pinnedPickerOpen, setPinnedPickerOpen] = React.useState(false)
   const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
   const [focusedTimelineId, setFocusedTimelineId] = React.useState<string | null>(null)
+  const [hasNewTimelineItems, setHasNewTimelineItems] = React.useState(false)
   const [localSearchOpen, setLocalSearchOpen] = React.useState(false)
   const [localSearchQuery, setLocalSearchQuery] = React.useState("")
   const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
@@ -1558,6 +1605,38 @@ export function ProjectFollowUp({
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   }, [currentUserId, groupedMessageIds, pendingComments, pendingUploads, project.logs, savedMessageGroupIds, selectedActivity, selectedSub, workSessions])
+
+  const lastTimelineItemId = timeline.at(-1)?.id ?? null
+
+  React.useEffect(() => {
+    lastTimelineItemRef.current = lastTimelineItemId
+    stickTimelineToBottomRef.current = true
+    setHasNewTimelineItems(false)
+  }, [selectedSubId])
+
+  React.useEffect(() => {
+    const previous = lastTimelineItemRef.current
+    if (previous === lastTimelineItemId) return
+    lastTimelineItemRef.current = lastTimelineItemId
+    if (!previous) return
+    if (stickTimelineToBottomRef.current) {
+      window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
+    } else {
+      setHasNewTimelineItems(true)
+    }
+  }, [lastTimelineItemId])
+
+  React.useEffect(() => {
+    const content = timelineContentRef.current
+    if (!content || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => {
+      if (!stickTimelineToBottomRef.current) return
+      window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
+    })
+    observer.observe(content)
+    if (timelineViewportRef.current) observer.observe(timelineViewportRef.current)
+    return () => observer.disconnect()
+  }, [selectedSubId])
 
   const reactionsByTimelineItem = React.useMemo(() => {
     const map = new Map<string, FollowUpReaction[]>()
@@ -2119,13 +2198,26 @@ export function ProjectFollowUp({
     return alias ? localMediaPreviewCacheRef.current.get(alias) : undefined
   }
 
-  function scrollTimelineToBottom() {
+  function scrollTimelineToBottom(behavior: ScrollBehavior = "auto") {
     const viewport = timelineViewportRef.current
     if (viewport) {
-      viewport.scrollTop = viewport.scrollHeight
+      const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+      if (behavior === "smooth" && typeof viewport.scrollTo === "function") viewport.scrollTo({ top, behavior })
+      else viewport.scrollTop = top
+      stickTimelineToBottomRef.current = true
+      setHasNewTimelineItems(false)
       return
     }
-    timelineEndRef.current?.scrollIntoView({ block: "end" })
+    timelineEndRef.current?.scrollIntoView({ block: "end", behavior })
+    stickTimelineToBottomRef.current = true
+    setHasNewTimelineItems(false)
+  }
+
+  function handleTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
+    const viewport = event.currentTarget
+    const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 96
+    stickTimelineToBottomRef.current = nearBottom
+    if (nearBottom) setHasNewTimelineItems(false)
   }
 
   function releaseInitialBottomLock() {
@@ -2137,8 +2229,8 @@ export function ProjectFollowUp({
   }
 
   function handleTimelineMediaReady() {
-    if (!initialBottomLockRef.current) return
-    window.requestAnimationFrame(scrollTimelineToBottom)
+    if (!initialBottomLockRef.current && !stickTimelineToBottomRef.current) return
+    window.requestAnimationFrame(() => scrollTimelineToBottom("auto"))
   }
 
   function focusTimelineItem(itemId: string) {
@@ -3248,9 +3340,11 @@ export function ProjectFollowUp({
                 </div>
               )}
 
+              <div className="relative min-h-0 flex-1">
               <div
                 ref={timelineViewportRef}
-                className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
+                className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
+                onScroll={handleTimelineScroll}
                 onWheel={releaseInitialBottomLock}
                 onTouchMove={releaseInitialBottomLock}
                 onPointerDown={(event) => {
@@ -3264,7 +3358,7 @@ export function ProjectFollowUp({
                   if (files.length) queueFilesForPreview(files)
                 }}
               >
-                <div className="w-full min-w-0">
+                <div ref={timelineContentRef} className="w-full min-w-0">
                   <div className="mb-4 border-b border-border pb-4">
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary min-[761px]:flex"><Hash className="size-5" /></span>
@@ -3722,6 +3816,12 @@ export function ProjectFollowUp({
                   )}
                   <div ref={timelineEndRef} />
                 </div>
+              </div>
+              <TimelineJumpToLatest
+                visible={hasNewTimelineItems}
+                onClick={() => scrollTimelineToBottom("smooth")}
+                label="Novas mensagens"
+              />
               </div>
 
               <footer className="relative border-t border-border bg-card/95 p-2.5 sm:p-3">

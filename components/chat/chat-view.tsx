@@ -38,6 +38,7 @@ import { AudioMessage } from "@/components/chat/audio-message"
 import { AudioRecordButton } from "@/components/chat/audio-record-button"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
+import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { Button } from "@/components/ui/button"
@@ -486,9 +487,11 @@ export function ChatView({
   const [replyingTo, setReplyingTo] = React.useState<ChatReplyReference | null>(null)
   const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null)
   const [focusedReplyMessageId, setFocusedReplyMessageId] = React.useState<string | null>(null)
+  const [hasNewMessagesBelow, setHasNewMessagesBelow] = React.useState(false)
   const [slashCommandIndex, setSlashCommandIndex] = React.useState(0)
   const [executingSlashCommandId, setExecutingSlashCommandId] = React.useState<string | null>(null)
   const messagesViewportRef = React.useRef<HTMLDivElement | null>(null)
+  const messagesContentRef = React.useRef<HTMLDivElement | null>(null)
   const historyRequestRef = React.useRef(0)
   const historyLoadingRef = React.useRef(false)
   const stickToBottomRef = React.useRef(true)
@@ -650,6 +653,7 @@ export function ChatView({
     setHistoryHasMore(true)
     setHistoryReady(false)
     stickToBottomRef.current = true
+    setHasNewMessagesBelow(false)
 
     if (!selectedId) {
       historyLoadingRef.current = false
@@ -676,17 +680,50 @@ export function ChatView({
     if (!viewport) return
     viewport.scrollTop = viewport.scrollHeight
     stickToBottomRef.current = true
+    setHasNewMessagesBelow(false)
   }, [historyReady, selectedId])
 
   const selectedLastMessageId = selected?.messages.at(-1)?.id
 
   React.useEffect(() => {
-    if (!historyReady || !stickToBottomRef.current) return
+    if (!historyReady || !selectedLastMessageId) return
+    if (!stickToBottomRef.current) {
+      setHasNewMessagesBelow(true)
+      return
+    }
     requestAnimationFrame(() => {
       const viewport = messagesViewportRef.current
       if (viewport) viewport.scrollTop = viewport.scrollHeight
+      setHasNewMessagesBelow(false)
     })
   }, [historyReady, selectedLastMessageId])
+
+  const scrollConversationToBottom = React.useCallback((behavior: ScrollBehavior = "auto") => {
+    const viewport = messagesViewportRef.current
+    if (!viewport) return
+    const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    if (behavior === "smooth" && typeof viewport.scrollTo === "function") viewport.scrollTo({ top, behavior })
+    else viewport.scrollTop = top
+    stickToBottomRef.current = true
+    setHasNewMessagesBelow(false)
+  }, [])
+
+  const handleConversationMediaReady = React.useCallback(() => {
+    if (!stickToBottomRef.current) return
+    requestAnimationFrame(() => scrollConversationToBottom("auto"))
+  }, [scrollConversationToBottom])
+
+  React.useEffect(() => {
+    const viewport = messagesViewportRef.current
+    if (!viewport || typeof ResizeObserver === "undefined" || !historyReady) return
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottomRef.current) return
+      window.requestAnimationFrame(() => scrollConversationToBottom("auto"))
+    })
+    observer.observe(viewport)
+    if (messagesContentRef.current) observer.observe(messagesContentRef.current)
+    return () => observer.disconnect()
+  }, [historyReady, selectedId, selectedLastMessageId, scrollConversationToBottom])
 
   React.useEffect(() => {
     setStagedFiles([])
@@ -988,6 +1025,7 @@ export function ChatView({
     const reply = replyingTo
     setReplyingTo(null)
     stickToBottomRef.current = true
+    setHasNewMessagesBelow(false)
     void sendChatMessage(selected.id, content, validMentions, reply ?? undefined)
   }
 
@@ -1001,6 +1039,8 @@ export function ChatView({
 
   async function submitMedia(caption: string) {
     if (readOnly || !selected || !stagedFiles.length || sendingMedia) return
+    stickToBottomRef.current = true
+    setHasNewMessagesBelow(false)
     setSendingMedia(true)
     try {
       const sent = await sendChatMedia(selected.id, stagedFiles, caption)
@@ -1356,17 +1396,19 @@ export function ChatView({
                   </button>
                 )}
 
+                <div className="relative min-h-0 flex-1">
                 <div
                   ref={messagesViewportRef}
                   onScroll={(event) => {
                     const viewport = event.currentTarget
                     stickToBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+                    if (stickToBottomRef.current) setHasNewMessagesBelow(false)
                     if (!stickToBottomRef.current && viewport.scrollTop <= 72) void loadOlderMessages()
                   }}
                   onWheel={(event) => {
                     if (event.deltaY < 0 && event.currentTarget.scrollTop <= 72) void loadOlderMessages()
                   }}
-                  className="min-h-0 flex-1 overflow-y-auto bg-muted/10 px-3 py-4 [overflow-anchor:none] sm:px-5"
+                  className="h-full min-h-0 overflow-y-auto bg-muted/10 px-3 py-4 [overflow-anchor:none] sm:px-5"
                 >
                   {!historyReady ? (
                     <div className="flex h-full min-h-80 items-center justify-center text-xs text-muted-foreground">
@@ -1385,7 +1427,7 @@ export function ChatView({
                       </p>
                     </div>
                   ) : (
-                    <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                    <div ref={messagesContentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
                       <div className="flex min-h-5 items-center justify-center">
                         {historyLoading && historyReady ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-[0.6rem] text-muted-foreground ring-1 ring-foreground/8">
@@ -1516,6 +1558,7 @@ export function ChatView({
                                     sizeBytes={item.mediaSizeBytes}
                                     kind={item.mediaKind}
                                     caption={item.content}
+                                    onMediaReady={handleConversationMediaReady}
                                     onSendEditedImage={selected ? (file) => sendChatMedia(selected.id, [file], "") : undefined}
                                   />
                                 ) : (
@@ -1555,6 +1598,8 @@ export function ChatView({
                       })}
                     </div>
                   )}
+                </div>
+                <TimelineJumpToLatest visible={hasNewMessagesBelow} onClick={() => scrollConversationToBottom("smooth")} label="Novas mensagens" />
                 </div>
 
                 <footer className="border-t border-border bg-card px-3 py-3 sm:px-4">

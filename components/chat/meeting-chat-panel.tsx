@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/client"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { AudioMessage } from "@/components/chat/audio-message"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
+import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
@@ -101,9 +102,11 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   const [stagedFiles, setStagedFiles] = React.useState<File[]>([])
   const [attachmentOpen, setAttachmentOpen] = React.useState(false)
   const [sendingMedia, setSendingMedia] = React.useState(false)
+  const [hasNewMessagesBelow, setHasNewMessagesBelow] = React.useState(false)
   const inputRef = React.useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
+  const messagesContentRef = React.useRef<HTMLDivElement | null>(null)
   const stickBottomRef = React.useRef(true)
 
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
@@ -164,6 +167,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
       requestAnimationFrame(() => {
         const viewport = viewportRef.current
         if (viewport) viewport.scrollTop = viewport.scrollHeight
+        setHasNewMessagesBelow(false)
       })
     }).finally(() => {
       if (!cancelled) setHistoryLoading(false)
@@ -185,12 +189,44 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
 
   const lastMessageId = conversation?.messages.at(-1)?.id
   React.useEffect(() => {
-    if (!historyReady || !stickBottomRef.current) return
+    if (!historyReady || !lastMessageId) return
+    if (!stickBottomRef.current) {
+      setHasNewMessagesBelow(true)
+      return
+    }
     requestAnimationFrame(() => {
       const viewport = viewportRef.current
       if (viewport) viewport.scrollTop = viewport.scrollHeight
+      setHasNewMessagesBelow(false)
     })
   }, [historyReady, lastMessageId])
+
+  const scrollMeetingChatToBottom = React.useCallback((behavior: ScrollBehavior = "auto") => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    if (behavior === "smooth" && typeof viewport.scrollTo === "function") viewport.scrollTo({ top, behavior })
+    else viewport.scrollTop = top
+    stickBottomRef.current = true
+    setHasNewMessagesBelow(false)
+  }, [])
+
+  const handleMeetingMediaReady = React.useCallback(() => {
+    if (!stickBottomRef.current) return
+    requestAnimationFrame(() => scrollMeetingChatToBottom("auto"))
+  }, [scrollMeetingChatToBottom])
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || typeof ResizeObserver === "undefined" || !historyReady) return
+    const observer = new ResizeObserver(() => {
+      if (!stickBottomRef.current) return
+      window.requestAnimationFrame(() => scrollMeetingChatToBottom("auto"))
+    })
+    observer.observe(viewport)
+    if (messagesContentRef.current) observer.observe(messagesContentRef.current)
+    return () => observer.disconnect()
+  }, [conversation?.id, historyReady, lastMessageId, scrollMeetingChatToBottom])
 
   function syncMention(value: string, caret: number | null) {
     if (caret == null) return setMentionRange(null)
@@ -238,6 +274,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
       setMentionRange(null)
       setReplyingTo(null)
       stickBottomRef.current = true
+      setHasNewMessagesBelow(false)
     } finally {
       setSending(false)
     }
@@ -291,6 +328,8 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
 
   async function submitMedia(caption: string) {
     if (!conversation || !stagedFiles.length || sendingMedia) return
+    stickBottomRef.current = true
+    setHasNewMessagesBelow(false)
     setSendingMedia(true)
     try {
       const ok = await sendChatMedia(conversation.id, stagedFiles, caption)
@@ -323,13 +362,15 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
         </div>
       </div>
 
+      <div className="relative min-h-0 min-w-0 flex-1">
       <div
         ref={viewportRef}
         onScroll={(event) => {
           const el = event.currentTarget
           stickBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          if (stickBottomRef.current) setHasNewMessagesBelow(false)
         }}
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
+        className="h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
       >
         {historyHasMore && (
           <div className="mb-2 text-center">
@@ -348,7 +389,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
             <p className="mt-2 text-[0.65rem]">Nenhuma mensagem ainda.</p>
           </div>
         ) : (
-          <div className="min-w-0 space-y-2.5">
+          <div ref={messagesContentRef} className="min-w-0 space-y-2.5">
             {conversation.messages.map((item) => {
               const own = item.senderId === currentUserId
               const mentionedCurrentUser = !own && isUserMentioned(item.mentions, currentUserId)
@@ -400,6 +441,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                           sizeBytes={item.mediaSizeBytes}
                           kind={item.mediaKind}
                           caption={item.content}
+                          onMediaReady={handleMeetingMediaReady}
                           onSendEditedImage={conversation ? (file) => sendChatMedia(conversation.id, [file], "") : undefined}
                         />
                       ) : (
@@ -470,6 +512,8 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
             })}
           </div>
         )}
+      </div>
+      <TimelineJumpToLatest visible={hasNewMessagesBelow} onClick={() => scrollMeetingChatToBottom("smooth")} label="Novas mensagens" />
       </div>
 
       <div className="relative min-w-0 shrink-0 border-t border-border bg-card p-2.5">

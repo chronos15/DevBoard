@@ -35,6 +35,7 @@ export function ChatMediaMessage({
   sizeBytes,
   kind,
   caption,
+  onMediaReady,
   onSendEditedImage,
 }: {
   storagePath?: string
@@ -43,6 +44,7 @@ export function ChatMediaMessage({
   sizeBytes?: number
   kind?: AttachmentKind
   caption?: string
+  onMediaReady?: () => void
   onSendEditedImage?: (file: File) => Promise<boolean | void>
 }) {
   const supabase = React.useMemo(() => createClient(), [])
@@ -149,7 +151,10 @@ export function ChatMediaMessage({
                   alt={fileName}
                   loading="lazy"
                   decoding="async"
-                  onLoad={() => setMediaReady(true)}
+                  onLoad={() => {
+                    setMediaReady(true)
+                    onMediaReady?.()
+                  }}
                   onError={() => {
                     setMediaReady(false)
                     setFailed(true)
@@ -199,7 +204,10 @@ export function ChatMediaMessage({
               controls
               playsInline
               preload="metadata"
-              onLoadedMetadata={() => setMediaReady(true)}
+              onLoadedMetadata={() => {
+                setMediaReady(true)
+                onMediaReady?.()
+              }}
               onError={() => {
                 setMediaReady(false)
                 setFailed(true)

@@ -100,7 +100,7 @@ export function SubactivityApprovalDialog({
           </div>
         </div>
 
-        <DialogFooter className="border-t border-border bg-muted/20 px-5 py-3">
+        <DialogFooter className="mx-0 mb-0 flex-row items-center justify-end gap-2 rounded-b-xl border-t border-border bg-muted/20 px-5 py-4">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>Cancelar</Button>
           <Button type="button" onClick={() => selectedId && onConfirm(selectedId)} disabled={!selectedId || loading} loading={loading} loadingText="Solicitando...">
             Solicitar aprovação

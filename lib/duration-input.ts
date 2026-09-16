@@ -49,11 +49,34 @@ export function normalizeHHMMOnBlur(value: string) {
     }
   }
 
-  const onlyHours = trimmed.match(/^\d+$/)
-  if (onlyHours) {
-    const hours = Number(trimmed)
-    if (Number.isSafeInteger(hours) && hours >= 0) return `${String(hours).padStart(2, "0")}:00`
+  const onlyDigits = trimmed.match(/^\d+$/)
+  if (onlyDigits) {
+    // Entrada compacta para digitação rápida: 400 -> 04:00, 130 -> 01:30, 1230 -> 12:30.
+    // Com 1-2 dígitos, preservamos o comportamento intuitivo de horas inteiras.
+    if (trimmed.length <= 2) {
+      const hours = Number(trimmed)
+      if (Number.isSafeInteger(hours) && hours >= 0) return `${String(hours).padStart(2, "0")}:00`
+    }
+
+    const hoursPart = trimmed.slice(0, -2)
+    const minutesPart = trimmed.slice(-2)
+    const hours = Number(hoursPart)
+    const minutes = Number(minutesPart)
+    if (Number.isSafeInteger(hours) && hours >= 0 && Number.isSafeInteger(minutes) && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+    }
   }
 
   return trimmed
+}
+
+export function sanitizeHHMMTyping(value: string) {
+  const sanitized = value.replace(/[^\d:]/g, "")
+  const colonIndex = sanitized.indexOf(":")
+
+  if (colonIndex < 0) return sanitized.slice(0, 6)
+
+  const hours = sanitized.slice(0, colonIndex).replace(/:/g, "").slice(0, 4)
+  const minutes = sanitized.slice(colonIndex + 1).replace(/:/g, "").slice(0, 2)
+  return `${hours}:${minutes}`
 }

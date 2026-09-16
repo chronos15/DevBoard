@@ -16,7 +16,8 @@ import { canPerformAction } from "@/lib/access-control"
 import { statusMeta, statusOrder } from "@/lib/project-utils"
 import type { Priority, Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { normalizeHHMMInput, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
+import { normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
+import { DurationField } from "@/components/ui/duration-field"
 
 function executionMembersOnly<T extends { role?: string }>(members: T[]) {
   return members.filter((member) => member.role === "developer" || member.role === "admin")
@@ -376,7 +377,8 @@ export function FollowUpAddSubactivityDialog({
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
-  const [hours, setHours] = React.useState("04:00")
+  const [hours, setHours] = React.useState("")
+  const [estimateError, setEstimateError] = React.useState<string | null>(null)
   const [assigneeId, setAssigneeId] = React.useState(
     executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "",
   )
@@ -400,7 +402,16 @@ export function FollowUpAddSubactivityDialog({
     event.preventDefault()
     const normalizedEstimate = normalizeHHMMOnBlur(hours)
     const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
-    if (!title.trim() || !assigneeId || !parsedEstimate || saving) return
+    if (!title.trim() || !assigneeId || saving) return
+    if (!parsedEstimate || parsedEstimate.totalMinutes <= 0) {
+      setEstimateError(!hours.trim()
+        ? "Informe a estimativa da subatividade."
+        : parsedEstimate?.totalMinutes === 0
+          ? "A estimativa deve ser maior que 00:00."
+          : "Informe uma estimativa válida no formato HH:mm.")
+      return
+    }
+    setEstimateError(null)
     if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     if (!aqsRequired && (status === "done" || status === "cancelled") && !window.confirm(`Criar esta subatividade já como “${statusMeta[status].label}”?`)) return
 
@@ -415,7 +426,8 @@ export function FollowUpAddSubactivityDialog({
       })
       if (!ok) return
       setTitle("")
-      setHours("04:00")
+      setHours("")
+      setEstimateError(null)
       setStatus("backlog")
       setTypeId("")
       setOpen(false)
@@ -430,7 +442,10 @@ export function FollowUpAddSubactivityDialog({
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+        if (next) {
+          setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+          setEstimateError(null)
+        }
       }}
     >
       <Button
@@ -468,17 +483,16 @@ export function FollowUpAddSubactivityDialog({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
-              <input
-                type="text"
-                inputMode="text"
+              <DurationField
                 value={hours}
-                onChange={(event) => setHours(normalizeHHMMInput(event.target.value))}
-                onBlur={() => setHours((current) => normalizeHHMMOnBlur(current))}
-                placeholder="Ex.: 04:00"
-                aria-invalid={hours.trim().length > 0 && !parseHHMMToDecimalHours(hours)}
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 font-mono text-sm tabular-nums outline-none focus:border-ring"
+                onChange={(value) => {
+                  setHours(value)
+                  if (estimateError) setEstimateError(null)
+                }}
+                invalid={Boolean(estimateError)}
+                errorMessage={estimateError}
+                placeholder="HH:mm"
               />
-              <p className="text-[0.66rem] leading-snug text-muted-foreground">Use HH:mm. Ex.: 01:30, 04:00 ou 12:45.</p>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Situação</label>
@@ -532,7 +546,7 @@ export function FollowUpAddSubactivityDialog({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-          <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId || !parseHHMMToDecimalHours(normalizeHHMMOnBlur(hours))} loading={saving} loadingText="Criando...">
+          <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId} loading={saving} loadingText="Criando...">
             <Plus className="size-4" /> Criar subatividade
           </Button>
         </DialogFooter>

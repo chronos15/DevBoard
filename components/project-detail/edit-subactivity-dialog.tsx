@@ -15,7 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { formatDecimalHoursAsHHMM, normalizeHHMMInput, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
+import { formatDecimalHoursAsHHMM, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
+import { DurationField } from "@/components/ui/duration-field"
 
 export function EditSubactivityDialog({
   subactivity,
@@ -146,17 +147,13 @@ export function EditSubactivityDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
-              <input
-                type="text"
-                inputMode="text"
+              <DurationField
                 value={hours}
-                onChange={(event) => setHours(normalizeHHMMInput(event.target.value))}
-                onBlur={() => setHours((current) => normalizeHHMMOnBlur(current))}
-                placeholder="Ex.: 04:00"
-                aria-invalid={hours.trim().length > 0 && !parsedEstimate}
-                className="h-10 rounded-xl border border-border bg-card px-3 font-mono text-sm tabular-nums outline-none focus:border-ring"
+                onChange={setHours}
+                invalid={hours.trim().length > 0 && !parsedEstimate}
+                errorMessage={hours.trim().length > 0 && !parsedEstimate ? "Informe uma estimativa válida no formato HH:mm." : null}
+                placeholder="HH:mm"
               />
-              <span className="text-[0.66rem] leading-snug text-muted-foreground">Use HH:mm. Ex.: 01:30, 04:00 ou 12:45.</span>
             </div>
 
             <div className="flex flex-col gap-1.5">

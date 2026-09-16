@@ -3522,13 +3522,38 @@ export function ProjectFollowUp({
                           </div>
                         )}
                         {showSubactivityReferencePrompt && (
-                          <div className="mt-2.5 rounded-xl border border-border/70 bg-muted/[0.12] px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-[0.68rem] font-medium text-muted-foreground">Referências opcionais</p>
-                              <p className="mt-0.5 text-[0.6rem] leading-snug text-muted-foreground/70">O.S. e Versão / Build desta subatividade</p>
+                          <div className="mt-2.5 rounded-xl border border-border/70 bg-muted/[0.10] px-3 py-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className="min-w-0 flex-1 truncate text-[0.68rem] font-medium text-muted-foreground">Referências opcionais</p>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="size-7 text-muted-foreground hover:text-foreground"
+                                  onClick={dismissSubactivityReferencePrompt}
+                                  disabled={referenceSaving}
+                                  title="Agora não"
+                                  aria-label="Agora não"
+                                >
+                                  <X className="size-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon-sm"
+                                  className="size-7"
+                                  onClick={() => { void saveSelectedSubactivityReferences() }}
+                                  disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
+                                  title="Salvar referências"
+                                  aria-label="Salvar referências"
+                                >
+                                  {referenceSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                                </Button>
+                              </div>
                             </div>
 
-                            <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] items-center gap-2">
+                            <div className="mt-1.5 grid min-w-0 grid-cols-2 gap-2">
                               <input
                                 value={referenceLinkedOs}
                                 onChange={(event) => setReferenceLinkedOs(event.target.value)}
@@ -3545,30 +3570,6 @@ export function ProjectFollowUp({
                                 aria-label="Versão / Build"
                                 className="h-8 min-w-0 w-full rounded-lg border border-border/80 bg-background/70 px-2.5 text-[0.72rem] outline-none transition-colors placeholder:text-muted-foreground/45 hover:border-border focus:border-ring focus:bg-background"
                               />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                className="size-8 shrink-0 text-muted-foreground hover:text-foreground sm:size-7"
-                                onClick={dismissSubactivityReferencePrompt}
-                                disabled={referenceSaving}
-                                title="Agora não"
-                                aria-label="Agora não"
-                              >
-                                <X className="size-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="icon-sm"
-                                className="size-8 shrink-0 sm:size-7"
-                                onClick={() => { void saveSelectedSubactivityReferences() }}
-                                disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
-                                title="Salvar referências"
-                                aria-label="Salvar referências"
-                              >
-                                {referenceSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                              </Button>
                             </div>
                           </div>
                         )}

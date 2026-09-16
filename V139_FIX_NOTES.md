@@ -1,24 +1,24 @@
-# TaskBoard V139 — versão e build no sidebar
+# TaskBoard V139 — versão e data/hora da build no sidebar
 
 Base: V138.
 
 ## Rodapé do sidebar
 
-- Exibe a versão atual e o identificador da build logo abaixo de **Sair**.
-- O texto é propositalmente discreto, em fonte monoespaçada pequena e baixa opacidade, para não competir com a navegação nem aumentar visualmente o rodapé.
-- Quando o sidebar está recolhido no desktop, a linha de versão fica oculta para preservar a largura compacta.
-- O texto completo também fica disponível no `title`/acessibilidade.
+- Exibe abaixo de **Sair** somente uma linha discreta no formato `V139 - dd/MM HH:mm`.
+- Mantém fonte pequena, baixa opacidade e sem criar um bloco visual extra no sidebar.
+- Quando o sidebar está recolhido no desktop, a linha fica oculta para preservar o modo compacto.
 
-## Identificação da versão/build
+## Data/hora da build
 
-- A versão padrão desta entrega é `V139`.
-- É possível sobrescrever a versão em CI/CD com `TASKBOARD_VERSION`.
-- A build usa, nesta ordem: `TASKBOARD_BUILD`, SHA do commit do Vercel/GitHub/CI ou um timestamp curto para builds locais.
-- `lib/app-version.ts` centraliza o consumo dessas informações no frontend.
+- A data/hora é calculada uma única vez durante a build/inicialização do Next e injetada no frontend.
+- O timezone padrão é `America/Sao_Paulo`, evitando mostrar horário UTC quando a aplicação é compilada no Vercel.
+- É possível sobrescrever manualmente com `TASKBOARD_BUILD_DATE` no formato desejado.
+- Também é possível alterar o timezone de geração com `TASKBOARD_BUILD_TIMEZONE`.
+- A versão continua configurável por `TASKBOARD_VERSION`.
 
 ## Arquivos alterados
 
 - `components/sidebar.tsx`
 - `next.config.mjs`
-- `lib/app-version.ts` (novo)
-- `V139_FIX_NOTES.md` (novo)
+- `lib/app-version.ts`
+- `V139_FIX_NOTES.md`

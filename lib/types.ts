@@ -171,6 +171,8 @@ export type Subactivity = {
   updatedAt?: string
   assigneeId: string
   typeId?: string
+  linkedOs?: string
+  build?: string
   memberIds?: string[]
   needsAttention?: boolean
   attentionMessage?: string

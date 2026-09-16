@@ -217,12 +217,13 @@ export type StoreContextValue = {
   addSubactivity: (
     projectId: string,
     activityId: string,
-    data: { title: string; estimatedHours: number; assigneeId: string; status?: Status; typeId?: string | null },
+    data: { title: string; estimatedHours: number; assigneeId: string; status?: Status; typeId?: string | null; linkedOs?: string; build?: string },
   ) => Promise<boolean>
   updateSubactivity: (
     subactivityId: string,
-    data: { title: string; estimatedHours: number; assigneeId: string; typeId?: string | null },
+    data: { title: string; estimatedHours: number; assigneeId: string; typeId?: string | null; linkedOs?: string; build?: string },
   ) => Promise<boolean>
+  updateSubactivityContext: (subactivityId: string, data: { linkedOs?: string; build?: string }) => Promise<boolean>
   updateSubactivityEstimatedHours: (subactivityId: string, estimatedHours: number) => Promise<boolean>
   updateSubactivityTimeMaintenance: (subactivityId: string, estimatedHours: number, trackedHours: number | null) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null, context?: ActivityContextInput) => Promise<boolean>
@@ -392,6 +393,8 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         assigneeId: row.assignee_id ?? sub.assigneeId,
         updatedAt: row.updated_at ?? sub.updatedAt,
         typeId: row.type_id !== undefined ? (row.type_id ?? undefined) : sub.typeId,
+        linkedOs: row.linked_os !== undefined ? (row.linked_os ?? undefined) : sub.linkedOs,
+        build: row.build !== undefined ? (row.build ?? undefined) : sub.build,
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,
         brainstormMode: row.brainstorm_mode !== undefined ? row.brainstorm_mode === true : sub.brainstormMode,
@@ -1967,6 +1970,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_status: data.status ?? "backlog",
     }, "Não foi possível adicionar a subatividade")
     if (!result) return false
+
+    const hasSubactivityContext = Boolean(data.linkedOs?.trim() || data.build?.trim())
+    if (hasSubactivityContext) {
+      const contextResult = await callRpc<unknown>("set_subactivity_context", {
+        p_subactivity_id: result,
+        p_linked_os: data.linkedOs?.trim() || null,
+        p_build: data.build?.trim() || null,
+      }, "Subatividade criada, mas não foi possível salvar O.S. e Versão / Build")
+      if (contextResult === undefined) {
+        schedule("projects", refreshProjects)
+      }
+    }
+
     if (data.typeId) {
       const typeResult = await callRpc<unknown>("set_subactivity_type", {
         p_subactivity_id: result,
@@ -1998,6 +2014,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               updatedAt: createdAt,
               assigneeId: data.assigneeId,
               typeId: data.typeId || undefined,
+              linkedOs: data.linkedOs?.trim() || undefined,
+              build: data.build?.trim() || undefined,
               memberIds: Array.from(new Set([data.assigneeId, currentUserId].filter(Boolean))),
               comments: [],
               attachments: [],
@@ -2010,6 +2028,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     schedule("service-requests", refreshServiceRequests)
     return true
   }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions, schedule])
+
+  const updateSubactivityContext = React.useCallback<StoreContextValue["updateSubactivityContext"]>(async (subactivityId, data) => {
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")) {
+      fail(new Error("Seu nível de acesso não permite alterar referências da subatividade."), "Sem permissão para alterar a subatividade")
+      return false
+    }
+
+    const found = findSubInProjects(projects, subactivityId)
+    if (!found) {
+      fail(new Error("Subatividade não encontrada."), "Não foi possível atualizar as referências")
+      return false
+    }
+
+    const canManageStructure = currentUserRole === "admin" || currentUserRole === "developer" || found.project.memberIds.includes(currentUserId)
+    if (!canManageStructure) {
+      fail(new Error("Você precisa estar integrado ao projeto para alterar esta subatividade."), "Sem permissão para alterar a subatividade")
+      return false
+    }
+
+    const nextLinkedOs = data.linkedOs !== undefined ? data.linkedOs.trim() : (found.sub.linkedOs ?? "")
+    const nextBuild = data.build !== undefined ? data.build.trim() : (found.sub.build ?? "")
+    const result = await callRpc<unknown>("set_subactivity_context", {
+      p_subactivity_id: subactivityId,
+      p_linked_os: nextLinkedOs || null,
+      p_build: nextBuild || null,
+    }, "Não foi possível salvar O.S. e Versão / Build da subatividade")
+    if (result === undefined) return false
+
+    const updatedAt = new Date().toISOString()
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subactivityId
+          ? { ...sub, linkedOs: nextLinkedOs || undefined, build: nextBuild || undefined, updatedAt }
+          : sub),
+      })),
+    })))
+    schedule("projects", refreshProjects)
+    return true
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
   const updateSubactivity = React.useCallback<StoreContextValue["updateSubactivity"]>(async (subactivityId, data) => {
     if (currentUserRole !== "admin") {
@@ -2024,6 +2083,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       p_type_id: data.typeId ?? null,
     }, "Não foi possível atualizar a subatividade")
     if (result === undefined) return false
+
+    const contextResult = await callRpc<unknown>("set_subactivity_context", {
+      p_subactivity_id: subactivityId,
+      p_linked_os: data.linkedOs?.trim() || null,
+      p_build: data.build?.trim() || null,
+    }, "Dados principais salvos, mas não foi possível atualizar O.S. e Versão / Build")
+    if (contextResult === undefined) {
+      schedule("projects", refreshProjects)
+      schedule("notifications", refreshNotifications)
+      schedule("work-sessions", refreshWorkSessions)
+      schedule("service-requests", refreshServiceRequests)
+      return true
+    }
+
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      activities: project.activities.map((activity) => ({
+        ...activity,
+        subactivities: activity.subactivities.map((sub) => sub.id === subactivityId ? {
+          ...sub,
+          title: data.title.trim(),
+          estimatedHours: Math.max(0, Number(data.estimatedHours || 0)),
+          assigneeId: data.assigneeId,
+          typeId: data.typeId || undefined,
+          linkedOs: data.linkedOs?.trim() || undefined,
+          build: data.build?.trim() || undefined,
+          updatedAt: new Date().toISOString(),
+        } : sub),
+      })),
+    })))
+
     schedule("projects", refreshProjects)
     schedule("notifications", refreshNotifications)
     schedule("work-sessions", refreshWorkSessions)
@@ -3790,6 +3880,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSubactivityFocus,
     addSubactivity,
     updateSubactivity,
+    updateSubactivityContext,
     updateSubactivityEstimatedHours,
     updateSubactivityTimeMaintenance,
     addActivity,
@@ -3843,7 +3934,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
-    activeSubId, addActivity, updateActivityContext, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity, updateSubactivityEstimatedHours, updateSubactivityTimeMaintenance,
+    activeSubId, addActivity, updateActivityContext, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity, updateSubactivityContext, updateSubactivityEstimatedHours, updateSubactivityTimeMaintenance,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, editSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, currentAccessPolicy, deleteActivity, deleteChatGroup,

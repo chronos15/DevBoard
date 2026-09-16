@@ -49,6 +49,8 @@ export function EditSubactivityDialog({
   const [hours, setHours] = React.useState(formatDecimalHoursAsHHMM(subactivity.estimatedHours))
   const [assigneeId, setAssigneeId] = React.useState(subactivity.assigneeId)
   const [typeId, setTypeId] = React.useState(subactivity.typeId ?? "")
+  const [linkedOs, setLinkedOs] = React.useState(subactivity.linkedOs ?? "")
+  const [build, setBuild] = React.useState(subactivity.build ?? "")
   const [saving, setSaving] = React.useState(false)
 
   const executionMembers = React.useMemo(
@@ -69,7 +71,9 @@ export function EditSubactivityDialog({
     setHours(formatDecimalHoursAsHHMM(subactivity.estimatedHours))
     setAssigneeId(subactivity.assigneeId)
     setTypeId(subactivity.typeId ?? "")
-  }, [subactivity.assigneeId, subactivity.estimatedHours, subactivity.title, subactivity.typeId])
+    setLinkedOs(subactivity.linkedOs ?? "")
+    setBuild(subactivity.build ?? "")
+  }, [subactivity.assigneeId, subactivity.build, subactivity.estimatedHours, subactivity.linkedOs, subactivity.title, subactivity.typeId])
 
   React.useEffect(() => {
     if (!open) reset()
@@ -94,6 +98,8 @@ export function EditSubactivityDialog({
         estimatedHours: parsedEstimate?.hours ?? 0,
         assigneeId,
         typeId: typeId || null,
+        linkedOs: linkedOs.trim(),
+        build: build.trim(),
       })
       if (ok) setOpen(false)
     } finally {
@@ -127,7 +133,7 @@ export function EditSubactivityDialog({
         <DialogHeader>
           <DialogTitle>Editar subatividade</DialogTitle>
           <DialogDescription>
-            Alteração administrativa de descrição, estimativa, tipo e responsável. O status continua sendo controlado pelo fluxo normal da subatividade.
+            Alteração administrativa de descrição, estimativa, referências, tipo e responsável. O status continua sendo controlado pelo fluxo normal da subatividade.
           </DialogDescription>
         </DialogHeader>
 
@@ -142,6 +148,30 @@ export function EditSubactivityDialog({
               className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors focus:border-ring sm:min-h-32"
               placeholder="Descreva o que precisa ser feito..."
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Número da O.S.</label>
+              <input
+                value={linkedOs}
+                onChange={(event) => setLinkedOs(event.target.value)}
+                maxLength={120}
+                placeholder="Ex: 15482"
+                className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Versão / Build</label>
+              <input
+                value={build}
+                onChange={(event) => setBuild(event.target.value)}
+                maxLength={120}
+                placeholder="Ex: 2026.09.16.1 ou v1.7.0"
+                className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

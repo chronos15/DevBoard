@@ -99,7 +99,7 @@ import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
-import { canWriteScreen } from "@/lib/access-control"
+import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom } from "@/lib/meeting-launcher"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
@@ -1042,6 +1042,7 @@ export function ProjectFollowUp({
     setSubStatus,
     setSubactivityBrainstorm,
     setSubactivityFocus,
+    updateSubactivityContext,
     refreshAll,
   } = useStore()
   const { requestPause } = usePauseSubactivity()
@@ -1097,6 +1098,10 @@ export function ProjectFollowUp({
   const [focusedCommentId, setFocusedCommentId] = React.useState<string | null>(null)
   const [focusedTimelineId, setFocusedTimelineId] = React.useState<string | null>(null)
   const [hasNewTimelineItems, setHasNewTimelineItems] = React.useState(false)
+  const [referenceLinkedOs, setReferenceLinkedOs] = React.useState("")
+  const [referenceBuild, setReferenceBuild] = React.useState("")
+  const [referenceSaving, setReferenceSaving] = React.useState(false)
+  const [dismissedReferenceSubIds, setDismissedReferenceSubIds] = React.useState<Set<string>>(() => new Set())
   const [localSearchOpen, setLocalSearchOpen] = React.useState(false)
   const [localSearchQuery, setLocalSearchQuery] = React.useState("")
   const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
@@ -1244,6 +1249,12 @@ export function ProjectFollowUp({
   const selectedActivity = selectedContext?.activity
   const linkedRequest = selectedActivity ? serviceRequests.find((request) => request.activityId === selectedActivity.id) : undefined
 
+  React.useEffect(() => {
+    setReferenceLinkedOs(selectedSub?.linkedOs ?? "")
+    setReferenceBuild(selectedSub?.build ?? "")
+    setReferenceSaving(false)
+  }, [selectedSub?.build, selectedSub?.id, selectedSub?.linkedOs])
+
   const unreadFollowUpNotifications = React.useMemo(
     () => notifications.filter((notification) => isFollowUpUnreadNotification(notification, currentUserId)),
     [currentUserId, notifications],
@@ -1371,6 +1382,34 @@ export function ProjectFollowUp({
     Boolean(selectedSub) && !moduleReadOnly && (!selectedDeveloperObserver || Boolean(replyingTo)),
   )
   const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
+  const canConfigureSubactivityReferences = !moduleReadOnly
+    && selectedCanManage
+    && canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
+  const showSubactivityReferencePrompt = Boolean(
+    selectedSub
+    && canConfigureSubactivityReferences
+    && (!selectedSub.linkedOs?.trim() || !selectedSub.build?.trim())
+    && !dismissedReferenceSubIds.has(selectedSub.id),
+  )
+
+  function dismissSubactivityReferencePrompt() {
+    if (!selectedSub) return
+    setDismissedReferenceSubIds((current) => new Set(current).add(selectedSub.id))
+  }
+
+  async function saveSelectedSubactivityReferences() {
+    if (!selectedSub || referenceSaving) return
+    setReferenceSaving(true)
+    try {
+      const ok = await updateSubactivityContext(selectedSub.id, {
+        linkedOs: referenceLinkedOs,
+        build: referenceBuild,
+      })
+      if (ok) dismissSubactivityReferencePrompt()
+    } finally {
+      setReferenceSaving(false)
+    }
+  }
 
   async function startSelectedMeeting() {
     if (!selectedActivity || !selectedSub || selectedDeveloperObserver || moduleReadOnly || meetingStarting) return
@@ -3072,22 +3111,22 @@ export function ProjectFollowUp({
                               <span>·</span>
                               <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
                             </div>
-                            {(activity.linkedOs || activity.build) && (
+                            {(sub.linkedOs || sub.build) && (
                               <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
-                                {activity.linkedOs && (
+                                {sub.linkedOs && (
                                   <span
                                     className="max-w-full truncate rounded-md border border-primary/15 bg-primary/[0.07] px-1.5 py-0.5 font-mono text-[0.54rem] font-semibold text-primary"
-                                    title={`O.S. ${activity.linkedOs}`}
+                                    title={`O.S. ${sub.linkedOs}`}
                                   >
-                                    OS {activity.linkedOs}
+                                    OS {sub.linkedOs}
                                   </span>
                                 )}
-                                {activity.build && (
+                                {sub.build && (
                                   <span
                                     className="max-w-full truncate rounded-md border border-border bg-muted/70 px-1.5 py-0.5 text-[0.54rem] font-medium text-muted-foreground"
-                                    title={`Build / Server ${activity.build}`}
+                                    title={`Versão / Build ${sub.build}`}
                                   >
-                                    Build/Server {activity.build}
+                                    Versão/Build {sub.build}
                                   </span>
                                 )}
                               </div>
@@ -3468,18 +3507,64 @@ export function ProjectFollowUp({
                       <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary min-[761px]:flex"><Hash className="size-5" /></span>
                       <div className="min-w-0 flex-1">
                         <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
-                        {(selectedActivity.linkedOs || selectedActivity.build) && (
+                        {(selectedSub.linkedOs || selectedSub.build) && (
                           <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                            {selectedActivity.linkedOs && (
+                            {selectedSub.linkedOs && (
                               <span className="rounded-lg border border-primary/15 bg-primary/[0.07] px-2 py-1 font-mono text-[0.62rem] font-semibold text-primary">
-                                O.S. {selectedActivity.linkedOs}
+                                O.S. {selectedSub.linkedOs}
                               </span>
                             )}
-                            {selectedActivity.build && (
+                            {selectedSub.build && (
                               <span className="rounded-lg border border-border bg-muted/60 px-2 py-1 text-[0.62rem] font-medium text-muted-foreground">
-                                Build / Server {selectedActivity.build}
+                                Versão / Build {selectedSub.build}
                               </span>
                             )}
+                          </div>
+                        )}
+                        {showSubactivityReferencePrompt && (
+                          <div className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-3 dark:border-amber-400/20 dark:bg-amber-400/[0.07]">
+                            <div className="flex items-start gap-2.5">
+                              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-700 dark:text-amber-300">
+                                <CircleAlert className="size-3.5" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[0.72rem] font-semibold text-foreground">Complete as referências desta subatividade</p>
+                                <p className="mt-0.5 text-[0.64rem] leading-relaxed text-muted-foreground">
+                                  O.S. e Versão / Build são opcionais e ficam vinculadas somente a esta subatividade.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                              <input
+                                value={referenceLinkedOs}
+                                onChange={(event) => setReferenceLinkedOs(event.target.value)}
+                                placeholder="Número da O.S."
+                                maxLength={120}
+                                className="h-9 min-w-0 rounded-xl border border-border bg-background px-3 text-xs outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                              />
+                              <input
+                                value={referenceBuild}
+                                onChange={(event) => setReferenceBuild(event.target.value)}
+                                placeholder="Versão / Build"
+                                maxLength={120}
+                                className="h-9 min-w-0 rounded-xl border border-border bg-background px-3 text-xs outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                              />
+                            </div>
+                            <div className="mt-2.5 flex flex-wrap justify-end gap-2">
+                              <Button type="button" variant="ghost" size="sm" onClick={dismissSubactivityReferencePrompt} disabled={referenceSaving}>
+                                Agora não
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => { void saveSelectedSubactivityReferences() }}
+                                disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
+                                loading={referenceSaving}
+                                loadingText="Salvando..."
+                              >
+                                Salvar referências
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>

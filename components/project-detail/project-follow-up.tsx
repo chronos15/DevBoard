@@ -1101,7 +1101,7 @@ export function ProjectFollowUp({
   const [referenceLinkedOs, setReferenceLinkedOs] = React.useState("")
   const [referenceBuild, setReferenceBuild] = React.useState("")
   const [referenceSaving, setReferenceSaving] = React.useState(false)
-  const [dismissedReferenceSubIds, setDismissedReferenceSubIds] = React.useState<Set<string>>(() => new Set())
+  const [subactivityReferencesExpanded, setSubactivityReferencesExpanded] = React.useState(false)
   const [localSearchOpen, setLocalSearchOpen] = React.useState(false)
   const [localSearchQuery, setLocalSearchQuery] = React.useState("")
   const [localSearchIndex, setLocalSearchIndex] = React.useState(0)
@@ -1255,6 +1255,10 @@ export function ProjectFollowUp({
     setReferenceSaving(false)
   }, [selectedSub?.build, selectedSub?.id, selectedSub?.linkedOs])
 
+  React.useEffect(() => {
+    setSubactivityReferencesExpanded(false)
+  }, [selectedSub?.id])
+
   const unreadFollowUpNotifications = React.useMemo(
     () => notifications.filter((notification) => isFollowUpUnreadNotification(notification, currentUserId)),
     [currentUserId, notifications],
@@ -1385,16 +1389,12 @@ export function ProjectFollowUp({
   const canConfigureSubactivityReferences = !moduleReadOnly
     && selectedCanManage
     && canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
-  const showSubactivityReferencePrompt = Boolean(
-    selectedSub
-    && canConfigureSubactivityReferences
-    && (!selectedSub.linkedOs?.trim() || !selectedSub.build?.trim())
-    && !dismissedReferenceSubIds.has(selectedSub.id),
+  const hasMissingSubactivityReferences = Boolean(
+    selectedSub && (!selectedSub.linkedOs?.trim() || !selectedSub.build?.trim()),
   )
 
-  function dismissSubactivityReferencePrompt() {
-    if (!selectedSub) return
-    setDismissedReferenceSubIds((current) => new Set(current).add(selectedSub.id))
+  function collapseSubactivityReferences() {
+    setSubactivityReferencesExpanded(false)
   }
 
   async function saveSelectedSubactivityReferences() {
@@ -1405,7 +1405,7 @@ export function ProjectFollowUp({
         linkedOs: referenceLinkedOs,
         build: referenceBuild,
       })
-      if (ok) dismissSubactivityReferencePrompt()
+      if (ok) collapseSubactivityReferences()
     } finally {
       setReferenceSaving(false)
     }
@@ -3506,71 +3506,83 @@ export function ProjectFollowUp({
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary min-[761px]:flex"><Hash className="size-5" /></span>
                       <div className="min-w-0 flex-1">
-                        <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
-                        {(selectedSub.linkedOs || selectedSub.build) && (
-                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                            {selectedSub.linkedOs && (
-                              <span className="rounded-lg border border-primary/15 bg-primary/[0.07] px-2 py-1 font-mono text-[0.62rem] font-semibold text-primary">
-                                O.S. {selectedSub.linkedOs}
-                              </span>
-                            )}
-                            {selectedSub.build && (
-                              <span className="rounded-lg border border-border bg-muted/60 px-2 py-1 text-[0.62rem] font-medium text-muted-foreground">
-                                Versão / Build {selectedSub.build}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {showSubactivityReferencePrompt && (
-                          <div className="mt-2.5 rounded-xl border border-border/70 bg-muted/[0.10] px-3 py-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <p className="min-w-0 flex-1 truncate text-[0.68rem] font-medium text-muted-foreground">Referências opcionais</p>
-                              <div className="flex shrink-0 items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  className="size-7 text-muted-foreground hover:text-foreground"
-                                  onClick={dismissSubactivityReferencePrompt}
-                                  disabled={referenceSaving}
-                                  title="Agora não"
-                                  aria-label="Agora não"
-                                >
-                                  <X className="size-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="icon-sm"
-                                  className="size-7"
-                                  onClick={() => { void saveSelectedSubactivityReferences() }}
-                                  disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
-                                  title="Salvar referências"
-                                  aria-label="Salvar referências"
-                                >
-                                  {referenceSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                                </Button>
-                              </div>
-                            </div>
+                        <button
+                          type="button"
+                          className="group flex min-w-0 max-w-full items-start gap-1.5 text-left"
+                          onClick={() => setSubactivityReferencesExpanded((current) => !current)}
+                          aria-expanded={subactivityReferencesExpanded}
+                          aria-controls={`subactivity-references-${selectedSub.id}`}
+                          title={subactivityReferencesExpanded ? "Recolher referências da subatividade" : "Ver referências da subatividade"}
+                        >
+                          <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
+                          <ChevronDown className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:text-muted-foreground min-[761px]:mt-1", subactivityReferencesExpanded && "rotate-180")} />
+                        </button>
 
-                            <div className="mt-1.5 grid min-w-0 grid-cols-2 gap-2">
-                              <input
-                                value={referenceLinkedOs}
-                                onChange={(event) => setReferenceLinkedOs(event.target.value)}
-                                placeholder="Número da O.S."
-                                maxLength={120}
-                                aria-label="Número da O.S."
-                                className="h-8 min-w-0 w-full rounded-lg border border-border/80 bg-background/70 px-2.5 text-[0.72rem] outline-none transition-colors placeholder:text-muted-foreground/45 hover:border-border focus:border-ring focus:bg-background"
-                              />
-                              <input
-                                value={referenceBuild}
-                                onChange={(event) => setReferenceBuild(event.target.value)}
-                                placeholder="Versão / Build"
-                                maxLength={120}
-                                aria-label="Versão / Build"
-                                className="h-8 min-w-0 w-full rounded-lg border border-border/80 bg-background/70 px-2.5 text-[0.72rem] outline-none transition-colors placeholder:text-muted-foreground/45 hover:border-border focus:border-ring focus:bg-background"
-                              />
-                            </div>
+                        {subactivityReferencesExpanded && (
+                          <div
+                            id={`subactivity-references-${selectedSub.id}`}
+                            className="mt-2.5 rounded-xl border border-border/60 bg-muted/[0.08] px-3 py-2.5"
+                          >
+                            {hasMissingSubactivityReferences && canConfigureSubactivityReferences ? (
+                              <>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[0.68rem] font-medium text-muted-foreground">Referências da subatividade</p>
+                                    <p className="mt-0.5 text-[0.6rem] leading-snug text-muted-foreground/65">Preencha somente se desejar.</p>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      className="size-7 text-muted-foreground hover:text-foreground"
+                                      onClick={collapseSubactivityReferences}
+                                      disabled={referenceSaving}
+                                      title="Fechar"
+                                      aria-label="Fechar referências"
+                                    >
+                                      <X className="size-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="icon-sm"
+                                      className="size-7"
+                                      onClick={() => { void saveSelectedSubactivityReferences() }}
+                                      disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
+                                      title="Salvar referências"
+                                      aria-label="Salvar referências"
+                                    >
+                                      {referenceSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className="mt-2 grid min-w-0 grid-cols-2 gap-2">
+                                  <input
+                                    value={referenceLinkedOs}
+                                    onChange={(event) => setReferenceLinkedOs(event.target.value)}
+                                    placeholder="Número da O.S."
+                                    maxLength={120}
+                                    aria-label="Número da O.S."
+                                    className="h-8 min-w-0 w-full rounded-lg border border-border/75 bg-background/65 px-2.5 text-[0.72rem] outline-none transition-colors placeholder:text-muted-foreground/45 hover:border-border focus:border-ring focus:bg-background"
+                                  />
+                                  <input
+                                    value={referenceBuild}
+                                    onChange={(event) => setReferenceBuild(event.target.value)}
+                                    placeholder="Versão / Build"
+                                    maxLength={120}
+                                    aria-label="Versão / Build"
+                                    className="h-8 min-w-0 w-full rounded-lg border border-border/75 bg-background/65 px-2.5 text-[0.72rem] outline-none transition-colors placeholder:text-muted-foreground/45 hover:border-border focus:border-ring focus:bg-background"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.68rem]">
+                                <span className="text-muted-foreground">O.S. <strong className="font-medium text-foreground">{selectedSub.linkedOs?.trim() || "Não informada"}</strong></span>
+                                <span className="text-muted-foreground">Versão / Build <strong className="font-medium text-foreground">{selectedSub.build?.trim() || "Não informada"}</strong></span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

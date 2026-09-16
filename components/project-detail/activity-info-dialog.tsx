@@ -159,7 +159,7 @@ export function ActivityInfoDialog({
   const activityPriority = activity.priority ? priorityMeta[activity.priority] : undefined
 
   const contextItems = [
-    { icon: GitBranch, label: "Build", value: activity.build },
+    { icon: GitBranch, label: "Build / Server", value: activity.build },
     { icon: ClipboardList, label: "O.S. vinculada", value: activity.linkedOs },
     { icon: Boxes, label: "Módulo relacionado", value: activity.relatedModule },
     { icon: Tags, label: "Assunto", value: activity.subject },
@@ -170,7 +170,7 @@ export function ActivityInfoDialog({
     activity.subject ? `Assunto: ${activity.subject}` : undefined,
     activity.responsibleDepartment ? `Departamento: ${activity.responsibleDepartment}` : undefined,
     activity.linkedOs ? `O.S.: ${activity.linkedOs}` : undefined,
-    activity.build ? `Build: ${activity.build}` : undefined,
+    activity.build ? `Build / Server: ${activity.build}` : undefined,
   ].filter(Boolean) as string[]
 
   return (

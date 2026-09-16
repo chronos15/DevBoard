@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronRight, FileText, Plus, SlidersHorizontal } from "lucide-react"
+import { Check, ChevronRight, CircleAlert, FileText, Plus, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -269,15 +269,15 @@ export function FollowUpAddActivityDialog({
             <div className="grid gap-4">
               <section className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Build</label>
+                  <label className="text-xs font-medium text-muted-foreground">Build / Server</label>
                   <input
                     value={build}
                     onChange={(event) => setBuild(event.target.value)}
-                    placeholder="Ex: 2026.09.11.1"
+                    placeholder="Ex: 2026.09.16.1 ou SERVER-PROD"
                     maxLength={120}
                     className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/65 focus:border-ring"
                   />
-                  <p className="text-[0.62rem] text-muted-foreground">Inicia com o Build atual do projeto e pode ser ajustado nesta atividade.</p>
+                  <p className="text-[0.62rem] text-muted-foreground">Inicia com o Build atual do projeto e também pode receber o nome do servidor desta atividade.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">O.S. vinculada</label>
@@ -370,10 +370,17 @@ export function FollowUpAddSubactivityDialog({
   projectId: string
   activityId: string
 }) {
-  const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
+  const { members, projects, serviceRequests, addSubactivity, updateActivityContext, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
+  const activity = project?.activities.find((item) => item.id === activityId)
   const canManageStructure = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities") && (currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId)))
+  const canUpdateActivityContext = canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")
+    && Boolean(project)
+    && (currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId)))
+  const missingLinkedOs = Boolean(activity && !activity.linkedOs?.trim())
+  const missingBuild = Boolean(activity && !activity.build?.trim())
+  const shouldOfferActivityReferences = canUpdateActivityContext && (missingLinkedOs || missingBuild)
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
@@ -384,6 +391,8 @@ export function FollowUpAddSubactivityDialog({
   )
   const [status, setStatus] = React.useState<Status>("backlog")
   const [typeId, setTypeId] = React.useState("")
+  const [activityLinkedOs, setActivityLinkedOs] = React.useState(activity?.linkedOs ?? "")
+  const [activityBuild, setActivityBuild] = React.useState(activity?.build ?? "")
   const [saving, setSaving] = React.useState(false)
   const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
 
@@ -417,6 +426,18 @@ export function FollowUpAddSubactivityDialog({
 
     setSaving(true)
     try {
+      if (shouldOfferActivityReferences && activity) {
+        const linkedOsChanged = missingLinkedOs && Boolean(activityLinkedOs.trim())
+        const buildChanged = missingBuild && Boolean(activityBuild.trim())
+        if (linkedOsChanged || buildChanged) {
+          const referencesSaved = await updateActivityContext(activity.id, {
+            linkedOs: activityLinkedOs,
+            build: activityBuild,
+          })
+          if (!referencesSaved) return
+        }
+      }
+
       const ok = await addSubactivity(projectId, activityId, {
         title: title.trim(),
         estimatedHours: parsedEstimate.hours,
@@ -445,6 +466,8 @@ export function FollowUpAddSubactivityDialog({
         if (next) {
           setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
           setEstimateError(null)
+          setActivityLinkedOs(activity?.linkedOs ?? "")
+          setActivityBuild(activity?.build ?? "")
         }
       }}
     >
@@ -468,6 +491,48 @@ export function FollowUpAddSubactivityDialog({
         </DialogHeader>
 
         <form id={`followup-add-sub-${activityId}`} onSubmit={submit} className="space-y-4">
+          {shouldOfferActivityReferences && (
+            <section className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3.5 dark:border-amber-400/20 dark:bg-amber-400/[0.08]">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/12 text-amber-700 dark:text-amber-300">
+                  <CircleAlert className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-foreground">Referências da atividade não informadas</p>
+                  <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
+                    Você pode informar a O.S. e/ou o Build / Server agora. Esses dados são opcionais e não impedem a criação da subatividade.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {missingLinkedOs && (
+                  <div className="space-y-1.5">
+                    <label className="text-[0.68rem] font-medium text-muted-foreground">Número da O.S.</label>
+                    <input
+                      value={activityLinkedOs}
+                      onChange={(event) => setActivityLinkedOs(event.target.value)}
+                      placeholder="Ex: 15482"
+                      maxLength={120}
+                      className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                    />
+                  </div>
+                )}
+                {missingBuild && (
+                  <div className="space-y-1.5">
+                    <label className="text-[0.68rem] font-medium text-muted-foreground">Build / Server</label>
+                    <input
+                      value={activityBuild}
+                      onChange={(event) => setActivityBuild(event.target.value)}
+                      placeholder="Ex: 2026.09.16.1 ou SERVER-PROD"
+                      maxLength={120}
+                      className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Descrição</label>
             <textarea

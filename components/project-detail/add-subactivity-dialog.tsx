@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "lucide-react"
+import { CircleAlert, Plus } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -28,9 +28,17 @@ export function AddSubactivityDialog({
   activityId: string
   aqsRequired?: boolean
 }) {
-  const { members, addSubactivity, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
+  const { members, projects, addSubactivity, updateActivityContext, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
   const executionMembers = members.filter((member) => member.role === "developer" || member.role === "admin")
   const canCreateSubactivity = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities")
+  const project = projects.find((item) => item.id === projectId)
+  const activity = project?.activities.find((item) => item.id === activityId)
+  const canUpdateActivityContext = canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")
+    && Boolean(project)
+    && (currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId)))
+  const missingLinkedOs = Boolean(activity && !activity.linkedOs?.trim())
+  const missingBuild = Boolean(activity && !activity.build?.trim())
+  const shouldOfferActivityReferences = canUpdateActivityContext && (missingLinkedOs || missingBuild)
   const [open, setOpen] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("")
@@ -40,6 +48,8 @@ export function AddSubactivityDialog({
   )
   const [status, setStatus] = React.useState<Status>("backlog")
   const [typeId, setTypeId] = React.useState("")
+  const [activityLinkedOs, setActivityLinkedOs] = React.useState(activity?.linkedOs ?? "")
+  const [activityBuild, setActivityBuild] = React.useState(activity?.build ?? "")
   const [terminalConfirmOpen, setTerminalConfirmOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assignee === currentUserId)
@@ -67,6 +77,18 @@ export function AddSubactivityDialog({
     if (normalizedEstimate !== hours) setHours(normalizedEstimate)
     setSaving(true)
     try {
+      if (shouldOfferActivityReferences && activity) {
+        const linkedOsChanged = missingLinkedOs && Boolean(activityLinkedOs.trim())
+        const buildChanged = missingBuild && Boolean(activityBuild.trim())
+        if (linkedOsChanged || buildChanged) {
+          const referencesSaved = await updateActivityContext(activity.id, {
+            linkedOs: activityLinkedOs,
+            build: activityBuild,
+          })
+          if (!referencesSaved) return
+        }
+      }
+
       const ok = await addSubactivity(projectId, activityId, {
         title: title.trim(),
         estimatedHours: parsedEstimate.hours,
@@ -120,6 +142,8 @@ export function AddSubactivityDialog({
         if (value) {
           setAssignee(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
           setEstimateError(null)
+          setActivityLinkedOs(activity?.linkedOs ?? "")
+          setActivityBuild(activity?.build ?? "")
         }
       }}
     >
@@ -140,6 +164,48 @@ export function AddSubactivityDialog({
         </DialogHeader>
 
         <form id="add-sub-form" onSubmit={submit} className="flex flex-col gap-4">
+          {shouldOfferActivityReferences && (
+            <section className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3.5 dark:border-amber-400/20 dark:bg-amber-400/[0.08]">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/12 text-amber-700 dark:text-amber-300">
+                  <CircleAlert className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-foreground">Referências da atividade não informadas</p>
+                  <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
+                    Se quiser, informe agora a O.S. e/ou o Build / Server. É opcional e a subatividade pode ser criada normalmente sem esses dados.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {missingLinkedOs && (
+                  <div className="space-y-1.5">
+                    <label className="text-[0.68rem] font-medium text-muted-foreground">Número da O.S.</label>
+                    <input
+                      value={activityLinkedOs}
+                      onChange={(event) => setActivityLinkedOs(event.target.value)}
+                      placeholder="Ex: 15482"
+                      maxLength={120}
+                      className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                    />
+                  </div>
+                )}
+                {missingBuild && (
+                  <div className="space-y-1.5">
+                    <label className="text-[0.68rem] font-medium text-muted-foreground">Build / Server</label>
+                    <input
+                      value={activityBuild}
+                      onChange={(event) => setActivityBuild(event.target.value)}
+                      placeholder="Ex: 2026.09.16.1 ou SERVER-PROD"
+                      maxLength={120}
+                      className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">Descrição</label>
             <textarea

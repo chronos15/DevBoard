@@ -3072,6 +3072,26 @@ export function ProjectFollowUp({
                               <span>·</span>
                               <span className="font-mono tabular-nums">{formatHMS(sub.trackedSeconds)}</span>
                             </div>
+                            {(activity.linkedOs || activity.build) && (
+                              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
+                                {activity.linkedOs && (
+                                  <span
+                                    className="max-w-full truncate rounded-md border border-primary/15 bg-primary/[0.07] px-1.5 py-0.5 font-mono text-[0.54rem] font-semibold text-primary"
+                                    title={`O.S. ${activity.linkedOs}`}
+                                  >
+                                    OS {activity.linkedOs}
+                                  </span>
+                                )}
+                                {activity.build && (
+                                  <span
+                                    className="max-w-full truncate rounded-md border border-border bg-muted/70 px-1.5 py-0.5 text-[0.54rem] font-medium text-muted-foreground"
+                                    title={`Build / Server ${activity.build}`}
+                                  >
+                                    Build/Server {activity.build}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           {subUnread === "mention" && (
                             <span
@@ -3446,7 +3466,23 @@ export function ProjectFollowUp({
                   <div className="mb-4 border-b border-border pb-4">
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary min-[761px]:flex"><Hash className="size-5" /></span>
-                      <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
+                        {(selectedActivity.linkedOs || selectedActivity.build) && (
+                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                            {selectedActivity.linkedOs && (
+                              <span className="rounded-lg border border-primary/15 bg-primary/[0.07] px-2 py-1 font-mono text-[0.62rem] font-semibold text-primary">
+                                O.S. {selectedActivity.linkedOs}
+                              </span>
+                            )}
+                            {selectedActivity.build && (
+                              <span className="rounded-lg border border-border bg-muted/60 px-2 py-1 text-[0.62rem] font-medium text-muted-foreground">
+                                Build / Server {selectedActivity.build}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 

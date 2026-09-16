@@ -226,6 +226,7 @@ export type StoreContextValue = {
   updateSubactivityEstimatedHours: (subactivityId: string, estimatedHours: number) => Promise<boolean>
   updateSubactivityTimeMaintenance: (subactivityId: string, estimatedHours: number, trackedHours: number | null) => Promise<boolean>
   addActivity: (projectId: string, title: string, assigneeIds?: string[], typeId?: string | null, context?: ActivityContextInput) => Promise<boolean>
+  updateActivityContext: (activityId: string, data: Partial<ActivityContextInput>) => Promise<boolean>
   deleteActivity: (projectId: string, activityId: string) => Promise<boolean>
   createWorkItemType: (data: { name: string; color: string; intermittent?: boolean }) => Promise<boolean>
   updateWorkItemType: (typeId: string, data: { name?: string; color?: string; active?: boolean; intermittent?: boolean }) => Promise<boolean>
@@ -2169,6 +2170,61 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
 
+  const updateActivityContext = React.useCallback(async (activityId: string, data: Partial<ActivityContextInput>) => {
+    const project = projects.find((item) => item.activities.some((activity) => activity.id === activityId))
+    const activity = project?.activities.find((item) => item.id === activityId)
+    if (!project || !activity) {
+      fail(new Error("Atividade não encontrada."), "Não foi possível atualizar os dados da atividade")
+      return false
+    }
+
+    if (!canPerformAction(currentUserRole, currentAccessPolicy, "createActivities")) {
+      fail(new Error("Seu nível de acesso não permite alterar os dados da atividade."), "Sem permissão para editar esta atividade")
+      return false
+    }
+
+    const canManageStructure = currentUserRole === "admin" || project.memberIds.includes(currentUserId)
+    if (!canManageStructure) {
+      fail(new Error("Você precisa estar integrado ao projeto para alterar a atividade."), "Sem permissão para editar esta atividade")
+      return false
+    }
+
+    const nextContext: ActivityContextInput = {
+      build: data.build !== undefined ? data.build.trim() : activity.build,
+      linkedOs: data.linkedOs !== undefined ? data.linkedOs.trim() : activity.linkedOs,
+      priority: data.priority !== undefined ? data.priority : activity.priority,
+      relatedModule: data.relatedModule !== undefined ? data.relatedModule.trim() : activity.relatedModule,
+      subject: data.subject !== undefined ? data.subject.trim() : activity.subject,
+      responsibleDepartment: data.responsibleDepartment !== undefined ? data.responsibleDepartment.trim() : activity.responsibleDepartment,
+    }
+
+    const result = await callRpc<unknown>("set_activity_context", {
+      p_activity_id: activityId,
+      p_build: nextContext.build || null,
+      p_linked_os: nextContext.linkedOs || null,
+      p_priority: nextContext.priority || null,
+      p_related_module: nextContext.relatedModule || null,
+      p_subject: nextContext.subject || null,
+      p_responsible_department: nextContext.responsibleDepartment || null,
+    }, "Não foi possível atualizar os dados da atividade")
+    if (result === undefined) return false
+
+    setProjects((current) => current.map((item) => item.id !== project.id ? item : {
+      ...item,
+      activities: item.activities.map((entry) => entry.id !== activityId ? entry : {
+        ...entry,
+        build: nextContext.build || undefined,
+        linkedOs: nextContext.linkedOs || undefined,
+        priority: nextContext.priority || undefined,
+        relatedModule: nextContext.relatedModule || undefined,
+        subject: nextContext.subject || undefined,
+        responsibleDepartment: nextContext.responsibleDepartment || undefined,
+      }),
+    }))
+    schedule("projects", refreshProjects)
+    return true
+  }, [callRpc, currentAccessPolicy, currentUserId, currentUserRole, fail, projects, refreshProjects, schedule])
+
   const deleteActivity = React.useCallback(async (projectId: string, activityId: string) => {
     const project = projects.find((item) => item.id === projectId)
     const canManageStructure = currentUserRole === "admin" || Boolean(project?.memberIds.includes(currentUserId))
@@ -3737,6 +3793,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateSubactivityEstimatedHours,
     updateSubactivityTimeMaintenance,
     addActivity,
+    updateActivityContext,
     deleteActivity,
     createWorkItemType,
     updateWorkItemType,
@@ -3786,7 +3843,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     findSub: (subId: string) => findSubInProjects(projects, subId),
   }), [
-    activeSubId, addActivity, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity, updateSubactivityEstimatedHours, updateSubactivityTimeMaintenance,
+    activeSubId, addActivity, updateActivityContext, addProject, addProjectAttachments, addActivityAttachments, addProjectComment, addSubactivity, updateSubactivity, updateSubactivityEstimatedHours, updateSubactivityTimeMaintenance,
     createWorkItemType, updateWorkItemType, deleteWorkItemType, setActivityType, setSubactivityType,
     addSubactivityAttachments, addAqsReviewAttachments, addSubactivityComment, editSubactivityComment, addFollowUpComment, addFollowUpAttachments, deleteFollowUpComment, deleteFollowUpAttachment, removeFollowUpMember, canManageSubactivity, chatConversations, chatMeetings,
     answerMeetingInvite, createChatGroup, createMeeting, startActivityMeeting, inviteMeetingUser, currentUserId, currentUserRole, currentAccessPolicy, deleteActivity, deleteChatGroup,

@@ -4,7 +4,7 @@ begin;
 -- Mantém os campos existentes da atividade por compatibilidade, mas as
 -- referências informadas na criação/edição da subatividade passam a ser
 -- persistidas diretamente em public.subactivities.
-
+//
 alter table public.subactivities
   add column if not exists linked_os text,
   add column if not exists build text;

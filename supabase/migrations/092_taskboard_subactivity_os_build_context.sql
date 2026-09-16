@@ -8,7 +8,7 @@ begin;
 alter table public.subactivities
   add column if not exists linked_os text,
   add column if not exists build text;
-//
+
 create or replace function public.set_subactivity_context(
   p_subactivity_id uuid,
   p_linked_os text default null,

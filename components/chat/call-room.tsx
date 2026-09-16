@@ -664,8 +664,9 @@ export function CallRoom({
       .map((id) => members.find((member) => member.id === id))
       .filter((member): member is Member => Boolean(member)) ?? []
   ), [meeting?.memberIds, members])
+  const isMeetingOwner = Boolean(meeting && meeting.createdBy === currentUserId)
   const canEndMeeting = Boolean(
-    meeting && (currentUserRole === "admin" || meeting.createdBy === currentUserId),
+    meeting && (currentUserRole === "admin" || isMeetingOwner),
   )
   React.useEffect(() => {
     if (!open || !meeting) {
@@ -3059,14 +3060,24 @@ export function CallRoom({
                 <div className="mx-1 hidden h-7 w-px bg-border sm:block" />
               </>
             )}
-            <Button type="button" variant="destructive" size={minimized ? "icon-sm" : "default"} className={cn(!minimized && "h-9 gap-1.5 px-4")} onClick={leaveRoom} loading={leavingMeeting} title="Sair da reunião">
+            <Button
+              type="button"
+              variant="destructive"
+              size={minimized ? "icon-sm" : "default"}
+              className={cn(!minimized && "h-9 gap-1.5 px-4")}
+              onClick={() => { void (isMeetingOwner ? finishMeeting() : leaveRoom()) }}
+              loading={isMeetingOwner ? endingMeeting : leavingMeeting}
+              title={isMeetingOwner ? "Finalizar reunião para todos" : "Sair da reunião"}
+            >
               <PhoneOff className="size-4" />
-              {!minimized && <span className="hidden sm:inline">Sair</span>}
+              {!minimized && <span className="hidden sm:inline">{isMeetingOwner ? "Finalizar reunião" : "Sair"}</span>}
             </Button>
           </div>
           {!minimized && (
             <div className="mt-1.5 text-center text-[0.56rem] text-muted-foreground">
-              <p>{deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; somente “Sair” encerra sua participação</p>
+              <p>
+                {deafened ? "Áudio recebido silenciado" : "Áudio recebido ativo"} · Voltar minimiza a reunião; {isMeetingOwner ? "“Finalizar reunião” encerra a chamada para todos" : "somente “Sair” encerra sua participação"}
+              </p>
               {(recordingState === "finalizing" || recordingState === "error") && recordingMessage && (
                 <p className={cn("mt-1 font-medium", recordingState === "error" ? "text-destructive" : "text-amber-700 dark:text-amber-300")}>{recordingMessage}</p>
               )}

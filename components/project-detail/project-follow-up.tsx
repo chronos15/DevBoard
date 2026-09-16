@@ -3527,6 +3527,40 @@ export function ProjectFollowUp({
               )}
 
               <div className="relative min-h-0 flex-1">
+              {selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId && (
+                <div className="pointer-events-none absolute inset-x-2.5 top-2.5 z-30 sm:inset-x-4 lg:inset-x-5">
+                  <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-card/95 px-3 py-2 shadow-lg shadow-black/10 backdrop-blur-md supports-[backdrop-filter]:bg-card/85">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.72rem] font-semibold text-foreground/90">Aguardando sua aprovação</p>
+                      <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">Aprove para concluir ou devolva para Backlog.</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => { void decideSelectedApproval(false) }}
+                      disabled={approvalDecisionSaving}
+                      title="Recusar e voltar para Backlog"
+                      aria-label="Recusar aprovação"
+                    >
+                      {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      className="size-7 shrink-0 border-success/25 text-success hover:bg-success/10 hover:text-success"
+                      onClick={() => { void decideSelectedApproval(true) }}
+                      disabled={approvalDecisionSaving}
+                      title="Aprovar e concluir"
+                      aria-label="Aprovar subatividade"
+                    >
+                      {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div
                 ref={timelineViewportRef}
                 className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
@@ -3560,39 +3594,6 @@ export function ProjectFollowUp({
                           <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
                           <ChevronDown className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:text-muted-foreground min-[761px]:mt-1", subactivityReferencesExpanded && "rotate-180")} />
                         </button>
-
-                        {selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId && (
-                          <div className="mt-2.5 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.045] px-3 py-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[0.72rem] font-semibold text-foreground/90">Aguardando sua aprovação</p>
-                              <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">Aprove para concluir ou devolva para Backlog.</p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => { void decideSelectedApproval(false) }}
-                              disabled={approvalDecisionSaving}
-                              title="Recusar e voltar para Backlog"
-                              aria-label="Recusar aprovação"
-                            >
-                              {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon-sm"
-                              className="size-7 shrink-0 border-success/25 text-success hover:bg-success/10 hover:text-success"
-                              onClick={() => { void decideSelectedApproval(true) }}
-                              disabled={approvalDecisionSaving}
-                              title="Aprovar e concluir"
-                              aria-label="Aprovar subatividade"
-                            >
-                              {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                            </Button>
-                          </div>
-                        )}
 
                         {subactivityReferencesExpanded && (
                           <div

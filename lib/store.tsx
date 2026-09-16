@@ -212,6 +212,8 @@ export type StoreContextValue = {
   startTimer: (subId: string) => Promise<boolean>
   stopTimer: (subId?: string, reason?: string) => Promise<boolean>
   setSubStatus: (subId: string, status: Status, releaseInfo?: SubactivityReleaseInfo) => Promise<boolean>
+  requestSubactivityApproval: (subId: string, approverId: string) => Promise<boolean>
+  decideSubactivityApproval: (subId: string, approved: boolean) => Promise<boolean>
   setSubactivityBrainstorm: (subId: string, enabled: boolean) => Promise<boolean>
   setSubactivityFocus: (subId: string, enabled: boolean) => Promise<boolean>
   addSubactivity: (
@@ -395,6 +397,9 @@ function applyRealtimeSubactivity(projects: Project[], row: Record<string, any>)
         typeId: row.type_id !== undefined ? (row.type_id ?? undefined) : sub.typeId,
         linkedOs: row.linked_os !== undefined ? (row.linked_os ?? undefined) : sub.linkedOs,
         build: row.build !== undefined ? (row.build ?? undefined) : sub.build,
+        approvalUserId: row.approval_user_id !== undefined ? (row.approval_user_id ?? undefined) : sub.approvalUserId,
+        approvalRequestedBy: row.approval_requested_by !== undefined ? (row.approval_requested_by ?? undefined) : sub.approvalRequestedBy,
+        approvalRequestedAt: row.approval_requested_at !== undefined ? (row.approval_requested_at ?? undefined) : sub.approvalRequestedAt,
         needsAttention: row.needs_attention === true,
         attentionMessage: row.attention_message ?? undefined,
         brainstormMode: row.brainstorm_mode !== undefined ? row.brainstorm_mode === true : sub.brainstormMode,
@@ -1755,6 +1760,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     schedule("service-requests", refreshServiceRequests)
     return true
   }, [callRpc, projects, refreshServiceRequests, refreshWorkSessions, schedule, startTimer])
+
+  const requestSubactivityApproval = React.useCallback(async (subId: string, approverId: string) => {
+    const cleanApproverId = approverId.trim()
+    if (!cleanApproverId) return false
+    const result = await callRpc<unknown>(
+      "request_subactivity_approval",
+      { p_subactivity_id: subId, p_approver_id: cleanApproverId },
+      "Não foi possível solicitar a aprovação",
+    )
+    if (result === undefined) return false
+    schedule("projects", refreshProjects)
+    schedule("notifications", refreshNotifications)
+    schedule("work-sessions", refreshWorkSessions)
+    return true
+  }, [callRpc, refreshNotifications, refreshProjects, refreshWorkSessions, schedule])
+
+  const decideSubactivityApproval = React.useCallback(async (subId: string, approved: boolean) => {
+    const result = await callRpc<unknown>(
+      "decide_subactivity_approval",
+      { p_subactivity_id: subId, p_approved: approved },
+      approved ? "Não foi possível aprovar a subatividade" : "Não foi possível devolver a subatividade",
+    )
+    if (result === undefined) return false
+    schedule("projects", refreshProjects)
+    schedule("notifications", refreshNotifications)
+    schedule("work-sessions", refreshWorkSessions)
+    schedule("service-requests", refreshServiceRequests)
+    return true
+  }, [callRpc, refreshNotifications, refreshProjects, refreshServiceRequests, refreshWorkSessions, schedule])
 
   const setSubactivityBrainstorm = React.useCallback(async (subId: string, enabled: boolean) => {
     const found = findSubInProjects(projects, subId)
@@ -3876,6 +3910,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     startTimer,
     stopTimer,
     setSubStatus,
+    requestSubactivityApproval,
+    decideSubactivityApproval,
     setSubactivityBrainstorm,
     setSubactivityFocus,
     addSubactivity,
@@ -3941,7 +3977,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     endMeeting, ensureDirectConversation, heartbeatMeeting, hydrated, chatHydrated, joinMeeting, lastError, leaveMeeting, loadChatHistory, deleteDirectConversation, leaveChatGroup,
     markAllNotificationsRead, markFollowUpContextRead, markNotificationRead,
     memberPresence, presenceReady, members, notifications, aqsReviews, supportTopics, serviceRequests, serviceRequestUnits, preferences, projects, refreshAll, refreshing, runningSubIds, retryChatMessage, sendChatAudio, sendChatMedia, sendChatMessage, editChatMessage, setMemberRole,
-    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, setSubactivityBrainstorm, setSubactivityFocus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
+    setProjectAttachmentActive, setActivityAttachmentActive, setSubStatus, requestSubactivityApproval, decideSubactivityApproval, setSubactivityBrainstorm, setSubactivityFocus, setSubactivityAttachmentActive, signOut, startTimer, stopTimer, startAqsReview, completeAqsReview, revokeAqsReview, createSupportTopic, addSupportTopicAttachments, startSupportTopicAnalysis, revokeSupportTopic, sendSupportTopicToActivity,
     createServiceRequest, createServiceRequestUnit, updateServiceRequestUnit, deleteServiceRequestUnit, addServiceRequestAttachments, addServiceRequestExternalResources, addServiceRequestMessage, editServiceRequestMessage, startServiceRequestAqs, requestServiceRequestInfo, rejectServiceRequest, sendServiceRequestToDev, assignServiceRequestExecutor, startServiceRequestDev, sendServiceRequestToAqs, returnServiceRequestToDev, approveServiceRequestForBuild, completeServiceRequest,
     updateChatGroup, updateMyProfile, updatePreferences, updateProject, versionProject, workSessions, workItemTypes, workspaceId,
   ])

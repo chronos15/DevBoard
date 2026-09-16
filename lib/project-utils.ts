@@ -95,7 +95,7 @@ export const statusMeta: Record<
     columnClassName: "bg-muted-foreground/55",
   },
   waiting: {
-    label: "Aguardando",
+    label: "Aguard. Aprovação",
     dot: "bg-chart-2",
     className: "bg-chart-2/15 text-chart-2",
     columnClassName: "bg-chart-2",
@@ -135,7 +135,7 @@ export const statusMeta: Record<
 export const activityFilters: { key: ActivityFilter; label: string }[] = [
   { key: "all", label: "Todos" },
   { key: "open", label: "Aberta" },
-  { key: "waiting", label: "Aguardando" },
+  { key: "waiting", label: "Aguard. Aprovação" },
   { key: "waiting-aqs", label: "Aguardando AQS" },
   { key: "in-progress", label: "Executando" },
   { key: "done", label: "Finalizadas" },

@@ -84,6 +84,7 @@ import { ActivityInfoDialog } from "@/components/project-detail/activity-info-di
 import { ActivityNotesDialog } from "@/components/project-detail/activity-notes-dialog"
 import { EditSubactivityDialog } from "@/components/project-detail/edit-subactivity-dialog"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { SubactivityApprovalDialog } from "@/components/project-detail/subactivity-approval-dialog"
 import { TypingIndicator, useTypingIndicator } from "@/components/typing/typing-indicator"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { followUpHref } from "@/lib/follow-up-launcher"
@@ -183,7 +184,16 @@ function formatShortTime(value: string) {
 }
 
 function parseLogDescription(description?: string) {
-  const clean = (description ?? "").replace(/\s+/g, " ").trim()
+  const clean = (description ?? "")
+    .replace(/\bwaiting-aqs\b/gi, "Aguardando AQS")
+    .replace(/\bin-progress\b/gi, "Executando")
+    .replace(/\bwaiting\b/gi, "Aguard. Aprovação")
+    .replace(/\bpaused\b/gi, "Pausada")
+    .replace(/\bdone\b/gi, "Concluído")
+    .replace(/\bcancelled\b/gi, "Cancelado")
+    .replace(/\bbacklog\b/gi, "Backlog")
+    .replace(/\s+/g, " ")
+    .trim()
   if (!clean) return { summary: "", reason: "" }
   const marker = "Motivo:"
   const index = clean.lastIndexOf(marker)
@@ -1040,6 +1050,8 @@ export function ProjectFollowUp({
     startActivityMeeting,
     startTimer,
     setSubStatus,
+    requestSubactivityApproval,
+    decideSubactivityApproval,
     setSubactivityBrainstorm,
     setSubactivityFocus,
     updateSubactivityContext,
@@ -1114,6 +1126,9 @@ export function ProjectFollowUp({
   const [pendingStatus, setPendingStatus] = React.useState<Status | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Status | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
+  const [approvalRequestOpen, setApprovalRequestOpen] = React.useState(false)
+  const [approvalRequestSaving, setApprovalRequestSaving] = React.useState(false)
+  const [approvalDecisionSaving, setApprovalDecisionSaving] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [focusSaving, setFocusSaving] = React.useState(false)
   const [headerActionsOpen, setHeaderActionsOpen] = React.useState(false)
@@ -1257,6 +1272,9 @@ export function ProjectFollowUp({
 
   React.useEffect(() => {
     setSubactivityReferencesExpanded(false)
+    setApprovalRequestOpen(false)
+    setApprovalRequestSaving(false)
+    setApprovalDecisionSaving(false)
   }, [selectedSub?.id])
 
   const unreadFollowUpNotifications = React.useMemo(
@@ -2926,6 +2944,10 @@ export function ProjectFollowUp({
     }
     const currentTerminal = selectedSub.status === "done" || selectedSub.status === "cancelled"
     if (linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
+    if (nextStatus === "waiting") {
+      setApprovalRequestOpen(true)
+      return
+    }
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
 
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
@@ -2936,6 +2958,27 @@ export function ProjectFollowUp({
 
     setStatusSaving(true)
     void setSubStatus(selectedSub.id, nextStatus).finally(() => setStatusSaving(false))
+  }
+
+  async function confirmSelectedApprovalRequest(approverId: string) {
+    if (!selectedSub || approvalRequestSaving) return
+    setApprovalRequestSaving(true)
+    try {
+      const ok = await requestSubactivityApproval(selectedSub.id, approverId)
+      if (ok) setApprovalRequestOpen(false)
+    } finally {
+      setApprovalRequestSaving(false)
+    }
+  }
+
+  async function decideSelectedApproval(approved: boolean) {
+    if (!selectedSub || approvalDecisionSaving) return
+    setApprovalDecisionSaving(true)
+    try {
+      await decideSubactivityApproval(selectedSub.id, approved)
+    } finally {
+      setApprovalDecisionSaving(false)
+    }
   }
 
   async function confirmSelectedStatus(release: SubactivityReleaseDraft) {
@@ -3517,6 +3560,39 @@ export function ProjectFollowUp({
                           <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
                           <ChevronDown className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:text-muted-foreground min-[761px]:mt-1", subactivityReferencesExpanded && "rotate-180")} />
                         </button>
+
+                        {selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId && (
+                          <div className="mt-2.5 flex min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.045] px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[0.72rem] font-semibold text-foreground/90">Aguardando sua aprovação</p>
+                              <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">Aprove para concluir ou devolva para Backlog.</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => { void decideSelectedApproval(false) }}
+                              disabled={approvalDecisionSaving}
+                              title="Recusar e voltar para Backlog"
+                              aria-label="Recusar aprovação"
+                            >
+                              {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon-sm"
+                              className="size-7 shrink-0 border-success/25 text-success hover:bg-success/10 hover:text-success"
+                              onClick={() => { void decideSelectedApproval(true) }}
+                              disabled={approvalDecisionSaving}
+                              title="Aprovar e concluir"
+                              aria-label="Aprovar subatividade"
+                            >
+                              {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                            </Button>
+                          </div>
+                        )}
 
                         {subactivityReferencesExpanded && (
                           <div
@@ -4556,6 +4632,18 @@ export function ProjectFollowUp({
           })}
         </div>,
         document.body,
+      )}
+
+      {selectedSub && (
+        <SubactivityApprovalDialog
+          open={approvalRequestOpen}
+          onOpenChange={setApprovalRequestOpen}
+          members={members}
+          currentUserId={currentUserId}
+          subactivityTitle={selectedSub.title}
+          loading={approvalRequestSaving}
+          onConfirm={(userId) => { void confirmSelectedApprovalRequest(userId) }}
+        />
       )}
 
       {selectedSub && pendingStatus && (

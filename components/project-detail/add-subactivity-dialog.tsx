@@ -277,7 +277,7 @@ export function AddSubactivityDialog({
                       onChange={(event) => setStatus(event.target.value as Status)}
                       className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
                     >
-                      {statusOrder.map((item) => (
+                      {statusOrder.filter((item) => item !== "waiting").map((item) => (
                         <option
                           key={item}
                           value={item}

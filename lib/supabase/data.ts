@@ -228,7 +228,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
         activity_assignees(user_id),
         attachments!attachments_activity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
         subactivities(
-          id,title,type_id,status,estimated_hours,tracked_seconds,manual_adjustment_seconds,timer_started_at,assignee_id,linked_os,build,needs_attention,attention_message,brainstorm_mode,is_focus,focus_marked_at,focus_marked_by,created_at,updated_at,
+          id,title,type_id,status,estimated_hours,tracked_seconds,manual_adjustment_seconds,timer_started_at,assignee_id,linked_os,build,approval_user_id,approval_requested_by,approval_requested_at,needs_attention,attention_message,brainstorm_mode,is_focus,focus_marked_at,focus_marked_by,created_at,updated_at,
           subactivity_members(user_id),
           subactivity_comments(id,author_id,content,mentions,reply_to_comment_id,reply_target_kind,reply_target_id,reply_snapshot,message_group_id,created_at,edited_at),
           attachments!attachments_subactivity_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at)
@@ -270,6 +270,9 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
             typeId: sub.type_id ?? undefined,
             linkedOs: sub.linked_os ?? undefined,
             build: sub.build ?? undefined,
+            approvalUserId: sub.approval_user_id ?? undefined,
+            approvalRequestedBy: sub.approval_requested_by ?? undefined,
+            approvalRequestedAt: sub.approval_requested_at ?? undefined,
             memberIds: Array.from(new Set([sub.assignee_id, ...(sub.subactivity_members ?? []).map((item: any) => item.user_id)].filter(Boolean))),
             needsAttention: sub.needs_attention === true,
             attentionMessage: sub.attention_message ?? undefined,

@@ -116,7 +116,7 @@ export function BrowserNotifications() {
     const pending = notifications
       .filter((notification) => {
         if (notification.recipientId !== currentUserId || notification.readAt || !notification.projectId) return false
-        if (notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "subactivity-comment") return true
+        if (notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "subactivity-comment" || notification.type === "subactivity-approval-request" || notification.type === "subactivity-approval-approved" || notification.type === "subactivity-approval-rejected") return true
         if (notification.type !== "followup-subactivity-opened") return false
         return Date.now() - new Date(notification.createdAt).getTime() <= 10 * 60 * 1000
       })

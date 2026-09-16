@@ -173,6 +173,9 @@ export type Subactivity = {
   typeId?: string
   linkedOs?: string
   build?: string
+  approvalUserId?: string
+  approvalRequestedBy?: string
+  approvalRequestedAt?: string
   memberIds?: string[]
   needsAttention?: boolean
   attentionMessage?: string
@@ -288,6 +291,9 @@ export type NotificationType =
   | "activity-assigned"
   | "subactivity-assigned"
   | "subactivity-comment"
+  | "subactivity-approval-request"
+  | "subactivity-approval-approved"
+  | "subactivity-approval-rejected"
   | "meeting-invite"
   | "aqs-awaiting"
   | "aqs-approved"

@@ -19,6 +19,7 @@ import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { SubactivityApprovalDialog } from "@/components/project-detail/subactivity-approval-dialog"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -50,7 +51,9 @@ import { usePauseSubactivity } from "@/components/pause-subactivity-provider"
 function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { sub: Subactivity; projectId: string; linkedRequest?: ServiceRequest; focused?: boolean }) {
   const {
     members,
+    currentUserId,
     setSubStatus,
+    requestSubactivityApproval,
     runningSubIds,
     canManageSubactivity,
     addSubactivityComment,
@@ -66,6 +69,8 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
   const [pendingStatus, setPendingStatus] = React.useState<Subactivity["status"] | null>(null)
   const [pendingFromStatus, setPendingFromStatus] = React.useState<Subactivity["status"] | null>(null)
   const [statusSaving, setStatusSaving] = React.useState(false)
+  const [approvalOpen, setApprovalOpen] = React.useState(false)
+  const [approvalSaving, setApprovalSaving] = React.useState(false)
   const [inlineOpen, setInlineOpen] = React.useState(false)
   const [titleExpanded, setTitleExpanded] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
@@ -108,6 +113,10 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
       return
     }
     if (linkedRequest && !terminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
+    if (nextStatus === "waiting") {
+      setApprovalOpen(true)
+      return
+    }
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
     const currentTerminal = sub.status === "done" || sub.status === "cancelled"
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
@@ -117,6 +126,17 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     }
     setStatusSaving(true)
     void setSubStatus(sub.id, nextStatus).finally(() => setStatusSaving(false))
+  }
+
+  async function requestApproval(approverId: string) {
+    if (approvalSaving) return
+    setApprovalSaving(true)
+    try {
+      const ok = await requestSubactivityApproval(sub.id, approverId)
+      if (ok) setApprovalOpen(false)
+    } finally {
+      setApprovalSaving(false)
+    }
   }
 
   async function confirmStatus(release: SubactivityReleaseDraft) {
@@ -463,6 +483,16 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
     </div>
 
     {inlineOpen && <SubactivityInlineSummary projectId={projectId} sub={sub} />}
+
+    <SubactivityApprovalDialog
+      open={approvalOpen}
+      onOpenChange={setApprovalOpen}
+      members={members}
+      currentUserId={currentUserId}
+      subactivityTitle={sub.title}
+      loading={approvalSaving}
+      onConfirm={(userId) => { void requestApproval(userId) }}
+    />
 
     {pendingStatus && (
       <SubactivityStatusConfirmDialog

@@ -30,6 +30,9 @@ const iconByType = {
   "activity-assigned": ListTodo,
   "subactivity-assigned": UserPlus,
   "subactivity-comment": MessageSquareText,
+  "subactivity-approval-request": ClipboardCheck,
+  "subactivity-approval-approved": ClipboardCheck,
+  "subactivity-approval-rejected": TriangleAlert,
   "meeting-invite": PhoneIncoming,
   "aqs-awaiting": ClipboardCheck,
   "aqs-approved": ClipboardCheck,
@@ -97,7 +100,7 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
       router.push(`/solicitacoes/${encodeURIComponent(notification.requestId)}`)
       return
     }
-    if ((notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "followup-subactivity-opened" || notification.type === "subactivity-comment") && notification.projectId) {
+    if ((notification.type === "followup-mention" || notification.type === "followup-update" || notification.type === "followup-subactivity-opened" || notification.type === "subactivity-comment" || notification.type === "subactivity-approval-request" || notification.type === "subactivity-approval-approved" || notification.type === "subactivity-approval-rejected") && notification.projectId) {
       openProjectFollowUp({
         projectId: notification.projectId,
         activityId: notification.activityId,

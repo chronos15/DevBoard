@@ -1283,7 +1283,7 @@ export function AnalysisView() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Revogar análise AQS?</DialogTitle>
-            <DialogDescription>A subatividade voltará para <strong>Aguardando</strong>, ficará sinalizada para ajuste e o desenvolvedor responsável será notificado.</DialogDescription>
+            <DialogDescription>A subatividade voltará para <strong>Backlog</strong>, ficará sinalizada para ajuste e o desenvolvedor responsável será notificado.</DialogDescription>
           </DialogHeader>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">Motivo / ajustes necessários</span>

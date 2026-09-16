@@ -15,6 +15,7 @@ import { CommentDialog } from "@/components/comments/comment-dialog"
 import { AttachmentDialog } from "@/components/attachments/attachment-dialog"
 import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { SubactivityStatusConfirmDialog } from "@/components/project-detail/subactivity-status-confirm-dialog"
+import { SubactivityApprovalDialog } from "@/components/project-detail/subactivity-approval-dialog"
 import { CopyEntityLinkButton } from "@/components/copy-entity-link-button"
 import { WorkItemTypeBadge } from "@/components/project-detail/work-item-type-badge"
 import { EditSubactivityDialog } from "@/components/project-detail/edit-subactivity-dialog"
@@ -196,7 +197,9 @@ export function SubactivityKanban({
 }) {
   const {
     members,
+    currentUserId,
     setSubStatus,
+    requestSubactivityApproval,
     runningSubIds,
     startTimer,
     canManageSubactivity,
@@ -211,6 +214,8 @@ export function SubactivityKanban({
   const [draggingId, setDraggingId] = React.useState<string | null>(null)
   const [overStatus, setOverStatus] = React.useState<Status | null>(null)
   const [pendingTransition, setPendingTransition] = React.useState<PendingTransition | null>(null)
+  const [pendingApproval, setPendingApproval] = React.useState<{ subId: string; subTitle: string } | null>(null)
+  const [approvalSaving, setApprovalSaving] = React.useState(false)
   const [pendingIds, setPendingIds] = React.useState<Set<string>>(() => new Set())
   const [focusSavingIds, setFocusSavingIds] = React.useState<Set<string>>(() => new Set())
   const [attachmentDialogSubId, setAttachmentDialogSubId] = React.useState<string | null>(null)
@@ -292,6 +297,10 @@ export function SubactivityKanban({
     }
     const currentTerminal = item.sub.status === "done" || item.sub.status === "cancelled"
     if (item.linkedRequest && !currentTerminal && (nextStatus === "done" || nextStatus === "cancelled")) nextStatus = "waiting-aqs"
+    if (nextStatus === "waiting") {
+      setPendingApproval({ subId: item.sub.id, subTitle: item.sub.title })
+      return
+    }
     const nextTerminal = nextStatus === "done" || nextStatus === "cancelled"
 
     if (nextTerminal || nextStatus === "waiting-aqs" || (currentTerminal && currentUserRole === "admin")) {
@@ -314,6 +323,17 @@ export function SubactivityKanban({
     if (item && canManageSubactivity(item.sub)) requestStatus(item, status)
     setDraggingId(null)
     setOverStatus(null)
+  }
+
+  async function confirmApproval(approverId: string) {
+    if (!pendingApproval || approvalSaving) return
+    setApprovalSaving(true)
+    try {
+      const ok = await requestSubactivityApproval(pendingApproval.subId, approverId)
+      if (ok) setPendingApproval(null)
+    } finally {
+      setApprovalSaving(false)
+    }
   }
 
   async function confirmTransition(release: SubactivityReleaseDraft) {
@@ -582,6 +602,16 @@ export function SubactivityKanban({
           })}
         </div>
       </div>
+
+      <SubactivityApprovalDialog
+        open={Boolean(pendingApproval)}
+        onOpenChange={(open) => { if (!open && !approvalSaving) setPendingApproval(null) }}
+        members={members}
+        currentUserId={currentUserId}
+        subactivityTitle={pendingApproval?.subTitle ?? "Subatividade"}
+        loading={approvalSaving}
+        onConfirm={(userId) => { void confirmApproval(userId) }}
+      />
 
       {pendingTransition && (
         <SubactivityStatusConfirmDialog

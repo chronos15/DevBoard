@@ -8,6 +8,9 @@ export const FOLLOW_UP_UNREAD_NOTIFICATION_TYPES: NotificationType[] = [
   "followup-subactivity-opened",
   "subactivity-comment",
   "subactivity-assigned",
+  "subactivity-approval-request",
+  "subactivity-approval-approved",
+  "subactivity-approval-rejected",
 ]
 
 const FOLLOW_UP_UNREAD_TYPE_SET = new Set<NotificationType>(FOLLOW_UP_UNREAD_NOTIFICATION_TYPES)

@@ -3522,48 +3522,56 @@ export function ProjectFollowUp({
                           </div>
                         )}
                         {showSubactivityReferencePrompt && (
-                          <div className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-3 dark:border-amber-400/20 dark:bg-amber-400/[0.07]">
-                            <div className="flex items-start gap-2.5">
-                              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-700 dark:text-amber-300">
-                                <CircleAlert className="size-3.5" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[0.72rem] font-semibold text-foreground">Complete as referências desta subatividade</p>
-                                <p className="mt-0.5 text-[0.64rem] leading-relaxed text-muted-foreground">
-                                  O.S. e Versão / Build são opcionais e ficam vinculadas somente a esta subatividade.
-                                </p>
+                          <div className="mt-2.5 rounded-xl border border-border/70 bg-muted/[0.16] px-3 py-2.5">
+                            <div className="flex flex-col gap-2.5 lg:flex-row lg:items-end">
+                              <div className="min-w-0 lg:w-40 lg:shrink-0">
+                                <p className="text-[0.68rem] font-medium text-muted-foreground">Referências opcionais</p>
+                                <p className="mt-0.5 text-[0.6rem] leading-snug text-muted-foreground/70">O.S. e Versão / Build</p>
                               </div>
-                            </div>
-                            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                              <input
-                                value={referenceLinkedOs}
-                                onChange={(event) => setReferenceLinkedOs(event.target.value)}
-                                placeholder="Número da O.S."
-                                maxLength={120}
-                                className="h-9 min-w-0 rounded-xl border border-border bg-background px-3 text-xs outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
-                              />
-                              <input
-                                value={referenceBuild}
-                                onChange={(event) => setReferenceBuild(event.target.value)}
-                                placeholder="Versão / Build"
-                                maxLength={120}
-                                className="h-9 min-w-0 rounded-xl border border-border bg-background px-3 text-xs outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
-                              />
-                            </div>
-                            <div className="mt-2.5 flex flex-wrap justify-end gap-2">
-                              <Button type="button" variant="ghost" size="sm" onClick={dismissSubactivityReferencePrompt} disabled={referenceSaving}>
-                                Agora não
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => { void saveSelectedSubactivityReferences() }}
-                                disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
-                                loading={referenceSaving}
-                                loadingText="Salvando..."
-                              >
-                                Salvar referências
-                              </Button>
+
+                              <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+                                <input
+                                  value={referenceLinkedOs}
+                                  onChange={(event) => setReferenceLinkedOs(event.target.value)}
+                                  placeholder="Número da O.S."
+                                  maxLength={120}
+                                  aria-label="Número da O.S."
+                                  className="h-8 min-w-0 rounded-lg border border-border/80 bg-background/70 px-2.5 text-xs outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-border focus:border-ring focus:bg-background"
+                                />
+                                <input
+                                  value={referenceBuild}
+                                  onChange={(event) => setReferenceBuild(event.target.value)}
+                                  placeholder="Versão / Build"
+                                  maxLength={120}
+                                  aria-label="Versão / Build"
+                                  className="h-8 min-w-0 rounded-lg border border-border/80 bg-background/70 px-2.5 text-xs outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-border focus:border-ring focus:bg-background"
+                                />
+                              </div>
+
+                              <div className="flex shrink-0 items-center justify-end gap-1 lg:pb-px">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+                                  onClick={dismissSubactivityReferencePrompt}
+                                  disabled={referenceSaving}
+                                >
+                                  Agora não
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 px-3 text-xs font-medium"
+                                  onClick={() => { void saveSelectedSubactivityReferences() }}
+                                  disabled={referenceSaving || (!referenceLinkedOs.trim() && !referenceBuild.trim())}
+                                  loading={referenceSaving}
+                                  loadingText="Salvando..."
+                                >
+                                  Salvar
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         )}

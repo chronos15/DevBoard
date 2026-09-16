@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronRight, CircleAlert, FileText, Plus, SlidersHorizontal } from "lucide-react"
+import { Check, ChevronRight, FileText, Plus, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,6 +18,7 @@ import type { Priority, Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
 import { DurationField } from "@/components/ui/duration-field"
+import { getSubactivityReferenceDefaults } from "@/lib/subactivity-reference-defaults"
 
 function executionMembersOnly<T extends { role?: string }>(members: T[]) {
   return members.filter((member) => member.role === "developer" || member.role === "admin")
@@ -194,7 +195,7 @@ export function FollowUpAddActivityDialog({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-semibold">Extras</span>
-                <span className="block truncate text-[0.62rem] text-muted-foreground">Build, O.S. e contexto do projeto</span>
+                <span className="block truncate text-[0.62rem] text-muted-foreground">Versão / Build, O.S. e contexto do projeto</span>
               </span>
               <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.58rem] font-semibold text-muted-foreground">
                 Opcional
@@ -269,7 +270,7 @@ export function FollowUpAddActivityDialog({
             <div className="grid gap-4">
               <section className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Build / Server</label>
+                  <label className="text-xs font-medium text-muted-foreground">Versão / Build</label>
                   <input
                     value={build}
                     onChange={(event) => setBuild(event.target.value)}
@@ -363,6 +364,8 @@ export function FollowUpAddActivityDialog({
   )
 }
 
+type AddSubactivityStep = "identification" | "extras"
+
 export function FollowUpAddSubactivityDialog({
   projectId,
   activityId,
@@ -373,9 +376,11 @@ export function FollowUpAddSubactivityDialog({
   const { members, projects, serviceRequests, addSubactivity, currentUserId, currentUserRole, currentAccessPolicy, workItemTypes } = useStore()
   const executionMembers = executionMembersOnly(members)
   const project = projects.find((item) => item.id === projectId)
+  const activity = project?.activities.find((item) => item.id === activityId)
   const canManageStructure = canPerformAction(currentUserRole, currentAccessPolicy, "createSubactivities") && (currentUserRole === "admin" || currentUserRole === "developer" || Boolean(project?.memberIds.includes(currentUserId)))
   const aqsRequired = serviceRequests.some((request) => request.activityId === activityId)
   const [open, setOpen] = React.useState(false)
+  const [step, setStep] = React.useState<AddSubactivityStep>("identification")
   const [title, setTitle] = React.useState("")
   const [hours, setHours] = React.useState("")
   const [estimateError, setEstimateError] = React.useState<string | null>(null)
@@ -387,6 +392,10 @@ export function FollowUpAddSubactivityDialog({
   const [linkedOs, setLinkedOs] = React.useState("")
   const [build, setBuild] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const tabRefs = React.useRef<Record<AddSubactivityStep, HTMLButtonElement | null>>({
+    identification: null,
+    extras: null,
+  })
   const canSetInitialStatus = currentUserRole === "admin" || (currentUserRole === "developer" && assigneeId === currentUserId)
 
   React.useEffect(() => {
@@ -400,12 +409,51 @@ export function FollowUpAddSubactivityDialog({
 
   if (!canManageStructure) return null
 
+  function resetForm() {
+    const defaults = getSubactivityReferenceDefaults(activity)
+    setStep("identification")
+    setTitle("")
+    setHours("")
+    setEstimateError(null)
+    setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
+    setStatus("backlog")
+    setTypeId("")
+    setLinkedOs(defaults.linkedOs)
+    setBuild(defaults.build)
+  }
+
+  function handleTabKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+    event.preventDefault()
+    const nextStep: AddSubactivityStep = step === "identification" ? "extras" : "identification"
+    setStep(nextStep)
+    window.setTimeout(() => tabRefs.current[nextStep]?.focus(), 0)
+  }
+
+  function validateIdentification() {
+    const normalizedEstimate = normalizeHHMMOnBlur(hours)
+    const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
+    if (!title.trim() || !assigneeId) return false
+    if (!parsedEstimate || parsedEstimate.totalMinutes <= 0) {
+      setEstimateError(!hours.trim()
+        ? "Informe a estimativa da subatividade."
+        : parsedEstimate?.totalMinutes === 0
+          ? "A estimativa deve ser maior que 00:00."
+          : "Informe uma estimativa válida no formato HH:mm.")
+      return false
+    }
+    setEstimateError(null)
+    if (normalizedEstimate !== hours) setHours(normalizedEstimate)
+    return true
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     const normalizedEstimate = normalizeHHMMOnBlur(hours)
     const parsedEstimate = parseHHMMToDecimalHours(normalizedEstimate)
     if (!title.trim() || !assigneeId || saving) return
     if (!parsedEstimate || parsedEstimate.totalMinutes <= 0) {
+      setStep("identification")
       setEstimateError(!hours.trim()
         ? "Informe a estimativa da subatividade."
         : parsedEstimate?.totalMinutes === 0
@@ -429,18 +477,15 @@ export function FollowUpAddSubactivityDialog({
         build: build.trim(),
       })
       if (!ok) return
-      setTitle("")
-      setHours("")
-      setEstimateError(null)
-      setStatus("backlog")
-      setTypeId("")
-      setLinkedOs("")
-      setBuild("")
+      resetForm()
       setOpen(false)
     } finally {
       setSaving(false)
     }
   }
+
+  const identificationReady = Boolean(title.trim() && assigneeId && parseHHMMToDecimalHours(normalizeHHMMOnBlur(hours))?.totalMinutes)
+  const hasReferences = Boolean(linkedOs.trim() || build.trim())
 
   return (
     <Dialog
@@ -448,151 +493,225 @@ export function FollowUpAddSubactivityDialog({
       onOpenChange={(next) => {
         if (saving) return
         setOpen(next)
-        if (next) {
-          setAssigneeId(executionMembers.some((member) => member.id === currentUserId) ? currentUserId : executionMembers[0]?.id || "")
-          setEstimateError(null)
-          setLinkedOs("")
-          setBuild("")
-        }
+        if (next) resetForm()
       }}
     >
       <Button
         type="button"
         variant="ghost"
         size="icon-xs"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          resetForm()
+          setOpen(true)
+        }}
         title="Nova subatividade"
         aria-label="Nova subatividade"
       >
         <Plus className="size-3.5" />
       </Button>
 
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-xl sm:max-w-xl md:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Nova subatividade</DialogTitle>
-          <DialogDescription>
-            {aqsRequired ? "Esta atividade pertence a uma solicitação. A conclusão é obrigatoriamente feita pela Análise AQS." : "Mesmas regras de criação, responsável, situação e estimativa usadas em Lista/Kanban."}
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="gap-1.5 border-b border-border px-5 pb-4 pt-5 pr-12">
+          <DialogTitle className="text-lg">Nova subatividade</DialogTitle>
+          <DialogDescription className="max-w-2xl text-xs leading-relaxed">
+            {aqsRequired
+              ? "Esta atividade pertence a uma solicitação. A conclusão é obrigatoriamente feita pela Análise AQS."
+              : "Crie a subatividade com o mesmo fluxo guiado usado nas atividades."}
           </DialogDescription>
         </DialogHeader>
 
-        <form id={`followup-add-sub-${activityId}`} onSubmit={submit} className="space-y-4">
-          <section className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3.5 dark:border-amber-400/20 dark:bg-amber-400/[0.08]">
-            <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/12 text-amber-700 dark:text-amber-300">
-                <CircleAlert className="size-4" />
+        <div className="border-b border-border bg-muted/20 px-5 py-2.5">
+          <div
+            role="tablist"
+            aria-label="Etapas da nova subatividade"
+            onKeyDown={handleTabKeyDown}
+            className="grid max-w-xl grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1"
+          >
+            <button
+              ref={(node) => { tabRefs.current.identification = node }}
+              type="button"
+              role="tab"
+              aria-selected={step === "identification"}
+              tabIndex={step === "identification" ? 0 : -1}
+              onClick={() => setStep("identification")}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                step === "identification" ? "bg-card text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              )}
+            >
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", step === "identification" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                <FileText className="size-3.5" />
               </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-foreground">Referências da subatividade</p>
-                <p className="mt-0.5 text-[0.68rem] leading-relaxed text-muted-foreground">
-                  A O.S. e a Versão / Build ficam vinculadas somente a esta subatividade. O preenchimento é opcional.
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-[0.68rem] font-medium text-muted-foreground">Número da O.S.</label>
-                <input
-                  value={linkedOs}
-                  onChange={(event) => setLinkedOs(event.target.value)}
-                  placeholder="Ex: 15482"
-                  maxLength={120}
-                  className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[0.68rem] font-medium text-muted-foreground">Versão / Build</label>
-                <input
-                  value={build}
-                  onChange={(event) => setBuild(event.target.value)}
-                  placeholder="Ex: 2026.09.16.1 ou v1.7.0"
-                  maxLength={120}
-                  className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
-                />
-              </div>
-            </div>
-          </section>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold">Identificação</span>
+                <span className="block truncate text-[0.62rem] text-muted-foreground">Descrição, tipo, responsável e estimativa</span>
+              </span>
+              {identificationReady && <Check className="size-3.5 shrink-0 text-success" />}
+            </button>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Descrição</label>
-            <textarea
-              autoFocus
-              rows={5}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Descreva o que precisa ser feito..."
-              className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring sm:min-h-32"
-            />
+            <button
+              ref={(node) => { tabRefs.current.extras = node }}
+              type="button"
+              role="tab"
+              aria-selected={step === "extras"}
+              tabIndex={step === "extras" ? 0 : -1}
+              onClick={() => setStep("extras")}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                step === "extras" ? "bg-card text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              )}
+            >
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", step === "extras" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                <SlidersHorizontal className="size-3.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold">Extras</span>
+                <span className="block truncate text-[0.62rem] text-muted-foreground">O.S. e Versão / Build</span>
+              </span>
+              {hasReferences ? (
+                <Check className="size-3.5 shrink-0 text-success" />
+              ) : (
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.58rem] font-medium text-muted-foreground">Opcional</span>
+              )}
+            </button>
           </div>
+        </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
-              <DurationField
-                value={hours}
-                onChange={(value) => {
-                  setHours(value)
-                  if (estimateError) setEstimateError(null)
-                }}
-                invalid={Boolean(estimateError)}
-                errorMessage={estimateError}
-                placeholder="HH:mm"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Situação</label>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value as Status)}
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
-              >
-                {statusOrder.map((item) => (
-                  <option key={item} value={item} disabled={(!canSetInitialStatus && item !== "backlog") || (aqsRequired && (item === "done" || item === "cancelled"))}>
-                    {statusMeta[item].label}
-                  </option>
-                ))}
-              </select>
+        <form id={`followup-add-sub-${activityId}`} onSubmit={submit} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {step === "identification" ? (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Descrição</label>
+                <textarea
+                  autoFocus
+                  rows={5}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Descreva o que precisa ser feito..."
+                  className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring sm:min-h-32"
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Estimativa (HH:mm)</label>
+                  <DurationField
+                    value={hours}
+                    onChange={(value) => {
+                      setHours(value)
+                      if (estimateError) setEstimateError(null)
+                    }}
+                    invalid={Boolean(estimateError)}
+                    errorMessage={estimateError}
+                    placeholder="HH:mm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Situação</label>
+                  <select
+                    value={status}
+                    onChange={(event) => setStatus(event.target.value as Status)}
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                  >
+                    {statusOrder.map((item) => (
+                      <option key={item} value={item} disabled={(!canSetInitialStatus && item !== "backlog") || (aqsRequired && (item === "done" || item === "cancelled"))}>
+                        {statusMeta[item].label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+                  <select
+                    value={typeId}
+                    onChange={(event) => setTypeId(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                  >
+                    <option value="">Sem tipo</option>
+                    {workItemTypes.filter((item) => item.active).map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {aqsRequired ? (
                 <p className="text-[0.68rem] leading-snug text-primary">OS vinculada: finalize enviando para Aguardando AQS.</p>
               ) : !canSetInitialStatus ? (
-                <p className="text-[0.68rem] leading-snug text-muted-foreground">
-                  Para outro responsável, a nova subatividade começa no Backlog.
-                </p>
+                <p className="text-[0.68rem] leading-snug text-muted-foreground">Para outro responsável, a nova subatividade começa no Backlog.</p>
               ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Tipo</label>
-              <select
-                value={typeId}
-                onChange={(event) => setTypeId(event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
-              >
-                <option value="">Sem tipo</option>
-                {workItemTypes.filter((item) => item.active).map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Responsável</label>
-            <select
-              value={assigneeId}
-              onChange={(event) => setAssigneeId(event.target.value)}
-              className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
-            >
-              {executionMembers.map((member) => (
-                <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
-            </select>
-          </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Responsável</label>
+                <select
+                  value={assigneeId}
+                  onChange={(event) => setAssigneeId(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-ring"
+                >
+                  {executionMembers.map((member) => (
+                    <option key={member.id} value={member.id}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-foreground">Referências</h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Opcionais. A última subatividade é usada como referência; se ela não tiver um valor, o campo configurado na atividade é reaproveitado.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Número da O.S.</label>
+                  <input
+                    value={linkedOs}
+                    onChange={(event) => setLinkedOs(event.target.value)}
+                    placeholder="Ex: 15482"
+                    maxLength={120}
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Versão / Build</label>
+                  <input
+                    value={build}
+                    onChange={(event) => setBuild(event.target.value)}
+                    placeholder="Ex: 1.7.0 ou 2026.09.16.1"
+                    maxLength={120}
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </form>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-          <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId} loading={saving} loadingText="Criando...">
-            <Plus className="size-4" /> Criar subatividade
-          </Button>
+        <DialogFooter className="m-0 rounded-none border-t border-border bg-popover/95 px-5 py-3 sm:items-center sm:justify-between">
+          <div className="hidden text-[0.62rem] text-muted-foreground sm:block">Tab navega · ←/→ troca guia · Esc fecha</div>
+          <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
+            {step === "identification" ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  if (validateIdentification()) setStep("extras")
+                }}
+                disabled={!title.trim() || !assigneeId}
+              >
+                Continuar para extras <ChevronRight className="size-4" />
+              </Button>
+            ) : (
+              <>
+                <Button type="button" variant="ghost" onClick={() => setStep("identification")} disabled={saving}>Voltar</Button>
+                <Button type="submit" form={`followup-add-sub-${activityId}`} disabled={!title.trim() || !assigneeId} loading={saving} loadingText="Criando...">
+                  <Plus className="size-4" /> Criar subatividade
+                </Button>
+              </>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -492,7 +492,7 @@ function activityContextDescription(activity: Activity, linkedRequest?: ServiceR
     activity.subject ? `Assunto ${activity.subject}` : undefined,
     activity.responsibleDepartment ? `Departamento ${activity.responsibleDepartment}` : undefined,
     activity.linkedOs ? `O.S. ${activity.linkedOs}` : undefined,
-    activity.build ? `Build / Server ${activity.build}` : undefined,
+    activity.build ? `Versão / Build ${activity.build}` : undefined,
   ].filter(Boolean) as string[]
 
   if (details.length > 0) return details.join(" · ")

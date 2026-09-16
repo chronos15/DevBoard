@@ -9,6 +9,47 @@ export const dynamic = "force-dynamic"
 
 const CONFIG_MARKER = "\nDEVBOARD_AGENT_CONFIG_V1\n"
 
+function normalizeOrigin(value: string | null | undefined): string | null {
+  if (!value) return null
+
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null
+    return `${url.protocol}//${url.host}`
+  } catch {
+    return null
+  }
+}
+
+function resolvePublicAppUrl(request: NextRequest): string {
+  const configuredAppUrl = normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL)
+  if (configuredAppUrl) return configuredAppUrl
+
+  const forwardedProto = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim()
+
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim()
+
+  const host =
+    forwardedHost ||
+    request.headers
+      .get("host")
+      ?.split(",")[0]
+      ?.trim()
+
+  if (forwardedProto && host) {
+    const forwardedOrigin = normalizeOrigin(`${forwardedProto}://${host}`)
+    if (forwardedOrigin) return forwardedOrigin
+  }
+
+  return request.nextUrl.origin
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -55,7 +96,7 @@ export async function GET(request: NextRequest) {
       JSON.stringify({
         agent_id: row.agent_id,
         agent_secret: row.agent_secret,
-        app_url: request.nextUrl.origin,
+        app_url: resolvePublicAppUrl(request),
         supabase_url: supabaseUrl,
         supabase_key: supabaseKey,
         agent_version: DEVBOARD_AGENT_VERSION,

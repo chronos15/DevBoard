@@ -40,6 +40,11 @@ export function useTypingIndicator(scopeKey: string | null | undefined, enabled 
     () => members.find((member) => member.id === currentUserId)?.name ?? "Usuário",
     [currentUserId, members],
   )
+  const currentMemberNameRef = React.useRef(currentMemberName)
+
+  React.useEffect(() => {
+    currentMemberNameRef.current = currentMemberName
+  }, [currentMemberName])
 
   const publish = React.useCallback((typing: boolean) => {
     desiredTypingRef.current = typing
@@ -47,11 +52,11 @@ export function useTypingIndicator(scopeKey: string | null | undefined, enabled 
     if (!channel || !subscribedRef.current) return
     void channel.track({
       user_id: currentUserId,
-      user_name: currentMemberName,
+      user_name: currentMemberNameRef.current,
       typing,
       updated_at: new Date().toISOString(),
     })
-  }, [currentMemberName, currentUserId])
+  }, [currentUserId])
 
   const stopTyping = React.useCallback(() => {
     if (idleTimerRef.current) {
@@ -87,14 +92,14 @@ export function useTypingIndicator(scopeKey: string | null | undefined, enabled 
     const topicPart = safeTypingTopicPart(scopeKey)
     if (!topicPart) return
 
+    const topic = `taskboard-typing:${workspaceId}:${topicPart}`
+    const realtimeTopic = `realtime:${topic}`
     let disposed = false
-    const channel = supabase.channel(`taskboard-typing:${workspaceId}:${topicPart}`, {
-      config: { presence: { key: currentUserId } },
-    })
-    channelRef.current = channel
+    let channel: RealtimeChannel | null = null
+    let expiryTimer: ReturnType<typeof setInterval> | null = null
 
     const syncPresence = () => {
-      if (disposed) return
+      if (disposed || !channel) return
       const now = Date.now()
       const state = channel.presenceState() as Record<string, TypingPresence[]>
       const next = new Set<string>()
@@ -113,41 +118,67 @@ export function useTypingIndicator(scopeKey: string | null | undefined, enabled 
       setTypingUserIds((current) => sameIds(current, ids) ? current : ids)
     }
 
-    channel
-      .on("presence", { event: "sync" }, syncPresence)
-      .on("presence", { event: "join" }, syncPresence)
-      .on("presence", { event: "leave" }, syncPresence)
-      .subscribe((status) => {
-        if (disposed) return
-        subscribedRef.current = status === "SUBSCRIBED"
-        if (status === "SUBSCRIBED") {
-          void channel.track({
-            user_id: currentUserId,
-            user_name: currentMemberName,
-            typing: desiredTypingRef.current,
-            updated_at: new Date().toISOString(),
-          })
+    const connect = async () => {
+      // realtime-js reaproveita o mesmo objeto de canal enquanto o tópico ainda
+      // estiver registrado no cliente. Se uma navegação/remount acontecer antes
+      // do unsubscribe anterior terminar, adicionar Presence novamente no canal
+      // já inscrito lança uma exceção e derruba a página. Removemos qualquer canal
+      // residual deste indicador antes de registrar os listeners do novo ciclo.
+      const staleChannel = supabase.getChannels().find((item) => item.topic === realtimeTopic)
+      if (staleChannel) {
+        try {
+          await supabase.removeChannel(staleChannel)
+        } catch (error) {
+          console.warn("[TaskBoard/Typing] Não foi possível remover um canal residual:", error)
         }
-      })
+        if (disposed) return
+      }
 
-    const expiryTimer = setInterval(syncPresence, 1200)
+      const nextChannel = supabase.channel(topic, {
+        config: { presence: { key: currentUserId } },
+      })
+      channel = nextChannel
+      channelRef.current = nextChannel
+
+      nextChannel
+        .on("presence", { event: "sync" }, syncPresence)
+        .on("presence", { event: "join" }, syncPresence)
+        .on("presence", { event: "leave" }, syncPresence)
+        .subscribe((status) => {
+          if (disposed || channel !== nextChannel) return
+          subscribedRef.current = status === "SUBSCRIBED"
+          if (status === "SUBSCRIBED") {
+            void nextChannel.track({
+              user_id: currentUserId,
+              user_name: currentMemberNameRef.current,
+              typing: desiredTypingRef.current,
+              updated_at: new Date().toISOString(),
+            })
+          }
+        })
+
+      expiryTimer = setInterval(syncPresence, 1200)
+    }
+
+    void connect()
 
     return () => {
       disposed = true
-      clearInterval(expiryTimer)
+      if (expiryTimer) clearInterval(expiryTimer)
       if (idleTimerRef.current) {
         clearTimeout(idleTimerRef.current)
         idleTimerRef.current = null
       }
       subscribedRef.current = false
       desiredTypingRef.current = false
-      if (channelRef.current === channel) channelRef.current = null
-      void channel.untrack().finally(() => {
-        void supabase.removeChannel(channel)
-      })
+      const activeChannel = channel
+      if (activeChannel && channelRef.current === activeChannel) channelRef.current = null
+      // Não esperamos untrack(): removeChannel já encerra o canal e evita que uma
+      // navegação imediata reutilize um canal Presence que ainda está inscrito.
+      if (activeChannel) void supabase.removeChannel(activeChannel)
       setTypingUserIds([])
     }
-  }, [currentMemberName, currentUserId, scopeKey, supabase, workspaceId])
+  }, [currentUserId, scopeKey, supabase, workspaceId])
 
   React.useEffect(() => {
     if (!enabled) stopTyping()

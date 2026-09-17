@@ -32,6 +32,7 @@ type ZoomableVideoStageProps = {
   showHint?: boolean
   autoPlay?: boolean
   onLoadedMetadata?: (video: HTMLVideoElement) => void
+  onClose?: () => void
 }
 
 type VideoViewerDialogProps = {
@@ -64,6 +65,7 @@ export function ZoomableVideoStage({
   showHint = true,
   autoPlay = false,
   onLoadedMetadata,
+  onClose,
 }: ZoomableVideoStageProps) {
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const videoRef = React.useRef<HTMLVideoElement | null>(null)
@@ -413,6 +415,22 @@ export function ZoomableVideoStage({
         >
           <RotateCcw className="size-3.5" />
         </Button>
+        {onClose ? (
+          <>
+            <span className="mx-0.5 h-5 w-px bg-white/10" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="size-8 text-white/85 hover:bg-white/10 hover:text-white"
+              onClick={onClose}
+              title="Fechar vídeo"
+              aria-label="Fechar vídeo"
+            >
+              <X className="size-3.5" />
+            </Button>
+          </>
+        ) : null}
       </div>
 
       {showHint && (
@@ -577,27 +595,6 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
       onContextMenu={stopEvent}
       onWheel={stopEvent}
     >
-      <div className="relative z-30 flex shrink-0 items-center gap-3 border-b border-white/10 bg-background/96 px-3 py-2.5 pr-3 shadow-sm backdrop-blur-md sm:px-5 sm:py-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium sm:text-base">{title || "Visualizar vídeo"}</div>
-          <p className="mt-0.5 truncate text-[0.62rem] text-muted-foreground sm:text-[0.65rem]">
-            <span className="sm:hidden">Pinça para ampliar · arraste com um dedo quando ampliado</span>
-            <span className="hidden sm:inline">Roda do mouse: zoom · Shift + arraste: mover</span>
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="size-9 shrink-0"
-          onClick={requestClose}
-          title="Fechar vídeo"
-          aria-label="Fechar vídeo"
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-
       <div className="relative z-10 flex min-h-0 w-full flex-1 overflow-hidden bg-black">
         {src ? (
           <ZoomableVideoStage
@@ -605,6 +602,7 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
             className="h-full min-h-0 w-full flex-1"
             videoClassName="h-auto w-auto"
             showHint
+            onClose={requestClose}
           />
         ) : (
           <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center bg-black px-6 text-center text-sm text-white/60">

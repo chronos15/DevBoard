@@ -40,7 +40,7 @@ import { ProjectLogDialog } from "./project-log"
 import { SubactivityKanban } from "./subactivity-kanban"
 import { VersionProjectDialog } from "./version-project-dialog"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
-import { ProjectIcon } from "@/components/projects/project-icon"
+import { ProjectImagePreview } from "@/components/projects/project-image-preview"
 import { canPerformAction } from "@/lib/access-control"
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
@@ -284,9 +284,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       <div className="flex min-w-0 flex-col gap-4 rounded-2xl bg-card p-3 ring-1 ring-foreground/8 sm:p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary" aria-hidden>
-            <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-5" imageClassName="size-full rounded-none object-cover" />
-          </span>
+          <ProjectImagePreview
+            project={project}
+            className="mt-0.5 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary transition-shadow"
+            iconClassName="size-5"
+            imageClassName="size-full rounded-none object-cover"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h1 className="min-w-0 break-words text-xl font-semibold tracking-tight text-balance md:text-2xl">{project.name}</h1>

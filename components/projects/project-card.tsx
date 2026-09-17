@@ -17,7 +17,7 @@ import {
 import { MemberStack } from "@/components/member-avatar"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import { ProjectIcon } from "@/components/projects/project-icon"
+import { ProjectImagePreview } from "@/components/projects/project-image-preview"
 import { canPerformAction } from "@/lib/access-control"
 
 export function ProjectCard({ project }: { project: Project }) {
@@ -55,15 +55,18 @@ export function ProjectCard({ project }: { project: Project }) {
       className="group flex cursor-pointer flex-col gap-4 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
     >
       <div className="flex items-start justify-between gap-3">
-        <Link href={`/projetos/${project.id}`} className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary">
-            <ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-5" imageClassName="size-full rounded-none object-cover" />
-          </span>
-          <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
+          <ProjectImagePreview
+            project={project}
+            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/12 text-primary transition-shadow"
+            iconClassName="size-5"
+            imageClassName="size-full rounded-none object-cover"
+          />
+          <Link href={`/projetos/${project.id}`} className="min-w-0">
             <h3 className="truncate font-semibold leading-tight transition-colors hover:text-primary">{project.name}</h3>
             <p className="truncate text-xs text-muted-foreground">{project.client}</p>
-          </div>
-        </Link>
+          </Link>
+        </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <span
             className={cn(

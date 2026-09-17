@@ -182,11 +182,11 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
           <button
             type="button"
             onClick={() => setVideoOpen(true)}
-            className="absolute left-5 top-5 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="absolute bottom-16 right-5 z-10 flex size-8 items-center justify-center rounded-lg border border-primary/50 bg-black/75 text-primary shadow-md backdrop-blur transition-colors hover:bg-black/90 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             title="Expandir vídeo e usar zoom"
             aria-label={`Expandir ${attachment.name}`}
           >
-            <Maximize2 className="size-3.5" />
+            <Maximize2 className="size-4" />
           </button>
         </div>
         <VideoViewerDialog open={videoOpen} onOpenChange={setVideoOpen} src={attachment.dataUrl} title={attachment.name} />

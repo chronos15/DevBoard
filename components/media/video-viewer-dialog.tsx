@@ -153,6 +153,10 @@ export function ZoomableVideoStage({
     setZoomAroundPoint(scaleRef.current + delta, focalPoint)
   }, [setZoomAroundPoint])
 
+  const isZoomToolbarTarget = React.useCallback((target: EventTarget | null) => {
+    return target instanceof Element && Boolean(target.closest("[data-video-zoom-toolbar='true']"))
+  }, [])
+
   React.useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
@@ -164,6 +168,10 @@ export function ZoomableVideoStage({
     }
 
     const handleTouchStart = (event: TouchEvent) => {
+      // A barra de zoom precisa continuar sendo um controle touch normal.
+      // Não deixamos o recognizer de pinch/pan cancelar o clique dos botões.
+      if (isZoomToolbarTarget(event.target)) return
+
       // Todo gesto fica isolado dentro do viewer. Em 100%, um toque simples
       // continua disponível para os controles nativos do vídeo.
       event.stopPropagation()
@@ -194,6 +202,7 @@ export function ZoomableVideoStage({
     }
 
     const handleTouchMove = (event: TouchEvent) => {
+      if (isZoomToolbarTarget(event.target)) return
       event.stopPropagation()
 
       const pinch = pinchRef.current
@@ -237,6 +246,7 @@ export function ZoomableVideoStage({
     }
 
     const handleTouchEnd = (event: TouchEvent) => {
+      if (isZoomToolbarTarget(event.target)) return
       event.stopPropagation()
 
       if (event.touches.length >= 2) {
@@ -292,7 +302,7 @@ export function ZoomableVideoStage({
       viewport.removeEventListener("gesturechange", preventNativeGesture)
       viewport.removeEventListener("gestureend", preventNativeGesture)
     }
-  }, [applyTransform, zoomBy])
+  }, [applyTransform, isZoomToolbarTarget, zoomBy])
 
   React.useEffect(() => {
     const handleResize = () => applyTransform(scaleRef.current, offsetRef.current)
@@ -354,7 +364,10 @@ export function ZoomableVideoStage({
       onLostPointerCapture={handlePointerEnd}
       onContextMenu={(event) => event.stopPropagation()}
     >
-      <div className="absolute left-1/2 top-2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-white/10 bg-black/65 p-1 shadow-lg backdrop-blur-md sm:left-auto sm:right-3 sm:translate-x-0">
+      <div
+        data-video-zoom-toolbar="true"
+        className="absolute left-1/2 top-2 z-20 flex -translate-x-1/2 touch-manipulation items-center gap-0.5 rounded-xl border border-white/10 bg-black/65 p-1 shadow-lg backdrop-blur-md sm:left-auto sm:right-3 sm:translate-x-0"
+      >
         <Button
           type="button"
           variant="ghost"

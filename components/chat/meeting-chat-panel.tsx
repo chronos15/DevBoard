@@ -21,6 +21,8 @@ import { AudioMessage } from "@/components/chat/audio-message"
 import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
+import { AudioRecordButton } from "@/components/chat/audio-record-button"
+import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
@@ -33,6 +35,8 @@ type MentionRange = { start: number; end: number; query: string }
 type ReactionRow = { messageId: string; userId: string; emoji: string }
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "✅"] as const
+const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_BATCH_BYTES = 150 * 1024 * 1024
 
 function mentionToken(mention: ChatMention) {
   return `@${mention.label}`
@@ -81,6 +85,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     editChatMessage,
     retryChatMessage,
     sendChatMedia,
+    sendChatAudio,
     loadChatHistory,
     inviteMeetingUser,
   } = useStore()
@@ -103,12 +108,14 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   const [stagedFiles, setStagedFiles] = React.useState<File[]>([])
   const [attachmentOpen, setAttachmentOpen] = React.useState(false)
   const [sendingMedia, setSendingMedia] = React.useState(false)
+  const [recordingAudio, setRecordingAudio] = React.useState(false)
   const [hasNewMessagesBelow, setHasNewMessagesBelow] = React.useState(false)
   const inputRef = React.useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const messagesContentRef = React.useRef<HTMLDivElement | null>(null)
   const stickBottomRef = React.useRef(true)
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
 
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
@@ -321,10 +328,58 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     }
   }
 
+  function fileIdentity(file: File) {
+    return `${file.name}:${file.type}:${file.size}:${file.lastModified}`
+  }
+
+  function queueMeetingFiles(files: File[]) {
+    if (!files.length || sendingMedia || recordingAudio) return
+    const incoming = files.filter((file) => file.size > 0)
+    if (!incoming.length) return
+
+    const merged = [...stagedFiles, ...incoming]
+    const seen = new Set<string>()
+    const unique = merged.filter((file) => {
+      const key = fileIdentity(file)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    const oversized = unique.find((file) => file.size > MAX_FILE_BYTES)
+    if (oversized) {
+      setLocalError(`“${oversized.name}” excede o limite de 50 MB.`)
+      return
+    }
+    const totalBytes = unique.reduce((sum, file) => sum + file.size, 0)
+    if (totalBytes > MAX_BATCH_BYTES) {
+      setLocalError("O envio pode ter no máximo 150 MB por vez.")
+      return
+    }
+
+    setLocalError("")
+    setStagedFiles(unique)
+    setAttachmentOpen(true)
+  }
+
   function stageFiles(files: FileList | null) {
     if (!files?.length) return
-    setStagedFiles(Array.from(files).filter((file) => file.size > 0))
-    setAttachmentOpen(true)
+    queueMeetingFiles(Array.from(files))
+  }
+
+  function updateStagedFiles(files: File[]) {
+    const valid = files.filter((file) => file.size > 0)
+    const oversized = valid.find((file) => file.size > MAX_FILE_BYTES)
+    if (oversized) {
+      setLocalError(`“${oversized.name}” excede o limite de 50 MB.`)
+      return
+    }
+    if (valid.reduce((sum, file) => sum + file.size, 0) > MAX_BATCH_BYTES) {
+      setLocalError("O envio pode ter no máximo 150 MB por vez.")
+      return
+    }
+    setLocalError("")
+    setStagedFiles(valid)
   }
 
   async function submitMedia(caption: string) {
@@ -355,7 +410,14 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+    <div ref={panelRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+      <FileDropOverlay
+        enabled={!sendingMedia && !recordingAudio}
+        title="Solte para anexar à reunião"
+        description="Imagens, vídeos, documentos e outros arquivos serão abertos no preview antes do envio."
+        onFiles={queueMeetingFiles}
+        scopeRef={panelRef}
+      />
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[0.68rem] font-semibold"><MessageSquareText className="size-3.5 text-primary" /> Chat da reunião</p>
@@ -577,47 +639,87 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
         )}
 
         <div className="flex min-w-0 items-end gap-1.5">
-          <RichMessageComposer
-            ref={inputRef}
-            value={message}
-            onChange={(event) => {
-              setMessage(event.target.value)
-              setDraftMentions((current) => current.filter((mention) => event.target.value.includes(mentionToken(mention))))
-              syncMention(event.target.value, event.target.selectionStart)
-            }}
-            onClick={(event) => syncMention(message, event.currentTarget.selectionStart)}
-            onKeyDown={(event) => {
-              if (mentionRange && mentionCandidates.length) {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return
-                }
-                if (event.key === "Enter" || event.key === "Tab") {
-                  event.preventDefault(); selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]); return
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault(); setMentionRange(null); return
-                }
+          {!recordingAudio && (
+            <>
+              <RichMessageComposer
+                ref={inputRef}
+                value={message}
+                onChange={(event) => {
+                  setMessage(event.target.value)
+                  setDraftMentions((current) => current.filter((mention) => event.target.value.includes(mentionToken(mention))))
+                  syncMention(event.target.value, event.target.selectionStart)
+                }}
+                onClick={(event) => syncMention(message, event.currentTarget.selectionStart)}
+                onKeyDown={(event) => {
+                  if (mentionRange && mentionCandidates.length) {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault(); setMentionIndex((current) => (current + 1) % mentionCandidates.length); return
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault(); setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length); return
+                    }
+                    if (event.key === "Enter" || event.key === "Tab") {
+                      event.preventDefault(); selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]); return
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault(); setMentionRange(null); return
+                    }
+                  }
+                  if (event.key === "Escape" && replyingTo) {
+                    event.preventDefault(); setReplyingTo(null); return
+                  }
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault(); void submitMessage()
+                  }
+                }}
+                onPaste={(event) => {
+                  const clipboard = event.clipboardData
+                  const directFiles = Array.from(clipboard.files ?? [])
+                  const itemFiles = Array.from(clipboard.items ?? [])
+                    .filter((item) => item.kind === "file")
+                    .map((item) => item.getAsFile())
+                    .filter((file): file is File => Boolean(file))
+                  const seen = new Set<string>()
+                  const files = [...directFiles, ...itemFiles].filter((file) => {
+                    if (!file.size) return false
+                    const key = fileIdentity(file)
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                  })
+                  if (!files.length) return
+                  event.preventDefault()
+                  queueMeetingFiles(files)
+                }}
+                rows={1}
+                maxLength={2500}
+                placeholder="Mensagem… use @ para chamar pessoas ou equipes"
+                className="max-h-28 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-2.5 py-2 text-[0.7rem] leading-5 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+              />
+              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(event.target.files); event.currentTarget.value = "" }} />
+              <Button type="button" size="icon" variant="ghost" className="size-9 shrink-0" onClick={() => fileInputRef.current?.click()} disabled={sendingMedia} title="Anexar arquivo">
+                <Paperclip className="size-3.5" />
+              </Button>
+            </>
+          )}
+          <AudioRecordButton
+            disabled={sendingMedia}
+            onRecordingChange={(recording) => {
+              setRecordingAudio(recording)
+              if (recording) {
+                setMentionRange(null)
+                setReplyingTo(null)
               }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault(); void submitMessage()
-              }
             }}
-            rows={1}
-            maxLength={2500}
-            placeholder="Mensagem… use @ para chamar pessoas ou equipes"
-            className="max-h-28 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-2.5 py-2 text-[0.7rem] leading-5 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+            onRecorded={(audio, durationMs) => conversation ? sendChatAudio(conversation.id, audio, durationMs) : Promise.resolve(false)}
           />
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(event.target.files); event.currentTarget.value = "" }} />
-          <Button type="button" size="icon" variant="ghost" className="size-9 shrink-0" onClick={() => fileInputRef.current?.click()} disabled={sendingMedia} title="Anexar arquivo">
-            <Paperclip className="size-3.5" />
-          </Button>
-          <Button type="button" size="icon" className="size-9 shrink-0" onClick={() => void submitMessage()} disabled={!message.trim() || sending} title="Enviar">
-            {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-          </Button>
+          {!recordingAudio && (
+            <Button type="button" size="icon" className="size-9 shrink-0" onClick={() => void submitMessage()} disabled={!message.trim() || sending} title="Enviar">
+              {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+            </Button>
+          )}
         </div>
+        <p className="mt-1.5 px-1 text-[0.54rem] leading-relaxed text-muted-foreground">Enter envia · Shift+Enter quebra linha · Ctrl+V cola anexos · arraste arquivos para o chat · @ menciona e chama</p>
       </div>
 
       <ChatAttachmentPreviewDialog
@@ -628,7 +730,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           setAttachmentOpen(next)
           if (!next && !sendingMedia) setStagedFiles([])
         }}
-        onFilesChange={setStagedFiles}
+        onFilesChange={updateStagedFiles}
         onSend={submitMedia}
       />
     </div>

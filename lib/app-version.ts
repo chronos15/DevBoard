@@ -1,4 +1,4 @@
-export const TASKBOARD_VERSION = process.env.NEXT_PUBLIC_TASKBOARD_VERSION?.trim() || "V188"
+export const TASKBOARD_VERSION = process.env.NEXT_PUBLIC_TASKBOARD_VERSION?.trim() || "V189"
 export const TASKBOARD_BUILD_DATE = process.env.NEXT_PUBLIC_TASKBOARD_BUILD_DATE?.trim() || "--/-- --:--"
 
 // Compatibilidade com a primeira implementação da V139.

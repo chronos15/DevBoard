@@ -99,6 +99,7 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -1714,7 +1715,6 @@ export function ProjectFollowUp({
       items.push({ kind: "session", id: `session-${session.id}`, targetId: session.id, createdAt: session.startedAt, authorId: session.userId, durationSeconds: session.durationSeconds, endedAt: session.endedAt })
     }
 
-    const needle = selectedSub.title.trim().toLocaleLowerCase("pt-BR")
     for (const log of project.logs ?? []) {
       if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
 
@@ -1737,9 +1737,7 @@ export function ProjectFollowUp({
         continue
       }
 
-      if (!needle) continue
-      const haystack = `${log.title} ${log.description ?? ""}`.toLocaleLowerCase("pt-BR")
-      if (!haystack.includes(needle)) continue
+      if (!logReferencesSubactivityTitle(selectedSub.title, log.title, log.description)) continue
       items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description, logType: log.type })
     }
 

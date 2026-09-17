@@ -214,12 +214,12 @@ function SubactivityRow({ sub, projectId, linkedRequest, focused = false }: { su
         setInlineOpen((current) => !current)
       }}
       className={cn(
-        "flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-all sm:px-3",
+        "relative flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl px-2.5 py-3 transition-all sm:px-3",
         inProgress
           ? "rounded-2xl border border-orange-500/25 bg-orange-500/[0.08] shadow-sm dark:border-orange-400/25 dark:bg-orange-400/[0.10]"
           : "hover:bg-muted/50",
         cancelled && "opacity-70",
-        focused && "bg-primary/[0.08] ring-2 ring-inset ring-primary/30",
+        focused && "bg-primary/[0.045] before:absolute before:bottom-3 before:left-0 before:top-3 before:w-0.5 before:rounded-full before:bg-primary before:content-['']",
       )}
     >
       <button

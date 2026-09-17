@@ -270,7 +270,7 @@ export function WorkspaceActivityStatus() {
                     >
                       <span className="min-w-0">
                         <span className="block text-[0.7rem] font-semibold text-primary">Mais</span>
-                        <span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">Dashboard, cronologia e Gantt de {member.name}</span>
+                        <span className="mt-0.5 block truncate text-[0.58rem] text-muted-foreground">Dashboard, cronologia e Gantt</span>
                       </span>
                       <ArrowRight className="size-4 shrink-0 text-primary" />
                     </button>

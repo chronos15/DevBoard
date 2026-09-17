@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Activity, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, MessageSquareText, Paperclip, Pause, Play, Timer } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MemberAvatar } from "@/components/member-avatar"
-import { followUpHref } from "@/lib/follow-up-launcher"
+import { followUpHref, openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { recentWork, workForMember, workLastMovement, type MemberWorkRef } from "@/lib/member-work-activity"
 import { formatHM, statusMeta } from "@/lib/project-utils"
 import { ACCESS_ROLE_LABELS, type Member, type MemberPresence, type Project, type WorkSession } from "@/lib/types"
@@ -73,7 +73,7 @@ function MetricCard({ icon: Icon, label, value, hint }: { icon: typeof Clock3; l
   )
 }
 
-function Gantt({ memberId, work, workSessions, now }: { memberId: string; work: MemberWorkRef[]; workSessions: WorkSession[]; now: number }) {
+function Gantt({ memberId, work, workSessions, now, onNavigate }: { memberId: string; work: MemberWorkRef[]; workSessions: WorkSession[]; now: number; onNavigate: (item: MemberWorkRef) => void }) {
   const end = startOfDay(now) + 24 * 60 * 60 * 1000
   const start = end - GANTT_DAYS * 24 * 60 * 60 * 1000
   const duration = end - start
@@ -118,13 +118,18 @@ function Gantt({ memberId, work, workSessions, now }: { memberId: string; work: 
             const meta = statusMeta[item.subactivity.status]
             return (
               <div key={item.subactivity.id} className="grid grid-cols-[210px_minmax(520px,1fr)] items-center gap-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="truncate text-[0.7rem] font-medium" title={item.subactivity.title}>{item.subactivity.title}</div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(item)}
+                  className="group min-w-0 rounded-lg px-1 py-1 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title={`Abrir acompanhamento de ${item.subactivity.title}`}
+                >
+                  <div className="truncate text-[0.7rem] font-medium transition-colors group-hover:text-primary">{item.subactivity.title}</div>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className={cn("size-1.5 rounded-full", meta.dot)} />
                     <span className="truncate text-[0.56rem] text-muted-foreground">{item.project.name}</span>
                   </div>
-                </div>
+                </button>
                 <div className="relative h-7 overflow-hidden rounded-lg bg-muted/35">
                   <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${GANTT_DAYS}, minmax(0,1fr))` }}>
                     {days.map((day) => <span key={day} className="border-r border-border/45 last:border-r-0" />)}
@@ -135,11 +140,14 @@ function Gantt({ memberId, work, workSessions, now }: { memberId: string; work: 
                     const left = ((segmentStart - start) / duration) * 100
                     const width = Math.max(0.75, ((segmentEnd - segmentStart) / duration) * 100)
                     return (
-                      <span
+                      <button
                         key={session.id}
-                        className="absolute top-1/2 h-3 -translate-y-1/2 rounded-full bg-primary shadow-sm"
+                        type="button"
+                        onClick={() => onNavigate(item)}
+                        className="absolute top-1/2 h-3 -translate-y-1/2 rounded-full bg-primary shadow-sm outline-none transition-[filter,box-shadow] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                         style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
-                        title={`${new Date(segmentStart).toLocaleString("pt-BR")} → ${new Date(segmentEnd).toLocaleString("pt-BR")}`}
+                        title={`${item.subactivity.title} · ${new Date(segmentStart).toLocaleString("pt-BR")} → ${new Date(segmentEnd).toLocaleString("pt-BR")}`}
+                        aria-label={`Abrir acompanhamento de ${item.subactivity.title}`}
                       />
                     )
                   })}
@@ -231,7 +239,16 @@ export function MemberWorkDashboardDialog({
                 </div>
                 <span className="rounded-full bg-muted px-2 py-1 font-mono text-[0.6rem] text-muted-foreground">{formatHM(weekSeconds)} / 7 dias</span>
               </div>
-              <Gantt memberId={member.id} work={work} workSessions={workSessions} now={now} />
+              <Gantt
+                memberId={member.id}
+                work={work}
+                workSessions={workSessions}
+                now={now}
+                onNavigate={(item) => {
+                  onOpenChange(false)
+                  openProjectFollowUp({ projectId: item.project.id, activityId: item.activityId, subactivityId: item.subactivity.id })
+                }}
+              />
             </section>
 
             <section className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm sm:p-5">

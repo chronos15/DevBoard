@@ -28,7 +28,10 @@ export function isActivityMeetingLog(log: ProjectLogEntry, activityId: string) {
 }
 
 export function isSubactivityMeetingLog(log: ProjectLogEntry, subactivityId: string) {
-  return log.subactivityId?.toLowerCase() === subactivityId.toLowerCase()
+  if (log.subactivityId?.trim()) {
+    return log.subactivityId.toLowerCase() === subactivityId.toLowerCase()
+  }
+  return meetingLogSubactivityId(log)?.toLowerCase() === subactivityId.toLowerCase()
 }
 
 export function visibleMeetingLogDescription(description?: string) {

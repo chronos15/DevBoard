@@ -98,7 +98,8 @@ import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
-import { visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -1716,9 +1717,22 @@ export function ProjectFollowUp({
 
     for (const log of project.logs ?? []) {
       if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
-      if (log.subactivityId !== selectedSub.id) continue
 
+      const hasSubactivityId = Boolean(log.subactivityId?.trim())
       const isMeetingLog = log.type === "meeting-started" || log.type === "meeting-ended"
+
+      if (hasSubactivityId) {
+        // Logs novos: vínculo exclusivamente pelo UUID persistido.
+        if (log.subactivityId?.toLowerCase() !== selectedSub.id.toLowerCase()) continue
+      } else if (isMeetingLog) {
+        // Compatibilidade com reuniões antigas: o UUID já era gravado no marcador interno.
+        if (!isSubactivityMeetingLog(log, selectedSub.id)) continue
+      } else {
+        // Compatibilidade com produção anterior à coluna subactivity_id.
+        // O fallback textual só existe quando o log realmente não possui UUID.
+        if (!logReferencesSubactivityTitle(selectedSub.title, log.title, log.description)) continue
+      }
+
       items.push({
         kind: "log",
         id: `log-${log.id}`,

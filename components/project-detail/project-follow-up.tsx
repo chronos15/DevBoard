@@ -906,7 +906,7 @@ function AttachmentCard({
             <button
               type="button"
               onClick={() => setVideoOpen(true)}
-              className="absolute bottom-12 right-2 z-10 flex size-8 items-center justify-center rounded-lg border border-primary/50 bg-black/75 text-primary shadow-md backdrop-blur transition-colors hover:bg-black/90 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="absolute bottom-[4.25rem] right-2 z-10 flex size-8 items-center justify-center rounded-lg border border-primary/50 bg-black/75 text-primary shadow-md backdrop-blur transition-colors hover:bg-black/90 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               title="Expandir vídeo e usar zoom"
               aria-label={`Expandir ${attachment.name}`}
             >

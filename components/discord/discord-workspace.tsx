@@ -17,6 +17,7 @@ import {
   Inbox,
   LoaderCircle,
   Link as LinkIcon,
+  ListChecks,
   MessageCircleMore,
   Moon,
   Plus,
@@ -394,6 +395,7 @@ export function DiscordWorkspace() {
   const [commandQuery, setCommandQuery] = React.useState("")
   const [commandIndex, setCommandIndex] = React.useState(0)
   const [serverRailExpanded, setServerRailExpanded] = React.useState(false)
+  const [showCompletedSubactivities, setShowCompletedSubactivities] = React.useState(false)
 
   React.useEffect(() => {
     try {
@@ -443,6 +445,10 @@ export function DiscordWorkspace() {
   const space: DiscordSpace = isSpaceAllowed(requestedResolvedSpace) ? requestedResolvedSpace : fallbackSpace
 
   const selectedProject = accessibleProjects.find((project) => project.id === requestedProjectId) ?? accessibleProjects[0] ?? null
+
+  React.useEffect(() => {
+    setShowCompletedSubactivities(false)
+  }, [selectedProject?.id])
   const selectedRequest = visibleRequests.find((request) => request.id === requestedRequestId) ?? null
   const selectedReview = visibleReviews.find((review) => review.id === requestedReviewId || (!requestedReviewId && requestedSubId && review.subactivityId === requestedSubId)) ?? null
   const selectedWorkspaceChannel = workspaceChannels.find((channel) => channel.id === requestedChannelId)
@@ -484,6 +490,59 @@ export function DiscordWorkspace() {
     // esperar o heartbeat global do workspace.
     window.setTimeout(() => window.dispatchEvent(new Event("taskboard:presence-refresh")), 80)
   }, [router])
+
+  const completedSubactivitiesCount = React.useMemo(
+    () => selectedProject?.activities.reduce((total, activity) => total + activity.subactivities.filter((sub) => sub.status === "done").length, 0) ?? 0,
+    [selectedProject],
+  )
+
+  const subactivitySequenceById = React.useMemo(() => {
+    const sequence = new Map<string, number>()
+    if (!selectedProject) return sequence
+    for (const activity of selectedProject.activities) {
+      const ordered = activity.subactivities
+        .map((sub, originalIndex) => ({ sub, originalIndex }))
+        .sort((a, b) => {
+          const aTime = a.sub.createdAt ? Date.parse(a.sub.createdAt) : Number.NaN
+          const bTime = b.sub.createdAt ? Date.parse(b.sub.createdAt) : Number.NaN
+          if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime
+          if (Number.isFinite(aTime) && !Number.isFinite(bTime)) return -1
+          if (!Number.isFinite(aTime) && Number.isFinite(bTime)) return 1
+          return a.originalIndex - b.originalIndex
+        })
+      ordered.forEach(({ sub }, index) => sequence.set(sub.id, index + 1))
+    }
+    return sequence
+  }, [selectedProject])
+
+  const toggleCompletedSubactivities = React.useCallback(() => {
+    if (!selectedProject) return
+    if (!showCompletedSubactivities) {
+      setShowCompletedSubactivities(true)
+      return
+    }
+
+    const selectedActivity = selectedProject.activities.find((activity) => activity.id === projectSelection?.activityId)
+    const selectedSub = selectedActivity?.subactivities.find((sub) => sub.id === projectSelection?.subactivityId)
+
+    if (selectedSub?.status === "done") {
+      const sameActivityCandidates = (selectedActivity?.subactivities ?? []).filter((sub) => sub.status !== "done")
+      const allCandidates = selectedProject.activities.flatMap((activity) => activity.subactivities).filter((sub) => sub.status !== "done")
+      const nextSub =
+        sameActivityCandidates.find((sub) => sub.status === "in-progress")
+        ?? sameActivityCandidates[0]
+        ?? allCandidates.find((sub) => sub.status === "in-progress")
+        ?? allCandidates[0]
+        ?? null
+
+      if (nextSub) {
+        const nextActivity = selectedProject.activities.find((activity) => activity.subactivities.some((sub) => sub.id === nextSub.id))
+        setLocation({ space: "project", project: selectedProject.id, activity: nextActivity?.id, sub: nextSub.id })
+      }
+    }
+
+    setShowCompletedSubactivities(false)
+  }, [projectSelection?.activityId, projectSelection?.subactivityId, selectedProject, setLocation, showCompletedSubactivities])
 
   const loadWorkspaceChannels = React.useCallback(async () => {
     if (!workspaceId) {
@@ -905,6 +964,30 @@ export function DiscordWorkspace() {
               <p className="truncate text-sm font-semibold">{selectedProject.name}</p>
               <p className="truncate text-[0.6rem] text-muted-foreground">{selectedProject.client || "Projeto"}</p>
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-pressed={showCompletedSubactivities}
+              onClick={toggleCompletedSubactivities}
+              className={cn(
+                "relative shrink-0 text-muted-foreground transition-colors",
+                showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
+              )}
+              title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
+              aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
+            >
+              <ListChecks className="size-3.5" />
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
+                  showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
+                )}
+              >
+                <span className="size-1.5 rounded-full bg-card shadow-sm" />
+              </span>
+            </Button>
             <UsersRound className="size-4 shrink-0 text-muted-foreground" />
             {canManageSelectedProject && <FollowUpAddActivityDialog projectId={selectedProject.id} />}
           </div>
@@ -920,9 +1003,9 @@ export function DiscordWorkspace() {
               {selectedProject.activities.map((activity, index) => {
                 const activityMatches = !q || normalize(activity.title).includes(q)
                 const subs = activity.subactivities
-                  .filter((sub) => !q || activityMatches || normalize(sub.title).includes(q))
+                  .filter((sub) => (showCompletedSubactivities || sub.status !== "done") && (!q || activityMatches || normalize(sub.title).includes(q)))
                   .sort((a, b) => (RESUMIDO_STATUS_RANK.get(a.status) ?? 999) - (RESUMIDO_STATUS_RANK.get(b.status) ?? 999))
-                if (q && !activityMatches && !subs.length) return null
+                if ((q && !activityMatches && !subs.length) || (!q && activity.subactivities.length > 0 && !subs.length)) return null
                 const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
                 const toggleActivity = () => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })
                 const runningCount = activity.subactivities.filter((sub) => sub.status === "in-progress").length
@@ -993,7 +1076,7 @@ export function DiscordWorkspace() {
                               <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} title={meta.label} />
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-1.5">
-                                  <p className={cn("min-w-0 flex-1 truncate text-[0.72rem]", active && "font-semibold")}>{sub.title}</p>
+                                  <p className={cn("min-w-0 flex-1 truncate text-[0.72rem]", active && "font-semibold")}>{subactivitySequenceById.get(sub.id) ?? 1}. {sub.title}</p>
                                   {sub.brainstormMode && <BrainCircuit className="size-3.5 shrink-0 text-primary" aria-label="Brainstorm ativo" />}
                                 </div>
                                 <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
@@ -1077,7 +1160,7 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, chatWritable, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, space, visibleRequests, visibleReviews])
+  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, completedSubactivitiesCount, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, chatWritable, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, showCompletedSubactivities, space, subactivitySequenceById, toggleCompletedSubactivities, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {

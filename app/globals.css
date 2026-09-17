@@ -219,7 +219,7 @@ html[data-chat-line-spacing="relaxed"] { --tb-chat-line-height: 1.72; }
   font-size: var(--tb-chat-title-size) !important;
 }
 
-/* TaskBoard V81 · destaque no estilo Discord para mensagens que mencionam o usuário atual. */
+/* TaskBoard V185 · menções com marcador lateral mais fino e proporcional ao card. */
 .tb-mentioned-message {
   position: relative;
   background: color-mix(in srgb, #f0a020 11%, transparent) !important;
@@ -228,12 +228,14 @@ html[data-chat-line-spacing="relaxed"] { --tb-chat-line-height: 1.72; }
 .tb-mentioned-message::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 0.35rem;
-  bottom: 0.35rem;
-  width: 3px;
-  border-radius: 0 999px 999px 0;
-  background: #f0a020;
+  left: 1px;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  width: 2px;
+  min-height: 0.9rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f0a020 92%, transparent);
+  pointer-events: none;
 }
 .tb-mentioned-bubble {
   position: relative;
@@ -244,10 +246,12 @@ html[data-chat-line-spacing="relaxed"] { --tb-chat-line-height: 1.72; }
 .tb-mentioned-bubble::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 0.35rem;
-  bottom: 0.35rem;
-  width: 3px;
-  border-radius: 0 999px 999px 0;
-  background: #f0a020;
+  left: 1px;
+  top: 0.65rem;
+  bottom: 0.65rem;
+  width: 2px;
+  min-height: 0.8rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f0a020 92%, transparent);
+  pointer-events: none;
 }

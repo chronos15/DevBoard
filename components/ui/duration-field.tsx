@@ -129,40 +129,36 @@ export function DurationField({
         desktopWidth={360}
         ariaLabel="Selecionar estimativa"
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">Definir estimativa</p>
-            <p className="text-xs text-muted-foreground">Escolha horas e minutos.</p>
+            <p className="text-[0.68rem] text-muted-foreground">Ajuste horas e minutos.</p>
           </div>
+          <span className="rounded-lg border border-border bg-muted/35 px-2.5 py-1.5 font-mono text-sm font-semibold tabular-nums text-foreground">
+            {formatDuration(pickerHours, pickerMinutes)}
+          </span>
           <button
             type="button"
             onClick={() => setPickerOpen(false)}
-            className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Fechar seletor"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto p-4">
-          <div className="rounded-2xl border border-border bg-muted/35 p-4 text-center">
-            <p className="font-mono text-3xl font-semibold tabular-nums tracking-tight">
-              {formatDuration(pickerHours, pickerMinutes)}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">horas : minutos</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          <div className="grid grid-cols-2 gap-2.5">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Horas</label>
-              <div className="flex h-11 items-center rounded-xl border border-border bg-card">
+              <label className="text-[0.68rem] font-medium text-muted-foreground">Horas</label>
+              <div className="flex h-10 items-center rounded-xl border border-border bg-card">
                 <button
                   type="button"
                   onClick={() => setPickerHours((current) => Math.max(0, current - 1))}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-l-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-l-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Diminuir uma hora"
                 >
-                  <Minus className="size-4" />
+                  <Minus className="size-3.5" />
                 </button>
                 <input
                   type="number"
@@ -171,30 +167,30 @@ export function DurationField({
                   inputMode="numeric"
                   value={pickerHours}
                   onChange={(event) => setPickerHours(Math.max(0, Math.min(999, Number(event.target.value) || 0)))}
-                  className="h-full min-w-0 flex-1 bg-transparent text-center font-mono text-base tabular-nums outline-none"
+                  className="h-full min-w-0 flex-1 bg-transparent text-center font-mono text-sm font-semibold tabular-nums outline-none"
                   aria-label="Horas da estimativa"
                 />
                 <button
                   type="button"
                   onClick={() => setPickerHours((current) => Math.min(999, current + 1))}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-r-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-r-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Aumentar uma hora"
                 >
-                  <Plus className="size-4" />
+                  <Plus className="size-3.5" />
                 </button>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Minutos</label>
-              <div className="flex h-11 items-center rounded-xl border border-border bg-card">
+              <label className="text-[0.68rem] font-medium text-muted-foreground">Minutos</label>
+              <div className="flex h-10 items-center rounded-xl border border-border bg-card">
                 <button
                   type="button"
                   onClick={() => setPickerMinutes((current) => Math.max(0, current - 5))}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-l-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-l-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Diminuir cinco minutos"
                 >
-                  <Minus className="size-4" />
+                  <Minus className="size-3.5" />
                 </button>
                 <input
                   type="number"
@@ -203,24 +199,24 @@ export function DurationField({
                   inputMode="numeric"
                   value={pickerMinutes}
                   onChange={(event) => setPickerMinutes(Math.max(0, Math.min(59, Number(event.target.value) || 0)))}
-                  className="h-full min-w-0 flex-1 bg-transparent text-center font-mono text-base tabular-nums outline-none"
+                  className="h-full min-w-0 flex-1 bg-transparent text-center font-mono text-sm font-semibold tabular-nums outline-none"
                   aria-label="Minutos da estimativa"
                 />
                 <button
                   type="button"
                   onClick={() => setPickerMinutes((current) => Math.min(59, current + 5))}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-r-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-r-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Aumentar cinco minutos"
                 >
-                  <Plus className="size-4" />
+                  <Plus className="size-3.5" />
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Atalhos</p>
-            <div className="flex flex-wrap gap-2">
+          <div className="space-y-1.5">
+            <p className="text-[0.68rem] font-medium text-muted-foreground">Atalhos</p>
+            <div className="grid grid-cols-5 gap-1.5">
               {QUICK_VALUES.map((quick) => {
                 const active = formatDuration(pickerHours, pickerMinutes) === quick
                 return (
@@ -229,7 +225,7 @@ export function DurationField({
                     type="button"
                     onClick={() => selectQuick(quick)}
                     className={cn(
-                      "rounded-xl border px-3 py-2 font-mono text-xs tabular-nums transition-colors",
+                      "min-w-0 rounded-lg border px-1.5 py-2 font-mono text-[0.68rem] tabular-nums transition-colors",
                       active
                         ? "border-primary/30 bg-primary/10 text-primary"
                         : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -243,7 +239,7 @@ export function DurationField({
           </div>
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-2 border-t border-border p-3 md:mt-0">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-popover px-3 py-3">
           <button
             type="button"
             onClick={() => {
@@ -252,7 +248,7 @@ export function DurationField({
               setPickerMinutes(0)
               setPickerOpen(false)
             }}
-            className="h-10 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="h-9 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Limpar
           </button>
@@ -260,10 +256,10 @@ export function DurationField({
             type="button"
             onClick={applyPicker}
             disabled={!pickerValid}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            <Check className="size-4" />
-            Aplicar
+            <Check className="size-3.5" />
+            Confirmar
           </button>
         </div>
       </AnchoredPopoverPortal>

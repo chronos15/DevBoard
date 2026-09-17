@@ -12,9 +12,16 @@ type DesktopPosition = {
   right?: number
   top?: number
   bottom?: number
+  maxHeight?: number
 }
 
-function getDesktopPosition(anchor: DOMRect, side: PopoverSide, preferredWidth: number, rightBoundary?: number): DesktopPosition | null {
+function getDesktopPosition(
+  anchor: DOMRect,
+  side: PopoverSide,
+  preferredWidth: number,
+  rightBoundary?: number,
+  panelHeight = 0,
+): DesktopPosition | null {
   if (typeof window === "undefined" || window.innerWidth < 768) return null
 
   const margin = 12
@@ -32,6 +39,22 @@ function getDesktopPosition(anchor: DOMRect, side: PopoverSide, preferredWidth: 
       width,
       left,
       bottom: Math.max(margin, window.innerHeight - anchor.bottom),
+      maxHeight: Math.max(220, window.innerHeight - margin * 2),
+    }
+  }
+
+  const availableBelow = Math.max(0, window.innerHeight - anchor.bottom - gap - margin)
+  const availableAbove = Math.max(0, anchor.top - gap - margin)
+  const viewportMaxHeight = Math.max(220, window.innerHeight - margin * 2)
+  const desiredHeight = Math.min(panelHeight > 0 ? panelHeight : 360, viewportMaxHeight)
+  const shouldFlipAbove = availableBelow < desiredHeight && availableAbove > availableBelow
+
+  if (shouldFlipAbove) {
+    return {
+      width,
+      right: Math.max(margin, window.innerWidth - anchor.right),
+      bottom: Math.max(margin, window.innerHeight - anchor.top + gap),
+      maxHeight: Math.max(220, availableAbove),
     }
   }
 
@@ -39,6 +62,7 @@ function getDesktopPosition(anchor: DOMRect, side: PopoverSide, preferredWidth: 
     width,
     right: Math.max(margin, window.innerWidth - anchor.right),
     top: Math.min(window.innerHeight - margin, anchor.bottom + gap),
+    maxHeight: Math.max(220, availableBelow),
   }
 }
 
@@ -81,7 +105,8 @@ export function AnchoredPopoverPortal({
     const boundary = side === "right"
       ? anchor.closest<HTMLElement>("[data-floating-popover-boundary]")?.getBoundingClientRect()
       : undefined
-    setDesktopPosition(getDesktopPosition(anchorRect, side, desktopWidth, boundary?.right))
+    const panelHeight = panelRef.current?.scrollHeight ?? panelRef.current?.getBoundingClientRect().height ?? 0
+    setDesktopPosition(getDesktopPosition(anchorRect, side, desktopWidth, boundary?.right, panelHeight))
   }, [anchorRef, desktopWidth, side])
 
   React.useLayoutEffect(() => {
@@ -127,6 +152,7 @@ export function AnchoredPopoverPortal({
         right: desktopPosition.right,
         top: desktopPosition.top,
         bottom: desktopPosition.bottom,
+        maxHeight: desktopPosition.maxHeight,
       }
     : undefined
 
@@ -144,7 +170,7 @@ export function AnchoredPopoverPortal({
         aria-label={ariaLabel}
         style={style}
         className={cn(
-          "fixed inset-3 z-[9999] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:inset-auto md:block md:shadow-xl",
+          "fixed inset-3 z-[9999] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl md:inset-auto md:flex md:flex-col md:shadow-xl",
           className,
         )}
       >

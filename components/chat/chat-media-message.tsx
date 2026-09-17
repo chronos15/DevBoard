@@ -204,6 +204,7 @@ export function ChatMediaMessage({
               <video
                 src={url}
                 controls
+                controlsList="nofullscreen"
                 playsInline
                 preload="metadata"
                 onLoadedMetadata={() => {
@@ -215,7 +216,7 @@ export function ChatMediaMessage({
                   setFailed(true)
                 }}
                 className={cn(
-                  "block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] transition-opacity duration-200",
+                  "taskboard-video-no-native-fullscreen block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] transition-opacity duration-200",
                   mediaReady ? "opacity-100" : "opacity-0",
                 )}
               />
@@ -225,7 +226,7 @@ export function ChatMediaMessage({
               <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="absolute right-2 top-2 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                className="absolute left-2 top-2 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 title="Expandir vídeo e usar zoom"
                 aria-label={`Expandir ${fileName}`}
               >

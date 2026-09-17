@@ -317,3 +317,9 @@ html[data-chat-line-spacing="relaxed"] { --tb-chat-line-height: 1.72; }
   color: color-mix(in srgb, currentColor 68%, transparent);
   font-weight: 700;
 }
+
+/* V197: no visualizador expandido o próprio overlay já é a experiência de tela inteira.
+   Ocultamos o fullscreen nativo do <video> para não sair da camada que contém zoom/pan. */
+.taskboard-video-no-native-fullscreen::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}

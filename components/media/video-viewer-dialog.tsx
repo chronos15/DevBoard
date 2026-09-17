@@ -20,6 +20,11 @@ type PinchState = {
   offset: Point
 }
 
+type TouchPanState = {
+  point: Point
+  offset: Point
+}
+
 type ZoomableVideoStageProps = {
   src: string
   className?: string
@@ -65,6 +70,7 @@ export function ZoomableVideoStage({
   const scaleRef = React.useRef(1)
   const offsetRef = React.useRef<Point>({ x: 0, y: 0 })
   const pinchRef = React.useRef<PinchState | null>(null)
+  const touchPanRef = React.useRef<TouchPanState | null>(null)
   const dragRef = React.useRef<{ pointerId: number; point: Point; offset: Point } | null>(null)
 
   const [scale, setScale] = React.useState(1)
@@ -105,6 +111,7 @@ export function ZoomableVideoStage({
     scaleRef.current = 1
     offsetRef.current = { x: 0, y: 0 }
     pinchRef.current = null
+    touchPanRef.current = null
     dragRef.current = null
     setScale(1)
     setOffset({ x: 0, y: 0 })
@@ -157,55 +164,106 @@ export function ZoomableVideoStage({
     }
 
     const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 2) return
-      event.preventDefault()
-      event.stopPropagation()
-      const a = touchPoint(event.touches[0]!)
-      const b = touchPoint(event.touches[1]!)
-      pinchRef.current = {
-        distance: Math.max(1, distance(a, b)),
-        scale: scaleRef.current,
-        midpoint: midpoint(a, b),
-        offset: offsetRef.current,
-      }
-      setGestureActive(true)
-    }
-
-    const handleTouchMove = (event: TouchEvent) => {
-      const pinch = pinchRef.current
-      if (!pinch || event.touches.length < 2) return
-      event.preventDefault()
+      // Todo gesto fica isolado dentro do viewer. Em 100%, um toque simples
+      // continua disponível para os controles nativos do vídeo.
       event.stopPropagation()
 
-      const a = touchPoint(event.touches[0]!)
-      const b = touchPoint(event.touches[1]!)
-      const currentDistance = Math.max(1, distance(a, b))
-      const currentMidpoint = midpoint(a, b)
-      const nextScale = clamp(pinch.scale * (currentDistance / pinch.distance), MIN_SCALE, MAX_SCALE)
-
-      if (nextScale <= MIN_SCALE) {
-        applyTransform(MIN_SCALE, { x: 0, y: 0 })
+      if (event.touches.length >= 2) {
+        event.preventDefault()
+        touchPanRef.current = null
+        const a = touchPoint(event.touches[0]!)
+        const b = touchPoint(event.touches[1]!)
+        pinchRef.current = {
+          distance: Math.max(1, distance(a, b)),
+          scale: scaleRef.current,
+          midpoint: midpoint(a, b),
+          offset: offsetRef.current,
+        }
+        setGestureActive(true)
         return
       }
 
-      const viewportRect = viewport.getBoundingClientRect()
-      const center = {
-        x: viewportRect.left + viewportRect.width / 2,
-        y: viewportRect.top + viewportRect.height / 2,
+      if (event.touches.length === 1 && scaleRef.current > MIN_SCALE) {
+        event.preventDefault()
+        touchPanRef.current = {
+          point: touchPoint(event.touches[0]!),
+          offset: offsetRef.current,
+        }
+        setGestureActive(true)
       }
-      const ratio = nextScale / pinch.scale
-      const nextOffset = {
-        x: (currentMidpoint.x - center.x) - ratio * (pinch.midpoint.x - center.x - pinch.offset.x),
-        y: (currentMidpoint.y - center.y) - ratio * (pinch.midpoint.y - center.y - pinch.offset.y),
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      event.stopPropagation()
+
+      const pinch = pinchRef.current
+      if (pinch && event.touches.length >= 2) {
+        event.preventDefault()
+
+        const a = touchPoint(event.touches[0]!)
+        const b = touchPoint(event.touches[1]!)
+        const currentDistance = Math.max(1, distance(a, b))
+        const currentMidpoint = midpoint(a, b)
+        const nextScale = clamp(pinch.scale * (currentDistance / pinch.distance), MIN_SCALE, MAX_SCALE)
+
+        if (nextScale <= MIN_SCALE) {
+          applyTransform(MIN_SCALE, { x: 0, y: 0 })
+          return
+        }
+
+        const viewportRect = viewport.getBoundingClientRect()
+        const center = {
+          x: viewportRect.left + viewportRect.width / 2,
+          y: viewportRect.top + viewportRect.height / 2,
+        }
+        const ratio = nextScale / pinch.scale
+        const nextOffset = {
+          x: (currentMidpoint.x - center.x) - ratio * (pinch.midpoint.x - center.x - pinch.offset.x),
+          y: (currentMidpoint.y - center.y) - ratio * (pinch.midpoint.y - center.y - pinch.offset.y),
+        }
+        applyTransform(nextScale, nextOffset)
+        return
       }
-      applyTransform(nextScale, nextOffset)
+
+      const pan = touchPanRef.current
+      if (pan && event.touches.length === 1 && scaleRef.current > MIN_SCALE) {
+        event.preventDefault()
+        const point = touchPoint(event.touches[0]!)
+        applyTransform(scaleRef.current, {
+          x: pan.offset.x + (point.x - pan.point.x),
+          y: pan.offset.y + (point.y - pan.point.y),
+        })
+      }
     }
 
     const handleTouchEnd = (event: TouchEvent) => {
-      if (!pinchRef.current) return
-      if (event.touches.length >= 2) return
       event.stopPropagation()
+
+      if (event.touches.length >= 2) {
+        const a = touchPoint(event.touches[0]!)
+        const b = touchPoint(event.touches[1]!)
+        pinchRef.current = {
+          distance: Math.max(1, distance(a, b)),
+          scale: scaleRef.current,
+          midpoint: midpoint(a, b),
+          offset: offsetRef.current,
+        }
+        touchPanRef.current = null
+        return
+      }
+
       pinchRef.current = null
+
+      if (event.touches.length === 1 && scaleRef.current > MIN_SCALE) {
+        touchPanRef.current = {
+          point: touchPoint(event.touches[0]!),
+          offset: offsetRef.current,
+        }
+        setGestureActive(true)
+        return
+      }
+
+      touchPanRef.current = null
       setGestureActive(false)
       applyTransform(scaleRef.current, offsetRef.current)
     }
@@ -288,7 +346,7 @@ export function ZoomableVideoStage({
   return (
     <div
       ref={viewportRef}
-      className={cn("relative min-h-0 overflow-hidden bg-black", className)}
+      className={cn("relative isolate min-h-0 select-none overflow-hidden overscroll-contain bg-black", className)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
@@ -346,7 +404,7 @@ export function ZoomableVideoStage({
 
       {showHint && (
         <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded-lg bg-black/55 px-2 py-1 text-[0.58rem] text-white/65 backdrop-blur sm:bottom-3 sm:left-3 sm:text-[0.62rem]">
-          <span className="sm:hidden">Pinça para ampliar</span>
+          <span className="sm:hidden">Pinça para ampliar · arraste com 1 dedo quando ampliado</span>
           <span className="hidden sm:inline">Roda do mouse: zoom · Shift + arraste: mover</span>
         </div>
       )}
@@ -356,10 +414,11 @@ export function ZoomableVideoStage({
           ref={videoRef}
           src={src}
           controls
+          controlsList="nofullscreen"
           playsInline
           preload="metadata"
           autoPlay={autoPlay}
-          className={cn("max-h-full max-w-full object-contain will-change-transform", videoClassName)}
+          className={cn("taskboard-video-no-native-fullscreen max-h-full max-w-full object-contain will-change-transform", videoClassName)}
           onLoadedMetadata={(event) => {
             applyTransform(scaleRef.current, offsetRef.current)
             onLoadedMetadata?.(event.currentTarget)
@@ -413,16 +472,30 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
   React.useEffect(() => {
     if (!open || typeof document === "undefined") return
     const body = document.body
+    const root = document.documentElement
     const previousMediaFlag = body.dataset.taskboardMediaViewerOpen
     const previousImageFlag = body.dataset.taskboardImageViewerOpen
+    const previousTouchAction = body.style.touchAction
+    const previousOverscrollBehavior = body.style.overscrollBehavior
+    const previousRootOverscrollBehavior = root.style.overscrollBehavior
+
     body.dataset.taskboardMediaViewerOpen = "true"
     // Mantém compatibilidade com proteções já existentes no fluxo de reunião/back.
     body.dataset.taskboardImageViewerOpen = "true"
+    // O vídeo expandido é uma camada exclusiva: nenhuma pinça/arraste deve
+    // atingir a timeline, cards ou botões que existem atrás do Portal.
+    body.style.touchAction = "none"
+    body.style.overscrollBehavior = "none"
+    root.style.overscrollBehavior = "none"
+
     return () => {
       if (previousMediaFlag === undefined) delete body.dataset.taskboardMediaViewerOpen
       else body.dataset.taskboardMediaViewerOpen = previousMediaFlag
       if (previousImageFlag === undefined) delete body.dataset.taskboardImageViewerOpen
       else body.dataset.taskboardImageViewerOpen = previousImageFlag
+      body.style.touchAction = previousTouchAction
+      body.style.overscrollBehavior = previousOverscrollBehavior
+      root.style.overscrollBehavior = previousRootOverscrollBehavior
     }
   }, [open])
 
@@ -444,23 +517,38 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? onOpenChange(true) : requestClose()}>
       <DialogContent
-        className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden bg-background/98 p-0 sm:h-[min(92dvh,920px)] sm:w-[min(96vw,1500px)] sm:max-w-none"
+        className="flex !max-w-none flex-col gap-0 overflow-hidden !rounded-none bg-background/98 p-0 !ring-0"
+        overlayClassName="!z-[1000] !bg-black/90"
+        style={{
+          zIndex: 1001,
+          top: 0,
+          left: 0,
+          width: "100vw",
+          maxWidth: "none",
+          height: "100dvh",
+          transform: "none",
+          borderRadius: 0,
+        }}
         showCloseButton
         data-no-swipe-reply="true"
         onPointerDown={(event) => event.stopPropagation()}
         onPointerMove={(event) => event.stopPropagation()}
         onPointerUp={(event) => event.stopPropagation()}
+        onPointerCancel={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
         onTouchMove={(event) => event.stopPropagation()}
         onTouchEnd={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
         <DialogHeader className="shrink-0 border-b border-border px-3 py-2.5 pr-12 sm:px-5 sm:py-3 sm:pr-14">
           <DialogTitle className="truncate text-sm sm:text-base">{title || "Visualizar vídeo"}</DialogTitle>
           <p className="mt-0.5 text-[0.62rem] text-muted-foreground sm:text-[0.65rem]">
-            <span className="sm:hidden">Use pinça com dois dedos para ampliar o vídeo.</span>
-            <span className="hidden sm:inline">Use a roda do mouse ou os botões de zoom. Para mover quando ampliado, segure Shift e arraste.</span>
+            <span className="sm:hidden">Use pinça com dois dedos para ampliar e arraste com um dedo quando estiver com zoom.</span>
+            <span className="hidden sm:inline">Esta visualização já ocupa a tela inteira. Use a roda ou os botões de zoom; com zoom, Shift + arraste move o vídeo.</span>
           </p>
         </DialogHeader>
 

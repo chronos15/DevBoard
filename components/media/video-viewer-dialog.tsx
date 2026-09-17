@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { Minus, Plus, RotateCcw } from "lucide-react"
+import { Minus, Plus, RotateCcw, X } from "lucide-react"
+import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 const MIN_SCALE = 1
@@ -478,15 +478,18 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
     const previousTouchAction = body.style.touchAction
     const previousOverscrollBehavior = body.style.overscrollBehavior
     const previousRootOverscrollBehavior = root.style.overscrollBehavior
+    const previousBodyOverflow = body.style.overflow
+    const previousRootOverflow = root.style.overflow
 
     body.dataset.taskboardMediaViewerOpen = "true"
     // Mantém compatibilidade com proteções já existentes no fluxo de reunião/back.
     body.dataset.taskboardImageViewerOpen = "true"
-    // O vídeo expandido é uma camada exclusiva: nenhuma pinça/arraste deve
-    // atingir a timeline, cards ou botões que existem atrás do Portal.
+    // O viewer é uma superfície exclusiva. Nada atrás dele recebe scroll, pinch ou pan.
     body.style.touchAction = "none"
     body.style.overscrollBehavior = "none"
     root.style.overscrollBehavior = "none"
+    body.style.overflow = "hidden"
+    root.style.overflow = "hidden"
 
     return () => {
       if (previousMediaFlag === undefined) delete body.dataset.taskboardMediaViewerOpen
@@ -496,6 +499,8 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
       body.style.touchAction = previousTouchAction
       body.style.overscrollBehavior = previousOverscrollBehavior
       root.style.overscrollBehavior = previousRootOverscrollBehavior
+      body.style.overflow = previousBodyOverflow
+      root.style.overflow = previousRootOverflow
     }
   }, [open])
 
@@ -514,50 +519,88 @@ export function VideoViewerDialog({ open, onOpenChange, src, title }: VideoViewe
     onOpenChange(false)
   }, [currentOverlayHistory, onOpenChange])
 
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? onOpenChange(true) : requestClose()}>
-      <DialogContent
-        className="flex !max-w-none flex-col gap-0 overflow-hidden !rounded-none bg-background/98 p-0 !ring-0"
-        overlayClassName="!z-[1000] !bg-black/90"
-        style={{
-          zIndex: 1001,
-          top: 0,
-          left: 0,
-          width: "100vw",
-          maxWidth: "none",
-          height: "100dvh",
-          transform: "none",
-          borderRadius: 0,
-        }}
-        showCloseButton
-        data-no-swipe-reply="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerMove={(event) => event.stopPropagation()}
-        onPointerUp={(event) => event.stopPropagation()}
-        onPointerCancel={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        onTouchMove={(event) => event.stopPropagation()}
-        onTouchEnd={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onContextMenu={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        <DialogHeader className="shrink-0 border-b border-border px-3 py-2.5 pr-12 sm:px-5 sm:py-3 sm:pr-14">
-          <DialogTitle className="truncate text-sm sm:text-base">{title || "Visualizar vídeo"}</DialogTitle>
-          <p className="mt-0.5 text-[0.62rem] text-muted-foreground sm:text-[0.65rem]">
-            <span className="sm:hidden">Use pinça com dois dedos para ampliar e arraste com um dedo quando estiver com zoom.</span>
-            <span className="hidden sm:inline">Esta visualização já ocupa a tela inteira. Use a roda ou os botões de zoom; com zoom, Shift + arraste move o vídeo.</span>
-          </p>
-        </DialogHeader>
+  React.useEffect(() => {
+    if (!open || typeof window === "undefined") return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      requestClose()
+    }
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
+  }, [open, requestClose])
 
+  if (!open || typeof document === "undefined") return null
+
+  const stopEvent = (event: React.SyntheticEvent) => event.stopPropagation()
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title || "Visualizar vídeo"}
+      data-taskboard-video-viewer="true"
+      className="fixed inset-0 flex min-h-0 w-screen flex-col overflow-hidden bg-background text-foreground"
+      style={{
+        zIndex: 2147483000,
+        width: "100dvw",
+        height: "100dvh",
+        maxWidth: "100dvw",
+        maxHeight: "100dvh",
+        touchAction: "none",
+        overscrollBehavior: "none",
+        isolation: "isolate",
+      }}
+      onPointerDown={stopEvent}
+      onPointerMove={stopEvent}
+      onPointerUp={stopEvent}
+      onPointerCancel={stopEvent}
+      onTouchStart={stopEvent}
+      onTouchMove={stopEvent}
+      onTouchEnd={stopEvent}
+      onClick={stopEvent}
+      onDoubleClick={stopEvent}
+      onContextMenu={stopEvent}
+      onWheel={stopEvent}
+    >
+      <div className="relative z-30 flex shrink-0 items-center gap-3 border-b border-white/10 bg-background/96 px-3 py-2.5 pr-3 shadow-sm backdrop-blur-md sm:px-5 sm:py-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium sm:text-base">{title || "Visualizar vídeo"}</div>
+          <p className="mt-0.5 truncate text-[0.62rem] text-muted-foreground sm:text-[0.65rem]">
+            <span className="sm:hidden">Pinça para ampliar · arraste com um dedo quando ampliado</span>
+            <span className="hidden sm:inline">Roda do mouse: zoom · Shift + arraste: mover</span>
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="size-9 shrink-0"
+          onClick={requestClose}
+          title="Fechar vídeo"
+          aria-label="Fechar vídeo"
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+
+      <div className="relative z-10 flex min-h-0 w-full flex-1 overflow-hidden bg-black">
         {src ? (
-          <ZoomableVideoStage src={src} className="min-h-0 flex-1" showHint />
+          <ZoomableVideoStage
+            src={src}
+            className="h-full min-h-0 w-full flex-1"
+            videoClassName="h-auto w-auto"
+            showHint
+          />
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center bg-black px-6 text-center text-sm text-white/60">Vídeo indisponível.</div>
+          <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center bg-black px-6 text-center text-sm text-white/60">
+            Vídeo indisponível.
+          </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>,
+    document.body,
   )
 }
+

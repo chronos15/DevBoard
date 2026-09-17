@@ -1088,6 +1088,7 @@ export function ProjectFollowUp({
   const [selectedSubId, setSelectedSubId] = React.useState<string | null>(initialSubactivityId ?? null)
   const [localMediaPreviewVersion, setLocalMediaPreviewVersion] = React.useState(0)
   const [expandedActivities, setExpandedActivities] = React.useState<Set<string>>(() => new Set(project.activities.map((activity) => activity.id)))
+  const [showCompletedSubactivities, setShowCompletedSubactivities] = React.useState(false)
   const [message, setMessage] = React.useState("")
   const [recording, setRecording] = React.useState(false)
   const [pendingFiles, setPendingFiles] = React.useState<File[]>([])
@@ -1222,22 +1223,55 @@ export function ProjectFollowUp({
     window.addEventListener("pointercancel", onPointerUp)
   }, [navigatorWidth])
 
+  const completedSubactivitiesCount = React.useMemo(
+    () => project.activities.reduce((total, activity) => total + activity.subactivities.filter((sub) => sub.status === "done").length, 0),
+    [project.activities],
+  )
+
+  const subactivitySequenceById = React.useMemo(() => {
+    const sequence = new Map<string, number>()
+    for (const activity of project.activities) {
+      const ordered = activity.subactivities
+        .map((sub, originalIndex) => ({ sub, originalIndex }))
+        .sort((a, b) => {
+          const aTime = a.sub.createdAt ? Date.parse(a.sub.createdAt) : Number.NaN
+          const bTime = b.sub.createdAt ? Date.parse(b.sub.createdAt) : Number.NaN
+          if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime
+          if (Number.isFinite(aTime) && !Number.isFinite(bTime)) return -1
+          if (!Number.isFinite(aTime) && Number.isFinite(bTime)) return 1
+          return a.originalIndex - b.originalIndex
+        })
+      ordered.forEach(({ sub }, index) => sequence.set(sub.id, index + 1))
+    }
+    return sequence
+  }, [project.activities])
+
   const visibleActivities = React.useMemo(
     () => project.activities.map((activity) => ({
       ...activity,
       visibleSubs: activity.subactivities
         .filter((sub) =>
-          matchesActivityFilter(sub.status, filter) && (assigneeId === "all" || sub.assigneeId === assigneeId),
+          (showCompletedSubactivities || sub.status !== "done")
+          && matchesActivityFilter(sub.status, filter)
+          && (assigneeId === "all" || sub.assigneeId === assigneeId),
         )
         .sort((a, b) => (FOLLOW_UP_STATUS_RANK.get(a.status) ?? 999) - (FOLLOW_UP_STATUS_RANK.get(b.status) ?? 999)),
-    })).filter((activity) => activity.visibleSubs.length > 0 || (filter === "all" && assigneeId === "all")),
-    [assigneeId, filter, project.activities],
+    })).filter((activity) => activity.visibleSubs.length > 0 || (filter === "all" && assigneeId === "all" && activity.subactivities.length === 0)),
+    [assigneeId, filter, project.activities, showCompletedSubactivities],
   )
 
   const visibleSubs = React.useMemo(
     () => visibleActivities.flatMap((activity) => activity.visibleSubs),
     [visibleActivities],
   )
+
+  React.useEffect(() => {
+    if (!initialSubactivityId) return
+    const requestedSubactivity = project.activities
+      .flatMap((activity) => activity.subactivities)
+      .find((sub) => sub.id === initialSubactivityId)
+    if (requestedSubactivity?.status === "done") setShowCompletedSubactivities(true)
+  }, [initialSubactivityId, project.activities])
 
   React.useEffect(() => {
     if (initialSubactivityId && project.activities.some((activity) => activity.subactivities.some((sub) => sub.id === initialSubactivityId))) {
@@ -3044,7 +3078,33 @@ export function ProjectFollowUp({
             </p>
             <p className="truncate text-[0.65rem] text-muted-foreground">{preferences.interfaceMode === "focused" ? "Tópicos do projeto" : "Atividades e subatividades"}</p>
           </div>
-          {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-pressed={showCompletedSubactivities}
+              onClick={() => setShowCompletedSubactivities((current) => !current)}
+              className={cn(
+                "relative text-muted-foreground transition-colors",
+                showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
+              )}
+              title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
+              aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
+            >
+              <ListChecks className="size-3.5" />
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
+                  showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
+                )}
+              >
+                <span className="size-1.5 rounded-full bg-card shadow-sm" />
+              </span>
+            </Button>
+            {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
+          </div>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
@@ -3148,7 +3208,7 @@ export function ProjectFollowUp({
                         >
                           <span className={cn("size-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-background", tone.dotClassName)} title={meta.label} />
                           <div className="min-w-0 flex-1">
-                            <p className={cn("truncate text-[0.72rem]", selected && "font-medium")}>{sub.title}</p>
+                            <p className={cn("truncate text-[0.72rem]", selected && "font-medium")}>{subactivitySequenceById.get(sub.id) ?? 1}. {sub.title}</p>
                             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[0.58rem] text-muted-foreground">
                               <span className={cn("truncate font-medium", tone.textClassName)}>{meta.label}</span>
                               <span>·</span>

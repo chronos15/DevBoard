@@ -98,6 +98,7 @@ import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -186,9 +187,10 @@ function formatShortTime(value: string) {
 
 function parseLogDescription(description?: string) {
   const clean = (description ?? "")
+    .replace(/Aguard\. Aprovação/gi, "Ag. Aprovação")
     .replace(/\bwaiting-aqs\b/gi, "Aguardando AQS")
     .replace(/\bin-progress\b/gi, "Executando")
-    .replace(/\bwaiting\b/gi, "Aguard. Aprovação")
+    .replace(/\bwaiting\b/gi, "Ag. Aprovação")
     .replace(/\bpaused\b/gi, "Pausada")
     .replace(/\bdone\b/gi, "Concluído")
     .replace(/\bcancelled\b/gi, "Cancelado")
@@ -4269,7 +4271,7 @@ export function ProjectFollowUp({
                           </Button>
                         </>
                       )}
-                      <textarea
+                      <RichMessageComposer
                         ref={messageRef}
                         value={message}
                         onChange={(event) => {

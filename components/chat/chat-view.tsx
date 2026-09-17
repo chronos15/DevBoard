@@ -42,6 +42,7 @@ import { ChatMediaMessage } from "@/components/chat/chat-media-message"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
@@ -1704,7 +1705,7 @@ export function ChatView({
                             </div>
                           </div>
                         )}
-                        <textarea
+                        <RichMessageComposer
                           ref={messageInputRef}
                           value={message}
                           onChange={(event) => {

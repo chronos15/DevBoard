@@ -23,6 +23,7 @@ import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { ChatAttachmentPreviewDialog } from "@/components/chat/chat-attachment-preview-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -576,7 +577,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
         )}
 
         <div className="flex min-w-0 items-end gap-1.5">
-          <textarea
+          <RichMessageComposer
             ref={inputRef}
             value={message}
             onChange={(event) => {

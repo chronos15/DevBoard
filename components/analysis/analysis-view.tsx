@@ -63,6 +63,7 @@ import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { canWriteScreen } from "@/lib/access-control"
 
@@ -1206,7 +1207,7 @@ export function AnalysisView() {
                     incomingVersion={droppedEvidenceVersion}
                   />
                   <button type="button" onClick={() => { const spacer = comment && !comment.endsWith(" ") ? " " : ""; const next = `${comment}${spacer}@`; setComment(next); detectMention(next, next.length); requestAnimationFrame(() => commentRef.current?.focus()) }} className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-3.5" /></button>
-                  <textarea
+                  <RichMessageComposer
                     ref={commentRef}
                     value={comment}
                     onChange={(event) => {

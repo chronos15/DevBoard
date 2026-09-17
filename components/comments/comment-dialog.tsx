@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { canWriteScreen, screenAccessForPath } from "@/lib/access-control"
 
@@ -246,7 +247,7 @@ export function CommentDialog({
               {enableMentions && (
                 <button type="button" onClick={() => { const spacer = text && !text.endsWith(" ") ? " " : ""; const next = `${text}${spacer}@`; setText(next); detectMention(next, next.length); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="mb-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-3.5" /></button>
               )}
-              <textarea
+              <RichMessageComposer
                 ref={textareaRef}
                 value={text}
                 onChange={(event) => {

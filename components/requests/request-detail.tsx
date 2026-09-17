@@ -58,6 +58,7 @@ import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { AnchoredTimelineViewport } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { canWriteScreen } from "@/lib/access-control"
 
 function formatDateTime(value: string) {
@@ -481,7 +482,7 @@ function RequestComposer({ request, readOnly = false }: { request: ServiceReques
       <div className="relative flex min-w-0 items-end gap-2 rounded-2xl border border-border bg-background p-2 focus-within:border-ring">
         <button type="button" onClick={() => inputRef.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Adicionar arquivo"><Paperclip className="size-4" /></button>
         <button type="button" onClick={() => { setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); requestAnimationFrame(() => textareaRef.current?.focus()) }} className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" title="Mencionar pessoa ou equipe"><AtSign className="size-4" /></button>
-        <textarea ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length > 0) { event.preventDefault(); chooseMention(mentionOptions[0]); return } if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+        <RichMessageComposer ref={textareaRef} value={draft} onChange={(event) => { const value = event.target.value; setDraft(value); reportTyping(value) }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && mentionOptions.length > 0) { event.preventDefault(); chooseMention(mentionOptions[0]); return } if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} placeholder={`Conversar em “${serviceRequestReference(request)}” · use @ para mencionar`} className="max-h-36 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground" />
         <Button type="button" size="icon" className="size-9 shrink-0 rounded-xl" disabled={(!draft.trim() && files.length === 0) || sending} onClick={() => void send()}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => { stageFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = "" }} />
       </div>

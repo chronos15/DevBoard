@@ -28,7 +28,7 @@ type RenderContext = {
 }
 
 type InlineMarker = {
-  kind: "bold" | "italic" | "spoiler"
+  kind: "bold" | "italic" | "spoiler" | "code"
   index: number
   openLength: number
   closeIndex: number
@@ -215,6 +215,16 @@ function renderTokenizedText(content: string, context: RenderContext, keyPrefix:
   return nodes
 }
 
+
+function findSingleBacktickClose(content: string, start: number) {
+  for (let index = start; index < content.length; index += 1) {
+    if (content[index] !== "`") continue
+    if (content[index - 1] === "`" || content[index + 1] === "`") continue
+    return index
+  }
+  return -1
+}
+
 function findSingleAsteriskClose(content: string, start: number) {
   for (let index = start; index < content.length; index += 1) {
     if (content[index] !== "*") continue
@@ -226,6 +236,13 @@ function findSingleAsteriskClose(content: string, start: number) {
 
 function findNextInlineMarker(content: string, cursor: number): InlineMarker | null {
   for (let index = cursor; index < content.length; index += 1) {
+    if (content[index] === "`" && content[index - 1] !== "`" && content[index + 1] !== "`") {
+      const closeIndex = findSingleBacktickClose(content, index + 1)
+      if (closeIndex > index + 1) {
+        return { kind: "code", index, openLength: 1, closeIndex, closeLength: 1 }
+      }
+    }
+
     if (content.startsWith("||", index)) {
       const closeIndex = content.indexOf("||", index + 2)
       if (closeIndex >= index + 2) {
@@ -277,6 +294,20 @@ function renderInline(content: string, context: RenderContext, keyPrefix: string
       nodes.push(<strong key={`${keyPrefix}-bold-node-${key++}`} className="font-semibold text-current">{children}</strong>)
     } else if (marker.kind === "italic") {
       nodes.push(<em key={`${keyPrefix}-italic-node-${key++}`} className="italic">{children}</em>)
+    } else if (marker.kind === "code") {
+      nodes.push(
+        <code
+          key={`${keyPrefix}-code-node-${key++}`}
+          className={cn(
+            "rounded-[0.32rem] border px-1 py-0.5 font-mono text-[0.92em]",
+            context.own
+              ? "border-primary-foreground/15 bg-black/20 text-current"
+              : "border-border/80 bg-muted/65 text-foreground/95",
+          )}
+        >
+          {inner}
+        </code>,
+      )
     } else {
       nodes.push(<Spoiler key={`${keyPrefix}-spoiler-node-${key++}`}>{children}</Spoiler>)
     }

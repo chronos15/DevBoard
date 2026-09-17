@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Check, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { cn } from "@/lib/utils"
 
 export function InlineMessageEditor({
@@ -55,7 +56,7 @@ export function InlineMessageEditor({
 
   return (
     <div className={cn("mt-1.5 min-w-0", className)}>
-      <textarea
+      <RichMessageComposer
         ref={textareaRef}
         value={value}
         maxLength={maxLength}

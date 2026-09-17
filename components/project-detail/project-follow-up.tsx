@@ -3531,7 +3531,7 @@ export function ProjectFollowUp({
               <div className="relative min-h-0 flex-1">
               {selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId && (
                 <div className="pointer-events-none absolute inset-x-2.5 top-2.5 z-30 sm:inset-x-4 lg:inset-x-5">
-                  <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-card/95 px-3 py-2 shadow-lg shadow-black/10 backdrop-blur-md supports-[backdrop-filter]:bg-card/85">
+                  <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-500/[0.09] px-3 py-2 shadow-lg shadow-rose-950/10 backdrop-blur-md ring-1 ring-inset ring-rose-500/[0.04] dark:border-rose-400/20 dark:bg-rose-500/[0.10]">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[0.72rem] font-semibold text-foreground/90">Aguardando sua aprovação</p>
                       <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">Aprove para concluir ou devolva para Backlog.</p>

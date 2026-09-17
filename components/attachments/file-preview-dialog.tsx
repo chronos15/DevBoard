@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { createClient } from "@/lib/supabase/client"
 import { inferAttachmentKind } from "@/lib/attachment-preview"
+import { ZoomableVideoStage } from "@/components/media/video-viewer-dialog"
 import type { AttachmentKind } from "@/lib/types"
 
 const MAX_TEXT_PREVIEW_CHARS = 120_000
@@ -209,9 +210,10 @@ export function FilePreviewDialog({
           ) : effectiveKind === "pdf" && resolvedUrl ? (
             <iframe title={name} src={resolvedUrl} className="h-[64dvh] min-h-96 w-full rounded-xl border border-border bg-white" />
           ) : effectiveKind === "video" && resolvedUrl ? (
-            <div className="flex min-h-72 items-center justify-center rounded-xl bg-black p-2">
-              <video src={resolvedUrl} controls playsInline className="max-h-[64dvh] max-w-full rounded-lg object-contain" />
-            </div>
+            <ZoomableVideoStage
+              src={resolvedUrl}
+              className="h-[64dvh] min-h-72 rounded-xl border border-border"
+            />
           ) : effectiveKind === "audio" && resolvedUrl ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-5 rounded-xl border border-border bg-card p-6">
               <FileAudio className="size-10 text-muted-foreground/55" />

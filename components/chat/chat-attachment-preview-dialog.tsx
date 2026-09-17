@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { inferAttachmentKind } from "@/lib/attachment-preview"
+import { ZoomableVideoStage } from "@/components/media/video-viewer-dialog"
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
@@ -74,7 +75,7 @@ function FilePreview({ file }: { file: File }) {
   }
 
   if (file.type.startsWith("video/") && url) {
-    return <video src={url} controls playsInline className="h-full max-h-[62dvh] w-full object-contain" />
+    return <ZoomableVideoStage src={url} className="h-[min(62dvh,640px)] w-full rounded-xl" />
   }
 
   if (file.type.startsWith("audio/") && url) {

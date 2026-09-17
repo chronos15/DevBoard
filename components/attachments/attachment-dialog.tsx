@@ -12,6 +12,7 @@ import {
   FileImage,
   FileText,
   FileVideo,
+  Maximize2,
   Paperclip,
   Save,
   Upload,
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { VideoViewerDialog } from "@/components/media/video-viewer-dialog"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -128,6 +130,7 @@ type PreviewableAttachment = Pick<
 
 function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }) {
   const [imageOpen, setImageOpen] = React.useState(false)
+  const [videoOpen, setVideoOpen] = React.useState(false)
   const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const downloadHref = attachment.textContent !== undefined
     ? textDownloadHref(attachment)
@@ -173,9 +176,21 @@ function AttachmentPreview({ attachment }: { attachment: PreviewableAttachment }
 
   if (effectiveKind === "video" && attachment.dataUrl) {
     return (
-      <div className="flex min-h-64 items-center justify-center rounded-xl bg-muted/35 p-3">
-        <video src={attachment.dataUrl} controls className="max-h-[50dvh] max-w-full rounded-lg" />
-      </div>
+      <>
+        <div className="relative flex min-h-64 items-center justify-center rounded-xl bg-muted/35 p-3">
+          <video src={attachment.dataUrl} controls playsInline className="max-h-[50dvh] max-w-full rounded-lg" />
+          <button
+            type="button"
+            onClick={() => setVideoOpen(true)}
+            className="absolute right-5 top-5 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            title="Expandir vídeo e usar zoom"
+            aria-label={`Expandir ${attachment.name}`}
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
+        <VideoViewerDialog open={videoOpen} onOpenChange={setVideoOpen} src={attachment.dataUrl} title={attachment.name} />
+      </>
     )
   }
 

@@ -26,6 +26,7 @@ import {
   LoaderCircle,
   ListChecks,
   ListTodo,
+  Maximize2,
   Check,
   Menu,
   Mic,
@@ -94,6 +95,7 @@ import { FileDropOverlay } from "@/components/attachments/file-drop-overlay"
 import { FilePreviewDialog } from "@/components/attachments/file-preview-dialog"
 import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { VideoViewerDialog } from "@/components/media/video-viewer-dialog"
 import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
@@ -795,6 +797,7 @@ function AttachmentCard({
   const href = resolvedUrl ?? attachment.dataUrl
   const displayHref = localPreview?.url ?? href
   const [imageOpen, setImageOpen] = React.useState(false)
+  const [videoOpen, setVideoOpen] = React.useState(false)
   const [fileOpen, setFileOpen] = React.useState(false)
   const [loadedVisual, setLoadedVisual] = React.useState<{ source: string; width: number; height: number } | null>(null)
   const effectiveKind = inferAttachmentKind({
@@ -871,39 +874,58 @@ function AttachmentCard({
 
   if (effectiveKind === "video") {
     return (
-      <div
-        className={cn("relative mt-2 max-w-full overflow-hidden rounded-xl border border-border", visualReady ? "bg-black" : "bg-muted/35", effectivePreview ? "w-auto" : "w-fit")}
-        style={localMediaBoxStyle(effectivePreview, 520) ?? (!visualReady && displayHref ? { width: "min(100%, 20rem)", aspectRatio: "16 / 9" } : undefined)}
-      >
-        {displayHref ? (
-          <video
-            src={displayHref}
-            controls
-            playsInline
-            preload="metadata"
-            onLoadedMetadata={(event) => {
-              const video = event.currentTarget
-              setLoadedVisual({ source: displayHref, width: video.videoWidth, height: video.videoHeight })
-              onMediaReady?.()
-            }}
-            className={cn(
-              "block object-contain transition-opacity duration-150",
-              effectivePreview ? "h-full w-full" : "h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]",
-              visualReady ? "opacity-100" : "opacity-0",
-            )}
-          />
-        ) : (
-          <div className="flex h-36 w-60 max-w-full items-center justify-center text-muted-foreground/55">
-            <FileVideo className="size-7" />
-          </div>
-        )}
-        {displayHref && !visualReady && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-[0.65rem] text-muted-foreground">
-            <LoaderCircle className="size-4 animate-spin" />
-            Carregando vídeo…
-          </div>
-        )}
-      </div>
+      <>
+        <div
+          className={cn("group/video relative mt-2 max-w-full overflow-hidden rounded-xl border border-border", visualReady ? "bg-black" : "bg-muted/35", effectivePreview ? "w-auto" : "w-fit")}
+          style={localMediaBoxStyle(effectivePreview, 520) ?? (!visualReady && displayHref ? { width: "min(100%, 20rem)", aspectRatio: "16 / 9" } : undefined)}
+        >
+          {displayHref ? (
+            <video
+              src={displayHref}
+              controls
+              playsInline
+              preload="metadata"
+              onLoadedMetadata={(event) => {
+                const video = event.currentTarget
+                setLoadedVisual({ source: displayHref, width: video.videoWidth, height: video.videoHeight })
+                onMediaReady?.()
+              }}
+              className={cn(
+                "block object-contain transition-opacity duration-150",
+                effectivePreview ? "h-full w-full" : "h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)]",
+                visualReady ? "opacity-100" : "opacity-0",
+              )}
+            />
+          ) : (
+            <div className="flex h-36 w-60 max-w-full items-center justify-center text-muted-foreground/55">
+              <FileVideo className="size-7" />
+            </div>
+          )}
+          {displayHref && visualReady && (
+            <button
+              type="button"
+              onClick={() => setVideoOpen(true)}
+              className="absolute right-2 top-2 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              title="Expandir vídeo e usar zoom"
+              aria-label={`Expandir ${attachment.name}`}
+            >
+              <Maximize2 className="size-3.5" />
+            </button>
+          )}
+          {displayHref && !visualReady && (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-[0.65rem] text-muted-foreground">
+              <LoaderCircle className="size-4 animate-spin" />
+              Carregando vídeo…
+            </div>
+          )}
+        </div>
+        <VideoViewerDialog
+          open={videoOpen}
+          onOpenChange={setVideoOpen}
+          src={displayHref}
+          title={attachment.name}
+        />
+      </>
     )
   }
 

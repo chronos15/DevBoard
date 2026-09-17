@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, ExternalLink, FileCode2, FileText, Film, Image as ImageIcon, Loader2, Music2 } from "lucide-react"
+import { Download, ExternalLink, FileCode2, FileText, Film, Image as ImageIcon, Loader2, Maximize2, Music2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { CHAT_MEDIA_BUCKET } from "@/lib/supabase/helpers"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -11,6 +11,7 @@ import { inferAttachmentKind } from "@/lib/attachment-preview"
 import { InlineTextAttachment } from "@/components/attachments/inline-text-attachment"
 import { useChatMediaActivation } from "@/components/chat/use-chat-media-activation"
 import { ImageViewerDialog } from "@/components/media/image-viewer-dialog"
+import { VideoViewerDialog } from "@/components/media/video-viewer-dialog"
 
 function formatBytes(bytes?: number) {
   if (!bytes || bytes <= 0) return ""
@@ -196,41 +197,57 @@ export function ChatMediaMessage({
 
   if (effectiveKind === "video") {
     return (
-      <div ref={targetRef} className="min-w-0 w-fit max-w-full">
-        <div className="relative w-fit max-w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
-          {url && (
-            <video
-              src={url}
-              controls
-              playsInline
-              preload="metadata"
-              onLoadedMetadata={() => {
-                setMediaReady(true)
-                onMediaReady?.()
-              }}
-              onError={() => {
-                setMediaReady(false)
-                setFailed(true)
-              }}
-              className={cn(
-                "block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] transition-opacity duration-200",
-                mediaReady ? "opacity-100" : "opacity-0",
-              )}
-            />
-          )}
+      <>
+        <div ref={targetRef} className="min-w-0 w-fit max-w-full">
+          <div className="relative w-fit max-w-full overflow-hidden rounded-xl bg-background/20 ring-1 ring-current/10">
+            {url && (
+              <video
+                src={url}
+                controls
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={() => {
+                  setMediaReady(true)
+                  onMediaReady?.()
+                }}
+                onError={() => {
+                  setMediaReady(false)
+                  setFailed(true)
+                }}
+                className={cn(
+                  "block h-auto w-auto max-h-[520px] max-w-[min(100%,42rem)] transition-opacity duration-200",
+                  mediaReady ? "opacity-100" : "opacity-0",
+                )}
+              />
+            )}
 
-          {!mediaReady && (
-            <div className={cn(
-              "pointer-events-none flex h-36 w-60 max-w-full flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75",
-              url && "absolute inset-0 h-full w-full",
-            )}>
-              {failed ? <Film className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <Film className="size-6" />}
-              <span>{failed ? "Vídeo indisponível" : loadingUrl || activated ? "Carregando vídeo..." : "Vídeo"}</span>
-            </div>
-          )}
+            {url && mediaReady && (
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="absolute right-2 top-2 z-10 flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 shadow-sm backdrop-blur transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                title="Expandir vídeo e usar zoom"
+                aria-label={`Expandir ${fileName}`}
+              >
+                <Maximize2 className="size-3.5" />
+              </button>
+            )}
+
+            {!mediaReady && (
+              <div className={cn(
+                "pointer-events-none flex h-36 w-60 max-w-full flex-col items-center justify-center gap-2 px-4 text-center text-[0.68rem] opacity-75",
+                url && "absolute inset-0 h-full w-full",
+              )}>
+                {failed ? <Film className="size-6" /> : loadingUrl || activated ? <Loader2 className="size-5 animate-spin" /> : <Film className="size-6" />}
+                <span>{failed ? "Vídeo indisponível" : loadingUrl || activated ? "Carregando vídeo..." : "Vídeo"}</span>
+              </div>
+            )}
+          </div>
+          {caption && <p className="tb-chat-text mt-2 whitespace-pre-wrap break-words">{caption}</p>}
         </div>
-        {caption && <p className="tb-chat-text mt-2 whitespace-pre-wrap break-words">{caption}</p>}
-      </div>
+
+        <VideoViewerDialog open={open} onOpenChange={setOpen} src={url} title={fileName} />
+      </>
     )
   }
 

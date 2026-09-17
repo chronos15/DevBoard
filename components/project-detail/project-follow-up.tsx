@@ -1097,6 +1097,7 @@ export function ProjectFollowUp({
   const stickTimelineToBottomRef = React.useRef(true)
   const lastTimelineItemRef = React.useRef<string | null>(null)
   const lastInitialBottomSubRef = React.useRef<string | null>(null)
+  const handledInitialSubactivityRef = React.useRef<string | null>(null)
   const pendingTimelineFocusRef = React.useRef<string | null>(initialTimelineId ?? null)
   const initialBottomLockRef = React.useRef(false)
   const bottomLockTimerRef = React.useRef<number | null>(null)
@@ -1289,17 +1290,24 @@ export function ProjectFollowUp({
   )
 
   React.useEffect(() => {
-    if (!initialSubactivityId) return
+    if (!initialSubactivityId) {
+      handledInitialSubactivityRef.current = null
+      return
+    }
+
+    // O deep-link/notificação deve posicionar a subatividade somente uma vez.
+    // Realtime/timer atualizam `project.activities` com frequência; repetir esta seleção
+    // fazia uma subatividade concluída reaparecer depois de o usuário ocultar concluídas.
+    if (handledInitialSubactivityRef.current === initialSubactivityId) return
+
     const requestedSubactivity = project.activities
       .flatMap((activity) => activity.subactivities)
       .find((sub) => sub.id === initialSubactivityId)
-    if (requestedSubactivity?.status === "done") setShowCompletedSubactivities(true)
-  }, [initialSubactivityId, project.activities])
+    if (!requestedSubactivity) return
 
-  React.useEffect(() => {
-    if (initialSubactivityId && project.activities.some((activity) => activity.subactivities.some((sub) => sub.id === initialSubactivityId))) {
-      setSelectedSubId(initialSubactivityId)
-    }
+    handledInitialSubactivityRef.current = initialSubactivityId
+    if (requestedSubactivity.status === "done") setShowCompletedSubactivities(true)
+    setSelectedSubId(initialSubactivityId)
   }, [initialSubactivityId, project.activities])
 
   React.useEffect(() => {
@@ -1318,6 +1326,38 @@ export function ProjectFollowUp({
 
   const selectedSub = selectedContext?.sub
   const selectedActivity = selectedContext?.activity
+
+  const toggleCompletedSubactivities = React.useCallback(() => {
+    if (!showCompletedSubactivities) {
+      setShowCompletedSubactivities(true)
+      return
+    }
+
+    // Se a subatividade atualmente aberta vai desaparecer, movemos a seleção antes
+    // de ocultar as concluídas. Prioriza outra subatividade da mesma atividade e,
+    // na falta dela, usa uma execução ativa ou a primeira visível do projeto.
+    if (selectedSub?.status === "done") {
+      const sameActivityCandidates = selectedActivity
+        ? (visibleActivities.find((activity) => activity.id === selectedActivity.id)?.visibleSubs ?? [])
+            .filter((sub) => sub.status !== "done")
+        : []
+      const allCandidates = visibleActivities
+        .flatMap((activity) => activity.visibleSubs)
+        .filter((sub) => sub.status !== "done")
+
+      const nextSub =
+        sameActivityCandidates.find((sub) => runningSubIds.includes(sub.id))
+        ?? sameActivityCandidates[0]
+        ?? allCandidates.find((sub) => runningSubIds.includes(sub.id))
+        ?? allCandidates[0]
+        ?? null
+
+      setSelectedSubId(nextSub?.id ?? null)
+    }
+
+    setShowCompletedSubactivities(false)
+  }, [runningSubIds, selectedActivity, selectedSub, showCompletedSubactivities, visibleActivities])
+
   const linkedRequest = selectedActivity ? serviceRequests.find((request) => request.activityId === selectedActivity.id) : undefined
 
   React.useEffect(() => {
@@ -3107,7 +3147,7 @@ export function ProjectFollowUp({
               variant="ghost"
               size="icon-xs"
               aria-pressed={showCompletedSubactivities}
-              onClick={() => setShowCompletedSubactivities((current) => !current)}
+              onClick={toggleCompletedSubactivities}
               className={cn(
                 "relative text-muted-foreground transition-colors",
                 showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",

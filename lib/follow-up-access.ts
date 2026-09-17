@@ -10,6 +10,17 @@ export function canAccessFollowUpSubactivity(
   return subactivity.assigneeId === userId || Boolean(subactivity.memberIds?.includes(userId))
 }
 
+function isProjectRelatedToUser(project: Project, userId: string) {
+  if (project.memberIds.includes(userId)) return true
+
+  return project.activities.some((activity) =>
+    Boolean(activity.assigneeIds?.includes(userId))
+    || activity.subactivities.some((subactivity) =>
+      subactivity.assigneeId === userId || Boolean(subactivity.memberIds?.includes(userId)),
+    ),
+  )
+}
+
 export function scopeFollowUpProjects(
   projects: Project[],
   userId: string,
@@ -18,11 +29,14 @@ export function scopeFollowUpProjects(
   if (role === "admin") return projects
   if (!userId) return []
 
-  // No Acompanhamento/Modo Resumido, desenvolvedores enxergam toda a estrutura do workspace.
-  // A permissão de interação continua sendo decidida no detalhe da subatividade:
-  // fora de uma subatividade o DEV entra como observador (somente leitura, com
-  // direito a responder/comentar e reagir).
-  if (role === "developer") return projects
+  // DEV não deve receber projetos sem qualquer vínculo pessoal. Uma vez
+  // integrado ao projeto (membro, responsável de atividade/subatividade ou
+  // participante), preservamos a árvore que já veio filtrada pela RLS. Isso
+  // permite visualizar atividades sem responsável sem transformar esse tipo de
+  // atividade em porta de entrada para projetos de terceiros.
+  if (role === "developer") {
+    return projects.filter((project) => isProjectRelatedToUser(project, userId))
+  }
 
   return projects.flatMap((project) => {
     const activities = project.activities.flatMap((activity) => {

@@ -610,7 +610,7 @@ function AccessProfileEditor({ role, policy, disabled, onChange }: {
             <div className="mt-3 space-y-2">
               {[
                 ["restrictProjects", "Somente projetos integrados", "Exibe o projeto apenas quando o usuário participa do projeto, de uma atividade ou de uma subatividade dele."],
-                ["restrictActivities", "Somente atividades integradas", "Dentro dos projetos visíveis, mostra apenas atividades em que o usuário participa diretamente ou por alguma subatividade. Atividades sem responsável permanecem visíveis para todos os desenvolvedores."],
+                ["restrictActivities", "Somente atividades integradas", "Dentro dos projetos visíveis, mostra apenas atividades em que o usuário participa diretamente ou por alguma subatividade. Atividades sem responsável permanecem visíveis somente para desenvolvedores já integrados ao projeto."],
                 ["restrictSubactivities", "Somente subatividades integradas", "Mostra somente subatividades em que é responsável ou participante."],
               ].map(([key, label, description]) => {
                 const typedKey = key as "restrictProjects" | "restrictActivities" | "restrictSubactivities"

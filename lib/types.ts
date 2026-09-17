@@ -245,6 +245,7 @@ export type ProjectLogEntry = {
   title: string
   description?: string
   actorId?: string
+  subactivityId?: string
 }
 
 export type ProjectVersionEntry = {

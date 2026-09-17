@@ -19,7 +19,6 @@ import { formatHMS } from "@/lib/project-utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
-import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 
 function formatMoment(value: string) {
   const date = new Date(value)
@@ -96,10 +95,10 @@ export function SubactivityInlineSummary({
       })
     }
 
-    if (sub.title.trim() && project) {
+    if (project) {
       for (const log of project.logs ?? []) {
         if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
-        if (!logReferencesSubactivityTitle(sub.title, log.title, log.description)) continue
+        if (log.subactivityId !== sub.id) continue
         items.push({
           kind: "log",
           id: `log-${log.id}`,

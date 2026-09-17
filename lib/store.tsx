@@ -424,6 +424,7 @@ function applyRealtimeProjectLog(projects: Project[], row: Record<string, any>) 
         type: row.type,
         title: row.title,
         description: row.description ?? undefined,
+        subactivityId: row.subactivity_id ?? undefined,
         createdAt: row.created_at,
       }, ...project.logs],
     }

@@ -98,8 +98,7 @@ import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
-import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
-import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
+import { visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -1717,28 +1716,19 @@ export function ProjectFollowUp({
 
     for (const log of project.logs ?? []) {
       if (log.title === "Mensagem adicionada no acompanhamento" || log.type === "attachment-added" || log.type === "attachment-status") continue
+      if (log.subactivityId !== selectedSub.id) continue
 
       const isMeetingLog = log.type === "meeting-started" || log.type === "meeting-ended"
-      if (isMeetingLog) {
-        if (selectedActivity && isSubactivityMeetingLog(log, selectedSub.id)) {
-          items.push({
-            kind: "log",
-            id: `log-${log.id}`,
-            targetId: log.id,
-            createdAt: log.createdAt,
-            authorId: log.actorId,
-            title: log.title,
-            description: visibleMeetingLogDescription(log.description),
-            logType: log.type,
-          })
-        }
-        // Logs de reunião são sempre contextuais. Nunca caem no filtro textual
-        // da subatividade, evitando "vazar" a reunião de um tópico para outro.
-        continue
-      }
-
-      if (!logReferencesSubactivityTitle(selectedSub.title, log.title, log.description)) continue
-      items.push({ kind: "log", id: `log-${log.id}`, targetId: log.id, createdAt: log.createdAt, authorId: log.actorId, title: log.title, description: log.description, logType: log.type })
+      items.push({
+        kind: "log",
+        id: `log-${log.id}`,
+        targetId: log.id,
+        createdAt: log.createdAt,
+        authorId: log.actorId,
+        title: log.title,
+        description: isMeetingLog ? visibleMeetingLogDescription(log.description) : log.description,
+        logType: log.type,
+      })
     }
 
     return items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())

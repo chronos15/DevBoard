@@ -221,7 +221,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
       project_members(user_id),
       project_comments(id,author_id,content,created_at),
       attachments!attachments_project_id_fkey(id,name,mime_type,size_bytes,kind,storage_path,uploaded_by,active,status_changed_at,status_changed_by,message_group_id,created_at),
-      project_logs(id,actor_id,type,title,description,created_at),
+      project_logs(id,actor_id,type,title,description,subactivity_id,created_at),
       project_versions(id,version,build,created_at),
       activities(
         id,title,type_id,build,linked_os,priority,related_module,subject,responsible_department,created_at,
@@ -370,6 +370,7 @@ export async function loadProjects(supabase: SupabaseClient, workspaceId: string
           type: log.type,
           title: log.title,
           description: log.description ?? undefined,
+          subactivityId: log.subactivity_id ?? undefined,
           createdAt: log.created_at,
         })),
       versions: (row.project_versions ?? [])

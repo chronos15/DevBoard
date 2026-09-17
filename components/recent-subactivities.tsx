@@ -8,6 +8,7 @@ import { statusMeta } from "@/lib/project-utils"
 import type { Status } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { AnchoredPopoverPortal } from "@/components/ui/anchored-popover-portal"
+import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 
 type RecentItem = {
   kind: "task" | "approval"
@@ -96,6 +97,14 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
 
   function openActivity(item: RecentItem) {
     setOpen(false)
+    if (item.kind === "approval") {
+      openProjectFollowUp({
+        projectId: item.projectId,
+        activityId: item.activityId,
+        subactivityId: item.subactivityId,
+      })
+      return
+    }
     if (preferences.interfaceMode === "focused") {
       const params = new URLSearchParams({
         space: "project",

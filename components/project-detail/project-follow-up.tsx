@@ -796,21 +796,19 @@ function AttachmentCard({
   const displayHref = localPreview?.url ?? href
   const [imageOpen, setImageOpen] = React.useState(false)
   const [fileOpen, setFileOpen] = React.useState(false)
-  const [visualReady, setVisualReady] = React.useState(false)
-  const [measuredSize, setMeasuredSize] = React.useState<{ width: number; height: number } | null>(null)
+  const [loadedVisual, setLoadedVisual] = React.useState<{ source: string; width: number; height: number } | null>(null)
   const effectiveKind = inferAttachmentKind({
     name: attachment.name,
     mimeType: attachment.mimeType,
     kind: attachment.kind,
   })
 
-  React.useEffect(() => {
-    setVisualReady(false)
-    setMeasuredSize(null)
-  }, [displayHref, effectiveKind])
-
-  const measuredPreview = measuredSize && displayHref
-    ? { key: attachment.id, kind: effectiveKind, url: displayHref, width: measuredSize.width, height: measuredSize.height } as LocalMediaPreview
+  // A prontidão fica vinculada à URL que realmente disparou onLoad/onLoadedMetadata.
+  // Isso evita a corrida em que um blob local carrega instantaneamente e um effect
+  // posterior volta visualReady para false, deixando o remetente preso em "Carregando...".
+  const visualReady = Boolean(displayHref && loadedVisual?.source === displayHref)
+  const measuredPreview = visualReady && displayHref && loadedVisual
+    ? { key: attachment.id, kind: effectiveKind, url: displayHref, width: loadedVisual.width, height: loadedVisual.height } as LocalMediaPreview
     : undefined
   const effectivePreview = localPreview ?? measuredPreview
 
@@ -836,8 +834,7 @@ function AttachmentCard({
               alt={attachment.name}
               onLoad={(event) => {
                 const image = event.currentTarget
-                setMeasuredSize({ width: image.naturalWidth, height: image.naturalHeight })
-                setVisualReady(true)
+                setLoadedVisual({ source: displayHref, width: image.naturalWidth, height: image.naturalHeight })
                 onMediaReady?.()
               }}
               className={cn(
@@ -886,8 +883,7 @@ function AttachmentCard({
             preload="metadata"
             onLoadedMetadata={(event) => {
               const video = event.currentTarget
-              setMeasuredSize({ width: video.videoWidth, height: video.videoHeight })
-              setVisualReady(true)
+              setLoadedVisual({ source: displayHref, width: video.videoWidth, height: video.videoHeight })
               onMediaReady?.()
             }}
             className={cn(

@@ -2835,6 +2835,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           }))
         }
       }
+      // Mantém a atualização otimista, mas também reconcilia o anexo recém-gravado
+      // com o estado canônico do servidor. Assim o remetente não depende de trocar
+      // de atividade ou atualizar a página para sair do estado de carregamento.
+      schedule("projects", refreshProjects)
       schedule("service-requests", refreshServiceRequests)
       return true
     } catch (error) {
@@ -2845,7 +2849,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       return false
     }
-  }, [currentUserId, fail, refreshServiceRequests, schedule, supabase, workspaceId])
+  }, [currentUserId, fail, refreshProjects, refreshServiceRequests, schedule, supabase, workspaceId])
 
   const addProjectAttachments = React.useCallback((projectId: string, files: AttachmentUploadInput[]) => uploadAttachments({ projectId }, files), [uploadAttachments])
 

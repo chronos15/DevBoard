@@ -6,6 +6,7 @@ import { FileImage, FileText, Files, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 let activeOwnerId: string | null = null
+const exclusiveOwnerIds = new Set<string>()
 
 function hasFilePayload(event: DragEvent) {
   return Array.from(event.dataTransfer?.types ?? []).includes("Files")
@@ -18,6 +19,7 @@ export function FileDropOverlay({
   onFiles,
   scopeRef,
   className,
+  exclusive = false,
 }: {
   enabled?: boolean
   title: string
@@ -25,6 +27,12 @@ export function FileDropOverlay({
   onFiles: (files: File[]) => void
   scopeRef?: React.RefObject<HTMLElement | null>
   className?: string
+  /**
+   * Quando ativo, bloqueia overlays globais concorrentes enquanto este destino existe.
+   * Use em superfícies modais (ex.: chat da reunião) para impedir que um drop
+   * atravesse visualmente a camada atual e seja capturado pela tela de trás.
+   */
+  exclusive?: boolean
 }) {
   const ownerIdRef = React.useRef(`taskboard-file-drop-${Math.random().toString(36).slice(2)}`)
   const [dragging, setDragging] = React.useState(false)
@@ -46,6 +54,8 @@ export function FileDropOverlay({
       return
     }
 
+    if (exclusive) exclusiveOwnerIds.add(ownerIdRef.current)
+
     const ownsEventTarget = (event: DragEvent) => {
       if (!scopeRef?.current) return true
       const target = event.target
@@ -54,6 +64,7 @@ export function FileDropOverlay({
 
     const handleDragEnter = (event: DragEvent) => {
       if (!hasFilePayload(event)) return
+      if (!exclusive && exclusiveOwnerIds.size > 0) return
 
       if (!draggingRef.current) {
         if (activeOwnerId && activeOwnerId !== ownerIdRef.current) return
@@ -69,12 +80,14 @@ export function FileDropOverlay({
     }
 
     const handleDragOver = (event: DragEvent) => {
+      if (!exclusive && exclusiveOwnerIds.size > 0) return
       if (!hasFilePayload(event) || activeOwnerId !== ownerIdRef.current) return
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"
     }
 
     const handleDragLeave = (event: DragEvent) => {
+      if (!exclusive && exclusiveOwnerIds.size > 0) return
       if (activeOwnerId !== ownerIdRef.current) return
       event.preventDefault()
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
@@ -82,6 +95,7 @@ export function FileDropOverlay({
     }
 
     const handleDrop = (event: DragEvent) => {
+      if (!exclusive && exclusiveOwnerIds.size > 0) return
       if (!hasFilePayload(event) || activeOwnerId !== ownerIdRef.current) return
       event.preventDefault()
       event.stopPropagation()
@@ -106,9 +120,10 @@ export function FileDropOverlay({
       window.removeEventListener("dragleave", handleDragLeave, true)
       window.removeEventListener("drop", handleDrop, true)
       window.removeEventListener("blur", handleBlur)
+      if (exclusive) exclusiveOwnerIds.delete(ownerIdRef.current)
       release()
     }
-  }, [enabled, release, scopeRef])
+  }, [enabled, exclusive, release, scopeRef])
 
   if (!dragging || typeof document === "undefined") return null
 

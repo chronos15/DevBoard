@@ -17,7 +17,7 @@
 -- cada atividade continua sendo filtrada por taskboard_can_view_activity().
 
 begin;
-
+//
 -- ---------------------------------------------------------------------------
 -- Projeto
 -- DEV pode enxergar o projeto pai quando houver pelo menos uma atividade sem

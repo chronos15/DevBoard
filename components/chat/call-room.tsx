@@ -668,6 +668,53 @@ export function CallRoom({
   const canEndMeeting = Boolean(
     meeting && (currentUserRole === "admin" || isMeetingOwner),
   )
+  React.useLayoutEffect(() => {
+    if (!open || !meeting || minimized || typeof document === "undefined") return
+
+    const body = document.body
+    const html = document.documentElement
+    const scrollX = window.scrollX
+    const scrollY = window.scrollY
+    const previousBody = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overflow: body.style.overflow,
+      overscrollBehavior: body.style.overscrollBehavior,
+    }
+    const previousHtml = {
+      overflow: html.style.overflow,
+      overscrollBehavior: html.style.overscrollBehavior,
+    }
+
+    // A reunião expandida é uma superfície modal. Fixar o documento impede que swipe/scroll
+    // nas bordas do painel seja encadeado para a tela que está por trás no Chrome mobile.
+    body.style.position = "fixed"
+    body.style.top = `-${scrollY}px`
+    body.style.left = `-${scrollX}px`
+    body.style.right = "0"
+    body.style.width = "100%"
+    body.style.overflow = "hidden"
+    body.style.overscrollBehavior = "none"
+    html.style.overflow = "hidden"
+    html.style.overscrollBehavior = "none"
+
+    return () => {
+      body.style.position = previousBody.position
+      body.style.top = previousBody.top
+      body.style.left = previousBody.left
+      body.style.right = previousBody.right
+      body.style.width = previousBody.width
+      body.style.overflow = previousBody.overflow
+      body.style.overscrollBehavior = previousBody.overscrollBehavior
+      html.style.overflow = previousHtml.overflow
+      html.style.overscrollBehavior = previousHtml.overscrollBehavior
+      window.requestAnimationFrame(() => window.scrollTo(scrollX, scrollY))
+    }
+  }, [meeting?.id, minimized, open])
+
   React.useEffect(() => {
     if (!open || !meeting) {
       setCanManageMeetingMembers(false)
@@ -2845,7 +2892,7 @@ export function CallRoom({
       role="dialog"
       aria-label={`Reunião ${meeting.title}`}
       className={cn(
-        "fixed z-[80] transition-[inset,width,height,background-color,padding] duration-200",
+        "fixed z-[80] overscroll-none transition-[inset,width,height,background-color,padding] duration-200",
         minimized
           ? "bottom-3 right-3 h-[220px] w-[min(370px,calc(100vw-1rem))]"
           : "inset-0 flex items-center justify-center bg-black/35 p-2 sm:p-4",
@@ -2853,7 +2900,7 @@ export function CallRoom({
       onPointerDownCapture={() => { void primeCallAudio() }}
     >
       <section className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden bg-background ring-1 ring-foreground/10 transition-[width,height,border-radius,box-shadow] duration-200",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden overscroll-none bg-background ring-1 ring-foreground/10 transition-[width,height,border-radius,box-shadow] duration-200",
         minimized
           ? "size-full rounded-2xl shadow-2xl"
           : "h-[min(94dvh,940px)] w-full max-w-[1500px] rounded-2xl shadow-2xl",
@@ -2932,7 +2979,7 @@ export function CallRoom({
         )}
 
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          <main className={cn("min-w-0 flex-1 overflow-hidden bg-muted/10", minimized ? "p-1" : "overflow-y-auto p-2 sm:p-3 lg:p-4")}>
+          <main className={cn("min-w-0 flex-1 overflow-hidden bg-muted/10", minimized ? "p-1" : "overflow-y-auto overscroll-contain p-2 sm:p-3 lg:p-4")}>
             <div className={cn(
               "grid h-full min-h-0 items-stretch",
               minimized
@@ -3005,7 +3052,7 @@ export function CallRoom({
           )}
 
           {!minimized && panel && (
-            <aside className="absolute inset-x-2 bottom-2 top-2 z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl lg:hidden">
+            <aside className="absolute inset-x-2 bottom-2 top-2 z-20 flex min-h-0 flex-col overflow-hidden overscroll-none rounded-2xl border border-border bg-card shadow-xl lg:hidden">
               <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
                 <span className="text-xs font-semibold">{panel === "participants" ? "Participantes" : panel === "chat" ? "Chat da reunião" : "Dispositivos"}</span>
                 <Button type="button" variant="ghost" size="icon-sm" onClick={() => setPanel(null)} aria-label="Fechar painel"><Minimize2 className="size-3.5" /></Button>

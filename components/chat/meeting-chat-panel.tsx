@@ -38,6 +38,27 @@ const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "✅"] as con
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_BATCH_BYTES = 150 * 1024 * 1024
 
+function fileIdentity(file: File) {
+  return `${file.name}:${file.type}:${file.size}:${file.lastModified}`
+}
+
+function filesFromClipboard(clipboard: DataTransfer | null) {
+  if (!clipboard) return []
+  const directFiles = Array.from(clipboard.files ?? [])
+  const itemFiles = Array.from(clipboard.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file))
+  const seen = new Set<string>()
+  return [...directFiles, ...itemFiles].filter((file) => {
+    if (!file.size) return false
+    const key = fileIdentity(file)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function mentionToken(mention: ChatMention) {
   return `@${mention.label}`
 }
@@ -328,11 +349,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     }
   }
 
-  function fileIdentity(file: File) {
-    return `${file.name}:${file.type}:${file.size}:${file.lastModified}`
-  }
-
-  function queueMeetingFiles(files: File[]) {
+  const queueMeetingFiles = React.useCallback((files: File[]) => {
     if (!files.length || sendingMedia || recordingAudio) return
     const incoming = files.filter((file) => file.size > 0)
     if (!incoming.length) return
@@ -360,7 +377,31 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     setLocalError("")
     setStagedFiles(unique)
     setAttachmentOpen(true)
-  }
+  }, [recordingAudio, sendingMedia, stagedFiles])
+
+  React.useEffect(() => {
+    if (attachmentOpen || sendingMedia || recordingAudio) return
+
+    const handleWindowPaste = (event: ClipboardEvent) => {
+      const panel = panelRef.current
+      if (!panel) return
+      const rect = panel.getBoundingClientRect()
+      const style = window.getComputedStyle(panel)
+      const panelVisible = rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+      if (!panelVisible) return
+
+      const files = filesFromClipboard(event.clipboardData)
+      if (!files.length) return
+      event.preventDefault()
+      event.stopPropagation()
+      queueMeetingFiles(files)
+    }
+
+    // Captura no window para funcionar mesmo quando o foco está em um botão, mensagem
+    // ou outra área do painel. Texto puro continua seguindo o comportamento normal.
+    window.addEventListener("paste", handleWindowPaste, true)
+    return () => window.removeEventListener("paste", handleWindowPaste, true)
+  }, [attachmentOpen, queueMeetingFiles, recordingAudio, sendingMedia])
 
   function stageFiles(files: FileList | null) {
     if (!files?.length) return
@@ -410,7 +451,28 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   }
 
   return (
-    <div ref={panelRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+    <div
+      ref={panelRef}
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none bg-card"
+      onDragEnter={(event) => {
+        if (!Array.from(event.dataTransfer.types ?? []).includes("Files")) return
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types ?? []).includes("Files")) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = "copy"
+      }}
+      onDrop={(event) => {
+        const files = Array.from(event.dataTransfer.files ?? []).filter((file) => file.size > 0)
+        if (!files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        queueMeetingFiles(files)
+      }}
+    >
       <FileDropOverlay
         enabled={!sendingMedia && !recordingAudio}
         title="Solte para anexar à reunião"
@@ -433,7 +495,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
           stickBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
           if (stickBottomRef.current) setHasNewMessagesBelow(false)
         }}
-        className="h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
+        className="h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain px-2.5 py-2 [scrollbar-width:thin]"
       >
         {historyHasMore && (
           <div className="mb-2 text-center">
@@ -673,22 +735,10 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
                   }
                 }}
                 onPaste={(event) => {
-                  const clipboard = event.clipboardData
-                  const directFiles = Array.from(clipboard.files ?? [])
-                  const itemFiles = Array.from(clipboard.items ?? [])
-                    .filter((item) => item.kind === "file")
-                    .map((item) => item.getAsFile())
-                    .filter((file): file is File => Boolean(file))
-                  const seen = new Set<string>()
-                  const files = [...directFiles, ...itemFiles].filter((file) => {
-                    if (!file.size) return false
-                    const key = fileIdentity(file)
-                    if (seen.has(key)) return false
-                    seen.add(key)
-                    return true
-                  })
+                  const files = filesFromClipboard(event.clipboardData)
                   if (!files.length) return
                   event.preventDefault()
+                  event.stopPropagation()
                   queueMeetingFiles(files)
                 }}
                 rows={1}

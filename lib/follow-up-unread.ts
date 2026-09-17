@@ -8,7 +8,6 @@ export const FOLLOW_UP_UNREAD_NOTIFICATION_TYPES: NotificationType[] = [
   "followup-subactivity-opened",
   "subactivity-comment",
   "subactivity-assigned",
-  "subactivity-approval-request",
   "subactivity-approval-approved",
   "subactivity-approval-rejected",
 ]

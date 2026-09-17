@@ -140,7 +140,7 @@ export function FocusedDashboard() {
     (activeSubId ? myWork.find(({ subactivity }) => subactivity.id === activeSubId) : undefined) ??
     openWork[0]
 
-  const unread = notifications.filter((notification) => notification.recipientId === currentUserId && !notification.readAt)
+  const unread = notifications.filter((notification) => notification.recipientId === currentUserId && !notification.readAt && notification.type !== "subactivity-approval-request")
   const mentions = unread.filter((notification) => MENTION_TYPES.has(notification.type)).length
   const relatedOpenRequests = serviceRequests.filter((request) =>
     OPEN_REQUEST_STATUSES.has(request.status) && (

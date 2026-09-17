@@ -587,7 +587,7 @@ export function DiscordWorkspace() {
   }
 
   const projectUnread = React.useCallback((projectId: string) => {
-    const unread = notifications.filter((n) => !n.readAt && n.recipientId === currentUserId && n.projectId === projectId)
+    const unread = notifications.filter((n) => !n.readAt && n.recipientId === currentUserId && n.projectId === projectId && n.type !== "subactivity-approval-request")
     if (unread.some((n) => n.type === "followup-mention")) return "mention" as const
     return unread.length ? "unread" as const : null
   }, [currentUserId, notifications])

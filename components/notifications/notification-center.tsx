@@ -78,7 +78,7 @@ export function NotificationCenter({ compact = false, popoverSide = "bottom" }: 
   const myNotifications = React.useMemo(
     () =>
       notifications
-        .filter((notification) => notification.recipientId === currentUserId)
+        .filter((notification) => notification.recipientId === currentUserId && notification.type !== "subactivity-approval-request")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, currentUserId],
   )

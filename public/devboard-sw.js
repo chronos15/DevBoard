@@ -1,4 +1,4 @@
-const TASKBOARD_SW_VERSION = "V222"
+const TASKBOARD_SW_VERSION = "V223"
 
 self.addEventListener("install", () => {
   self.skipWaiting()
@@ -6,7 +6,7 @@ self.addEventListener("install", () => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    // V222: o Service Worker não consome mais POSTs do Web Share Target.
+    // V223: o Service Worker não consome mais POSTs do Web Share Target.
     // O multipart segue intacto para o Route Handler do Next.js, que usa
     // request.formData() nativo. Mantemos apenas a limpeza de caches legados.
     const cacheNames = await caches.keys()

@@ -1,11 +1,25 @@
 import type { MetadataRoute } from "next"
 
+/**
+ * V223
+ *
+ * O WebAPK do Android transforma `share_target.params.files` em metadados
+ * nativos (`shareParamNames` / `shareParamAccepts`). Nas versões anteriores o
+ * bucket continha dezenas de MIME types/extensões. O Chrome estava abrindo o
+ * TaskBoard, mas gerando um multipart vazio (somente o boundary).
+ *
+ * Mantemos o registro propositalmente mínimo: um único campo aceitando qualquer MIME.
+ * O servidor continua validando tamanho/tipo antes de persistir/enviar.
+ *
+ * O `id` muda de "/" para "/taskboard" uma única vez para forçar a criação de
+ * um WebAPK novo, sem reutilizar metadados nativos de instalações anteriores.
+ */
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "TaskBoard",
     short_name: "TaskBoard",
     description: "Gestão de projetos, atividades, subatividades, horas e colaboração em equipe.",
-    id: "/",
+    id: "/taskboard",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -22,50 +36,7 @@ export default function manifest(): MetadataRoute.Manifest {
         files: [
           {
             name: "files",
-            accept: [
-              "image/*",
-              "video/*",
-              "audio/*",
-              "text/*",
-              "application/pdf",
-              "application/zip",
-              "application/x-zip-compressed",
-              "application/octet-stream",
-              "application/msword",
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-              "application/vnd.ms-excel",
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              "application/vnd.ms-powerpoint",
-              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-              ".jpg",
-              ".jpeg",
-              ".png",
-              ".webp",
-              ".gif",
-              ".heic",
-              ".heif",
-              ".mp4",
-              ".mov",
-              ".mkv",
-              ".webm",
-              ".m4a",
-              ".aac",
-              ".wav",
-              ".ogg",
-              ".pdf",
-              ".txt",
-              ".sql",
-              ".csv",
-              ".json",
-              ".xml",
-              ".zip",
-              ".doc",
-              ".docx",
-              ".xls",
-              ".xlsx",
-              ".ppt",
-              ".pptx",
-            ],
+            accept: ["*/*"],
           },
         ],
       },

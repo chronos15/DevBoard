@@ -47,7 +47,7 @@ async function notify(title: string, body: string, tag: string) {
   const options: NotificationOptions = { body, icon: "/devboard-icon-192.png", badge: "/devboard-icon-64.png", tag, data: { url: "/dev" } }
   try {
     if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.register("/devboard-sw.js?v=222")
+      const registration = await navigator.serviceWorker.register("/devboard-sw.js?v=223")
       await registration.showNotification(title, options)
       return
     }

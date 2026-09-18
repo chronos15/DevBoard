@@ -83,7 +83,7 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
       throw new Error(`Tipo de conteúdo inesperado no Web Share Target: ${contentType || "ausente"}`)
     }
 
-    // V222: usa o parser multipart nativo da Fetch API/Node/Next.
+    // V223: usa o parser multipart nativo da Fetch API/Node/Next.
     // O parser artesanal V219 foi removido do fluxo porque os logs de produção
     // provaram que o boundary chegava, mas nenhuma parte era reconhecida.
     const formData = await request.formData()
@@ -93,7 +93,7 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
     const url = stringValue(formData, "url")
 
     if (files.length === 0 && !title && !text && !url) {
-      console.error("[TaskBoard/PWA Share V222] POST multipart recebido sem conteúdo utilizável", {
+      console.error("[TaskBoard/PWA Share V223] POST multipart recebido sem conteúdo utilizável", {
         contentType,
         contentLength,
         url: request.url,
@@ -108,19 +108,19 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
     target.searchParams.set("serverShare", staged.manifest.id)
     target.searchParams.set("serverFiles", String(staged.manifest.files.length))
     target.searchParams.set("receiver", staged.storedLocally && staged.storedRemotely
-      ? "server-v222-native-dual"
+      ? "server-v223-native-dual"
       : staged.storedLocally
-        ? "server-v222-native-disk"
-        : "server-v222-native-supabase")
+        ? "server-v223-native-disk"
+        : "server-v223-native-supabase")
 
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V222-native-formdata")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V223-native-formdata")
     response.headers.set("X-TaskBoard-Share-Files", String(staged.manifest.files.length))
     return response
   } catch (error) {
-    console.error("[TaskBoard/PWA Share V222] Falha ao receber compartilhamento externo", {
+    console.error("[TaskBoard/PWA Share V223] Falha ao receber compartilhamento externo", {
       contentType,
       contentLength,
       url: request.url,
@@ -138,16 +138,16 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
           ? "limite"
           : "persistencia"
 
-    target.searchParams.set("erro", "recebimento-v222")
+    target.searchParams.set("erro", "recebimento-v223")
     target.searchParams.set("motivo", reason)
     if (contentLength) target.searchParams.set("bytes", contentLength.slice(0, 24))
     target.searchParams.set("tipo", shortContentType(contentType))
-    target.searchParams.set("receiver", "server-v222-error")
+    target.searchParams.set("receiver", "server-v223-error")
 
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V222-error")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V223-error")
     return response
   }
 }

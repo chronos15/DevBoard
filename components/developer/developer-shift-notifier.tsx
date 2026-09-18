@@ -13,7 +13,7 @@ import {
   type DeveloperSettings,
 } from "@/lib/developer/panel"
 
-const SW_PATH = "/devboard-sw.js?v=222"
+const SW_PATH = "/devboard-sw.js?v=223"
 const CHECK_INTERVAL_MS = 30_000
 
 async function showDeveloperNotification(title: string, body: string, tag: string) {

@@ -257,7 +257,7 @@ export async function stageServerShare(formData: FormData, preferredToken?: stri
   void cleanupLocalShares()
   const admin = adminStorage()
 
-  // V222: o Windows Server é o caminho principal e síncrono. Não esperamos
+  // V223: o Windows Server é o caminho principal e síncrono. Não esperamos
   // Supabase para abrir a tela de compartilhamento. Isso remove rede/policy do
   // caminho crítico: gravou no disco local, o usuário já pode continuar.
   try {
@@ -265,7 +265,7 @@ export async function stageServerShare(formData: FormData, preferredToken?: stri
 
     if (admin) {
       void writeRemote(admin, manifest, files).catch((error) => {
-        console.warn("[TaskBoard/PWA Share V222] Redundância Supabase indisponível; recebimento local preservado", {
+        console.warn("[TaskBoard/PWA Share V223] Redundância Supabase indisponível; recebimento local preservado", {
           token: manifest.id,
           error: error instanceof Error ? error.message : String(error),
         })
@@ -281,13 +281,13 @@ export async function stageServerShare(formData: FormData, preferredToken?: stri
         await writeRemote(admin, manifest, files)
         return { manifest, storedLocally: false, storedRemotely: true }
       } catch (remoteError) {
-        console.error("[TaskBoard/PWA Share V222] Falha no disco local e no fallback Supabase", {
+        console.error("[TaskBoard/PWA Share V223] Falha no disco local e no fallback Supabase", {
           localMessage: localError instanceof Error ? localError.message : String(localError),
           remoteMessage: remoteError instanceof Error ? remoteError.message : String(remoteError),
         })
       }
     } else {
-      console.error("[TaskBoard/PWA Share V222] Falha ao persistir recebimento no disco local", {
+      console.error("[TaskBoard/PWA Share V223] Falha ao persistir recebimento no disco local", {
         localMessage: localError instanceof Error ? localError.message : String(localError),
       })
     }

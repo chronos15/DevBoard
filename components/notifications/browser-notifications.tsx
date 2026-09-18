@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { BROWSER_NOTIFICATION_PREFERENCE_EVENT, dismissBrowserNotificationPrompt, isBrowserNotificationPromptDismissed, resetBrowserNotificationPrompt } from "@/lib/browser-notification-preference"
 import { isFollowUpContextActive } from "@/lib/active-follow-up-context"
 
-const SW_PATH = "/devboard-sw.js?v=222"
+const SW_PATH = "/devboard-sw.js?v=223"
 
 export function BrowserNotifications() {
   const { hydrated, notifications, chatMeetings, members, currentUserId } = useStore()

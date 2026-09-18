@@ -317,7 +317,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
-    void navigator.serviceWorker.register("/devboard-sw.js?v=222", { updateViaCache: "none" })
+    void navigator.serviceWorker.register("/devboard-sw.js?v=223", { updateViaCache: "none" })
       .then((registration) => registration.update().catch(() => undefined))
       .catch(() => undefined)
   }, [])

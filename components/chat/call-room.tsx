@@ -1900,10 +1900,31 @@ export function CallRoom({
   }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
 
   const updateLocalVideo = React.useCallback(() => {
-    if (!localVideoRef.current) return
+    const video = localVideoRef.current
+    if (!video) return
     const stream = screenStreamRef.current ?? localStreamRef.current
-    localVideoRef.current.srcObject = stream
+    if (video.srcObject !== stream) video.srcObject = stream
+    if (stream && video.paused) {
+      void video.play().catch(() => {
+        // O preview local pode ser bloqueado por alguns ms durante a troca de layout.
+        // A track continua ativa; a segunda tentativa abaixo recupera apenas a UI local.
+      })
+    }
   }, [])
+
+  React.useLayoutEffect(() => {
+    if (!open || !meeting || minimized) return
+
+    // Normal -> Mural (e o caminho inverso) desmonta um <video> local e monta outro
+    // em uma região diferente da UI. O MediaStream permanece o mesmo e continua
+    // sendo enviado aos peers; reanexamos somente o preview local ao novo elemento.
+    const frame = window.requestAnimationFrame(() => updateLocalVideo())
+    const retry = window.setTimeout(() => updateLocalVideo(), 120)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(retry)
+    }
+  }, [cameraEnabled, meeting?.id, minimized, muralParticipantView, open, presentationMode, screenSharing, updateLocalVideo])
 
   const refreshDevices = React.useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return
@@ -3171,7 +3192,7 @@ export function CallRoom({
     : null
 
   const participantsPanel = (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 w-full flex-col">
       <div className="flex min-h-[58px] shrink-0 items-center justify-between gap-3 px-3 py-2.5">
         <button
           type="button"
@@ -3283,7 +3304,7 @@ export function CallRoom({
   )
 
   const muralParticipantsPanel = (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 w-full flex-col">
       <div className="flex min-h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold">Participantes</p>
@@ -3698,7 +3719,7 @@ export function CallRoom({
 
               <div
                 className={cn(
-                  "min-h-0 overflow-hidden",
+                  "min-h-0 w-full overflow-hidden",
                   panel === "settings" || (presentationMode && panel === "chat") ? "hidden" : "flex",
                   presentationMode
                     ? "flex-1"
@@ -3713,7 +3734,7 @@ export function CallRoom({
 
               <div
                 className={cn(
-                  "min-h-0",
+                  "min-h-0 w-full",
                   panel === "settings" || (presentationMode && panel !== "chat") ? "hidden" : "flex flex-1",
                 )}
               >

@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V220"
+const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V221"
 const taskboardBuildDate = (() => {
   const explicitBuildDate = process.env.TASKBOARD_BUILD_DATE?.trim()
   if (explicitBuildDate) return explicitBuildDate
@@ -54,7 +54,7 @@ const nextConfig = {
         ],
       },
       {
-        source: "/share-target-v219",
+        source: "/share-target",
         headers: [
           { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],

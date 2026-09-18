@@ -37,6 +37,7 @@ import { SharePageSkeleton } from "@/components/share/share-page-skeleton"
 import { cn } from "@/lib/utils"
 import { SERVICE_REQUEST_FINAL_STATUSES, serviceRequestReference } from "@/lib/service-requests"
 import { deleteServerStagedShare, readServerStagedShare } from "@/lib/taskboard-share-cache"
+import { deleteLocalStagedShare, readLocalStagedShare } from "@/lib/taskboard-share-local"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
   isSingleVideoSelection,
@@ -415,6 +416,7 @@ export default function ShareToDevboardPage() {
 
   const [loadingShare, setLoadingShare] = React.useState(true)
   const [shareId, setShareId] = React.useState("")
+  const [localShareId, setLocalShareId] = React.useState("")
   const [serverShareId, setServerShareId] = React.useState("")
   const [payload, setPayload] = React.useState<SharedPayload | null>(null)
   const [files, setFiles] = React.useState<File[]>([])
@@ -432,12 +434,35 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js?v=220", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=221", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }
 
     const params = new URLSearchParams(window.location.search)
+
+    // V221: caminho principal. O Service Worker recebe o multipart diretamente
+    // do Android e guarda os Blobs no IndexedDB antes de abrir esta tela.
+    const localId = params.get("shareLocal") || ""
+    if (localId) {
+      setLocalShareId(localId)
+      void readLocalStagedShare(localId)
+        .then(({ metadata, files: receivedFiles }) => {
+          setPayload(metadata as SharedPayload)
+          setFiles(receivedFiles)
+          setIncludeText(Boolean(textEvidence(metadata)))
+          const expectedFiles = Math.max(0, Number(params.get("localFiles") || 0))
+          if (expectedFiles > 0 && receivedFiles.length !== expectedFiles) {
+            setError(`O Android informou ${expectedFiles} anexo${expectedFiles === 1 ? "" : "s"}, mas o armazenamento local recuperou ${receivedFiles.length}. O envio foi bloqueado para evitar perda silenciosa.`)
+          }
+        })
+        .catch((cause) => {
+          setError(cause instanceof Error ? cause.message : "Não foi possível recuperar o anexo salvo localmente pelo PWA.")
+        })
+        .finally(() => setLoadingShare(false))
+      return
+    }
+
     const id = params.get("share") || ""
     setShareId(id)
 
@@ -485,6 +510,11 @@ export default function ShareToDevboardPage() {
       setWarning(declaredCount > 0
         ? `O receptor legado detectou ${declaredCount} ${declaredCount === 1 ? "anexo" : "anexos"}, mas não conseguiu preservá-${declaredCount === 1 ? "lo" : "los"}. A V219 não abre mais a tela como se fosse um compartilhamento vazio: o POST agora é confirmado no servidor antes da navegação.`
         : "Este compartilhamento veio de um receptor antigo do PWA. Abra o TaskBoard atualizado uma vez e tente novamente para ativar o receptor V219.")
+    } else if (params.get("erro") === "recebimento-v221") {
+      const reason = params.get("motivo") || "desconhecido"
+      setError(reason === "sw-e-servidor"
+        ? "O Android acionou o TaskBoard, mas o arquivo não pôde ser lido nem pelo receptor local do PWA nem pelo fallback do servidor."
+        : "O compartilhamento V221 não pôde ser recebido.")
     } else if (params.get("erro") === "recebimento-v219") {
       const reason = params.get("motivo") || "desconhecido"
       const bytes = Number(params.get("bytes") || 0)
@@ -805,6 +835,7 @@ export default function ShareToDevboardPage() {
 
   async function discardAndLeave() {
     if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
+    if (localShareId) await deleteLocalStagedShare(localShareId).catch(() => undefined)
     if (serverShareId) await deleteServerStagedShare(serverShareId).catch(() => undefined)
     if (window.history.length > 1) window.history.back()
     else router.replace("/")
@@ -942,6 +973,7 @@ export default function ShareToDevboardPage() {
       }
 
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
+      if (localShareId) await deleteLocalStagedShare(localShareId).catch(() => undefined)
       if (serverShareId) await deleteServerStagedShare(serverShareId).catch(() => undefined)
 
       // Sucesso total: não exibe uma etapa intermediária. O compartilhamento

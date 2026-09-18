@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { stageServerShare } from "@/lib/server-share-inbox"
+import { parseTaskBoardShareMultipart } from "@/lib/server-share-multipart"
 
 function firstForwardedValue(value: string | null) {
   return value?.split(",", 1)[0]?.trim() || ""
@@ -45,32 +46,68 @@ function resolvePublicOrigin(request: Request) {
   return new URL(request.url).origin
 }
 
+function shortContentType(value: string | null) {
+  return (value || "desconhecido").split(";", 1)[0].trim().slice(0, 80)
+}
+
+function classifyReceiveError(error: unknown, contentType: string | null) {
+  const message = error instanceof Error ? error.message : String(error || "")
+  const lower = message.toLowerCase()
+  if (!contentType?.toLowerCase().includes("multipart/form-data")) return "tipo-invalido"
+  if (lower.includes("sem arquivo, texto ou link") || lower.includes("without file")) return "vazio"
+  if (lower.includes("formdata") || lower.includes("multipart") || lower.includes("boundary") || lower.includes("unexpected end")) {
+    return "multipart-incompleto"
+  }
+  if (lower.includes("excede") || lower.includes("limit")) return "limite"
+  return "persistencia"
+}
+
 export async function handleTaskBoardShareTargetPost(request: Request) {
   const target = new URL("/compartilhar", resolvePublicOrigin(request))
+  const contentType = request.headers.get("content-type")
+  const contentLength = request.headers.get("content-length") || ""
 
   try {
-    const formData = await request.formData()
-    const staged = await stageServerShare(formData)
+    if (!contentType?.toLowerCase().includes("multipart/form-data")) {
+      throw new Error(`Tipo de conteúdo inesperado no Web Share Target: ${contentType || "ausente"}`)
+    }
+
+    const parsed = await parseTaskBoardShareMultipart(request)
+    const staged = await stageServerShare(parsed.formData)
 
     target.searchParams.set("serverShare", staged.manifest.id)
     target.searchParams.set("serverFiles", String(staged.manifest.files.length))
     target.searchParams.set("receiver", staged.storedLocally && staged.storedRemotely
-      ? "server-v218-dual"
+      ? "server-v219-dual"
       : staged.storedLocally
-        ? "server-v218-disk"
-        : "server-v218-supabase")
+        ? "server-v219-disk"
+        : "server-v219-supabase")
 
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V219")
+    response.headers.set("X-TaskBoard-Share-Parts", String(parsed.partCount))
+    response.headers.set("X-TaskBoard-Share-Files", String(parsed.fileCount))
     return response
   } catch (error) {
-    console.error("[TaskBoard/PWA Share V218] Falha ao receber compartilhamento externo", error)
-    target.searchParams.set("erro", "recebimento-v218")
-    target.searchParams.set("receiver", "server-v218-error")
+    const reason = classifyReceiveError(error, contentType)
+    console.error("[TaskBoard/PWA Share V219] Falha ao receber compartilhamento externo", {
+      reason,
+      contentType,
+      contentLength,
+      url: request.url,
+      error,
+    })
+    target.searchParams.set("erro", "recebimento-v219")
+    target.searchParams.set("motivo", reason)
+    if (contentLength) target.searchParams.set("bytes", contentLength.slice(0, 24))
+    target.searchParams.set("tipo", shortContentType(contentType))
+    target.searchParams.set("receiver", "server-v219-error")
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V219-error")
     return response
   }
 }

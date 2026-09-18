@@ -12,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#0c0c0d",
     theme_color: "#202833",
     share_target: {
-      action: "/share-target-v218",
+      action: "/share-target-v219",
       method: "POST",
       enctype: "multipart/form-data",
       params: {

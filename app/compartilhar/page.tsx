@@ -432,7 +432,7 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js?v=218", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=219", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }
@@ -483,10 +483,25 @@ export default function ShareToDevboardPage() {
       setIncludeText(Boolean(textEvidence(metadata)))
       const declaredCount = Number(params.get("fileCount") || fileNames.length || 0)
       setWarning(declaredCount > 0
-        ? `O receptor legado detectou ${declaredCount} ${declaredCount === 1 ? "anexo" : "anexos"}, mas não conseguiu preservá-${declaredCount === 1 ? "lo" : "los"}. A V218 não abre mais a tela como se fosse um compartilhamento vazio: o POST agora é confirmado no servidor antes da navegação.`
-        : "Este compartilhamento veio de um receptor antigo do PWA. Abra o TaskBoard atualizado uma vez e tente novamente para ativar o receptor V218.")
+        ? `O receptor legado detectou ${declaredCount} ${declaredCount === 1 ? "anexo" : "anexos"}, mas não conseguiu preservá-${declaredCount === 1 ? "lo" : "los"}. A V219 não abre mais a tela como se fosse um compartilhamento vazio: o POST agora é confirmado no servidor antes da navegação.`
+        : "Este compartilhamento veio de um receptor antigo do PWA. Abra o TaskBoard atualizado uma vez e tente novamente para ativar o receptor V219.")
+    } else if (params.get("erro") === "recebimento-v219") {
+      const reason = params.get("motivo") || "desconhecido"
+      const bytes = Number(params.get("bytes") || 0)
+      const type = params.get("tipo") || "desconhecido"
+      const sizeLabel = Number.isFinite(bytes) && bytes > 0 ? `${(bytes / 1024 / 1024).toFixed(bytes >= 1024 * 1024 ? 1 : 3)} MB` : "tamanho não informado"
+      const reasonText = reason === "multipart-incompleto"
+        ? "O multipart chegou incompleto ao servidor."
+        : reason === "vazio"
+          ? "O Android abriu o TaskBoard, mas não entregou nenhuma parte binária do arquivo."
+          : reason === "tipo-invalido"
+            ? "O compartilhamento chegou fora do formato multipart/form-data esperado para anexos."
+            : reason === "limite"
+              ? "O anexo ultrapassou o limite temporário de recebimento."
+              : "O arquivo chegou ao receptor, mas não pôde ser persistido."
+      setError(`${reasonText} Diagnóstico V219: ${type} · ${sizeLabel}.`)
     } else if (params.get("erro") === "recebimento-v218") {
-      setError("O Android abriu o TaskBoard, mas o conteúdo não pôde ser preservado no servidor. Nenhum envio vazio será permitido. Tente compartilhar novamente após confirmar sua conexão.")
+      setError("Este compartilhamento ainda passou pelo receptor V218. Abra o TaskBoard atualizado, feche-o completamente e tente novamente para ativar o receptor V219 sem Proxy.")
     } else if (params.get("erro") === "recebimento") {
       setError("Não foi possível receber este compartilhamento. Tente compartilhar novamente pelo Chrome.")
     }

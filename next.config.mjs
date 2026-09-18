@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V218"
+const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V219"
 const taskboardBuildDate = (() => {
   const explicitBuildDate = process.env.TASKBOARD_BUILD_DATE?.trim()
   if (explicitBuildDate) return explicitBuildDate
@@ -21,6 +21,11 @@ const taskboardBuildDate = (() => {
 })()
 
 const nextConfig = {
+  experimental: {
+    // Uploads normais que ainda passam pelo Proxy têm margem acima do limite de 50 MB do app.
+    // O Web Share Target é excluído do proxy.ts e não depende deste buffer.
+    proxyClientMaxBodySize: "64mb",
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -49,7 +54,7 @@ const nextConfig = {
         ],
       },
       {
-        source: "/share-target-v218",
+        source: "/share-target-v219",
         headers: [
           { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],

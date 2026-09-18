@@ -10,11 +10,11 @@ export const SERVER_SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 export const SERVER_SHARE_MAX_FILE_BYTES = 200 * 1024 * 1024
 export const SERVER_SHARE_MAX_BATCH_BYTES = 300 * 1024 * 1024
 
-const SERVER_SHARE_ROOT_PREFIX = "v218"
+const SERVER_SHARE_ROOT_PREFIX = "v219"
 const LOCAL_SHARE_ROOT = process.env.TASKBOARD_SHARE_INBOX_DIR?.trim()
   || (process.platform === "win32"
-    ? path.join(process.env.LOCALAPPDATA?.trim() || os.tmpdir(), "TaskBoard", "share-inbox-v218")
-    : path.join(os.tmpdir(), "taskboard-share-inbox-v218"))
+    ? path.join(process.env.LOCALAPPDATA?.trim() || os.tmpdir(), "TaskBoard", "share-inbox-v219")
+    : path.join(os.tmpdir(), "taskboard-share-inbox-v219"))
 
 type ShareFileManifest = {
   index: number
@@ -26,7 +26,7 @@ type ShareFileManifest = {
 }
 
 export type ServerShareManifest = {
-  version: 218
+  version: 219
   id: string
   receivedAt: string
   expiresAt: string
@@ -78,7 +78,7 @@ export function createServerShareToken() {
 }
 
 export function validServerShareToken(value: string) {
-  // Aceita o formato V218 (64 hex) e IDs legados somente para permitir limpeza/
+  // Aceita o formato V219 (64 hex) e IDs legados somente para permitir limpeza/
   // recuperação durante a transição de uma instalação já aberta.
   return /^[a-f0-9]{64}$/i.test(value) || /^[a-zA-Z0-9-]{12,180}$/.test(value)
 }
@@ -103,7 +103,7 @@ export function collectSharedFiles(formData: FormData) {
 function buildManifest(token: string, formData: FormData, files: File[]): ServerShareManifest {
   const now = Date.now()
   return {
-    version: 218,
+    version: 219,
     id: token,
     receivedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + SERVER_SHARE_MAX_AGE_MS).toISOString(),
@@ -270,7 +270,7 @@ export async function stageServerShare(formData: FormData, preferredToken?: stri
   if (!storedLocally && !storedRemotely) {
     const localMessage = localResult.status === "rejected" ? String(localResult.reason) : ""
     const remoteMessage = remoteResult.status === "rejected" ? String(remoteResult.reason) : ""
-    console.error("[TaskBoard/PWA Share V218] Nenhum backend conseguiu persistir o recebimento", {
+    console.error("[TaskBoard/PWA Share V219] Nenhum backend conseguiu persistir o recebimento", {
       localMessage,
       remoteMessage,
     })

@@ -1,4 +1,4 @@
-const TASKBOARD_SW_VERSION = "V218"
+const TASKBOARD_SW_VERSION = "V219"
 
 self.addEventListener("install", () => {
   self.skipWaiting()
@@ -6,7 +6,7 @@ self.addEventListener("install", () => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    // Remove somente caches legados do receptor externo. O V218 processa o POST
+    // Remove somente caches legados do receptor externo. O V219 processa o POST
     // diretamente no servidor para não depender de Cache Storage/particionamento
     // do navegador ao receber arquivos vindos de outros apps.
     const cacheNames = await caches.keys()
@@ -26,11 +26,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
-  // IMPORTANTE V218:
-  // Não usamos respondWith() em /share-target nem /share-target-v218.
+  // IMPORTANTE V219:
+  // Não usamos respondWith() em /share-target nem /share-target-v219.
   // Assim o multipart original segue intacto ao Route Handler do Next.js. O
   // backend persiste o conteúdo e somente depois responde com HTTP 303.
-  if (url.pathname === "/share-target" || url.pathname === "/share-target-v218") {
+  if (url.pathname === "/share-target" || url.pathname === "/share-target-v218" || url.pathname === "/share-target-v219") {
     return
   }
 })

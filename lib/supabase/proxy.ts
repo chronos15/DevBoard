@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/api/share-inbox', '/manifest.webmanifest', '/devboard-sw.js', '/share-target', '/share-target-v218']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/api/share-inbox', '/manifest.webmanifest', '/devboard-sw.js', '/share-target', '/share-target-v218', '/share-target-v219']
 
 type SessionCookie = {
   name: string
@@ -15,6 +15,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicPwaAsset = pathname === '/manifest.webmanifest' || pathname === '/devboard-sw.js'
   const isPublicShareReceiver = pathname === '/share-target'
     || pathname === '/share-target-v218'
+    || pathname === '/share-target-v219'
     || pathname === '/api/share-inbox'
 
   // Manifest e service worker são buscados pelo navegador fora do fluxo normal de

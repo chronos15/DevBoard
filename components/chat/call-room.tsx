@@ -232,6 +232,26 @@ function findMeetingProject(projects: Project[], context: MeetingWallContext | n
   return projects.find((project) => project.id === context.projectId || project.activities.some((activity) => activity.id === context.activityId || activity.subactivities.some((subactivity) => subactivity.id === context.subactivityId))) ?? null
 }
 
+class MeetingWallErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: unknown, info: React.ErrorInfo) {
+    console.error("TaskBoard: falha no mural completo da reunião; usando mural seguro", error, info)
+  }
+
+  render() {
+    if (this.state.failed) return this.props.fallback
+    return this.props.children
+  }
+}
+
 function MeetingWallSurface({
   loading,
   error,
@@ -3118,6 +3138,23 @@ export function CallRoom({
         }
       }
 
+      const hasTranscriptContent = rows.some((row) => {
+        const content = typeof row.content === "string" ? row.content.trim() : ""
+        const mediaName = typeof row.media_name === "string" ? row.media_name.trim() : ""
+        const messageType = typeof row.message_type === "string" ? row.message_type : ""
+        return Boolean(content || mediaName || messageType === "audio" || messageType === "media")
+      })
+
+      // V225: não publica um PDF vazio somente para registrar que a reunião não teve chat.
+      // O artefato só existe quando houve conteúdo real: texto, áudio ou anexo.
+      if (!hasTranscriptContent) {
+        if (!options?.background) {
+          setRecordingState("published")
+          setRecordingMessage("Reunião sem conteúdo no chat; nenhum PDF foi gerado.")
+        }
+        return true
+      }
+
       const memberNames = new Map<string, string>(members.map((member: Member) => [member.id, member.name]))
       const reactionLabels: Record<string, string> = {
         "👍": "Curtir",
@@ -4062,14 +4099,28 @@ export function CallRoom({
             {presentationMode && hasWallContext && !minimized ? (
               <div className="h-full min-h-0 w-full overflow-hidden bg-background">
                 {wallProject && wallActivity && wallSubactivity ? (
-                  <ProjectFollowUp
-                    project={wallProject}
-                    availableProjects={[wallProject]}
-                    initialActivityId={wallActivity.id}
-                    initialSubactivityId={wallSubactivity.id}
-                    discordEmbedded
-                    meetingEmbedded
-                  />
+                  <MeetingWallErrorBoundary
+                    fallback={
+                      <MeetingWallSurface
+                        loading={meetingWallLoading}
+                        error={meetingWallError}
+                        context={meetingWallContext}
+                        projects={projects}
+                        serviceRequests={serviceRequests}
+                        aqsReviews={aqsReviews}
+                        members={members}
+                      />
+                    }
+                  >
+                    <ProjectFollowUp
+                      project={wallProject}
+                      availableProjects={[wallProject]}
+                      initialActivityId={wallActivity.id}
+                      initialSubactivityId={wallSubactivity.id}
+                      discordEmbedded
+                      meetingEmbedded
+                    />
+                  </MeetingWallErrorBoundary>
                 ) : (
                   <MeetingWallSurface
                     loading={meetingWallLoading}

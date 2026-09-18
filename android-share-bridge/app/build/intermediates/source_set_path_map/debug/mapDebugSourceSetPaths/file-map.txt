@@ -1,0 +1,7 @@
+br.com.softworksistema.taskboard.sharebridge.app-pngs-0 E:\Projetos\devflow_mvc\android-share-bridge\app\build\generated\res\pngs\debug
+br.com.softworksistema.taskboard.sharebridge.app-resValues-1 E:\Projetos\devflow_mvc\android-share-bridge\app\build\generated\res\resValues\debug
+br.com.softworksistema.taskboard.sharebridge.app-packageDebugResources-2 E:\Projetos\devflow_mvc\android-share-bridge\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+br.com.softworksistema.taskboard.sharebridge.app-packageDebugResources-3 E:\Projetos\devflow_mvc\android-share-bridge\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+br.com.softworksistema.taskboard.sharebridge.app-debug-4 E:\Projetos\devflow_mvc\android-share-bridge\app\build\intermediates\merged_res\debug\mergeDebugResources
+br.com.softworksistema.taskboard.sharebridge.app-debug-5 E:\Projetos\devflow_mvc\android-share-bridge\app\src\debug\res
+br.com.softworksistema.taskboard.sharebridge.app-main-6 E:\Projetos\devflow_mvc\android-share-bridge\app\src\main\res

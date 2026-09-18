@@ -1,4 +1,4 @@
-const TASKBOARD_SW_VERSION = "V224"
+const TASKBOARD_SW_VERSION = "V225"
 
 self.addEventListener("install", () => {
   self.skipWaiting()
@@ -6,7 +6,7 @@ self.addEventListener("install", () => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    // V224: o PWA não registra mais share_target para arquivos.
+    // V225: o PWA não registra mais share_target para arquivos.
     // O receptor Android nativo (android-share-bridge) recebe ACTION_SEND /
     // ACTION_SEND_MULTIPLE e envia o multipart diretamente para /share-target.
     // O SW permanece fora desse caminho.

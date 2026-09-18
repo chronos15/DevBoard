@@ -1,0 +1,3 @@
+br.com.softworksistema.taskboard.sharebridge:string/app_name = 0x7f020000
+br.com.softworksistema.taskboard.sharebridge:string/share_preparing = 0x7f020001
+br.com.softworksistema.taskboard.sharebridge:drawable/ic_taskboard = 0x7f010000

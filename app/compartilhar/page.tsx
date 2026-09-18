@@ -434,7 +434,7 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js?v=224", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=225", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }
@@ -442,7 +442,7 @@ export default function ShareToDevboardPage() {
     const params = new URLSearchParams(window.location.search)
 
     // Compatibilidade V221: links shareLocal antigos ainda podem ser recuperados.
-    // Na V224 o caminho principal é serverShare, usando request.formData() nativo no Route Handler.
+    // Na V225 o caminho principal é serverShare, usando request.formData() nativo no Route Handler.
     const localId = params.get("shareLocal") || ""
     if (localId) {
       setLocalShareId(localId)
@@ -527,7 +527,7 @@ export default function ShareToDevboardPage() {
           : reason === "limite"
             ? "O anexo ultrapassou o limite temporário de recebimento."
             : "O arquivo chegou ao receptor, mas não pôde ser preservado antes de abrir a tela."
-      setError(`${reasonText} Diagnóstico V224: ${type} · ${sizeLabel}.`)
+      setError(`${reasonText} Diagnóstico V225: ${type} · ${sizeLabel}.`)
     } else if (params.get("erro") === "recebimento-v219") {
       const reason = params.get("motivo") || "desconhecido"
       const bytes = Number(params.get("bytes") || 0)

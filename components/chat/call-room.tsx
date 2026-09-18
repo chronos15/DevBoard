@@ -105,6 +105,12 @@ type MeetingMemberRemovedSignal = {
   sentAt: string
 }
 
+type MeetingEndedSignal = {
+  meetingId: string
+  endedBy: string
+  sentAt: string
+}
+
 type CallSignal = {
   type: "offer" | "answer" | "ice" | "restart-request"
   meetingId: string
@@ -130,6 +136,10 @@ type PeerRoleState = {
 type PanelMode = "participants" | "chat" | "settings" | null
 
 type MeetingWallContext = Pick<MeetingRecordingContext, "projectId" | "activityId" | "subactivityId" | "requestId" | "aqsReviewId" | "hasContext">
+
+// Mantém o processamento de gravação/PDF vivo mesmo quando CallRoom é desmontado.
+// A Promise continua ativa enquanto a página do TaskBoard permanecer aberta.
+const backgroundMeetingFinalizationTasks = new Map<string, Promise<void>>()
 
 const SUBACTIVITY_STATUS_LABELS: Record<string, string> = {
   backlog: "Backlog",
@@ -2132,6 +2142,14 @@ export function CallRoom({
     onOpenChangeRef.current(false)
   }
 
+  const handleMeetingEndedRef = React.useRef<(({ payload }: { payload: unknown }) => void) | null>(null)
+  handleMeetingEndedRef.current = ({ payload }: { payload: unknown }) => {
+    const signal = payload as MeetingEndedSignal
+    if (!meeting || signal?.meetingId !== meeting.id) return
+    stopAllMedia()
+    onOpenChangeRef.current(false)
+  }
+
   const setupMedia = React.useCallback(async () => {
     if (!meeting) return
     setMediaReadyMeetingId(null)
@@ -2619,6 +2637,7 @@ export function CallRoom({
           .on("broadcast", { event: "recording-state" }, ({ payload }) => handleRecordingState(payload as RecordingStateSignal))
           .on("broadcast", { event: "recording-stop-request" }, handleRecordingStopRequest)
           .on("broadcast", { event: "member-removed" }, (message) => handleMemberRemovedRef.current?.(message))
+          .on("broadcast", { event: "meeting-ended" }, (message) => handleMeetingEndedRef.current?.(message))
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
@@ -3038,7 +3057,11 @@ export function CallRoom({
     syncRemoteReceiverTracks,
   ])
 
-  const publishMeetingChatTranscript = React.useCallback(async () => {
+  const publishMeetingChatTranscript = React.useCallback(async (options?: {
+    context?: MeetingRecordingContext | null
+    endedAt?: string
+    background?: boolean
+  }) => {
     if (!meeting) return true
     if (meeting.createdBy !== currentUserId) return false
 
@@ -3046,22 +3069,32 @@ export function CallRoom({
       const { data: existing, error: existingError } = await supabase.rpc("meeting_transcript_status", { p_meeting_id: meeting.id })
       if (!existingError && Boolean((existing as { published?: boolean } | null)?.published)) return true
 
-      let context = recordingContextRef.current
+      let context = options?.context ?? recordingContextRef.current
       if (!context?.hasContext) {
-        const { data, error } = await supabase.rpc("claim_meeting_recording", { p_meeting_id: meeting.id })
+        // V214: depois que a reunião é encerrada visualmente, claim_meeting_recording
+        // não pode mais ser usado porque a sala já possui ended_at. Esta RPC é apenas
+        // leitura do contexto canônico e continua válida após o encerramento.
+        const { data, error } = await supabase.rpc("meeting_artifact_context", { p_meeting_id: meeting.id })
         if (error) throw error
-        context = (data ?? null) as MeetingRecordingContext | null
-        recordingContextRef.current = context
+        const payload = (data ?? null) as MeetingRecordingContext | null
+        context = payload ? {
+          ...payload,
+          canRecord: meeting.createdBy === currentUserId,
+          status: payload.status ?? "finalizing",
+        } : null
+        if (!options?.background) recordingContextRef.current = context
       }
 
-      // Reuniões comuns do Chat não possuem tópico/subatividade de origem. Nelas o
-      // encerramento continua com o fluxo antigo e não há onde anexar o histórico.
+      // Reuniões comuns do Chat não possuem tópico/subatividade de origem. Nelas não
+      // existe destino para o PDF e o encerramento segue sem artefato contextual.
       if (!context?.hasContext) return true
       if (!context.workspaceId || !context.projectId) throw new Error("O tópico de origem da reunião não pôde ser identificado para salvar o chat.")
 
-      setRecordingState("finalizing")
-      setRecordingMessage("Gerando o PDF com o chat completo da reunião…")
-      const endedAt = new Date().toISOString()
+      if (!options?.background) {
+        setRecordingState("finalizing")
+        setRecordingMessage("Gerando o PDF com o chat completo da reunião…")
+      }
+      const endedAt = options?.endedAt ?? new Date().toISOString()
       const rows: Array<Record<string, any>> = []
 
       if (meeting.conversationId) {
@@ -3153,7 +3186,7 @@ export function CallRoom({
         : `${context.workspaceId}/${context.projectId}/${currentUserId}/meeting-${meeting.id}-${safeFileName(fileName)}`
       const bucket = context.requestId ? SERVICE_REQUEST_MEDIA_BUCKET : ATTACHMENTS_BUCKET
 
-      setRecordingMessage("Enviando o PDF do chat para o tópico de origem…")
+      if (!options?.background) setRecordingMessage("Enviando o PDF do chat para o tópico de origem…")
       // O caminho é determinístico por reunião. Se uma tentativa anterior enviou o
       // arquivo mas falhou antes da publicação no banco, removemos somente esse
       // órfão e repetimos o upload sem depender de policy UPDATE do Storage.
@@ -3175,21 +3208,28 @@ export function CallRoom({
       if (error) throw error
       if (data !== true) throw new Error("O servidor não confirmou a publicação do chat da reunião.")
 
-      setRecordingState("published")
-      setRecordingMessage("Gravação e chat enviados. Encerrando a reunião…")
+      if (!options?.background) {
+        setRecordingState("published")
+        setRecordingMessage("Gravação e chat enviados ao tópico de origem.")
+      }
       void refreshAll()
       return true
     } catch (error) {
       console.error("TaskBoard: falha ao publicar o chat da reunião", error)
       const message = toUserFacingError(error, "Não foi possível enviar o chat da reunião")
-      setRecordingState("error")
-      setMediaError(`${message}. A reunião continuará aberta para você tentar novamente.`)
-      setRecordingMessage(message)
+      if (!options?.background) {
+        setRecordingState("error")
+        setMediaError(message)
+        setRecordingMessage(message)
+      }
       return false
     }
   }, [currentUserId, meeting, members, refreshAll, supabase])
 
-  const finalizeAndPublishRecording = React.useCallback(async () => {
+  const finalizeAndPublishRecording = React.useCallback(async (options?: {
+    context?: MeetingRecordingContext | null
+    background?: boolean
+  }) => {
     if (!meeting) return true
     if (meeting.createdBy !== currentUserId) {
       const { data } = await supabase.rpc("meeting_recording_status", { p_meeting_id: meeting.id })
@@ -3199,7 +3239,22 @@ export function CallRoom({
 
     const task = (async () => {
       const recorder = meetingRecorderRef.current
-      const context = recordingContextRef.current
+      let context = options?.context ?? recordingContextRef.current
+
+      // Capture/stop acontece antes de qualquer operação longa. Assim o fechamento
+      // da UI pode desligar câmera/microfone sem cortar o último trecho da gravação.
+      const segmentPromise = recorder ? recorder.stop() : null
+
+      if (!context?.hasContext) {
+        const { data, error } = await supabase.rpc("meeting_artifact_context", { p_meeting_id: meeting.id })
+        if (error) throw error
+        const payload = (data ?? null) as MeetingRecordingContext | null
+        context = payload ? {
+          ...payload,
+          canRecord: meeting.createdBy === currentUserId,
+          status: payload.status ?? "finalizing",
+        } : null
+      }
       if (!context?.hasContext) return true
 
       if (!recorder || !context.canRecord) {
@@ -3209,13 +3264,12 @@ export function CallRoom({
 
       const uploaded: Array<{ bucket: string; path: string }> = []
       try {
-        setRecordingState("finalizing")
-        setRecordingMessage("Finalizando a gravação da reunião…")
+        if (!options?.background) {
+          setRecordingState("finalizing")
+          setRecordingMessage("Finalizando a gravação da reunião…")
+        }
 
-        // Dispara o stop do MediaRecorder antes de qualquer chamada de rede. Assim,
-        // encerrar a sala pode desligar câmera/microfone imediatamente sem perder o
-        // último trecho; compressão, upload e publicação seguem desacoplados da call.
-        const segmentPromise = recorder.stop()
+        // O stop já foi disparado acima, antes de qualquer chamada de rede.
         if (recordingHeartbeatRef.current !== null) {
           window.clearInterval(recordingHeartbeatRef.current)
           recordingHeartbeatRef.current = null
@@ -3223,7 +3277,7 @@ export function CallRoom({
         void supabase.rpc("meeting_recording_mark_finalizing", { p_meeting_id: meeting.id })
         void broadcastRecordingState("finalizing")
 
-        const segmentCount = await segmentPromise
+        const segmentCount = await segmentPromise!
         if (segmentCount <= 0) throw new Error("A reunião terminou antes que o navegador conseguisse gerar a gravação.")
         if (!context.workspaceId || !context.projectId) throw new Error("O tópico de origem da reunião não pôde ser identificado.")
 
@@ -3237,9 +3291,9 @@ export function CallRoom({
           const sourceName = `Gravacao - ${base} - trecho ${String(index + 1).padStart(2, "0")} de ${String(segmentCount).padStart(2, "0")}.${extension}`
           const sourceFile = new File([stored.blob], sourceName, { type: stored.mimeType || "video/webm", lastModified: Date.now() })
 
-          setRecordingMessage(`Preparando gravação ${index + 1} de ${segmentCount}…`)
+          if (!options?.background) setRecordingMessage(`Preparando gravação ${index + 1} de ${segmentCount}…`)
           const prepared = await prepareVideoAttachment(sourceFile, (progress) => {
-            setRecordingMessage(`${progress.message} ${Math.round(progress.progress * 100)}%`)
+            if (!options?.background) setRecordingMessage(`${progress.message} ${Math.round(progress.progress * 100)}%`)
           })
 
           for (const part of prepared) {
@@ -3252,7 +3306,7 @@ export function CallRoom({
                   kind: "video",
                 })
             const bucket = context.requestId ? SERVICE_REQUEST_MEDIA_BUCKET : ATTACHMENTS_BUCKET
-            setRecordingMessage(`Enviando ${metadata.length + 1}ª parte da gravação…`)
+            if (!options?.background) setRecordingMessage(`Enviando ${metadata.length + 1}ª parte da gravação…`)
             const { error: uploadError } = await supabase.storage.from(bucket).upload(path, part, {
               contentType: part.type || "video/webm",
               cacheControl: "3600",
@@ -3270,7 +3324,7 @@ export function CallRoom({
         }
 
         if (metadata.length === 0) throw new Error("Nenhuma parte válida da gravação foi gerada.")
-        setRecordingMessage("Publicando a gravação no tópico de origem…")
+        if (!options?.background) setRecordingMessage("Publicando a gravação no tópico de origem…")
         const { data, error } = await supabase.rpc("publish_meeting_recording", {
           p_meeting_id: meeting.id,
           p_parts: metadata,
@@ -3279,8 +3333,10 @@ export function CallRoom({
         if (data !== true) throw new Error("O servidor não confirmou a publicação da gravação.")
 
         await clearMeetingRecordingSegments(meeting.id).catch(() => undefined)
-        setRecordingState("published")
-        setRecordingMessage("Gravação enviada ao tópico de origem.")
+        if (!options?.background) {
+          setRecordingState("published")
+          setRecordingMessage("Gravação enviada ao tópico de origem.")
+        }
         void broadcastRecordingState("published")
         void refreshAll()
         return true
@@ -3293,8 +3349,10 @@ export function CallRoom({
         try {
           await supabase.rpc("meeting_recording_mark_failed", { p_meeting_id: meeting.id, p_error: message })
         } catch {}
-        setRecordingState("error")
-        setRecordingMessage(message)
+        if (!options?.background) {
+          setRecordingState("error")
+          setRecordingMessage(message)
+        }
         void broadcastRecordingState("failed")
         return false
       }
@@ -3362,6 +3420,48 @@ export function CallRoom({
     setRecordingMessage("O dispositivo responsável pela gravação não respondeu a tempo.")
     return false
   }, [currentUserId, finalizeAndPublishRecording, meeting?.id, sendMeetingBroadcast, supabase])
+
+  const startBackgroundMeetingFinalization = React.useCallback((endedAt: string) => {
+    if (!meeting || meeting.createdBy !== currentUserId) return
+    if (backgroundMeetingFinalizationTasks.has(meeting.id)) return
+
+    // Copia o contexto antes de desmontar CallRoom; se ainda não tiver sido carregado,
+    // as rotinas possuem fallback para meeting_artifact_context após o encerramento.
+    const contextSnapshot = recordingContextRef.current ? { ...recordingContextRef.current } : null
+
+    const task = (async () => {
+      const recordingPublished = await finalizeAndPublishRecording({
+        context: contextSnapshot,
+        background: true,
+      }).catch((error) => {
+        console.error("TaskBoard: gravação em segundo plano falhou", error)
+        return false
+      })
+
+      if (!recordingPublished) {
+        console.warn("TaskBoard: reunião encerrada, mas a gravação não pôde ser publicada em segundo plano.")
+      }
+
+      const transcriptPublished = await publishMeetingChatTranscript({
+        context: contextSnapshot,
+        endedAt,
+        background: true,
+      }).catch((error) => {
+        console.error("TaskBoard: PDF do chat em segundo plano falhou", error)
+        return false
+      })
+
+      if (!transcriptPublished) {
+        console.warn("TaskBoard: reunião encerrada, mas o PDF do chat não pôde ser publicado em segundo plano.")
+      }
+
+      void refreshAll()
+    })().finally(() => {
+      backgroundMeetingFinalizationTasks.delete(meeting.id)
+    })
+
+    backgroundMeetingFinalizationTasks.set(meeting.id, task)
+  }, [currentUserId, finalizeAndPublishRecording, meeting, publishMeetingChatTranscript, refreshAll])
 
   React.useEffect(() => {
     if (!memberPickerOpen) return
@@ -3445,20 +3545,32 @@ export function CallRoom({
 
   async function finishMeeting() {
     if (!meeting || !canEndMeeting || endingMeeting) return
-    if (!window.confirm(`Finalizar a reunião “${meeting.title}” para todos? A sala só será encerrada depois que a gravação e o PDF com o chat forem enviados ao tópico de origem.`)) return
+    if (!window.confirm(`Finalizar a reunião “${meeting.title}” para todos? A chamada será encerrada agora; gravação e PDF do chat continuarão sendo enviados em segundo plano.`)) return
+
     setEndingMeeting(true)
     setMediaError("")
+    const endedAt = new Date().toISOString()
+
     try {
-      // V212: a reunião contextual permanece aberta durante todo o processamento.
-      // Primeiro o owner finaliza e publica o vídeo; depois geramos/publicamos o
-      // histórico completo do chat. Só então o backend aceita end_meeting().
-      const recordingPublished = await ensureRecordingPublishedBeforeEnd()
-      if (!recordingPublished) return
+      // V214: inicia o stop do MediaRecorder e mantém todo o pipeline de artefatos
+      // vivo em uma Promise global. Não aguardamos compressão/upload para fechar a sala.
+      startBackgroundMeetingFinalization(endedAt)
 
-      const transcriptPublished = await publishMeetingChatTranscript()
-      if (!transcriptPublished) return
-
+      // end_meeting é propositalmente a única espera. É uma RPC curta que marca todos
+      // como left/ended; assim todos os clientes saem da sala antes do upload pesado.
       if (await endMeeting(meeting.id)) {
+        // O banco já encerrou a sala. O Broadcast só acelera o fechamento visual
+        // dos demais clientes; a consistência continua garantida por ended_at.
+        try {
+          await Promise.race([
+            sendMeetingBroadcast("meeting-ended", {
+              meetingId: meeting.id,
+              endedBy: currentUserId,
+              sentAt: endedAt,
+            } satisfies MeetingEndedSignal),
+            sleep(180),
+          ])
+        } catch {}
         stopAllMedia()
         onOpenChange(false)
       }
@@ -3607,11 +3719,11 @@ export function CallRoom({
 
       {isMeetingOwner && (
         <div className="shrink-0 border-t border-border p-2.5">
-          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Salvando…">
+          <Button type="button" variant="destructive" size="sm" className="w-full gap-1.5" onClick={() => void finishMeeting()} loading={endingMeeting} loadingText="Encerrando…">
             <PhoneOff className="size-3.5" />
             Finalizar reunião
           </Button>
-          <p className="mt-1.5 text-center text-[0.54rem] leading-relaxed text-muted-foreground">A sala fecha somente após enviar a gravação e o PDF do chat.</p>
+          <p className="mt-1.5 text-center text-[0.54rem] leading-relaxed text-muted-foreground">A sala fecha agora; gravação e PDF do chat continuam em segundo plano.</p>
         </div>
       )}
     </div>

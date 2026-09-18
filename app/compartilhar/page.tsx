@@ -432,7 +432,7 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js?v=219", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=220", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }

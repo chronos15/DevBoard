@@ -219,7 +219,7 @@ async function writeRemote(admin: SupabaseClient, manifest: ServerShareManifest,
 async function cleanupLocalShares() {
   try {
     await mkdir(LOCAL_SHARE_ROOT, { recursive: true })
-    const entries = await readdir(LOCAL_SHARE_ROOT, { withFileTypes: true })
+    const entries = await readdir(/* turbopackIgnore: true */ LOCAL_SHARE_ROOT, { withFileTypes: true })
     const now = Date.now()
     await Promise.all(entries.map(async (entry) => {
       if (!entry.isDirectory()) return

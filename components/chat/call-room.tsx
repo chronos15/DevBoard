@@ -589,6 +589,11 @@ function ParticipantTile({
   const [videoPlaying, setVideoPlaying] = React.useState(false)
   const [videoFrameReady, setVideoFrameReady] = React.useState(false)
   const [fullscreen, setFullscreen] = React.useState(false)
+  const remoteVideoHealthRef = React.useRef({
+    lastCurrentTime: -1,
+    stagnantChecks: 0,
+    lastRecoveryAt: 0,
+  })
   const micOn = own ? Boolean(micEnabled) : presence?.micEnabled ?? false
   const camOn = own
     ? Boolean(cameraEnabled || (screenSharing && !nativeScreenShare))
@@ -596,7 +601,10 @@ function ParticipantTile({
   const presentingScreen = own ? Boolean(screenSharing) : Boolean(presence?.screenSharing)
   const remoteVideoSource = !own && presence?.screenSharing && remoteScreenStream ? remoteScreenStream : remoteStream
   const remoteVideoTracks = remoteVideoSource?.getVideoTracks() ?? []
-  const remoteHasVideo = remoteVideoTracks.some((track) => track.readyState === "live" && !track.muted)
+  // O estado "muted" da track remota pode ficar defasado em alguns Chrome/driver
+  // depois de um toggle local. A decisão visual usa Presence + frame real do <video>;
+  // aqui basta existir uma track de vídeo viva.
+  const remoteHasVideo = remoteVideoTracks.some((track) => track.readyState === "live")
   const showVideo = own
     ? camOn
     : Boolean(connected && camOn && remoteHasVideo && videoPlaying && videoFrameReady)
@@ -695,7 +703,15 @@ function ParticipantTile({
       if (video.srcObject !== remoteVideoSource) video.srcObject = remoteVideoSource ?? null
       // O vídeo remoto nunca reproduz áudio; a saída de som é tratada separadamente.
       video.muted = true
-      void video.play().catch(() => undefined)
+      try {
+        await video.play()
+        // Em alguns Chromes onPlaying não é reenviado após uma pausa transitória do
+        // decoder. A Promise resolvida de play() também é uma confirmação válida.
+        setVideoPlaying(true)
+      } catch {
+        // O watchdog abaixo tenta recuperar somente o elemento <video>, sem tocar
+        // em RTCPeerConnection, ICE, sender/receiver ou nas tracks recebidas.
+      }
     }
 
     if (deafened) {
@@ -729,6 +745,10 @@ function ParticipantTile({
       }
     }
   }, [attachWebAudio, deafened, own, remoteScreenStream, remoteStream, remoteVideoSource])
+
+  React.useEffect(() => {
+    remoteVideoHealthRef.current = { lastCurrentTime: -1, stagnantChecks: 0, lastRecoveryAt: 0 }
+  }, [remoteVideoSource])
 
   React.useEffect(() => {
     if (own || !remoteStream) return
@@ -774,22 +794,103 @@ function ParticipantTile({
     else void playRemote()
   }, [deafened, playRemote])
 
-  // Alterar microfone/câmera local não deve reconstruir peers nem tocar em ICE.
-  // Esta revisão apenas reaplica play() nos elementos remotos já conectados.
-  // É um "soft refresh" de reprodução para contornar pausas esporádicas do
-  // pipeline de vídeo do Chrome em alguns drivers/dispositivos.
-  React.useEffect(() => {
-    if (own || !playbackRevision) return
-    const replay = () => { void playRemote() }
-    const frame = window.requestAnimationFrame(replay)
-    // Segunda tentativa curta cobre navegadores que pausam o decoder alguns ms
-    // depois da alteração da track local. Continua sendo apenas HTMLMediaElement.play().
-    const timer = window.setTimeout(replay, 220)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(timer)
+  const recoverRemoteVideoElement = React.useCallback((reason: string) => {
+    if (own || !remoteVideoSource) return
+    const video = remoteVideoRef.current
+    if (!video) return
+
+    const now = Date.now()
+    const health = remoteVideoHealthRef.current
+    // Evita loops de rebind caso o navegador esteja realmente sem frames da origem.
+    if (now - health.lastRecoveryAt < 1200) return
+    health.lastRecoveryAt = now
+    health.stagnantChecks = 0
+    health.lastCurrentTime = -1
+
+    const source = remoteVideoSource
+    setVideoPlaying(false)
+    setVideoFrameReady(false)
+
+    // Recuperação exclusivamente do renderer HTML. O MediaStream/track continua o
+    // mesmo, portanto não existe renegociação, restart de ICE ou replaceTrack.
+    try { video.pause() } catch {}
+    if (video.srcObject === source) video.srcObject = null
+
+    const reattach = () => {
+      const current = remoteVideoRef.current
+      if (!current || !current.isConnected) return
+      current.srcObject = source
+      current.muted = true
+      void current.play().then(() => {
+        setVideoPlaying(true)
+      }).catch(() => undefined)
     }
-  }, [own, playbackRevision, playRemote])
+
+    window.requestAnimationFrame(reattach)
+    window.setTimeout(reattach, 120)
+    window.setTimeout(() => {
+      const current = remoteVideoRef.current
+      if (!current || current.srcObject !== source) return
+      if (current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && current.videoWidth > 0 && current.videoHeight > 0) {
+        setVideoPlaying(true)
+        setVideoFrameReady(true)
+      }
+    }, 420)
+
+    console.debug("TaskBoard: renderer de vídeo remoto recuperado", { reason, memberId: member.id })
+  }, [member.id, own, remoteVideoSource])
+
+  // Alterar microfone/câmera local não deve reconstruir peers nem tocar em ICE.
+  // Se o Chrome derrubar o renderer de vídeos remotos nesse instante, reanexamos
+  // apenas o srcObject dos elementos <video> existentes.
+  React.useEffect(() => {
+    if (own || !playbackRevision || !camOn || !remoteVideoSource) return
+    const frame = window.requestAnimationFrame(() => {
+      const video = remoteVideoRef.current
+      if (!video) return
+      void playRemote()
+      window.setTimeout(() => {
+        const current = remoteVideoRef.current
+        if (!current) return
+        const hasFrame = current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && current.videoWidth > 0 && current.videoHeight > 0 && !current.paused
+        if (!hasFrame) recoverRemoteVideoElement("local-media-toggle")
+      }, 260)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [camOn, own, playbackRevision, playRemote, recoverRemoteVideoElement, remoteVideoSource])
+
+  // Watchdog visual: áudio pode continuar normal enquanto somente o decoder/render
+  // de vídeo do Chrome fica preso. Detectamos o <video> sem avançar e recuperamos
+  // SOMENTE o elemento DOM. Nenhuma estrutura WebRTC é alterada.
+  React.useEffect(() => {
+    if (own || !connected || !camOn || !remoteVideoSource) return
+    const interval = window.setInterval(() => {
+      const video = remoteVideoRef.current
+      if (!video) return
+      const track = remoteVideoSource.getVideoTracks().find((item) => item.readyState === "live")
+      if (!track) return
+
+      const health = remoteVideoHealthRef.current
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0
+      const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0
+      const advanced = health.lastCurrentTime < 0 || currentTime > health.lastCurrentTime + 0.025
+      const healthy = !video.paused && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && hasDimensions && advanced
+
+      if (healthy) {
+        health.stagnantChecks = 0
+        health.lastCurrentTime = currentTime
+        if (!videoPlaying) setVideoPlaying(true)
+        if (!videoFrameReady) setVideoFrameReady(true)
+        return
+      }
+
+      health.lastCurrentTime = currentTime
+      health.stagnantChecks += 1
+      if (health.stagnantChecks >= 2) recoverRemoteVideoElement("stalled-renderer")
+    }, 1200)
+
+    return () => window.clearInterval(interval)
+  }, [camOn, connected, own, recoverRemoteVideoElement, remoteVideoSource, videoFrameReady, videoPlaying])
 
   React.useEffect(() => {
     if (own || !camOn || !remoteVideoSource) {
@@ -805,6 +906,7 @@ function ParticipantTile({
     const confirmFrame = () => {
       if (cancelled) return
       if (element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && element.videoWidth > 0 && element.videoHeight > 0) {
+        setVideoPlaying(true)
         setVideoFrameReady(true)
         return
       }
@@ -812,17 +914,17 @@ function ParticipantTile({
     }
 
     setVideoFrameReady(false)
+    // O polling roda SEMPRE como fallback. Chrome implementa requestVideoFrameCallback,
+    // mas há combinações de driver/GPU em que o callback deixa de ser entregue após
+    // toggle local de mic/câmera, mesmo com o vídeo remoto ainda reproduzindo.
+    timeoutId = window.setTimeout(confirmFrame, 120)
     if (typeof element.requestVideoFrameCallback === "function") {
       frameId = element.requestVideoFrameCallback(() => {
         if (cancelled) return
-        // Aguarda um segundo frame para não exibir o último frame preto gerado
-        // enquanto a track remota ainda estava desabilitada.
         frameId = element.requestVideoFrameCallback(() => {
           if (!cancelled && element.videoWidth > 0 && element.videoHeight > 0) setVideoFrameReady(true)
         })
       })
-    } else {
-      confirmFrame()
     }
 
     return () => {

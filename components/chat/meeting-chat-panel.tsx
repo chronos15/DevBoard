@@ -194,7 +194,7 @@ function MessageText({ message, own }: { message: ChatMessage; own: boolean }) {
   return <RichMessageText content={message.content} mentions={message.mentions} own={own} />
 }
 
-export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
+export function MeetingChatPanel({ meeting, active = true }: { meeting: ChatMeeting; active?: boolean }) {
   const {
     chatConversations,
     currentUserId,
@@ -233,6 +233,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   const messagesContentRef = React.useRef<HTMLDivElement | null>(null)
   const stickBottomRef = React.useRef(true)
   const panelRef = React.useRef<HTMLDivElement | null>(null)
+  const reactionChannelTopicRef = React.useRef(`devboard-meeting-chat-reactions:${meeting.id}:${Math.random().toString(36).slice(2)}`)
 
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     if (!mentionRange) return []
@@ -306,7 +307,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
 
   React.useEffect(() => {
     const channel = supabase
-      .channel(`devboard-meeting-chat-reactions:${meeting.id}`)
+      .channel(reactionChannelTopicRef.current)
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_message_reactions" }, () => void loadReactions())
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
@@ -500,7 +501,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
   }, [recordingAudio, sendingMedia, stagedFiles])
 
   React.useEffect(() => {
-    if (sendingMedia || recordingAudio) return
+    if (!active || sendingMedia || recordingAudio) return
 
     const handleWindowPaste = (event: ClipboardEvent) => {
       const panel = panelRef.current
@@ -521,7 +522,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
     // ou outra área do painel. Texto puro continua seguindo o comportamento normal.
     window.addEventListener("paste", handleWindowPaste, true)
     return () => window.removeEventListener("paste", handleWindowPaste, true)
-  }, [queueMeetingFiles, recordingAudio, sendingMedia])
+  }, [active, queueMeetingFiles, recordingAudio, sendingMedia])
 
   function stageFiles(files: FileList | null) {
     if (!files?.length) return
@@ -578,7 +579,7 @@ export function MeetingChatPanel({ meeting }: { meeting: ChatMeeting }) {
       }}
     >
       <FileDropOverlay
-        enabled={!sendingMedia && !recordingAudio}
+        enabled={active && !sendingMedia && !recordingAudio}
         title="Solte para anexar à reunião"
         description="Imagens, vídeos, documentos e outros arquivos serão adicionados ao compositor da reunião."
         onFiles={queueMeetingFiles}

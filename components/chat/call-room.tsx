@@ -961,6 +961,7 @@ export function CallRoom({
   const [meetingWallLoading, setMeetingWallLoading] = React.useState(false)
   const [meetingWallError, setMeetingWallError] = React.useState("")
   const [participantsExpanded, setParticipantsExpanded] = React.useState(false)
+  const [muralParticipantView, setMuralParticipantView] = React.useState<"tiles" | "list">("tiles")
   const [memberPickerOpen, setMemberPickerOpen] = React.useState(false)
   const [memberQuery, setMemberQuery] = React.useState("")
   const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null)
@@ -1122,6 +1123,7 @@ export function CallRoom({
   React.useEffect(() => {
     setPresentationMode(false)
     setPanel(null)
+    setMuralParticipantView("tiles")
     setMeetingWallContext(null)
     setMeetingWallError("")
   }, [meeting?.id])
@@ -3280,6 +3282,153 @@ export function CallRoom({
     </div>
   )
 
+  const muralParticipantsPanel = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold">Participantes</p>
+          <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">{connectedCount} conectado{connectedCount === 1 ? "" : "s"} · {meetingMembers.length} convidado{meetingMembers.length === 1 ? "" : "s"}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="inline-flex items-center rounded-lg border border-border bg-muted/35 p-0.5" aria-label="Visualização dos participantes">
+            <button
+              type="button"
+              onClick={() => setMuralParticipantView("tiles")}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-md transition-colors",
+                muralParticipantView === "tiles" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Mostrar quadrinhos com câmera"
+              aria-pressed={muralParticipantView === "tiles"}
+            >
+              <Camera className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMuralParticipantView("list")}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-md transition-colors",
+                muralParticipantView === "list" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Mostrar lista de participantes"
+              aria-pressed={muralParticipantView === "list"}
+            >
+              <Users className="size-3.5" />
+            </button>
+          </div>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => { setMemberQuery(""); setMemberPickerOpen(true) }}
+            title="Adicionar ou chamar participante"
+            aria-label="Adicionar ou chamar participante"
+          >
+            <UserPlus className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {muralParticipantView === "tiles" ? (
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 [scrollbar-width:thin]">
+          {orderedMeetingMembers.map((member) => {
+            const own = member.id === currentUserId
+            const presence = presenceByUser.get(member.id)
+            return (
+              <div key={member.id} className="h-[170px] min-h-[170px] overflow-hidden rounded-2xl">
+                <ParticipantTile
+                  member={member}
+                  own={own}
+                  connected={own || Boolean(presence)}
+                  connectionState={presence ? peerStates[presence.sessionId] : undefined}
+                  presence={presence}
+                  cameraEnabled={own ? cameraEnabled : presence?.cameraEnabled}
+                  micEnabled={own ? micEnabled : presence?.micEnabled}
+                  screenSharing={own ? screenSharing : presence?.screenSharing}
+                  localVideoRef={own ? localVideoRef : undefined}
+                  remoteStream={presence ? remoteStreams[presence.sessionId] : undefined}
+                  remoteScreenStream={presence ? nativeScreenStreams[presence.sessionId] : undefined}
+                  nativeScreenShare={own ? nativeScreenSharing : false}
+                  compact
+                  deafened={deafened}
+                  playbackRevision={remotePlaybackRevision}
+                />
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 pt-1 [scrollbar-width:thin]">
+          {meetingMembers.map((member) => {
+            const own = member.id === currentUserId
+            const presence = presenceByUser.get(member.id)
+            const connected = own || Boolean(presence)
+            const mic = own ? micEnabled : presence?.micEnabled
+            const camera = own ? cameraEnabled : presence?.cameraEnabled
+            const memberState = meeting.memberStates.find((state) => state.userId === member.id)?.status
+            return (
+              <div key={member.id} className="group/member flex items-center gap-2.5 rounded-xl px-2 py-2.5 hover:bg-muted/40">
+                <div className="relative">
+                  <MemberAvatar member={member} className="size-8 ring-0" />
+                  <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card", connected ? "bg-success" : "bg-muted-foreground/40")} />
+                </div>
+                <span className="min-w-0 flex-1">
+                  <MemberName member={member} className="block truncate text-xs font-medium" suffix={own ? " · Você" : ""} />
+                  <span className="block truncate text-[0.56rem] text-muted-foreground">
+                    {connected
+                      ? own
+                        ? "Na reunião"
+                        : `${peerStates[presence?.sessionId ?? ""] === "connected" ? "Mídia conectada" : "Conectando mídia"}${peerRoutes[presence?.sessionId ?? ""] ? ` · ${peerRoutes[presence?.sessionId ?? ""]}` : ""}`
+                      : memberState === "declined"
+                        ? "Recusou · pode chamar novamente"
+                        : memberState === "left"
+                          ? "Saiu · pode chamar novamente"
+                          : "Convidado · aguardando"}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {connected ? (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-destructive" />}
+                      {camera && <Camera className="size-3" />}
+                    </span>
+                  ) : !own ? (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="size-7"
+                      loading={invitingUserId === member.id}
+                      disabled={Boolean(invitingUserId) || Boolean(removingUserId)}
+                      onClick={() => void callUser(member.id)}
+                      title="Chamar novamente"
+                    >
+                      <PhoneCall className="size-3.5" />
+                    </Button>
+                  ) : null}
+                  {!own && canManageMeetingMembers && (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="size-7 text-muted-foreground hover:text-destructive"
+                      loading={removingUserId === member.id}
+                      disabled={Boolean(invitingUserId) || Boolean(removingUserId)}
+                      onClick={() => void removeUserFromMeeting(member.id)}
+                      title="Remover da reunião"
+                    >
+                      <UserMinus className="size-3.5" />
+                    </Button>
+                  )}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+
   const settingsPanel = (
     <div className="min-h-0 overflow-y-auto p-3 [scrollbar-width:thin]">
       <div className="mb-4 flex items-center gap-2">
@@ -3543,21 +3692,33 @@ export function CallRoom({
 
           {!minimized && (
             <aside className="hidden w-[360px] shrink-0 min-h-0 flex-col border-l border-border bg-card lg:flex">
-              {panel === "settings" ? settingsPanel : presentationMode ? (
-                panel === "chat" ? <MeetingChatPanel meeting={meeting} /> : participantsPanel
-              ) : (
-                <>
-                  <div
-                    className={cn(
-                      "shrink-0 overflow-hidden border-b border-border transition-[height] duration-200 ease-out",
-                      participantsExpanded ? "h-[min(40%,360px)] min-h-[190px]" : "h-[58px]",
-                    )}
-                  >
-                    {participantsPanel}
-                  </div>
-                  <MeetingChatPanel meeting={meeting} />
-                </>
-              )}
+              <div className={cn("min-h-0 flex-1", panel === "settings" ? "flex" : "hidden")}>
+                {settingsPanel}
+              </div>
+
+              <div
+                className={cn(
+                  "min-h-0 overflow-hidden",
+                  panel === "settings" || (presentationMode && panel === "chat") ? "hidden" : "flex",
+                  presentationMode
+                    ? "flex-1"
+                    : cn(
+                        "shrink-0 border-b border-border transition-[height] duration-200 ease-out",
+                        participantsExpanded ? "h-[min(40%,360px)] min-h-[190px]" : "h-[58px]",
+                      ),
+                )}
+              >
+                {presentationMode ? muralParticipantsPanel : participantsPanel}
+              </div>
+
+              <div
+                className={cn(
+                  "min-h-0",
+                  panel === "settings" || (presentationMode && panel !== "chat") ? "hidden" : "flex flex-1",
+                )}
+              >
+                <MeetingChatPanel meeting={meeting} active={!presentationMode || panel === "chat"} />
+              </div>
             </aside>
           )}
 
@@ -3568,7 +3729,7 @@ export function CallRoom({
                 <Button type="button" variant="ghost" size="icon-sm" onClick={() => setPanel(null)} aria-label="Fechar painel"><Minimize2 className="size-3.5" /></Button>
               </div>
               <div className="min-h-0 flex-1 overflow-hidden">
-                {panel === "participants" ? participantsPanel : panel === "chat" ? <MeetingChatPanel meeting={meeting} /> : settingsPanel}
+                {panel === "participants" ? (presentationMode ? muralParticipantsPanel : participantsPanel) : panel === "chat" ? <MeetingChatPanel meeting={meeting} /> : settingsPanel}
               </div>
             </aside>
           )}

@@ -4,6 +4,60 @@ import { createClient } from "@/lib/supabase/server"
 const SERVER_SHARE_BUCKET = "taskboard-share-inbox"
 const SERVER_SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
+function firstForwardedValue(value: string | null) {
+  return value?.split(",", 1)[0]?.trim() || ""
+}
+
+function normalizeHttpOrigin(value: string | null | undefined) {
+  const candidate = value?.trim()
+  if (!candidate) return null
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve a origem PUBLICA do TaskBoard.
+ *
+ * Em producao o Next roda atras de Apache/reverse proxy e request.url pode ser
+ * http://localhost:3000/share-target. Usar esse valor diretamente no redirect
+ * faz o Android/PWA tentar abrir o localhost do proprio aparelho.
+ *
+ * NEXT_PUBLIC_APP_URL e a fonte primaria (e ja e definida no servidor). Os
+ * headers forwarded ficam como fallback para instalacoes que nao tenham a env.
+ */
+function resolvePublicOrigin(request: Request) {
+  const configuredOrigin = normalizeHttpOrigin(process.env.NEXT_PUBLIC_APP_URL)
+  if (configuredOrigin) return configuredOrigin
+
+  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"))
+  const forwardedProto = firstForwardedValue(request.headers.get("x-forwarded-proto")).toLowerCase()
+  if (forwardedHost && (forwardedProto === "http" || forwardedProto === "https")) {
+    const forwardedOrigin = normalizeHttpOrigin(`${forwardedProto}://${forwardedHost}`)
+    if (forwardedOrigin) return forwardedOrigin
+  }
+
+  const requestOriginHeader = normalizeHttpOrigin(request.headers.get("origin"))
+  if (requestOriginHeader) return requestOriginHeader
+
+  const host = firstForwardedValue(request.headers.get("host"))
+  if (host) {
+    try {
+      const requestUrl = new URL(request.url)
+      const hostOrigin = normalizeHttpOrigin(`${requestUrl.protocol}//${host}`)
+      if (hostOrigin) return hostOrigin
+    } catch {
+      // Segue para o ultimo fallback.
+    }
+  }
+
+  return new URL(request.url).origin
+}
+
 function safeFileName(name: string) {
   const clean = (name || "arquivo-compartilhado")
     .normalize("NFD")
@@ -46,7 +100,7 @@ async function cleanupOldServerShares(supabase: Awaited<ReturnType<typeof create
 }
 
 export async function POST(request: Request) {
-  const target = new URL("/compartilhar", request.url)
+  const target = new URL("/compartilhar", resolvePublicOrigin(request))
 
   let formData: FormData | null = null
   try {

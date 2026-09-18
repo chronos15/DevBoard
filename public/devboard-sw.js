@@ -14,6 +14,26 @@ function shareCacheUrl(path) {
   return new URL(path, self.location.origin).toString()
 }
 
+function safeShareNavigationUrl(rawUrl) {
+  const fallback = new URL("/compartilhar", self.location.origin)
+  try {
+    const target = new URL(rawUrl, self.location.origin)
+    if (target.origin === self.location.origin) return target.toString()
+
+    // Reverse proxies podem fazer o Next enxergar localhost/127.0.0.1.
+    // Nunca deixamos esse host interno escapar para a navegacao do PWA, mas
+    // preservamos os parametros serverShare/serverFiles do redirect valido.
+    if (target.pathname === "/compartilhar" || target.pathname.startsWith("/compartilhar/")) {
+      fallback.pathname = target.pathname
+      fallback.search = target.search
+      fallback.hash = target.hash
+    }
+  } catch {
+    // URL invalida: usa /compartilhar na propria origem do PWA.
+  }
+  return fallback.toString()
+}
+
 async function cleanupExpiredShares(cache) {
   const requests = await cache.keys()
   const metadataRequests = requests.filter((request) => request.url.includes("/metadata"))
@@ -83,7 +103,7 @@ async function handleShareTarget(request) {
       const response = await fetch(serverFallbackRequest)
       // Se o fetch interno tiver seguido o 303 do Next, devolvemos um novo 303
       // para que a navegação do PWA também atualize a URL para /compartilhar.
-      if (response.redirected && response.url) return Response.redirect(response.url, 303)
+      if (response.redirected && response.url) return Response.redirect(safeShareNavigationUrl(response.url), 303)
       return response
     } catch {
       // Offline/erro de rede: seguimos para o cache local e mantemos título/texto.

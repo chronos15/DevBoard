@@ -544,7 +544,8 @@ function ParticipantTile({
   cameraEnabled,
   micEnabled,
   screenSharing,
-  localVideoRef,
+  getLocalVideoStream,
+  localVideoRevision,
   remoteStream,
   remoteScreenStream,
   nativeScreenShare,
@@ -562,7 +563,8 @@ function ParticipantTile({
   cameraEnabled?: boolean
   micEnabled?: boolean
   screenSharing?: boolean
-  localVideoRef?: React.RefObject<HTMLVideoElement | null>
+  getLocalVideoStream?: () => MediaStream | null
+  localVideoRevision?: number
   remoteStream?: MediaStream
   remoteScreenStream?: MediaStream
   nativeScreenShare?: boolean
@@ -573,6 +575,7 @@ function ParticipantTile({
   playbackRevision?: number
 }) {
   const tileRef = React.useRef<HTMLDivElement | null>(null)
+  const ownVideoRef = React.useRef<HTMLVideoElement | null>(null)
   const remoteVideoRef = React.useRef<HTMLVideoElement | null>(null)
   const remoteAudioRef = React.useRef<HTMLAudioElement | null>(null)
   const webAudioRef = React.useRef<{
@@ -596,6 +599,53 @@ function ParticipantTile({
   const showVideo = own
     ? camOn
     : Boolean(connected && camOn && remoteHasVideo && videoPlaying && videoFrameReady)
+
+  const attachOwnVideo = React.useCallback((element: HTMLVideoElement | null) => {
+    ownVideoRef.current = element
+    if (!element || !own) return
+
+    const stream = getLocalVideoStream?.() ?? null
+    if (element.srcObject !== stream) element.srcObject = stream
+    element.muted = true
+
+    if (!stream) return
+    const replay = () => {
+      if (!element.isConnected || element.srcObject !== stream) return
+      void element.play().catch(() => undefined)
+    }
+    replay()
+    window.requestAnimationFrame(replay)
+    window.setTimeout(replay, 80)
+  }, [getLocalVideoStream, localVideoRevision, own])
+
+  React.useLayoutEffect(() => {
+    if (!own || !camOn) return
+    const element = ownVideoRef.current
+    if (!element) return
+
+    const stream = getLocalVideoStream?.() ?? null
+    if (element.srcObject !== stream) element.srcObject = stream
+    element.muted = true
+    if (!stream) return
+
+    const replay = () => {
+      if (!element.isConnected || element.srcObject !== stream) return
+      void element.play().catch(() => undefined)
+    }
+    const videoTrack = stream.getVideoTracks().find((track) => track.readyState === "live")
+    videoTrack?.addEventListener("unmute", replay)
+    videoTrack?.addEventListener("mute", replay)
+    replay()
+    const frame = window.requestAnimationFrame(replay)
+    const retry = window.setTimeout(replay, 120)
+
+    return () => {
+      videoTrack?.removeEventListener("unmute", replay)
+      videoTrack?.removeEventListener("mute", replay)
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(retry)
+    }
+  }, [camOn, getLocalVideoStream, localVideoRevision, own, screenSharing])
 
   const disconnectWebAudio = React.useCallback(() => {
     const current = webAudioRef.current
@@ -844,7 +894,7 @@ function ParticipantTile({
           </div>
         ) : camOn ? (
           <video
-            ref={localVideoRef}
+            ref={attachOwnVideo}
             autoPlay
             playsInline
             muted
@@ -990,7 +1040,7 @@ export function CallRoom({
   const [remoteRecordingActive, setRemoteRecordingActive] = React.useState(false)
   const localStreamRef = React.useRef<MediaStream | null>(null)
   const screenStreamRef = React.useRef<MediaStream | null>(null)
-  const localVideoRef = React.useRef<HTMLVideoElement | null>(null)
+  const [localVideoRevision, setLocalVideoRevision] = React.useState(0)
   const channelRef = React.useRef<RealtimeChannel | null>(null)
   const realtimeSubscribedRef = React.useRef(false)
   const peersRef = React.useRef<Map<string, RTCPeerConnection>>(new Map())
@@ -1899,17 +1949,18 @@ export function CallRoom({
     return peer
   }, [bindPeerSenders, closePeer, getPeerRole, inspectPeerRoute, postSignal, requestIceRestart, sendOffer])
 
+  const getLocalVideoStream = React.useCallback(() => {
+    const screenStream = screenStreamRef.current
+    const liveScreenTrack = screenStream?.getVideoTracks().some((track) => track.readyState === "live")
+    if (screenStream && liveScreenTrack) return screenStream
+    return localStreamRef.current
+  }, [])
+
   const updateLocalVideo = React.useCallback(() => {
-    const video = localVideoRef.current
-    if (!video) return
-    const stream = screenStreamRef.current ?? localStreamRef.current
-    if (video.srcObject !== stream) video.srcObject = stream
-    if (stream && video.paused) {
-      void video.play().catch(() => {
-        // O preview local pode ser bloqueado por alguns ms durante a troca de layout.
-        // A track continua ativa; a segunda tentativa abaixo recupera apenas a UI local.
-      })
-    }
+    // O preview local não usa mais um único ref compartilhado entre a grade e o Mural.
+    // Cada <video> local se conecta diretamente ao MediaStream no próprio mount; esta
+    // revisão apenas força uma nova leitura quando câmera/tela/layout mudam.
+    setLocalVideoRevision((current) => current + 1)
   }, [])
 
   React.useLayoutEffect(() => {
@@ -1953,7 +2004,6 @@ export function CallRoom({
     screenStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
     screenStreamRef.current = null
-    if (localVideoRef.current) localVideoRef.current.srcObject = null
   }, [])
 
   // V149: a moderação da V92 não pode participar da identidade do efeito WebRTC.
@@ -3366,7 +3416,8 @@ export function CallRoom({
                   cameraEnabled={own ? cameraEnabled : presence?.cameraEnabled}
                   micEnabled={own ? micEnabled : presence?.micEnabled}
                   screenSharing={own ? screenSharing : presence?.screenSharing}
-                  localVideoRef={own ? localVideoRef : undefined}
+                  getLocalVideoStream={own ? getLocalVideoStream : undefined}
+                  localVideoRevision={own ? localVideoRevision : undefined}
                   remoteStream={presence ? remoteStreams[presence.sessionId] : undefined}
                   remoteScreenStream={presence ? nativeScreenStreams[presence.sessionId] : undefined}
                   nativeScreenShare={own ? nativeScreenSharing : false}
@@ -3694,7 +3745,8 @@ export function CallRoom({
                       cameraEnabled={own ? cameraEnabled : presence?.cameraEnabled}
                       micEnabled={own ? micEnabled : presence?.micEnabled}
                       screenSharing={own ? screenSharing : presence?.screenSharing}
-                      localVideoRef={own ? localVideoRef : undefined}
+                      getLocalVideoStream={own ? getLocalVideoStream : undefined}
+                      localVideoRevision={own ? localVideoRevision : undefined}
                       remoteStream={presence ? remoteStreams[presence.sessionId] : undefined}
                       remoteScreenStream={presence ? nativeScreenStreams[presence.sessionId] : undefined}
                       nativeScreenShare={own ? nativeScreenSharing : false}

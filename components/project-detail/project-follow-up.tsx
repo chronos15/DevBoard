@@ -1035,6 +1035,7 @@ export function ProjectFollowUp({
   initialTimelineId,
   onProjectChange,
   discordEmbedded = false,
+  meetingEmbedded = false,
 }: {
   project: Project
   availableProjects?: Project[]
@@ -1045,6 +1046,8 @@ export function ProjectFollowUp({
   initialTimelineId?: string | null
   onProjectChange?: (projectId: string, subactivityId?: string | null, timelineId?: string | null, activityId?: string | null) => void
   discordEmbedded?: boolean
+  /** Exibe somente o mural central dentro da reunião, sem navegação/equipe duplicadas. */
+  meetingEmbedded?: boolean
 }) {
   const {
     projects,
@@ -3448,7 +3451,7 @@ export function ProjectFollowUp({
         onFiles={queueFilesForPreview}
       />
       <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-card">
-        {preferences.interfaceMode === "complete" && <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
+        {!meetingEmbedded && preferences.interfaceMode === "complete" && <nav className="hidden w-16 shrink-0 min-h-0 flex-col border-r border-border bg-muted/30 xl:flex" aria-label="Projetos no acompanhamento">
           <div className="flex h-12 items-center justify-center border-b border-border">
             <FolderKanban className="size-4 text-muted-foreground" />
           </div>
@@ -3607,9 +3610,9 @@ export function ProjectFollowUp({
                     hideTrigger
                   />
                 )}
-                <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" onClick={() => setMobileMembersOpen(true)} aria-label="Ver equipe">
+                {!meetingEmbedded && <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" onClick={() => setMobileMembersOpen(true)} aria-label="Ver equipe">
                   <UsersRound className="size-4" />
-                </Button>
+                </Button>}
               </header>
 
               {localSearchOpen && (
@@ -4478,7 +4481,7 @@ export function ProjectFollowUp({
           )}
         </main>
 
-        <aside
+        {!meetingEmbedded && <aside
           className="hidden min-h-0 shrink-0 flex-col border-l border-border bg-muted/20 transition-[width] duration-200 ease-out xl:flex"
           style={{ width: membersCollapsed ? FOLLOW_UP_MEMBERS_COLLAPSED_WIDTH : FOLLOW_UP_MEMBERS_EXPANDED_WIDTH }}
         >
@@ -4518,7 +4521,7 @@ export function ProjectFollowUp({
               {membersContent}
             </>
           )}
-        </aside>
+        </aside>}
       </div>
 
       {headerActionsOpen && headerActionsPosition && selectedSub && typeof document !== "undefined" && createPortal(

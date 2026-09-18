@@ -33,6 +33,7 @@ import { useStore } from "@/lib/store"
 import { MemberAvatar, MemberName } from "@/components/member-avatar"
 import { Button } from "@/components/ui/button"
 import { MeetingChatPanel } from "@/components/chat/meeting-chat-panel"
+import { ProjectFollowUp } from "@/components/project-detail/project-follow-up"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { loadWebRtcIceConfig } from "@/lib/webrtc/ice-servers"
@@ -128,13 +129,6 @@ type PeerRoleState = {
 type PanelMode = "participants" | "chat" | "settings" | null
 
 type MeetingWallContext = Pick<MeetingRecordingContext, "projectId" | "activityId" | "subactivityId" | "requestId" | "aqsReviewId" | "hasContext">
-
-type MeetingStageModeSignal = {
-  meetingId: string
-  enabled: boolean
-  changedBy: string
-  sentAt: string
-}
 
 const SUBACTIVITY_STATUS_LABELS: Record<string, string> = {
   backlog: "Backlog",
@@ -1166,15 +1160,6 @@ export function CallRoom({
 
   const hasWallContext = Boolean(meetingWallContext?.hasContext && (meetingWallContext?.requestId || meetingWallContext?.aqsReviewId || meetingWallContext?.subactivityId || meetingWallContext?.activityId))
 
-  const handleStageMode = React.useCallback((payload: MeetingStageModeSignal) => {
-    if (!meeting || payload.meetingId !== meeting.id) return
-    setPresentationMode(Boolean(payload.enabled))
-    setPanel((current) => {
-      if (payload.enabled) return current === "chat" || current === "settings" ? current : "participants"
-      return current === "settings" ? current : null
-    })
-  }, [meeting])
-
   const inviteCandidates = members
     .filter((member) => member.id !== currentUserId)
     .filter((member) => !memberQuery.trim() || member.name.toLocaleLowerCase("pt-BR").includes(memberQuery.trim().toLocaleLowerCase("pt-BR")))
@@ -1273,20 +1258,16 @@ export function CallRoom({
   }, [])
 
 
-  const syncStageMode = React.useCallback((enabled: boolean) => {
-    if (!meeting) return
-    setPresentationMode(enabled)
-    setPanel((current) => {
-      if (enabled) return current === "chat" || current === "settings" ? current : "participants"
-      return current === "settings" ? current : null
+  const togglePresentationMode = React.useCallback(() => {
+    setPresentationMode((current) => {
+      const next = !current
+      // Visualização local: cada participante abre/fecha o Mural sem alterar a tela dos demais.
+      const desktop = typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+      setPanel(next && desktop ? "participants" : null)
+      return next
     })
-    void sendMeetingBroadcast("stage-mode", {
-      meetingId: meeting.id,
-      enabled,
-      changedBy: currentUserId,
-      sentAt: new Date().toISOString(),
-    } satisfies MeetingStageModeSignal)
-  }, [currentUserId, meeting, sendMeetingBroadcast])
+  }, [])
+
 
   const publishPresence = React.useCallback(() => {
     if (!meeting || !channelRef.current || !realtimeSubscribedRef.current) return
@@ -2458,7 +2439,6 @@ export function CallRoom({
           .on("broadcast", { event: "recording-state" }, ({ payload }) => handleRecordingState(payload as RecordingStateSignal))
           .on("broadcast", { event: "recording-stop-request" }, handleRecordingStopRequest)
           .on("broadcast", { event: "member-removed" }, (message) => handleMemberRemovedRef.current?.(message))
-          .on("broadcast", { event: "stage-mode" }, ({ payload }) => handleStageMode(payload as MeetingStageModeSignal))
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
@@ -2497,7 +2477,6 @@ export function CallRoom({
     broadcastMediaState,
     broadcastMediaStateBurst,
     broadcastRecordingState,
-    handleStageMode,
     currentUserId,
     closeAllPeers,
     closePeer,
@@ -3165,19 +3144,6 @@ export function CallRoom({
     }
   }
 
-  React.useEffect(() => {
-    if (!open || !meeting || currentMeetingState?.status !== "joined" || !presentationMode || !hasWallContext) return
-    const timer = window.setTimeout(() => {
-      void sendMeetingBroadcast("stage-mode", {
-        meetingId: meeting.id,
-        enabled: true,
-        changedBy: currentUserId,
-        sentAt: new Date().toISOString(),
-      } satisfies MeetingStageModeSignal)
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [currentMeetingState?.status, currentUserId, hasWallContext, meeting, open, presentationMode, sendMeetingBroadcast, Object.keys(presences).length])
-
   if (!meeting || !currentMember || currentMeetingState?.status !== "joined") return null
 
   const secondsRunning = (now - new Date(meeting.createdAt).getTime()) / 1000
@@ -3192,6 +3158,15 @@ export function CallRoom({
   const orderedMeetingMembers = hasFocusedMember
     ? [...meetingMembers].sort((a, b) => Number(b.id === focusedMemberId) - Number(a.id === focusedMemberId))
     : meetingMembers
+
+  const wallProject = findMeetingProject(projects, meetingWallContext)
+  const wallActivity = wallProject?.activities.find((activity) =>
+    activity.id === meetingWallContext?.activityId ||
+    activity.subactivities.some((subactivity) => subactivity.id === meetingWallContext?.subactivityId),
+  ) ?? null
+  const wallSubactivity = meetingWallContext?.subactivityId
+    ? wallActivity?.subactivities.find((subactivity) => subactivity.id === meetingWallContext.subactivityId) ?? null
+    : null
 
   const participantsPanel = (
     <div className="flex h-full min-h-0 flex-col">
@@ -3428,7 +3403,7 @@ export function CallRoom({
                 variant={presentationMode ? "secondary" : "ghost"}
                 size="sm"
                 className="h-9 gap-1.5 px-2.5"
-                onClick={() => syncStageMode(!presentationMode)}
+                onClick={togglePresentationMode}
                 title={presentationMode ? "Voltar para a chamada" : "Mostrar mural da origem da reunião"}
               >
                 <FileText className="size-4" />
@@ -3439,8 +3414,8 @@ export function CallRoom({
               type="button"
               variant={panel === "participants" ? "secondary" : "ghost"}
               size="icon"
-              className={cn(!presentationMode && "lg:hidden")}
-              onClick={() => setPanel((current) => current === "participants" && !presentationMode ? null : "participants")}
+              className="lg:hidden"
+              onClick={() => setPanel((current) => current === "participants" ? null : "participants")}
               title="Participantes"
             >
               <Users className="size-4" />
@@ -3450,7 +3425,11 @@ export function CallRoom({
               variant={panel === "chat" ? "secondary" : "ghost"}
               size="icon"
               className={cn(!presentationMode && "lg:hidden")}
-              onClick={() => setPanel((current) => current === "chat" ? (presentationMode ? "participants" : null) : "chat")}
+              onClick={() => setPanel((current) => {
+                if (current !== "chat") return "chat"
+                const desktop = typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+                return presentationMode && desktop ? "participants" : null
+              })}
               title="Chat da reunião"
             >
               <MessageSquareText className="size-4" />
@@ -3459,7 +3438,11 @@ export function CallRoom({
               type="button"
               variant={panel === "settings" ? "secondary" : "ghost"}
               size="icon"
-              onClick={() => setPanel((current) => current === "settings" ? (presentationMode ? "participants" : null) : "settings")}
+              onClick={() => setPanel((current) => {
+                if (current !== "settings") return "settings"
+                const desktop = typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+                return presentationMode && desktop ? "participants" : null
+              })}
               title="Dispositivos"
             >
               <Settings2 className="size-4" />
@@ -3475,7 +3458,34 @@ export function CallRoom({
         )}
 
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          <main className={cn("min-w-0 flex-1 overflow-hidden bg-muted/10", minimized ? "p-1" : "overflow-y-auto overscroll-contain p-2 sm:p-3 lg:p-4")}>
+          <main className={cn(
+            "min-w-0 flex-1 overflow-hidden bg-muted/10",
+            minimized ? "p-1" : presentationMode && hasWallContext ? "p-0" : "overflow-y-auto overscroll-contain p-2 sm:p-3 lg:p-4",
+          )}>
+            {presentationMode && hasWallContext && !minimized ? (
+              <div className="h-full min-h-0 w-full overflow-hidden bg-background">
+                {wallProject && wallActivity && wallSubactivity ? (
+                  <ProjectFollowUp
+                    project={wallProject}
+                    availableProjects={[wallProject]}
+                    initialActivityId={wallActivity.id}
+                    initialSubactivityId={wallSubactivity.id}
+                    discordEmbedded
+                    meetingEmbedded
+                  />
+                ) : (
+                  <MeetingWallSurface
+                    loading={meetingWallLoading}
+                    error={meetingWallError}
+                    context={meetingWallContext}
+                    projects={projects}
+                    serviceRequests={serviceRequests}
+                    aqsReviews={aqsReviews}
+                    members={members}
+                  />
+                )}
+              </div>
+            ) : (
             <div className={cn(
               "grid h-full min-h-0 items-stretch",
               minimized
@@ -3528,6 +3538,7 @@ export function CallRoom({
                 )
               })}
             </div>
+            )}
           </main>
 
           {!minimized && (

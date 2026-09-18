@@ -257,27 +257,43 @@ export async function stageServerShare(formData: FormData, preferredToken?: stri
   void cleanupLocalShares()
   const admin = adminStorage()
 
-  // As duas gravações são independentes. No Windows Server o disco local evita
-  // depender de rede/policy. Em ambientes distribuídos, o Supabase preserva o
-  // mesmo recibo entre instâncias. Um único sucesso já é suficiente.
-  const [localResult, remoteResult] = await Promise.allSettled([
-    writeLocal(manifest, files),
-    admin ? writeRemote(admin, manifest, files) : Promise.reject(new Error("Supabase service role indisponível")),
-  ])
+  // V222: o Windows Server é o caminho principal e síncrono. Não esperamos
+  // Supabase para abrir a tela de compartilhamento. Isso remove rede/policy do
+  // caminho crítico: gravou no disco local, o usuário já pode continuar.
+  try {
+    await writeLocal(manifest, files)
 
-  const storedLocally = localResult.status === "fulfilled"
-  const storedRemotely = remoteResult.status === "fulfilled"
-  if (!storedLocally && !storedRemotely) {
-    const localMessage = localResult.status === "rejected" ? String(localResult.reason) : ""
-    const remoteMessage = remoteResult.status === "rejected" ? String(remoteResult.reason) : ""
-    console.error("[TaskBoard/PWA Share V219] Nenhum backend conseguiu persistir o recebimento", {
-      localMessage,
-      remoteMessage,
-    })
+    if (admin) {
+      void writeRemote(admin, manifest, files).catch((error) => {
+        console.warn("[TaskBoard/PWA Share V222] Redundância Supabase indisponível; recebimento local preservado", {
+          token: manifest.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    }
+
+    return { manifest, storedLocally: true, storedRemotely: false }
+  } catch (localError) {
+    // Se o disco local falhar por permissão/volume, ainda existe um fallback
+    // real para não perder o compartilhamento.
+    if (admin) {
+      try {
+        await writeRemote(admin, manifest, files)
+        return { manifest, storedLocally: false, storedRemotely: true }
+      } catch (remoteError) {
+        console.error("[TaskBoard/PWA Share V222] Falha no disco local e no fallback Supabase", {
+          localMessage: localError instanceof Error ? localError.message : String(localError),
+          remoteMessage: remoteError instanceof Error ? remoteError.message : String(remoteError),
+        })
+      }
+    } else {
+      console.error("[TaskBoard/PWA Share V222] Falha ao persistir recebimento no disco local", {
+        localMessage: localError instanceof Error ? localError.message : String(localError),
+      })
+    }
+
     throw new Error("Não foi possível preservar o conteúdo compartilhado antes de abrir o TaskBoard.")
   }
-
-  return { manifest, storedLocally, storedRemotely }
 }
 
 function manifestExpired(manifest: ServerShareManifest) {

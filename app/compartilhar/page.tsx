@@ -434,15 +434,15 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js?v=221", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=222", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }
 
     const params = new URLSearchParams(window.location.search)
 
-    // V221: caminho principal. O Service Worker recebe o multipart diretamente
-    // do Android e guarda os Blobs no IndexedDB antes de abrir esta tela.
+    // Compatibilidade V221: links shareLocal antigos ainda podem ser recuperados.
+    // Na V222 o caminho principal é serverShare, usando request.formData() nativo no Route Handler.
     const localId = params.get("shareLocal") || ""
     if (localId) {
       setLocalShareId(localId)
@@ -515,6 +515,19 @@ export default function ShareToDevboardPage() {
       setError(reason === "sw-e-servidor"
         ? "O Android acionou o TaskBoard, mas o arquivo não pôde ser lido nem pelo receptor local do PWA nem pelo fallback do servidor."
         : "O compartilhamento V221 não pôde ser recebido.")
+    } else if (params.get("erro") === "recebimento-v222") {
+      const reason = params.get("motivo") || "desconhecido"
+      const bytes = Number(params.get("bytes") || 0)
+      const type = params.get("tipo") || "desconhecido"
+      const sizeLabel = Number.isFinite(bytes) && bytes > 0 ? `${(bytes / 1024 / 1024).toFixed(bytes >= 1024 * 1024 ? 1 : 3)} MB` : "tamanho não informado"
+      const reasonText = reason === "tipo-invalido"
+        ? "O Android acionou o TaskBoard fora do formato multipart/form-data."
+        : reason === "multipart"
+          ? "O POST multipart chegou ao TaskBoard, mas o parser nativo não conseguiu interpretá-lo."
+          : reason === "limite"
+            ? "O anexo ultrapassou o limite temporário de recebimento."
+            : "O arquivo chegou ao receptor, mas não pôde ser preservado antes de abrir a tela."
+      setError(`${reasonText} Diagnóstico V222: ${type} · ${sizeLabel}.`)
     } else if (params.get("erro") === "recebimento-v219") {
       const reason = params.get("motivo") || "desconhecido"
       const bytes = Number(params.get("bytes") || 0)

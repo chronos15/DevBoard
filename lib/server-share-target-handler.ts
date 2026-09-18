@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { stageServerShare } from "@/lib/server-share-inbox"
-import { parseTaskBoardShareMultipart } from "@/lib/server-share-multipart"
+import { stageServerShare, collectSharedFiles } from "@/lib/server-share-inbox"
 
 function firstForwardedValue(value: string | null) {
   return value?.split(",", 1)[0]?.trim() || ""
@@ -50,64 +49,105 @@ function shortContentType(value: string | null) {
   return (value || "desconhecido").split(";", 1)[0].trim().slice(0, 80)
 }
 
-function classifyReceiveError(error: unknown, contentType: string | null) {
-  const message = error instanceof Error ? error.message : String(error || "")
-  const lower = message.toLowerCase()
-  if (!contentType?.toLowerCase().includes("multipart/form-data")) return "tipo-invalido"
-  if (lower.includes("sem arquivo, texto ou link") || lower.includes("without file")) return "vazio"
-  if (lower.includes("formdata") || lower.includes("multipart") || lower.includes("boundary") || lower.includes("unexpected end")) {
-    return "multipart-incompleto"
+function stringValue(formData: FormData, name: string) {
+  const value = formData.get(name)
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function describeFormData(formData: FormData) {
+  const entries: Array<{ field: string; kind: "text" | "file"; name?: string; type?: string; size?: number }> = []
+  for (const [field, value] of formData.entries()) {
+    if (typeof value === "string") {
+      entries.push({ field, kind: "text", size: value.length })
+    } else {
+      entries.push({
+        field,
+        kind: "file",
+        name: value.name || "",
+        type: value.type || "",
+        size: value.size,
+      })
+    }
   }
-  if (lower.includes("excede") || lower.includes("limit")) return "limite"
-  return "persistencia"
+  return entries
 }
 
 export async function handleTaskBoardShareTargetPost(request: Request) {
   const target = new URL("/compartilhar", resolvePublicOrigin(request))
   const contentType = request.headers.get("content-type")
   const contentLength = request.headers.get("content-length") || ""
+  const userAgent = request.headers.get("user-agent") || ""
 
   try {
     if (!contentType?.toLowerCase().includes("multipart/form-data")) {
       throw new Error(`Tipo de conteúdo inesperado no Web Share Target: ${contentType || "ausente"}`)
     }
 
-    const parsed = await parseTaskBoardShareMultipart(request)
-    const staged = await stageServerShare(parsed.formData)
+    // V222: usa o parser multipart nativo da Fetch API/Node/Next.
+    // O parser artesanal V219 foi removido do fluxo porque os logs de produção
+    // provaram que o boundary chegava, mas nenhuma parte era reconhecida.
+    const formData = await request.formData()
+    const files = collectSharedFiles(formData)
+    const title = stringValue(formData, "title")
+    const text = stringValue(formData, "text")
+    const url = stringValue(formData, "url")
+
+    if (files.length === 0 && !title && !text && !url) {
+      console.error("[TaskBoard/PWA Share V222] POST multipart recebido sem conteúdo utilizável", {
+        contentType,
+        contentLength,
+        url: request.url,
+        userAgent,
+        entries: describeFormData(formData),
+      })
+      throw new Error("O Android abriu o TaskBoard, mas o multipart nativo não contém arquivo, texto ou link.")
+    }
+
+    const staged = await stageServerShare(formData)
 
     target.searchParams.set("serverShare", staged.manifest.id)
     target.searchParams.set("serverFiles", String(staged.manifest.files.length))
     target.searchParams.set("receiver", staged.storedLocally && staged.storedRemotely
-      ? "server-v219-dual"
+      ? "server-v222-native-dual"
       : staged.storedLocally
-        ? "server-v219-disk"
-        : "server-v219-supabase")
+        ? "server-v222-native-disk"
+        : "server-v222-native-supabase")
 
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V219")
-    response.headers.set("X-TaskBoard-Share-Parts", String(parsed.partCount))
-    response.headers.set("X-TaskBoard-Share-Files", String(parsed.fileCount))
+    response.headers.set("X-TaskBoard-Share-Receiver", "V222-native-formdata")
+    response.headers.set("X-TaskBoard-Share-Files", String(staged.manifest.files.length))
     return response
   } catch (error) {
-    const reason = classifyReceiveError(error, contentType)
-    console.error("[TaskBoard/PWA Share V219] Falha ao receber compartilhamento externo", {
-      reason,
+    console.error("[TaskBoard/PWA Share V222] Falha ao receber compartilhamento externo", {
       contentType,
       contentLength,
       url: request.url,
+      userAgent,
       error,
     })
-    target.searchParams.set("erro", "recebimento-v219")
+
+    const message = error instanceof Error ? error.message : String(error || "")
+    const lower = message.toLowerCase()
+    const reason = !contentType?.toLowerCase().includes("multipart/form-data")
+      ? "tipo-invalido"
+      : lower.includes("formdata") || lower.includes("multipart") || lower.includes("boundary")
+        ? "multipart"
+        : lower.includes("excede") || lower.includes("limit")
+          ? "limite"
+          : "persistencia"
+
+    target.searchParams.set("erro", "recebimento-v222")
     target.searchParams.set("motivo", reason)
     if (contentLength) target.searchParams.set("bytes", contentLength.slice(0, 24))
     target.searchParams.set("tipo", shortContentType(contentType))
-    target.searchParams.set("receiver", "server-v219-error")
+    target.searchParams.set("receiver", "server-v222-error")
+
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V219-error")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V222-error")
     return response
   }
 }

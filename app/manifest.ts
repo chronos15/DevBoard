@@ -23,7 +23,6 @@ export default function manifest(): MetadataRoute.Manifest {
           {
             name: "files",
             accept: [
-              "*/*",
               "image/*",
               "video/*",
               "audio/*",

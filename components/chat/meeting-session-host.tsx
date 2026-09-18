@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useStore } from "@/lib/store"
 import { CallRoom } from "@/components/chat/call-room"
-import { OPEN_MEETING_EVENT, MINIMIZE_MEETING_EVENT, type MeetingOpenDetail } from "@/lib/meeting-launcher"
+import { FINISH_MEETING_EVENT, OPEN_MEETING_EVENT, MINIMIZE_MEETING_EVENT, type MeetingFinishDetail, type MeetingOpenDetail } from "@/lib/meeting-launcher"
 
 const STORAGE_KEY = "devboard.active-meeting.v1"
 
@@ -39,6 +39,7 @@ export function MeetingSessionHost() {
   const { chatMeetings, currentUserId, chatHydrated } = useStore()
   const [activeMeetingId, setActiveMeetingId] = React.useState<string | null>(null)
   const [minimized, setMinimized] = React.useState(false)
+  const [finishRequestedMeetingId, setFinishRequestedMeetingId] = React.useState<string | null>(null)
   const restoredRef = React.useRef(false)
 
   const meeting = React.useMemo(
@@ -60,11 +61,22 @@ export function MeetingSessionHost() {
       setMinimized(true)
     }
 
+    function onFinishMeeting(event: Event) {
+      const detail = (event as CustomEvent<MeetingFinishDetail>).detail
+      if (!detail?.meetingId) return
+      setActiveMeetingId(detail.meetingId)
+      setMinimized(false)
+      setFinishRequestedMeetingId(detail.meetingId)
+      writeStoredSession({ meetingId: detail.meetingId, minimized: false })
+    }
+
     window.addEventListener(OPEN_MEETING_EVENT, onOpenMeeting)
     window.addEventListener(MINIMIZE_MEETING_EVENT, onMinimizeMeeting)
+    window.addEventListener(FINISH_MEETING_EVENT, onFinishMeeting)
     return () => {
       window.removeEventListener(OPEN_MEETING_EVENT, onOpenMeeting)
       window.removeEventListener(MINIMIZE_MEETING_EVENT, onMinimizeMeeting)
+      window.removeEventListener(FINISH_MEETING_EVENT, onFinishMeeting)
     }
   }, [])
 
@@ -162,6 +174,8 @@ export function MeetingSessionHost() {
       onMinimize={minimizeMeeting}
       onRestore={restoreMeeting}
       onOpenChange={handleRoomOpenChange}
+      finishRequested={finishRequestedMeetingId === meeting.id}
+      onFinishRequestHandled={() => setFinishRequestedMeetingId(null)}
     />
   )
 }

@@ -101,12 +101,12 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
-import { isSubactivityMeetingLog, visibleMeetingLogDescription } from "@/lib/work-meetings"
+import { isSubactivityMeetingLog, meetingLogMeetingId, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
-import { openMeetingRoom } from "@/lib/meeting-launcher"
+import { openMeetingRoom, requestFinishMeeting } from "@/lib/meeting-launcher"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isGroupCandidate, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import {
   MAX_ATTACHMENT_FILE_BYTES,
@@ -1062,6 +1062,7 @@ export function ProjectFollowUp({
     currentAccessPolicy,
     preferences,
     serviceRequests,
+    chatMeetings,
     canManageSubactivity,
     addFollowUpComment,
     editSubactivityComment,
@@ -1073,6 +1074,7 @@ export function ProjectFollowUp({
     addSubactivityAttachments,
     deleteActivity,
     startActivityMeeting,
+    answerMeetingInvite,
     startTimer,
     setSubStatus,
     requestSubactivityApproval,
@@ -1492,6 +1494,22 @@ export function ProjectFollowUp({
     currentUserRole === "developer" &&
     !selectedIsParticipant
   )
+  const selectedLiveMeeting = React.useMemo(() => {
+    if (!selectedSub) return null
+    const activeMeetings = new Map(chatMeetings.filter((meeting) => !meeting.endedAt).map((meeting) => [meeting.id.toLowerCase(), meeting]))
+    const logs = (project.logs ?? [])
+      .filter((log) => log.type === "meeting-started" && isSubactivityMeetingLog(log, selectedSub.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    for (const log of logs) {
+      const meetingId = meetingLogMeetingId(log)?.toLowerCase()
+      if (!meetingId) continue
+      const meeting = activeMeetings.get(meetingId)
+      if (meeting) return meeting
+    }
+    return null
+  }, [chatMeetings, project.logs, selectedSub])
+  const selectedLiveMeetingState = selectedLiveMeeting?.memberStates.find((member) => member.userId === currentUserId)
+  const selectedLiveMeetingOwner = Boolean(selectedLiveMeeting && selectedLiveMeeting.createdBy === currentUserId)
   const moduleReadOnly = !canWriteScreen(currentUserRole, currentAccessPolicy, "followup")
   const sendEditedImageToCurrentFollowUp = React.useCallback(async (file: File) => {
     if (!selectedSub || selectedDeveloperObserver || moduleReadOnly) return false
@@ -1538,6 +1556,21 @@ export function ProjectFollowUp({
     } finally {
       setMeetingStarting(false)
     }
+  }
+
+  async function openSelectedLiveMeeting() {
+    if (!selectedLiveMeeting) return
+    if (selectedLiveMeetingState?.status === "pending") {
+      void primeCallAudio()
+      const accepted = await answerMeetingInvite(selectedLiveMeeting.id, true)
+      if (!accepted) return
+    }
+    openMeetingRoom(selectedLiveMeeting.id)
+  }
+
+  function finishSelectedLiveMeeting() {
+    if (!selectedLiveMeeting || !selectedLiveMeetingOwner) return
+    requestFinishMeeting(selectedLiveMeeting.id)
   }
 
   const loadChecklist = React.useCallback(async (subactivityId: string, quiet = false) => {
@@ -3684,6 +3717,44 @@ export function ProjectFollowUp({
                     >
                       {approvalDecisionSaving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                     </Button>
+                  </div>
+                </div>
+              )}
+              {selectedLiveMeeting && !meetingEmbedded && (
+                <div className={cn(
+                  "pointer-events-none absolute inset-x-2.5 z-30 sm:inset-x-4 lg:inset-x-5",
+                  selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId ? "top-[74px]" : "top-2.5",
+                )}>
+                  <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-card/95 px-2.5 py-2 shadow-lg shadow-black/5 backdrop-blur-md ring-1 ring-inset ring-primary/[0.04]">
+                    <button
+                      type="button"
+                      onClick={() => { void openSelectedLiveMeeting() }}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left outline-none transition-colors hover:bg-primary/[0.05] focus-visible:ring-2 focus-visible:ring-primary/25"
+                      title="Abrir reunião desta subatividade"
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Video className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.72rem] font-semibold text-foreground">Reunião em andamento</span>
+                        <span className="mt-0.5 block truncate text-[0.6rem] text-muted-foreground">
+                          {selectedLiveMeetingState?.status === "pending" ? "Sala aberta · clique para entrar" : "Sala aberta nesta subatividade · clique para abrir"}
+                        </span>
+                      </span>
+                      <span className="mr-1 hidden size-2 shrink-0 rounded-full bg-success sm:block" />
+                    </button>
+                    {selectedLiveMeetingOwner && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0 border-destructive/20 bg-destructive/[0.045] px-2.5 text-[0.66rem] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={finishSelectedLiveMeeting}
+                        title="Finalizar reunião após enviar gravação e chat"
+                      >
+                        Fin. Reunião
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

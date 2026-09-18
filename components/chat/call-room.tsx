@@ -195,6 +195,7 @@ function ParticipantTile({
   compact,
   onPrioritize,
   deafened,
+  playbackRevision,
 }: {
   member: Member
   own?: boolean
@@ -212,6 +213,7 @@ function ParticipantTile({
   compact?: boolean
   onPrioritize?: () => void
   deafened?: boolean
+  playbackRevision?: number
 }) {
   const tileRef = React.useRef<HTMLDivElement | null>(null)
   const remoteVideoRef = React.useRef<HTMLVideoElement | null>(null)
@@ -363,6 +365,23 @@ function ParticipantTile({
     if (deafened) setPlaybackBlocked(false)
     else void playRemote()
   }, [deafened, playRemote])
+
+  // Alterar microfone/câmera local não deve reconstruir peers nem tocar em ICE.
+  // Esta revisão apenas reaplica play() nos elementos remotos já conectados.
+  // É um "soft refresh" de reprodução para contornar pausas esporádicas do
+  // pipeline de vídeo do Chrome em alguns drivers/dispositivos.
+  React.useEffect(() => {
+    if (own || !playbackRevision) return
+    const replay = () => { void playRemote() }
+    const frame = window.requestAnimationFrame(replay)
+    // Segunda tentativa curta cobre navegadores que pausam o decoder alguns ms
+    // depois da alteração da track local. Continua sendo apenas HTMLMediaElement.play().
+    const timer = window.setTimeout(replay, 220)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [own, playbackRevision, playRemote])
 
   React.useEffect(() => {
     if (own || !camOn || !remoteVideoSource) {
@@ -575,6 +594,7 @@ export function CallRoom({
   const supabase = React.useMemo(() => createClient(), [])
   const [micEnabled, setMicEnabled] = React.useState(true)
   const [cameraEnabled, setCameraEnabled] = React.useState(meeting?.mode === "video")
+  const [remotePlaybackRevision, setRemotePlaybackRevision] = React.useState(0)
   const [screenSharing, setScreenSharing] = React.useState(false)
   const [nativeScreenSharing, setNativeScreenSharing] = React.useState(false)
   const [deafened, setDeafened] = React.useState(false)
@@ -1482,6 +1502,14 @@ export function CallRoom({
     }
   }, [])
 
+  React.useEffect(() => {
+    const mediaDevices = navigator.mediaDevices
+    if (!mediaDevices?.addEventListener) return
+    const handleDeviceChange = () => { void refreshDevices() }
+    mediaDevices.addEventListener("devicechange", handleDeviceChange)
+    return () => mediaDevices.removeEventListener("devicechange", handleDeviceChange)
+  }, [refreshDevices])
+
   const stopAllMedia = React.useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     screenStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -2116,7 +2144,11 @@ export function CallRoom({
       track.enabled = nextEnabled
       commitMediaState({ micEnabled: nextEnabled })
       setMediaError("")
-      await refreshDevices()
+      // Não reenumera dispositivos ao apenas mutar/desmutar. Em alguns Chrome/drivers,
+      // enumerateDevices() durante uma chamada pode coincidir com uma pausa transitória
+      // dos decoders de vídeo remotos. Mantemos a lista por devicechange/setup e apenas
+      // reaplicamos play() nos vídeos já existentes, sem recriar peer/track/ICE.
+      setRemotePlaybackRevision((value) => value + 1)
     } catch {
       setMediaError("Não foi possível ativar o microfone. Verifique a permissão do navegador.")
     }
@@ -2130,7 +2162,9 @@ export function CallRoom({
       track.enabled = nextEnabled
       commitMediaState({ cameraEnabled: nextEnabled })
       setMediaError("")
-      await refreshDevices()
+      // Mesmo princípio do microfone: toggle de estado não precisa atualizar inventário
+      // de hardware nem renegociar mídia. O refresh abaixo é somente de reprodução DOM.
+      setRemotePlaybackRevision((value) => value + 1)
     } catch {
       setMediaError("Não foi possível ativar a câmera. Verifique a permissão do navegador.")
     }
@@ -3026,6 +3060,7 @@ export function CallRoom({
                       compact={compact}
                       onPrioritize={minimized ? undefined : () => setFocusedMemberId((current) => current === member.id ? null : member.id)}
                       deafened={deafened}
+                      playbackRevision={remotePlaybackRevision}
                     />
                   </div>
                 )

@@ -432,7 +432,9 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js").catch(() => undefined)
+      void navigator.serviceWorker.register("/devboard-sw.js", { updateViaCache: "none" })
+        .then((registration) => registration.update())
+        .catch(() => undefined)
     }
 
     const params = new URLSearchParams(window.location.search)
@@ -493,16 +495,21 @@ export default function ShareToDevboardPage() {
   React.useEffect(() => {
     if (!serverShareId || !currentUserId) return
     const params = new URLSearchParams(window.location.search)
+    const expectedFiles = Math.max(0, Number(params.get("serverFiles") || 0))
     void readServerStagedShare(serverShareId, currentUserId, {
       title: params.get("title") || "",
       text: params.get("text") || "",
       url: params.get("url") || "",
+      expectedFiles,
     })
-      .then(({ metadata, files: receivedFiles }) => {
+      .then(({ metadata, files: receivedFiles, missingNames }) => {
         setPayload(metadata as SharedPayload)
         setFiles(receivedFiles)
         setIncludeText(Boolean(textEvidence(metadata)))
-        if (receivedFiles.length === 0) setWarning("O compartilhamento foi recebido, mas nenhum binário válido foi encontrado. Tente compartilhar novamente.")
+        if (missingNames.length > 0 || (expectedFiles > 0 && receivedFiles.length < expectedFiles)) {
+          const missingCount = Math.max(missingNames.length, expectedFiles - receivedFiles.length)
+          setWarning(`${missingCount === 1 ? "Um anexo ainda não pôde" : `${missingCount} anexos ainda não puderam`} ser recuperado${missingCount === 1 ? "" : "s"}. Os itens disponíveis continuam prontos para envio.`)
+        }
       })
       .catch((cause) => {
         setError(cause instanceof Error ? cause.message : "Não foi possível recuperar o anexo recebido pelo dispositivo.")

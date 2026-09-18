@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 
 const SERVER_SHARE_BUCKET = "taskboard-share-inbox"
 const SERVER_SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const SERVER_SHARE_MANIFEST = "__taskboard_share_manifest.json"
 
 function firstForwardedValue(value: string | null) {
   return value?.split(",", 1)[0]?.trim() || ""
@@ -91,7 +92,7 @@ async function cleanupOldServerShares(supabase: Awaited<ReturnType<typeof create
       if (!Number.isFinite(stamp) || now - stamp <= SERVER_SHARE_MAX_AGE_MS) continue
       const folder = `${userId}/${entry.name}`
       const { data: children } = await supabase.storage.from(SERVER_SHARE_BUCKET).list(folder, { limit: 100 })
-      const paths = (children ?? []).filter((item) => item.id && item.name).map((item) => `${folder}/${item.name}`)
+      const paths = (children ?? []).filter((item) => item.name).map((item) => `${folder}/${item.name}`)
       if (paths.length) await supabase.storage.from(SERVER_SHARE_BUCKET).remove(paths)
     }
   } catch {
@@ -127,19 +128,53 @@ export async function POST(request: Request) {
       if (user) {
         const shareId = `${Date.now()}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
         const uploaded: string[] = []
+        const stagedFiles: Array<{
+          index: number
+          storedName: string
+          name: string
+          type: string
+          size: number
+          lastModified: number
+        }> = []
         await cleanupOldServerShares(supabase, user.id)
 
         try {
           for (let index = 0; index < files.length; index += 1) {
             const file = files[index]
-            const path = `${user.id}/${shareId}/${String(index).padStart(3, "0")}-${safeFileName(file.name || `arquivo-${index + 1}`)}`
+            const storedName = `${String(index).padStart(3, "0")}-${safeFileName(file.name || `arquivo-${index + 1}`)}`
+            const path = `${user.id}/${shareId}/${storedName}`
             const { error } = await supabase.storage.from(SERVER_SHARE_BUCKET).upload(path, file, {
               contentType: file.type || "application/octet-stream",
               upsert: false,
             })
             if (error) throw error
             uploaded.push(path)
+            stagedFiles.push({
+              index,
+              storedName,
+              name: file.name || `arquivo-${index + 1}`,
+              type: file.type || "application/octet-stream",
+              size: file.size,
+              lastModified: file.lastModified || Date.now(),
+            })
           }
+
+          // V216: gravamos um manifesto em caminho previsível. Assim a tela de
+          // compartilhamento não depende do formato retornado por Storage.list()
+          // (algumas versões self-hosted não retornam `id` para os objetos e a
+          // implementação antiga acabava interpretando a pasta como vazia).
+          const manifestPath = `${user.id}/${shareId}/${SERVER_SHARE_MANIFEST}`
+          const manifest = new Blob([JSON.stringify({
+            id: shareId,
+            receivedAt: new Date().toISOString(),
+            files: stagedFiles,
+          })], { type: "application/json" })
+          const { error: manifestError } = await supabase.storage.from(SERVER_SHARE_BUCKET).upload(manifestPath, manifest, {
+            contentType: "application/json",
+            upsert: true,
+          })
+          if (!manifestError) uploaded.push(manifestPath)
+
           target.searchParams.set("serverShare", shareId)
           target.searchParams.set("serverFiles", String(files.length))
           return NextResponse.redirect(target, 303)

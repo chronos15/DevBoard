@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V215"
+const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V216"
 const taskboardBuildDate = (() => {
   const explicitBuildDate = process.env.TASKBOARD_BUILD_DATE?.trim()
   if (explicitBuildDate) return explicitBuildDate
@@ -35,6 +35,13 @@ const nextConfig = {
   },
   async headers() {
     return [
+      {
+        source: "/devboard-sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
       {
         source: "/:path*",
         headers: [

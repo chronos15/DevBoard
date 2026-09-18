@@ -483,8 +483,8 @@ export default function ShareToDevboardPage() {
       setIncludeText(Boolean(textEvidence(metadata)))
       const declaredCount = Number(params.get("fileCount") || fileNames.length || 0)
       setWarning(declaredCount > 0
-        ? `Este aparelho abriu o receptor legado antes do Service Worker assumir o compartilhamento e ${declaredCount === 1 ? "o anexo não pôde" : "os anexos não puderam"} ser preservado${declaredCount === 1 ? "" : "s"}. Abra o TaskBoard uma vez e compartilhe novamente; a V134 também possui um inbox privado de fallback para evitar este caso.`
-        : "O receptor do PWA foi atualizado. Se o compartilhamento continha um arquivo, compartilhe novamente após abrir o TaskBoard uma vez neste aparelho.")
+        ? `Este aparelho abriu o receptor legado antes do Service Worker assumir o compartilhamento e ${declaredCount === 1 ? "o anexo não pôde" : "os anexos não puderam"} ser preservado${declaredCount === 1 ? "" : "s"}. Abra o TaskBoard uma vez após a atualização e compartilhe novamente. A V217 passa a preservar o binário no Service Worker antes de abrir esta tela e mantém um inbox de servidor como fallback.`
+        : "O receptor do PWA foi atualizado. Abra o TaskBoard uma vez após a atualização e compartilhe novamente para ativar o novo receptor V217.")
     } else if (params.get("erro") === "recebimento") {
       setError("Não foi possível receber este compartilhamento. Tente compartilhar novamente pelo Chrome.")
     }

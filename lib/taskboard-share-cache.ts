@@ -1,11 +1,8 @@
 "use client"
 
-import { createClient } from "@/lib/supabase/client"
-
 const SHARE_CACHE = "devboard-share-target-v1"
 const SHARE_PREFIX = "/__devboard-share-target__/"
 export const SERVER_SHARE_BUCKET = "taskboard-share-inbox"
-const SERVER_SHARE_MANIFEST = "__taskboard_share_manifest.json"
 
 function cacheUrl(path: string) {
   return new URL(path, window.location.origin).toString()
@@ -35,93 +32,82 @@ export async function stageFilesForTaskBoardShare(files: File[], title = "") {
     })),
   }
 
-  await cache.put(
-    cacheUrl(`${SHARE_PREFIX}${id}/metadata`),
-    new Response(JSON.stringify(metadata), { headers: { "Content-Type": "application/json" } }),
-  )
-  await Promise.all(files.map((file, index) => cache.put(
-    cacheUrl(`${SHARE_PREFIX}${id}/file/${index}`),
-    new Response(file, {
-      headers: {
-        "Content-Type": file.type || "application/octet-stream",
-        "X-TaskBoard-File-Name": encodeURIComponent(file.name || `arquivo-${index + 1}`),
-        "X-TaskBoard-Last-Modified": String(file.lastModified || Date.now()),
-      },
-    }),
-  )))
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      await cache.put(
+        cacheUrl(`${SHARE_PREFIX}${id}/file/${index}`),
+        new Response(file, {
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            "X-TaskBoard-File-Name": encodeURIComponent(file.name || `arquivo-${index + 1}`),
+            "X-TaskBoard-Last-Modified": String(file.lastModified || Date.now()),
+          },
+        }),
+      )
+    }
+
+    // Metadata por último = commit do share. A tela nunca abre um lote ainda
+    // incompleto caso o Cache Storage falhe durante a gravação de algum blob.
+    await cache.put(
+      cacheUrl(`${SHARE_PREFIX}${id}/metadata`),
+      new Response(JSON.stringify(metadata), { headers: { "Content-Type": "application/json" } }),
+    )
+  } catch (error) {
+    const keys = await cache.keys()
+    await Promise.all(keys
+      .filter((entry) => entry.url.includes(`${SHARE_PREFIX}${id}/`))
+      .map((entry) => cache.delete(entry)))
+    throw error
+  }
 
   return `/compartilhar?share=${encodeURIComponent(id)}`
 }
 
-function originalNameFromServerObject(name: string) {
-  return name.replace(/^\d{3,5}-/, "") || "arquivo-compartilhado"
+type ServerShareFile = {
+  index: number
+  name: string
+  type: string
+  size: number
+  lastModified: number
 }
 
 type ServerShareManifest = {
-  id?: string
+  id: string
   receivedAt?: string
-  files?: Array<{
-    index?: number
-    storedName: string
-    name?: string
-    type?: string
-    size?: number
-    lastModified?: number
-  }>
+  files: ServerShareFile[]
+  error?: string
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-async function downloadServerObject(
-  supabase: ReturnType<typeof createClient>,
-  path: string,
-  attempts = 4,
-) {
-  let lastError: unknown = null
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const { data, error } = await supabase.storage.from(SERVER_SHARE_BUCKET).download(path)
-    if (!error && data) return data
-    lastError = error
-    if (attempt < attempts - 1) await wait(120 + (attempt * 180))
+async function fetchServerShareManifest(shareId: string) {
+  const response = await fetch(`/api/share-inbox?share=${encodeURIComponent(shareId)}`, {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+  })
+  const payload = await response.json().catch(() => ({})) as ServerShareManifest
+  if (!response.ok) {
+    throw new Error(payload.error || "Não foi possível recuperar o compartilhamento temporário.")
   }
-  throw lastError ?? new Error("Não foi possível recuperar o arquivo temporário.")
+  if (!payload || !Array.isArray(payload.files)) {
+    throw new Error("O compartilhamento temporário retornou dados inválidos.")
+  }
+  return payload
 }
 
-async function listServerShareEntries(
-  supabase: ReturnType<typeof createClient>,
-  folder: string,
-  expectedFiles: number,
-) {
-  let lastError: unknown = null
-  let entries: Array<{ name: string; updated_at?: string | null; metadata?: { mimetype?: string } | null }> = []
-
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const { data, error } = await supabase.storage.from(SERVER_SHARE_BUCKET).list(folder, {
-      limit: 100,
-      sortBy: { column: "name", order: "asc" },
-    })
-    if (error) {
-      lastError = error
-    } else {
-      // Não dependemos mais de `item.id`. Algumas versões self-hosted do
-      // Storage retornam os arquivos corretamente, mas deixam esse campo nulo.
-      entries = (data ?? [])
-        .filter((item) => Boolean(item.name) && item.name !== SERVER_SHARE_MANIFEST)
-        .map((item) => ({
-          name: item.name,
-          updated_at: item.updated_at,
-          metadata: item.metadata as { mimetype?: string } | null | undefined,
-        }))
-      if (entries.length > 0 && (!expectedFiles || entries.length >= expectedFiles)) return entries
-    }
-    if (attempt < 3) await wait(120 + (attempt * 180))
-  }
-
-  if (entries.length) return entries
-  if (lastError) throw lastError
-  return entries
+async function fetchServerShareFile(shareId: string, item: ServerShareFile) {
+  const response = await fetch(
+    `/api/share-inbox?share=${encodeURIComponent(shareId)}&file=${encodeURIComponent(String(item.index))}`,
+    { method: "GET", credentials: "same-origin", cache: "no-store" },
+  )
+  if (!response.ok) throw new Error(`Não foi possível recuperar “${item.name}”.`)
+  const blob = await response.blob()
+  const encodedName = response.headers.get("X-TaskBoard-File-Name")
+  const modified = Number(response.headers.get("X-TaskBoard-Last-Modified") || item.lastModified || Date.now())
+  return new File([blob], encodedName ? decodeURIComponent(encodedName) : item.name, {
+    type: response.headers.get("Content-Type") || item.type || blob.type || "application/octet-stream",
+    lastModified: Number.isFinite(modified) ? modified : Date.now(),
+  })
 }
 
 export async function readServerStagedShare(
@@ -130,57 +116,34 @@ export async function readServerStagedShare(
   payload: { title?: string; text?: string; url?: string; expectedFiles?: number } = {},
 ) {
   if (!shareId || !userId) throw new Error("Compartilhamento temporário inválido.")
-  const supabase = createClient()
-  const folder = `${userId}/${shareId}`
+
+  const manifest = await fetchServerShareManifest(shareId)
   const expectedFiles = Math.max(0, Number(payload.expectedFiles || 0))
+  const ordered = [...manifest.files].sort((a, b) => a.index - b.index)
   const files: File[] = []
   const missingNames: string[] = []
 
-  // V216: o servidor grava um manifesto em um caminho conhecido. Isso evita
-  // depender de Storage.list() para descobrir os binários recém-enviados.
-  let manifest: ServerShareManifest | null = null
-  try {
-    const manifestBlob = await downloadServerObject(supabase, `${folder}/${SERVER_SHARE_MANIFEST}`, 3)
-    const parsed = JSON.parse(await manifestBlob.text()) as ServerShareManifest
-    if (Array.isArray(parsed.files)) manifest = parsed
-  } catch {
-    // Compartilhamentos criados por versões anteriores não possuem manifesto.
-  }
-
-  if (manifest?.files?.length) {
-    const ordered = [...manifest.files].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-    for (let index = 0; index < ordered.length; index += 1) {
+  // Pouca concorrência evita estourar memória em compartilhamentos com vários
+  // vídeos/imagens grandes, sem voltar ao envio sequencial lento.
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(3, Math.max(1, ordered.length)) }, async () => {
+    while (cursor < ordered.length) {
+      const index = cursor
+      cursor += 1
       const item = ordered[index]
-      if (!item?.storedName) continue
       try {
-        const blob = await downloadServerObject(supabase, `${folder}/${item.storedName}`)
-        files.push(new File([blob], item.name || originalNameFromServerObject(item.storedName), {
-          type: item.type || blob.type || "application/octet-stream",
-          lastModified: item.lastModified || Date.now(),
-        }))
+        const file = await fetchServerShareFile(shareId, item)
+        files[index] = file
       } catch {
-        missingNames.push(item.name || originalNameFromServerObject(item.storedName))
+        missingNames.push(item.name)
       }
     }
-  } else {
-    // Compatibilidade com V134–V215. O fallback não exige `item.id`, pois isso
-    // era justamente o motivo de alguns shares aparecerem como "0 itens".
-    const entries = await listServerShareEntries(supabase, folder, expectedFiles)
-    for (const item of entries) {
-      try {
-        const blob = await downloadServerObject(supabase, `${folder}/${item.name}`)
-        files.push(new File([blob], originalNameFromServerObject(item.name), {
-          type: blob.type || item.metadata?.mimetype || "application/octet-stream",
-          lastModified: item.updated_at ? new Date(item.updated_at).getTime() : Date.now(),
-        }))
-      } catch {
-        missingNames.push(originalNameFromServerObject(item.name))
-      }
-    }
-  }
+  })
+  await Promise.all(workers)
 
-  if (expectedFiles > 0 && files.length === 0) {
-    throw new Error("O anexo chegou ao servidor, mas ainda não pôde ser recuperado do armazenamento temporário. Tente compartilhar novamente.")
+  const availableFiles = files.filter(Boolean)
+  if ((expectedFiles > 0 || ordered.length > 0) && availableFiles.length === 0) {
+    throw new Error("Os anexos chegaram ao servidor, mas não puderam ser recuperados. Compartilhe novamente pelo TaskBoard.")
   }
 
   return {
@@ -189,8 +152,8 @@ export async function readServerStagedShare(
       title: payload.title ?? "",
       text: payload.text ?? "",
       url: payload.url ?? "",
-      receivedAt: manifest?.receivedAt ?? new Date().toISOString(),
-      files: files.map((file, index) => ({
+      receivedAt: manifest.receivedAt ?? new Date().toISOString(),
+      files: availableFiles.map((file, index) => ({
         index,
         name: file.name,
         type: file.type,
@@ -198,17 +161,16 @@ export async function readServerStagedShare(
         lastModified: file.lastModified,
       })),
     },
-    files,
+    files: availableFiles,
     missingNames,
   }
 }
 
 export async function deleteServerStagedShare(shareId: string, userId: string) {
   if (!shareId || !userId) return
-  const supabase = createClient()
-  const folder = `${userId}/${shareId}`
-  const { data, error } = await supabase.storage.from(SERVER_SHARE_BUCKET).list(folder, { limit: 100 })
-  if (error) return
-  const paths = (data ?? []).filter((item) => item.name).map((item) => `${folder}/${item.name}`)
-  if (paths.length) await supabase.storage.from(SERVER_SHARE_BUCKET).remove(paths)
+  await fetch(`/api/share-inbox?share=${encodeURIComponent(shareId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    cache: "no-store",
+  }).catch(() => undefined)
 }

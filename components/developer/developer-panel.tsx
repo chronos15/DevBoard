@@ -60,7 +60,7 @@ const DAY_OPTIONS = [
 ] as const
 
 
-const SW_PATH = "/devboard-sw.js"
+const SW_PATH = "/devboard-sw.js?v=218"
 
 type FocusMode = "focus" | "break"
 

@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/manifest.webmanifest', '/devboard-sw.js', '/share-target']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/dev-agent/update', '/api/share-inbox', '/manifest.webmanifest', '/devboard-sw.js', '/share-target', '/share-target-v218']
 
 type SessionCookie = {
   name: string
@@ -13,11 +13,14 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isAgentUpdateEndpoint = pathname === '/api/dev-agent/update' || pathname.startsWith('/api/dev-agent/update/')
   const isPublicPwaAsset = pathname === '/manifest.webmanifest' || pathname === '/devboard-sw.js'
+  const isPublicShareReceiver = pathname === '/share-target'
+    || pathname === '/share-target-v218'
+    || pathname === '/api/share-inbox'
 
   // Manifest e service worker são buscados pelo navegador fora do fluxo normal de
   // navegação e podem chegar sem cookies. Eles precisam responder diretamente,
   // senão o browser recebe o HTML de /login e acusa "Manifest: syntax error".
-  if (isPublicPwaAsset) {
+  if (isPublicPwaAsset || isPublicShareReceiver) {
     return NextResponse.next({ request })
   }
 

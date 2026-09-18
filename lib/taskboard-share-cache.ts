@@ -2,7 +2,6 @@
 
 const SHARE_CACHE = "devboard-share-target-v1"
 const SHARE_PREFIX = "/__devboard-share-target__/"
-export const SERVER_SHARE_BUCKET = "taskboard-share-inbox"
 
 function cacheUrl(path: string) {
   return new URL(path, window.location.origin).toString()
@@ -47,8 +46,6 @@ export async function stageFilesForTaskBoardShare(files: File[], title = "") {
       )
     }
 
-    // Metadata por último = commit do share. A tela nunca abre um lote ainda
-    // incompleto caso o Cache Storage falhe durante a gravação de algum blob.
     await cache.put(
       cacheUrl(`${SHARE_PREFIX}${id}/metadata`),
       new Response(JSON.stringify(metadata), { headers: { "Content-Type": "application/json" } }),
@@ -75,56 +72,81 @@ type ServerShareFile = {
 type ServerShareManifest = {
   id: string
   receivedAt?: string
+  expiresAt?: string
+  title?: string
+  text?: string
+  url?: string
   files: ServerShareFile[]
   error?: string
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
 async function fetchServerShareManifest(shareId: string) {
-  const response = await fetch(`/api/share-inbox?share=${encodeURIComponent(shareId)}`, {
-    method: "GET",
-    credentials: "same-origin",
-    cache: "no-store",
-  })
-  const payload = await response.json().catch(() => ({})) as ServerShareManifest
-  if (!response.ok) {
-    throw new Error(payload.error || "Não foi possível recuperar o compartilhamento temporário.")
+  let lastError = "Não foi possível recuperar o compartilhamento temporário."
+
+  // Retentativas curtas cobrem replicação/latência de storage sem transformar um
+  // recebimento válido em "0 arquivos" por uma leitura alguns ms cedo demais.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await fetch(`/api/share-inbox?share=${encodeURIComponent(shareId)}&ts=${Date.now()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    })
+    const payload = await response.json().catch(() => ({})) as ServerShareManifest
+    if (response.ok && payload && Array.isArray(payload.files)) return payload
+
+    lastError = payload.error || lastError
+    if (response.status !== 404 || attempt === 5) break
+    await sleep(180 * (attempt + 1))
   }
-  if (!payload || !Array.isArray(payload.files)) {
-    throw new Error("O compartilhamento temporário retornou dados inválidos.")
-  }
-  return payload
+
+  throw new Error(lastError)
 }
 
 async function fetchServerShareFile(shareId: string, item: ServerShareFile) {
-  const response = await fetch(
-    `/api/share-inbox?share=${encodeURIComponent(shareId)}&file=${encodeURIComponent(String(item.index))}`,
-    { method: "GET", credentials: "same-origin", cache: "no-store" },
-  )
-  if (!response.ok) throw new Error(`Não foi possível recuperar “${item.name}”.`)
-  const blob = await response.blob()
-  const encodedName = response.headers.get("X-TaskBoard-File-Name")
-  const modified = Number(response.headers.get("X-TaskBoard-Last-Modified") || item.lastModified || Date.now())
-  return new File([blob], encodedName ? decodeURIComponent(encodedName) : item.name, {
-    type: response.headers.get("Content-Type") || item.type || blob.type || "application/octet-stream",
-    lastModified: Number.isFinite(modified) ? modified : Date.now(),
-  })
+  let lastError = `Não foi possível recuperar “${item.name}”.`
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(
+      `/api/share-inbox?share=${encodeURIComponent(shareId)}&file=${encodeURIComponent(String(item.index))}&ts=${Date.now()}`,
+      {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      },
+    )
+    if (response.ok) {
+      const blob = await response.blob()
+      const encodedName = response.headers.get("X-TaskBoard-File-Name")
+      const modified = Number(response.headers.get("X-TaskBoard-Last-Modified") || item.lastModified || Date.now())
+      return new File([blob], encodedName ? decodeURIComponent(encodedName) : item.name, {
+        type: response.headers.get("Content-Type") || item.type || blob.type || "application/octet-stream",
+        lastModified: Number.isFinite(modified) ? modified : Date.now(),
+      })
+    }
+
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+    lastError = payload.error || lastError
+    if (response.status !== 404 || attempt === 3) break
+    await sleep(150 * (attempt + 1))
+  }
+
+  throw new Error(lastError)
 }
 
-export async function readServerStagedShare(
-  shareId: string,
-  userId: string,
-  payload: { title?: string; text?: string; url?: string; expectedFiles?: number } = {},
-) {
-  if (!shareId || !userId) throw new Error("Compartilhamento temporário inválido.")
+export async function readServerStagedShare(shareId: string) {
+  if (!shareId) throw new Error("Compartilhamento temporário inválido.")
 
   const manifest = await fetchServerShareManifest(shareId)
-  const expectedFiles = Math.max(0, Number(payload.expectedFiles || 0))
   const ordered = [...manifest.files].sort((a, b) => a.index - b.index)
   const files: File[] = []
   const missingNames: string[] = []
 
-  // Pouca concorrência evita estourar memória em compartilhamentos com vários
-  // vídeos/imagens grandes, sem voltar ao envio sequencial lento.
   let cursor = 0
   const workers = Array.from({ length: Math.min(3, Math.max(1, ordered.length)) }, async () => {
     while (cursor < ordered.length) {
@@ -132,8 +154,7 @@ export async function readServerStagedShare(
       cursor += 1
       const item = ordered[index]
       try {
-        const file = await fetchServerShareFile(shareId, item)
-        files[index] = file
+        files[index] = await fetchServerShareFile(shareId, item)
       } catch {
         missingNames.push(item.name)
       }
@@ -142,32 +163,26 @@ export async function readServerStagedShare(
   await Promise.all(workers)
 
   const availableFiles = files.filter(Boolean)
-  if ((expectedFiles > 0 || ordered.length > 0) && availableFiles.length === 0) {
-    throw new Error("Os anexos chegaram ao servidor, mas não puderam ser recuperados. Compartilhe novamente pelo TaskBoard.")
+  if (ordered.length > 0 && availableFiles.length === 0) {
+    throw new Error("O recebimento foi confirmado, mas os anexos não puderam ser lidos. O TaskBoard não vai tratar isso como um compartilhamento vazio.")
   }
 
   return {
     metadata: {
       id: shareId,
-      title: payload.title ?? "",
-      text: payload.text ?? "",
-      url: payload.url ?? "",
+      title: manifest.title ?? "",
+      text: manifest.text ?? "",
+      url: manifest.url ?? "",
       receivedAt: manifest.receivedAt ?? new Date().toISOString(),
-      files: availableFiles.map((file, index) => ({
-        index,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        lastModified: file.lastModified,
-      })),
+      files: ordered,
     },
     files: availableFiles,
     missingNames,
   }
 }
 
-export async function deleteServerStagedShare(shareId: string, userId: string) {
-  if (!shareId || !userId) return
+export async function deleteServerStagedShare(shareId: string) {
+  if (!shareId) return
   await fetch(`/api/share-inbox?share=${encodeURIComponent(shareId)}`, {
     method: "DELETE",
     credentials: "same-origin",

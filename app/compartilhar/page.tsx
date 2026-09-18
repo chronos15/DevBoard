@@ -432,7 +432,7 @@ export default function ShareToDevboardPage() {
 
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/devboard-sw.js", { updateViaCache: "none" })
+      void navigator.serviceWorker.register("/devboard-sw.js?v=218", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined)
     }
@@ -483,8 +483,10 @@ export default function ShareToDevboardPage() {
       setIncludeText(Boolean(textEvidence(metadata)))
       const declaredCount = Number(params.get("fileCount") || fileNames.length || 0)
       setWarning(declaredCount > 0
-        ? `Este aparelho abriu o receptor legado antes do Service Worker assumir o compartilhamento e ${declaredCount === 1 ? "o anexo não pôde" : "os anexos não puderam"} ser preservado${declaredCount === 1 ? "" : "s"}. Abra o TaskBoard uma vez após a atualização e compartilhe novamente. A V217 passa a preservar o binário no Service Worker antes de abrir esta tela e mantém um inbox de servidor como fallback.`
-        : "O receptor do PWA foi atualizado. Abra o TaskBoard uma vez após a atualização e compartilhe novamente para ativar o novo receptor V217.")
+        ? `O receptor legado detectou ${declaredCount} ${declaredCount === 1 ? "anexo" : "anexos"}, mas não conseguiu preservá-${declaredCount === 1 ? "lo" : "los"}. A V218 não abre mais a tela como se fosse um compartilhamento vazio: o POST agora é confirmado no servidor antes da navegação.`
+        : "Este compartilhamento veio de um receptor antigo do PWA. Abra o TaskBoard atualizado uma vez e tente novamente para ativar o receptor V218.")
+    } else if (params.get("erro") === "recebimento-v218") {
+      setError("O Android abriu o TaskBoard, mas o conteúdo não pôde ser preservado no servidor. Nenhum envio vazio será permitido. Tente compartilhar novamente após confirmar sua conexão.")
     } else if (params.get("erro") === "recebimento") {
       setError("Não foi possível receber este compartilhamento. Tente compartilhar novamente pelo Chrome.")
     }
@@ -493,15 +495,10 @@ export default function ShareToDevboardPage() {
   }, [])
 
   React.useEffect(() => {
-    if (!serverShareId || !currentUserId) return
+    if (!serverShareId) return
     const params = new URLSearchParams(window.location.search)
     const expectedFiles = Math.max(0, Number(params.get("serverFiles") || 0))
-    void readServerStagedShare(serverShareId, currentUserId, {
-      title: params.get("title") || "",
-      text: params.get("text") || "",
-      url: params.get("url") || "",
-      expectedFiles,
-    })
+    void readServerStagedShare(serverShareId)
       .then(({ metadata, files: receivedFiles, missingNames }) => {
         setPayload(metadata as SharedPayload)
         setFiles(receivedFiles)
@@ -515,7 +512,7 @@ export default function ShareToDevboardPage() {
         setError(cause instanceof Error ? cause.message : "Não foi possível recuperar o anexo recebido pelo dispositivo.")
       })
       .finally(() => setLoadingShare(false))
-  }, [currentUserId, serverShareId])
+  }, [serverShareId])
 
   const isAdmin = currentUserRole === "admin"
   const availableProjects = React.useMemo(() => projects.filter((project) =>
@@ -759,7 +756,8 @@ export default function ShareToDevboardPage() {
   }, [filteredDestinations])
 
   const sharedText = payload ? textEvidence(payload) : null
-  const hasContent = files.length > 0 || Boolean(includeText && sharedText)
+  const readyItemCount = files.length + (includeText && sharedText ? 1 : 0)
+  const hasContent = readyItemCount > 0
 
   function toggleDestination(item: ShareDestination) {
     setSelectedDestinationKeys((current) => current.includes(item.key)
@@ -792,7 +790,7 @@ export default function ShareToDevboardPage() {
 
   async function discardAndLeave() {
     if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
-    if (serverShareId && currentUserId) await deleteServerStagedShare(serverShareId, currentUserId).catch(() => undefined)
+    if (serverShareId) await deleteServerStagedShare(serverShareId).catch(() => undefined)
     if (window.history.length > 1) window.history.back()
     else router.replace("/")
   }
@@ -929,7 +927,7 @@ export default function ShareToDevboardPage() {
       }
 
       if (shareId) await deleteCachedShare(shareId).catch(() => undefined)
-      if (serverShareId && currentUserId) await deleteServerStagedShare(serverShareId, currentUserId).catch(() => undefined)
+      if (serverShareId) await deleteServerStagedShare(serverShareId).catch(() => undefined)
 
       // Sucesso total: não exibe uma etapa intermediária. O compartilhamento
       // termina levando o usuário direto ao destino, como no fluxo do Discord.
@@ -1031,7 +1029,11 @@ export default function ShareToDevboardPage() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">
-                  {files.length + (includeText && sharedText ? 1 : 0)} {files.length + (includeText && sharedText ? 1 : 0) === 1 ? "item pronto" : "itens prontos"} para enviar
+                  {readyItemCount > 0
+                    ? `${readyItemCount} ${readyItemCount === 1 ? "item pronto" : "itens prontos"} para enviar`
+                    : error
+                      ? "Conteúdo não recebido"
+                      : "Aguardando conteúdo compartilhado"}
                 </span>
                 <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">
                   Toque para revisar ou remover antes do envio
@@ -1099,8 +1101,8 @@ export default function ShareToDevboardPage() {
               {!hasContent && !warning && (
                 <div className="rounded-xl border border-dashed border-border px-4 py-7 text-center">
                   <Paperclip className="mx-auto size-5 text-muted-foreground" />
-                  <p className="mt-2 text-sm font-semibold">Nenhum conteúdo recebido</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Compartilhe novamente pelo menu do Android/iOS.</p>
+                  <p className="mt-2 text-sm font-semibold">{error ? "Falha ao receber o conteúdo" : "Nenhum conteúdo recebido"}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{error ? "O TaskBoard bloqueou o fluxo vazio para não perder o anexo silenciosamente." : "Compartilhe novamente pelo menu do Android/iOS."}</p>
                 </div>
               )}
             </div>

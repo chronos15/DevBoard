@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V216"
+const taskboardVersion = process.env.TASKBOARD_VERSION?.trim() || "V218"
 const taskboardBuildDate = (() => {
   const explicitBuildDate = process.env.TASKBOARD_BUILD_DATE?.trim()
   if (explicitBuildDate) return explicitBuildDate
@@ -40,6 +40,18 @@ const nextConfig = {
         headers: [
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
           { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+      {
+        source: "/manifest.webmanifest",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+      {
+        source: "/share-target-v218",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],
       },
       {

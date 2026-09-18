@@ -1,7 +1,7 @@
 -- V214 — encerramento visual imediato da reunião contextual.
 -- A sala é encerrada para todos em uma RPC curta; gravação e PDF do chat podem
 -- continuar sendo publicados pelo owner depois de meetings.ended_at ser preenchido.
-
+--
 begin;
 
 create or replace function public.meeting_artifact_context(p_meeting_id uuid)

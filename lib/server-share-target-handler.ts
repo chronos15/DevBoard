@@ -83,7 +83,7 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
       throw new Error(`Tipo de conteúdo inesperado no Web Share Target: ${contentType || "ausente"}`)
     }
 
-    // V223: usa o parser multipart nativo da Fetch API/Node/Next.
+    // V224: usa o parser multipart nativo da Fetch API/Node/Next.
     // O parser artesanal V219 foi removido do fluxo porque os logs de produção
     // provaram que o boundary chegava, mas nenhuma parte era reconhecida.
     const formData = await request.formData()
@@ -93,7 +93,7 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
     const url = stringValue(formData, "url")
 
     if (files.length === 0 && !title && !text && !url) {
-      console.error("[TaskBoard/PWA Share V223] POST multipart recebido sem conteúdo utilizável", {
+      console.error("[TaskBoard/PWA Share V224] POST multipart recebido sem conteúdo utilizável", {
         contentType,
         contentLength,
         url: request.url,
@@ -116,11 +116,11 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V223-native-formdata")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V224-native-formdata")
     response.headers.set("X-TaskBoard-Share-Files", String(staged.manifest.files.length))
     return response
   } catch (error) {
-    console.error("[TaskBoard/PWA Share V223] Falha ao receber compartilhamento externo", {
+    console.error("[TaskBoard/PWA Share V224] Falha ao receber compartilhamento externo", {
       contentType,
       contentLength,
       url: request.url,
@@ -147,7 +147,7 @@ export async function handleTaskBoardShareTargetPost(request: Request) {
     const response = NextResponse.redirect(target, 303)
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.set("Pragma", "no-cache")
-    response.headers.set("X-TaskBoard-Share-Receiver", "V223-error")
+    response.headers.set("X-TaskBoard-Share-Receiver", "V224-error")
     return response
   }
 }

@@ -1,18 +1,14 @@
 import type { MetadataRoute } from "next"
 
 /**
- * V223
+ * V224
  *
- * O WebAPK do Android transforma `share_target.params.files` em metadados
- * nativos (`shareParamNames` / `shareParamAccepts`). Nas versões anteriores o
- * bucket continha dezenas de MIME types/extensões. O Chrome estava abrindo o
- * TaskBoard, mas gerando um multipart vazio (somente o boundary).
+ * O recebimento de arquivos pelo Web Share Target do WebAPK foi removido.
+ * Nos testes reais com Chrome 153/Android, o WebAPK abria o TaskBoard mas
+ * enviava somente o boundary multipart (75 bytes, sem File/EXTRA_STREAM).
  *
- * Mantemos o registro propositalmente mínimo: um único campo aceitando qualquer MIME.
- * O servidor continua validando tamanho/tipo antes de persistir/enviar.
- *
- * O `id` muda de "/" para "/taskboard" uma única vez para forçar a criação de
- * um WebAPK novo, sem reutilizar metadados nativos de instalações anteriores.
+ * O compartilhamento de arquivos é feito pelo receptor Android nativo em
+ * android-share-bridge/, que envia o multipart diretamente para /share-target.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -25,22 +21,6 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#0c0c0d",
     theme_color: "#202833",
-    share_target: {
-      action: "/share-target",
-      method: "POST",
-      enctype: "multipart/form-data",
-      params: {
-        title: "title",
-        text: "text",
-        url: "url",
-        files: [
-          {
-            name: "files",
-            accept: ["*/*"],
-          },
-        ],
-      },
-    },
     icons: [
       {
         src: "/devboard-icon-192.png",

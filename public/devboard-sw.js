@@ -1,4 +1,4 @@
-const TASKBOARD_SW_VERSION = "V223"
+const TASKBOARD_SW_VERSION = "V224"
 
 self.addEventListener("install", () => {
   self.skipWaiting()
@@ -6,9 +6,10 @@ self.addEventListener("install", () => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    // V223: o Service Worker não consome mais POSTs do Web Share Target.
-    // O multipart segue intacto para o Route Handler do Next.js, que usa
-    // request.formData() nativo. Mantemos apenas a limpeza de caches legados.
+    // V224: o PWA não registra mais share_target para arquivos.
+    // O receptor Android nativo (android-share-bridge) recebe ACTION_SEND /
+    // ACTION_SEND_MULTIPLE e envia o multipart diretamente para /share-target.
+    // O SW permanece fora desse caminho.
     const cacheNames = await caches.keys()
     await Promise.all(
       cacheNames

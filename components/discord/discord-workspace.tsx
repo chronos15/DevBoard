@@ -8,6 +8,7 @@ import {
   ArchiveRestore,
   BrainCircuit,
   Code2,
+  Ellipsis,
   Eye,
   ChevronDown,
   ChevronRight,
@@ -63,6 +64,7 @@ import type { AqsReview, ChatCommandBlock, Project } from "@/lib/types"
 import { WORKSPACE_COMMAND_FILES_BUCKET, workspaceCommandFileStoragePath } from "@/lib/supabase/helpers"
 import { isFollowUpUnreadNotification } from "@/lib/follow-up-unread"
 import { resolveFollowUpMentionShortcut } from "@/lib/follow-up-mention-shortcuts"
+import { matchesSubactivityHeaderSearch } from "@/lib/subactivity-search"
 
 type DiscordSpace = "project" | "channels" | "requests" | "aqs" | "chat"
 
@@ -360,8 +362,14 @@ export function DiscordWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = React.useMemo(() => createClient(), [])
+  const projectHeaderRef = React.useRef<HTMLDivElement>(null)
+  const projectHeaderSearchInputRef = React.useRef<HTMLInputElement>(null)
+  const projectHeaderMoreRef = React.useRef<HTMLDetailsElement>(null)
 
   const [channelSearch, setChannelSearch] = React.useState("")
+  const [projectSubactivitySearchOpen, setProjectSubactivitySearchOpen] = React.useState(false)
+  const [projectSubactivitySearch, setProjectSubactivitySearch] = React.useState("")
+  const [projectHeaderCompact, setProjectHeaderCompact] = React.useState(false)
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set())
   const [createRequestOpen, setCreateRequestOpen] = React.useState(false)
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false)
@@ -448,7 +456,35 @@ export function DiscordWorkspace() {
 
   React.useEffect(() => {
     setShowCompletedSubactivities(false)
+    setProjectSubactivitySearchOpen(false)
+    setProjectSubactivitySearch("")
+    projectHeaderMoreRef.current?.removeAttribute("open")
   }, [selectedProject?.id])
+
+  React.useEffect(() => {
+    const node = projectHeaderRef.current
+    if (space !== "project" || !node || typeof ResizeObserver === "undefined") return
+    const update = () => {
+      const width = node.getBoundingClientRect().width
+      setProjectHeaderCompact(width < 270 || ((selectedProject?.name.length ?? 0) > 22 && width < 340))
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [selectedProject?.id, space])
+
+  React.useEffect(() => {
+    if (!projectSubactivitySearchOpen) return
+    window.requestAnimationFrame(() => projectHeaderSearchInputRef.current?.focus())
+  }, [projectSubactivitySearchOpen])
+
+  React.useEffect(() => {
+    if (space === "project") return
+    setProjectSubactivitySearchOpen(false)
+    setProjectSubactivitySearch("")
+    projectHeaderMoreRef.current?.removeAttribute("open")
+  }, [space])
   const selectedRequest = visibleRequests.find((request) => request.id === requestedRequestId) ?? null
   const selectedReview = visibleReviews.find((review) => review.id === requestedReviewId || (!requestedReviewId && requestedSubId && review.subactivityId === requestedSubId)) ?? null
   const selectedWorkspaceChannel = workspaceChannels.find((channel) => channel.id === requestedChannelId)
@@ -951,62 +987,132 @@ export function DiscordWorkspace() {
     setLocation(result.target)
   }
 
+  const openProjectSubactivitySearch = React.useCallback(() => {
+    projectHeaderMoreRef.current?.removeAttribute("open")
+    setProjectSubactivitySearchOpen(true)
+  }, [])
+
+  const closeProjectSubactivitySearch = React.useCallback(() => {
+    setProjectSubactivitySearch("")
+    setProjectSubactivitySearchOpen(false)
+  }, [])
+
   const channelSidebar = React.useMemo(() => {
     const q = normalize(channelSearch.trim())
 
     if (space === "project" && selectedProject) {
       const projectRequests = visibleRequests.filter((request) => request.projectId === selectedProject.id && !CLOSED_REQUEST_STATUSES.has(request.status))
       const projectReviews = visibleReviews.filter((review) => review.projectId === selectedProject.id && (review.status === "awaiting" || review.status === "evaluating"))
+      const projectSearchQuery = projectSubactivitySearch.trim()
+      const projectSearchResultCount = projectSearchQuery
+        ? selectedProject.activities.reduce((total, activity) => total + activity.subactivities.filter((sub) => matchesSubactivityHeaderSearch(sub.title, subactivitySequenceById.get(sub.id), projectSearchQuery)).length, 0)
+        : 0
       return (
         <>
-          <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 py-2 shadow-sm">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{selectedProject.name}</p>
-              <p className="truncate text-[0.6rem] text-muted-foreground">{selectedProject.client || "Projeto"}</p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-pressed={showCompletedSubactivities}
-              onClick={toggleCompletedSubactivities}
-              className={cn(
-                "relative shrink-0 text-muted-foreground transition-colors",
-                showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
-              )}
-              title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
-              aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
-            >
-              <ListChecks className="size-3.5" />
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
-                  showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
+          <div ref={projectHeaderRef} className="relative flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 py-2 shadow-sm">
+            {projectSubactivitySearchOpen ? (
+              <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-primary/30 bg-background px-2.5 shadow-sm ring-2 ring-primary/5">
+                <Search className="size-4 shrink-0 text-primary" />
+                <input
+                  ref={projectHeaderSearchInputRef}
+                  value={projectSubactivitySearch}
+                  onChange={(event) => setProjectSubactivitySearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault()
+                      closeProjectSubactivitySearch()
+                    }
+                  }}
+                  placeholder="Nº ou título da subatividade"
+                  aria-label="Pesquisar subatividade por número ou título"
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/70"
+                />
+                {projectSearchQuery && (
+                  <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground" title="Resultados encontrados">{projectSearchResultCount}</span>
                 )}
-              >
-                <span className="size-1.5 rounded-full bg-card shadow-sm" />
-              </span>
-            </Button>
-            <UsersRound className="size-4 shrink-0 text-muted-foreground" />
-            {canManageSelectedProject && <FollowUpAddActivityDialog projectId={selectedProject.id} />}
-          </div>
-          <div className="px-2.5 pb-2 pt-2.5">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder="Buscar atividades ou subatividades" className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-9 text-xs outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/15" />
-              {channelSearch && <button type="button" onClick={() => setChannelSearch("")} className="absolute right-2.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>}
-            </div>
+                <button type="button" onClick={closeProjectSubactivitySearch} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Fechar pesquisa" aria-label="Fechar pesquisa de subatividades">
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{selectedProject.name}</p>
+                  <p className="truncate text-[0.6rem] text-muted-foreground">{selectedProject.client || "Projeto"}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {projectHeaderCompact ? (
+                    <details ref={projectHeaderMoreRef} className="relative">
+                      <summary className="flex size-7 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden" title="Mais ações" aria-label="Mais ações do projeto">
+                        <Ellipsis className="size-4" />
+                      </summary>
+                      <div className="absolute right-0 top-full z-50 mt-1.5 w-56 overflow-hidden rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
+                        <button type="button" onClick={openProjectSubactivitySearch} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted">
+                          <Search className="size-3.5 text-primary" />
+                          <span className="min-w-0 flex-1">Pesquisar subatividade</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            projectHeaderMoreRef.current?.removeAttribute("open")
+                            toggleCompletedSubactivities()
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
+                        >
+                          <ListChecks className={cn("size-3.5", showCompletedSubactivities ? "text-success" : "text-muted-foreground")} />
+                          <span className="min-w-0 flex-1">{showCompletedSubactivities ? "Ocultar concluídas" : "Mostrar concluídas"}</span>
+                          {completedSubactivitiesCount > 0 && <span className="font-mono text-[0.58rem] text-muted-foreground">{completedSubactivitiesCount}</span>}
+                        </button>
+                      </div>
+                    </details>
+                  ) : (
+                    <>
+                      <Button type="button" variant="ghost" size="icon-xs" onClick={openProjectSubactivitySearch} className="shrink-0 text-muted-foreground" title="Pesquisar subatividade" aria-label="Pesquisar subatividade">
+                        <Search className="size-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-pressed={showCompletedSubactivities}
+                        onClick={toggleCompletedSubactivities}
+                        className={cn(
+                          "relative shrink-0 text-muted-foreground transition-colors",
+                          showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
+                        )}
+                        title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
+                        aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
+                      >
+                        <ListChecks className="size-3.5" />
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
+                            showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
+                          )}
+                        >
+                          <span className="size-1.5 rounded-full bg-card shadow-sm" />
+                        </span>
+                      </Button>
+                    </>
+                  )}
+                  {!projectHeaderCompact && <UsersRound className="size-4 shrink-0 text-muted-foreground" />}
+                  {canManageSelectedProject && <FollowUpAddActivityDialog projectId={selectedProject.id} />}
+                </div>
+              </>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3 [scrollbar-width:thin]">
             <div className="space-y-0.5">
               {selectedProject.activities.map((activity, index) => {
-                const activityMatches = !q || normalize(activity.title).includes(q)
+                const searchingSubactivities = Boolean(projectSearchQuery)
                 const subs = activity.subactivities
-                  .filter((sub) => (showCompletedSubactivities || sub.status !== "done") && (!q || activityMatches || normalize(sub.title).includes(q)))
+                  .filter((sub) => searchingSubactivities
+                    ? matchesSubactivityHeaderSearch(sub.title, subactivitySequenceById.get(sub.id), projectSearchQuery)
+                    : (showCompletedSubactivities || sub.status !== "done"))
                   .sort((a, b) => (RESUMIDO_STATUS_RANK.get(a.status) ?? 999) - (RESUMIDO_STATUS_RANK.get(b.status) ?? 999))
-                if ((q && !activityMatches && !subs.length) || (!q && activity.subactivities.length > 0 && !subs.length)) return null
-                const isOpen = q ? true : !collapsed.has(`activity:${activity.id}`)
+                if ((searchingSubactivities && !subs.length) || (!searchingSubactivities && activity.subactivities.length > 0 && !subs.length)) return null
+                const isOpen = searchingSubactivities ? true : !collapsed.has(`activity:${activity.id}`)
                 const toggleActivity = () => setCollapsed((current) => { const next = new Set(current); const key = `activity:${activity.id}`; next.has(key) ? next.delete(key) : next.add(key); return next })
                 const runningCount = activity.subactivities.filter((sub) => sub.status === "in-progress").length
                 const activityUnread = selectedProjectUnreadMaps.byActivity.get(activity.id)
@@ -1067,7 +1173,11 @@ export function DiscordWorkspace() {
                             <button
                               key={sub.id}
                               type="button"
-                              onClick={() => { setLocation({ space: "project", project: selectedProject.id, activity: activity.id, sub: sub.id }); setMobileChannelsOpen(false) }}
+                              onClick={() => {
+                                if (projectSearchQuery && sub.status === "done") setShowCompletedSubactivities(true)
+                                setLocation({ space: "project", project: selectedProject.id, activity: activity.id, sub: sub.id })
+                                setMobileChannelsOpen(false)
+                              }}
                               className={cn(
                                 "group/sub relative my-0.5 flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg py-1.5 pl-2 pr-2 text-left transition-colors",
                                 active ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/65 hover:text-foreground",
@@ -1114,8 +1224,11 @@ export function DiscordWorkspace() {
                 )
               })}
             </div>
-            {projectRequests.length > 0 && <div className="mt-4 border-t border-border/70 pt-2"><CategoryHeader label="Solicitações" open={!collapsed.has("project:requests")} count={projectRequests.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:requests") ? next.delete("project:requests") : next.add("project:requests"); return next })} />{!collapsed.has("project:requests") && <div className="space-y-0.5">{projectRequests.filter((request) => !q || normalize(`${request.title} ${request.orderNumber}`).includes(q)).map((request) => <ChannelButton key={request.id} active={requestedRequestId === request.id} label={`${serviceRequestReference(request)} · ${request.title}`} muted={SERVICE_REQUEST_STATUS_LABELS[request.status]} onClick={() => { setLocation({ space: "project", project: selectedProject.id, request: request.id }); setMobileChannelsOpen(false) }} />)}</div>}</div>}
-            {projectReviews.length > 0 && <div className="mt-3"><CategoryHeader label="Análise AQS" open={!collapsed.has("project:aqs")} count={projectReviews.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:aqs") ? next.delete("project:aqs") : next.add("project:aqs"); return next })} />{!collapsed.has("project:aqs") && <div className="space-y-0.5">{projectReviews.filter((review) => { const activity = selectedProject.activities.find((a) => a.id === review.activityId); const sub = activity?.subactivities.find((s) => s.id === review.subactivityId); return !q || normalize(`${sub?.title ?? ""} ${activity?.title ?? ""}`).includes(q) }).map((review) => { const activity = selectedProject.activities.find((a) => a.id === review.activityId); const sub = activity?.subactivities.find((s) => s.id === review.subactivityId); return <ChannelButton key={review.id} active={requestedReviewId === review.id} label={sub?.title ?? "Análise AQS"} muted={review.status === "awaiting" ? "Aguardando" : review.status === "evaluating" ? "Em análise" : review.status === "completed" ? "Concluída" : "Revogada"} onClick={() => { setLocation({ space: "project", project: selectedProject.id, review: review.id, activity: review.activityId, sub: review.subactivityId }); setMobileChannelsOpen(false) }} /> })}</div>}</div>}
+            {projectSearchQuery && projectSearchResultCount === 0 && (
+              <div className="px-3 py-8 text-center text-xs text-muted-foreground">Nenhuma subatividade encontrada para “{projectSearchQuery}”.</div>
+            )}
+            {!projectSearchQuery && projectRequests.length > 0 && <div className="mt-4 border-t border-border/70 pt-2"><CategoryHeader label="Solicitações" open={!collapsed.has("project:requests")} count={projectRequests.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:requests") ? next.delete("project:requests") : next.add("project:requests"); return next })} />{!collapsed.has("project:requests") && <div className="space-y-0.5">{projectRequests.map((request) => <ChannelButton key={request.id} active={requestedRequestId === request.id} label={`${serviceRequestReference(request)} · ${request.title}`} muted={SERVICE_REQUEST_STATUS_LABELS[request.status]} onClick={() => { setLocation({ space: "project", project: selectedProject.id, request: request.id }); setMobileChannelsOpen(false) }} />)}</div>}</div>}
+            {!projectSearchQuery && projectReviews.length > 0 && <div className="mt-3"><CategoryHeader label="Análise AQS" open={!collapsed.has("project:aqs")} count={projectReviews.length} onToggle={() => setCollapsed((current) => { const next = new Set(current); next.has("project:aqs") ? next.delete("project:aqs") : next.add("project:aqs"); return next })} />{!collapsed.has("project:aqs") && <div className="space-y-0.5">{projectReviews.map((review) => { const activity = selectedProject.activities.find((a) => a.id === review.activityId); const sub = activity?.subactivities.find((s) => s.id === review.subactivityId); return <ChannelButton key={review.id} active={requestedReviewId === review.id} label={sub?.title ?? "Análise AQS"} muted={review.status === "awaiting" ? "Aguardando" : review.status === "evaluating" ? "Em análise" : review.status === "completed" ? "Concluída" : "Revogada"} onClick={() => { setLocation({ space: "project", project: selectedProject.id, review: review.id, activity: review.activityId, sub: review.subactivityId }); setMobileChannelsOpen(false) }} /> })}</div>}</div>}
           </div>
         </>
       )
@@ -1160,7 +1273,7 @@ export function DiscordWorkspace() {
     }
 
     return null
-  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, collapsed, completedSubactivitiesCount, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, chatWritable, openMentionTarget, openWorkspaceChannels, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, showCompletedSubactivities, space, subactivitySequenceById, toggleCompletedSubactivities, visibleRequests, visibleReviews])
+  }, [canCreateSubactivityInSelectedProject, canManageSelectedProject, channelSearch, channelsError, channelsLoading, closeProjectSubactivitySearch, collapsed, completedSubactivitiesCount, currentUserId, currentUserRole, deleteActivity, deletingActivityId, isAdmin, chatWritable, members, openMentionTarget, openProjectSubactivitySearch, openWorkspaceChannels, projectHeaderCompact, projectSubactivitySearch, projectSubactivitySearchOpen, projectSelection?.subactivityId, projects, requestedRequestId, requestedReviewId, selectedProject, selectedProjectUnreadMaps, selectedRequest?.id, selectedReview?.id, selectedWorkspaceChannel, setLocation, showCompletedSubactivities, space, subactivitySequenceById, toggleCompletedSubactivities, visibleRequests, visibleReviews])
 
   let content: React.ReactNode
   if (space === "chat") {

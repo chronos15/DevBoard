@@ -15,6 +15,7 @@ function formatBytes(bytes?: number) {
 }
 
 export function InlineTextAttachment({
+  attachmentId,
   name,
   mimeType,
   size,
@@ -25,6 +26,7 @@ export function InlineTextAttachment({
   className,
   compact = false,
 }: {
+  attachmentId?: string
   name: string
   mimeType?: string
   size?: number
@@ -45,6 +47,7 @@ export function InlineTextAttachment({
   const [downloading, setDownloading] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
   const pendingUrlRef = React.useRef<Promise<string | null> | null>(null)
+  const pendingDatabaseTextRef = React.useRef<Promise<string | null> | null>(null)
 
   React.useEffect(() => {
     setResolvedUrl(sourceUrl ?? null)
@@ -54,7 +57,8 @@ export function InlineTextAttachment({
     setError(null)
     setExpanded(false)
     pendingUrlRef.current = null
-  }, [sourceUrl, storagePath, textContent, name])
+    pendingDatabaseTextRef.current = null
+  }, [attachmentId, sourceUrl, storagePath, textContent, name])
 
   const ensureUrl = React.useCallback(async () => {
     if (resolvedUrl) return resolvedUrl
@@ -79,6 +83,27 @@ export function InlineTextAttachment({
     return request
   }, [bucket, resolvedUrl, sourceUrl, storagePath, supabase])
 
+  const loadDatabaseText = React.useCallback(async () => {
+    if (!attachmentId) return null
+    if (pendingDatabaseTextRef.current) return pendingDatabaseTextRef.current
+
+    const request = supabase
+      .from("attachments")
+      .select("text_content")
+      .eq("id", attachmentId)
+      .maybeSingle()
+      .then(({ data, error: textError }) => {
+        if (textError || typeof data?.text_content !== "string") return null
+        return data.text_content
+      })
+      .finally(() => {
+        pendingDatabaseTextRef.current = null
+      })
+
+    pendingDatabaseTextRef.current = request
+    return request
+  }, [attachmentId, supabase])
+
   React.useEffect(() => {
     if (textContent !== undefined) {
       setLoading(false)
@@ -91,27 +116,35 @@ export function InlineTextAttachment({
 
     void ensureUrl().then(async (url) => {
       if (cancelled) return
-      if (!url) {
-        setError("Preview indisponível para este arquivo.")
-        setLoading(false)
-        return
-      }
       try {
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const value = await response.text()
+        let value: string | null = null
+        if (url) {
+          try {
+            const response = await fetch(url)
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            value = await response.text()
+          } catch {
+            // Anexos textuais antigos do Acompanhamento/AQS podem ter o
+            // conteúdo salvo diretamente no banco. Também serve como fallback
+            // caso o Storage esteja temporariamente indisponível.
+            value = await loadDatabaseText()
+          }
+        } else {
+          value = await loadDatabaseText()
+        }
+        if (value === null) throw new Error("Conteúdo textual indisponível")
         if (cancelled) return
         setTruncated(value.length > MAX_TEXT_PREVIEW_CHARS)
         setText(value.slice(0, MAX_TEXT_PREVIEW_CHARS))
       } catch {
-        if (!cancelled) setError("Não foi possível carregar o conteúdo. Você ainda pode abrir ou baixar o arquivo.")
+        if (!cancelled) setError("Não foi possível carregar o conteúdo deste arquivo agora.")
       } finally {
         if (!cancelled) setLoading(false)
       }
     })
 
     return () => { cancelled = true }
-  }, [ensureUrl, textContent])
+  }, [ensureUrl, loadDatabaseText, textContent])
 
   async function copyText() {
     if (text === null) return
@@ -143,12 +176,19 @@ export function InlineTextAttachment({
             const response = await fetch(url)
             if (response.ok) blob = await response.blob()
           } catch {
-            // Se CORS impedir o blob, abre a URL assinada como fallback.
+            // Fallback abaixo tenta o conteúdo persistido antes de abrir a URL.
           }
           if (!blob) {
-            window.open(url, "_blank", "noopener,noreferrer")
-            return
+            const databaseText = await loadDatabaseText()
+            if (databaseText !== null) blob = new Blob([databaseText], { type: mimeType || "text/plain;charset=utf-8" })
+            else {
+              window.open(url, "_blank", "noopener,noreferrer")
+              return
+            }
           }
+        } else {
+          const databaseText = await loadDatabaseText()
+          if (databaseText !== null) blob = new Blob([databaseText], { type: mimeType || "text/plain;charset=utf-8" })
         }
       }
       if (!blob) return
@@ -166,7 +206,7 @@ export function InlineTextAttachment({
   }
 
   const canOpen = Boolean(sourceUrl || (bucket && storagePath))
-  const canDownload = textContent !== undefined || canOpen
+  const canDownload = textContent !== undefined || Boolean(attachmentId) || canOpen
   const info = formatBytes(size)
   const previewMaxHeight = compact ? "max-h-52" : "max-h-72"
 

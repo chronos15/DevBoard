@@ -104,6 +104,7 @@ import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { MessageNarratorButton } from "@/components/messages/message-narrator"
 import { isSubactivityMeetingLog, meetingLogMeetingId, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
+import { matchesSubactivityHeaderSearch } from "@/lib/subactivity-search"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
@@ -171,7 +172,7 @@ function detectKind(file: File): AttachmentKind {
 async function fileToUpload(file: File): Promise<AttachmentUploadInput> {
   const kind = detectKind(file)
   const base = { name: file.name, mimeType: file.type, size: file.size, kind }
-  if (kind === "text") return { ...base, textContent: await file.text() }
+  if (kind === "text") return { ...base, file, textContent: await file.text() }
   return { ...base, file }
 }
 
@@ -946,6 +947,7 @@ function AttachmentCard({
   if (effectiveKind === "text") {
     return (
       <InlineTextAttachment
+        attachmentId={attachment.id}
         name={attachment.name}
         mimeType={attachment.mimeType}
         size={attachment.size}
@@ -1090,6 +1092,9 @@ export function ProjectFollowUp({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const messageRef = React.useRef<HTMLTextAreaElement>(null)
   const localSearchInputRef = React.useRef<HTMLInputElement>(null)
+  const navigatorHeaderRef = React.useRef<HTMLDivElement>(null)
+  const subactivityHeaderSearchInputRef = React.useRef<HTMLInputElement>(null)
+  const navigatorHeaderMoreRef = React.useRef<HTMLDetailsElement>(null)
   const pinnedPickerRef = React.useRef<HTMLDivElement>(null)
   const statusMenuRef = React.useRef<HTMLDivElement>(null)
   const statusMenuButtonRef = React.useRef<HTMLButtonElement>(null)
@@ -1119,6 +1124,9 @@ export function ProjectFollowUp({
   const [localMediaPreviewVersion, setLocalMediaPreviewVersion] = React.useState(0)
   const [expandedActivities, setExpandedActivities] = React.useState<Set<string>>(() => new Set(project.activities.map((activity) => activity.id)))
   const [showCompletedSubactivities, setShowCompletedSubactivities] = React.useState(false)
+  const [subactivityHeaderSearchOpen, setSubactivityHeaderSearchOpen] = React.useState(false)
+  const [subactivityHeaderSearchQuery, setSubactivityHeaderSearchQuery] = React.useState("")
+  const [navigatorHeaderCompact, setNavigatorHeaderCompact] = React.useState(false)
   const [message, setMessage] = React.useState("")
   const [recording, setRecording] = React.useState(false)
   const [pendingFiles, setPendingFiles] = React.useState<File[]>([])
@@ -1253,6 +1261,30 @@ export function ProjectFollowUp({
     window.addEventListener("pointercancel", onPointerUp)
   }, [navigatorWidth])
 
+  React.useEffect(() => {
+    const node = navigatorHeaderRef.current
+    if (!node || typeof ResizeObserver === "undefined") return
+    const update = () => {
+      const width = node.getBoundingClientRect().width
+      setNavigatorHeaderCompact(width < 250 || (project.name.length > 22 && width < 340))
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [project.name])
+
+  React.useEffect(() => {
+    if (!subactivityHeaderSearchOpen) return
+    window.requestAnimationFrame(() => subactivityHeaderSearchInputRef.current?.focus())
+  }, [subactivityHeaderSearchOpen])
+
+  React.useEffect(() => {
+    setSubactivityHeaderSearchOpen(false)
+    setSubactivityHeaderSearchQuery("")
+    navigatorHeaderMoreRef.current?.removeAttribute("open")
+  }, [project.id])
+
   const completedSubactivitiesCount = React.useMemo(
     () => project.activities.reduce((total, activity) => total + activity.subactivities.filter((sub) => sub.status === "done").length, 0),
     [project.activities],
@@ -1276,19 +1308,28 @@ export function ProjectFollowUp({
     return sequence
   }, [project.activities])
 
-  const visibleActivities = React.useMemo(
-    () => project.activities.map((activity) => ({
+  const visibleActivities = React.useMemo(() => {
+    const searchQuery = subactivityHeaderSearchQuery.trim()
+    const searching = searchQuery.length > 0
+
+    return project.activities.map((activity) => ({
       ...activity,
       visibleSubs: activity.subactivities
-        .filter((sub) =>
-          (showCompletedSubactivities || sub.status !== "done")
-          && matchesActivityFilter(sub.status, filter)
-          && (assigneeId === "all" || sub.assigneeId === assigneeId),
-        )
+        .filter((sub) => {
+          if (searching) {
+            return matchesSubactivityHeaderSearch(sub.title, subactivitySequenceById.get(sub.id), searchQuery)
+          }
+          return (
+            (showCompletedSubactivities || sub.status !== "done")
+            && matchesActivityFilter(sub.status, filter)
+            && (assigneeId === "all" || sub.assigneeId === assigneeId)
+          )
+        })
         .sort((a, b) => (FOLLOW_UP_STATUS_RANK.get(a.status) ?? 999) - (FOLLOW_UP_STATUS_RANK.get(b.status) ?? 999)),
-    })).filter((activity) => activity.visibleSubs.length > 0 || (filter === "all" && assigneeId === "all" && activity.subactivities.length === 0)),
-    [assigneeId, filter, project.activities, showCompletedSubactivities],
-  )
+    })).filter((activity) => searching
+      ? activity.visibleSubs.length > 0
+      : activity.visibleSubs.length > 0 || (filter === "all" && assigneeId === "all" && activity.subactivities.length === 0))
+  }, [assigneeId, filter, project.activities, showCompletedSubactivities, subactivityHeaderSearchQuery, subactivitySequenceById])
 
   const visibleSubs = React.useMemo(
     () => visibleActivities.flatMap((activity) => activity.visibleSubs),
@@ -1317,10 +1358,11 @@ export function ProjectFollowUp({
   }, [initialSubactivityId, project.activities])
 
   React.useEffect(() => {
+    if (subactivityHeaderSearchQuery.trim()) return
     if (selectedSubId && visibleSubs.some((sub) => sub.id === selectedSubId)) return
     const running = visibleSubs.find((sub) => runningSubIds.includes(sub.id))
     setSelectedSubId(running?.id ?? visibleSubs[0]?.id ?? null)
-  }, [runningSubIds, selectedSubId, visibleSubs])
+  }, [runningSubIds, selectedSubId, subactivityHeaderSearchQuery, visibleSubs])
 
   const selectedContext = React.useMemo(() => {
     for (const activity of project.activities) {
@@ -2553,6 +2595,10 @@ export function ProjectFollowUp({
   }
 
   function selectSubactivity(subId: string) {
+    if (subactivityHeaderSearchQuery.trim()) {
+      const target = project.activities.flatMap((activity) => activity.subactivities).find((sub) => sub.id === subId)
+      if (target?.status === "done") setShowCompletedSubactivities(true)
+    }
     setSelectedSubId(subId)
     setPinnedPickerOpen(false)
     setReplyingTo(null)
@@ -3155,62 +3201,152 @@ export function ProjectFollowUp({
     }
   }
 
+  function openSubactivityHeaderSearch() {
+    navigatorHeaderMoreRef.current?.removeAttribute("open")
+    setSubactivityHeaderSearchOpen(true)
+  }
+
+  function closeSubactivityHeaderSearch() {
+    setSubactivityHeaderSearchQuery("")
+    setSubactivityHeaderSearchOpen(false)
+  }
+
   const navigatorContent = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-3">
-        <div className="flex items-center gap-2">
-          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" /></span>
-          <div className="min-w-0 flex-1">
-            <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
-              <span className="truncate">{project.name}</span>
-              {unreadMaps.byProject.get(project.id) && (
-                unreadMaps.byProject.get(project.id) === "mention" ? (
-                  <button
-                    type="button"
-                    onClick={() => openMentionShortcut()}
-                    className="flex size-4 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[0.52rem] font-bold text-white transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
-                    title="Ir para a menção mais recente neste projeto"
-                    aria-label="Ir para a menção mais recente neste projeto"
-                  >@</button>
-                ) : (
-                  <span className="size-2 shrink-0 rounded-full bg-sky-400" title="Alterações não vistas" />
-                )
+        <div ref={navigatorHeaderRef} className="relative flex min-w-0 items-center gap-2">
+          {subactivityHeaderSearchOpen ? (
+            <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-primary/30 bg-background px-2.5 shadow-sm ring-2 ring-primary/5">
+              <Search className="size-4 shrink-0 text-primary" />
+              <input
+                ref={subactivityHeaderSearchInputRef}
+                value={subactivityHeaderSearchQuery}
+                onChange={(event) => setSubactivityHeaderSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    closeSubactivityHeaderSearch()
+                    return
+                  }
+                  if (event.key === "Enter" && visibleSubs.length === 1) {
+                    event.preventDefault()
+                    selectSubactivity(visibleSubs[0].id)
+                  }
+                }}
+                placeholder="Nº ou título da subatividade"
+                aria-label="Pesquisar subatividade por número ou título"
+                className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/70"
+              />
+              {subactivityHeaderSearchQuery.trim() && (
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground" title="Resultados encontrados">
+                  {visibleSubs.length}
+                </span>
               )}
-            </p>
-            <p className="truncate text-[0.65rem] text-muted-foreground">{preferences.interfaceMode === "focused" ? "Tópicos do projeto" : "Atividades e subatividades"}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-pressed={showCompletedSubactivities}
-              onClick={toggleCompletedSubactivities}
-              className={cn(
-                "relative text-muted-foreground transition-colors",
-                showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
-              )}
-              title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
-              aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
-            >
-              <ListChecks className="size-3.5" />
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
-                  showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
-                )}
+              <button
+                type="button"
+                onClick={closeSubactivityHeaderSearch}
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Fechar pesquisa"
+                aria-label="Fechar pesquisa de subatividades"
               >
-                <span className="size-1.5 rounded-full bg-card shadow-sm" />
-              </span>
-            </Button>
-            {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
-          </div>
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-primary"><ProjectIcon icon={project.icon} imageUrl={project.iconImageUrl} className="size-4" imageClassName="size-full rounded-none object-cover" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+                  <span className="truncate">{project.name}</span>
+                  {unreadMaps.byProject.get(project.id) && (
+                    unreadMaps.byProject.get(project.id) === "mention" ? (
+                      <button
+                        type="button"
+                        onClick={() => openMentionShortcut()}
+                        className="flex size-4 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[0.52rem] font-bold text-white transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40"
+                        title="Ir para a menção mais recente neste projeto"
+                        aria-label="Ir para a menção mais recente neste projeto"
+                      >@</button>
+                    ) : (
+                      <span className="size-2 shrink-0 rounded-full bg-sky-400" title="Alterações não vistas" />
+                    )
+                  )}
+                </p>
+                <p className="truncate text-[0.65rem] text-muted-foreground">{preferences.interfaceMode === "focused" ? "Tópicos do projeto" : "Atividades e subatividades"}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {navigatorHeaderCompact ? (
+                  <details ref={navigatorHeaderMoreRef} className="relative">
+                    <summary
+                      className="flex size-7 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
+                      title="Mais ações"
+                      aria-label="Mais ações do projeto"
+                    >
+                      <Ellipsis className="size-4" />
+                    </summary>
+                    <div className="absolute right-0 top-full z-50 mt-1.5 w-56 overflow-hidden rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
+                      <button
+                        type="button"
+                        onClick={openSubactivityHeaderSearch}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
+                      >
+                        <Search className="size-3.5 text-primary" />
+                        <span className="min-w-0 flex-1">Pesquisar subatividade</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigatorHeaderMoreRef.current?.removeAttribute("open")
+                          toggleCompletedSubactivities()
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
+                      >
+                        <ListChecks className={cn("size-3.5", showCompletedSubactivities ? "text-success" : "text-muted-foreground")} />
+                        <span className="min-w-0 flex-1">{showCompletedSubactivities ? "Ocultar concluídas" : "Mostrar concluídas"}</span>
+                        {completedSubactivitiesCount > 0 && <span className="font-mono text-[0.58rem] text-muted-foreground">{completedSubactivitiesCount}</span>}
+                      </button>
+                    </div>
+                  </details>
+                ) : (
+                  <>
+                    <Button type="button" variant="ghost" size="icon-xs" onClick={openSubactivityHeaderSearch} className="text-muted-foreground" title="Pesquisar subatividade" aria-label="Pesquisar subatividade">
+                      <Search className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-pressed={showCompletedSubactivities}
+                      onClick={toggleCompletedSubactivities}
+                      className={cn(
+                        "relative text-muted-foreground transition-colors",
+                        showCompletedSubactivities && "bg-success/10 text-success hover:bg-success/15 hover:text-success",
+                      )}
+                      title={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} concluídas${completedSubactivitiesCount ? ` (${completedSubactivitiesCount})` : ""}`}
+                      aria-label={`${showCompletedSubactivities ? "Ocultar" : "Mostrar"} subatividades concluídas`}
+                    >
+                      <ListChecks className="size-3.5" />
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "absolute -bottom-0.5 -right-0.5 flex h-2.5 w-4 items-center rounded-full border border-card px-px transition-colors",
+                          showCompletedSubactivities ? "justify-end bg-success" : "justify-start bg-muted-foreground/45",
+                        )}
+                      >
+                        <span className="size-1.5 rounded-full bg-card shadow-sm" />
+                      </span>
+                    </Button>
+                  </>
+                )}
+                {canManageStructure && <FollowUpAddActivityDialog projectId={project.id} />}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
         {visibleActivities.map((activity, index) => {
-          const expanded = expandedActivities.has(activity.id)
+          const expanded = Boolean(subactivityHeaderSearchQuery.trim()) || expandedActivities.has(activity.id)
           const runningCount = activity.subactivities.filter((sub) => runningSubIds.includes(sub.id)).length
           const activityUnread = unreadMaps.byActivity.get(activity.id)
           return (
@@ -3370,7 +3506,11 @@ export function ProjectFollowUp({
           )
         })}
         {visibleActivities.length === 0 && (
-          <div className="px-3 py-8 text-center text-xs text-muted-foreground">Nada corresponde aos filtros atuais.</div>
+          <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+            {subactivityHeaderSearchQuery.trim()
+              ? `Nenhuma subatividade encontrada para “${subactivityHeaderSearchQuery.trim()}”.`
+              : "Nada corresponde aos filtros atuais."}
+          </div>
         )}
       </div>
     </div>

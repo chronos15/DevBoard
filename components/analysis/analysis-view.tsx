@@ -206,6 +206,7 @@ function AnalysisAttachmentPreview({ attachment, onSendEditedImage }: { attachme
   if (effectiveKind === "text") {
     return (
       <InlineTextAttachment
+        attachmentId={attachment.id}
         name={attachment.name}
         mimeType={attachment.mimeType}
         size={attachment.size}

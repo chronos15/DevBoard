@@ -64,7 +64,7 @@ async function fileToUpload(file: File): Promise<AttachmentUploadInput> {
   }
 
   if (kind === "text") {
-    return { ...base, textContent: await file.text() }
+    return { ...base, file, textContent: await file.text() }
   }
 
   return { ...base, file, dataUrl: URL.createObjectURL(file) }

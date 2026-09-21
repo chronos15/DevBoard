@@ -93,15 +93,18 @@ function attachmentIcon(category: string) {
 
 function RequestAttachmentLink({ attachment, compact = false, inlineImage = false, onSendEditedImage }: { attachment: ServiceRequest["attachments"][number]; compact?: boolean; inlineImage?: boolean; onSendEditedImage?: (file: File) => Promise<boolean | void> }) {
   const supabase = React.useMemo(() => createClient(), [])
+  const { currentUserRole, refreshAll } = useStore()
   const effectiveKind = inferAttachmentKind({ name: attachment.name, mimeType: attachment.mimeType, kind: attachment.kind })
   const [opening, setOpening] = React.useState(false)
   const [imageUrl, setImageUrl] = React.useState<string | null>(null)
   const [imageOpen, setImageOpen] = React.useState(false)
   const [fileOpen, setFileOpen] = React.useState(false)
+  const [visibilitySaving, setVisibilitySaving] = React.useState(false)
   const isImage = effectiveKind === "image"
+  const hiddenForCurrentUser = Boolean(attachment.meetingArtifactKind && attachment.active === false && currentUserRole !== "admin")
 
   React.useEffect(() => {
-    if (!inlineImage || !isImage || imageUrl) return
+    if (hiddenForCurrentUser || !inlineImage || !isImage || imageUrl) return
     let cancelled = false
     if (attachment.sourceType === "external-url" && attachment.externalUrl) {
       setImageUrl(attachment.externalUrl)
@@ -115,7 +118,14 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
       if (!cancelled) setOpening(false)
     })
     return () => { cancelled = true }
-  }, [attachment.externalUrl, attachment.sourceType, attachment.storagePath, imageUrl, inlineImage, isImage, supabase])
+  }, [attachment.externalUrl, attachment.sourceType, attachment.storagePath, hiddenForCurrentUser, imageUrl, inlineImage, isImage, supabase])
+
+  React.useEffect(() => {
+    if (!hiddenForCurrentUser) return
+    setImageUrl(null)
+    setImageOpen(false)
+    setFileOpen(false)
+  }, [hiddenForCurrentUser])
 
   async function openImage() {
     if (opening) return
@@ -139,6 +149,26 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
       setOpening(false)
     }
   }
+
+
+  async function toggleMeetingArtifactVisibility() {
+    if (!attachment.meetingArtifactKind || currentUserRole !== "admin" || visibilitySaving) return
+    setVisibilitySaving(true)
+    try {
+      const { error } = await supabase.rpc("set_service_request_attachment_active", {
+        p_attachment_id: attachment.id,
+        p_active: !attachment.active,
+      })
+      if (error) throw error
+      await refreshAll()
+    } catch (error) {
+      console.error("[TaskBoard/Reunião] Não foi possível alterar a visualização do artefato:", error)
+    } finally {
+      setVisibilitySaving(false)
+    }
+  }
+
+  if (hiddenForCurrentUser) return null
 
   if (inlineImage && isImage) {
     return (
@@ -193,20 +223,36 @@ function RequestAttachmentLink({ attachment, compact = false, inlineImage = fals
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => isImage ? void openImage() : setFileOpen(true)}
-        className={cn("group flex w-full max-w-full min-w-0 overflow-hidden items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}
-      >
-        <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-primary", compact ? "size-8" : "size-9")}> 
-          {opening ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
-        </span>
-        <span className="min-w-0 flex-1 overflow-hidden">
-          <span className="line-clamp-2 break-words text-xs font-semibold leading-snug">{attachment.name}</span>
-          <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{metadata}</span>
-        </span>
-        <ArrowRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-      </button>
+      <div className={cn("min-w-0", attachment.active === false && "opacity-70")}>
+        <button
+          type="button"
+          onClick={() => isImage ? void openImage() : setFileOpen(true)}
+          className={cn("group flex w-full max-w-full min-w-0 overflow-hidden items-center gap-3 rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/25 hover:bg-primary/[0.03]", compact ? "p-2.5" : "p-3")}
+        >
+          <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-primary", compact ? "size-8" : "size-9")}> 
+            {opening ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
+          </span>
+          <span className="min-w-0 flex-1 overflow-hidden">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="line-clamp-2 break-words text-xs font-semibold leading-snug">{attachment.name}</span>
+              {attachment.meetingArtifactKind && <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.52rem] font-semibold text-primary">Reunião</span>}
+            </span>
+            <span className="mt-0.5 block truncate text-[0.62rem] text-muted-foreground">{metadata}</span>
+          </span>
+          <ArrowRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+        </button>
+        {attachment.meetingArtifactKind && currentUserRole === "admin" && (
+          <button
+            type="button"
+            disabled={visibilitySaving}
+            onClick={() => void toggleMeetingArtifactVisibility()}
+            className="mt-1.5 inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background px-2 text-[0.62rem] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            {visibilitySaving ? <LoaderCircle className="size-3 animate-spin" /> : attachment.active ? <X className="size-3" /> : <CheckCircle2 className="size-3" />}
+            {attachment.active ? "Ocultar registro" : "Exibir registro"}
+          </button>
+        )}
+      </div>
 
       {isImage ? (
         <ImageViewerDialog

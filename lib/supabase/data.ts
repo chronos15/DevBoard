@@ -21,6 +21,7 @@ import type {
 } from '@/lib/types'
 import { AVATARS_BUCKET, PROJECT_ICONS_BUCKET, SERVICE_REQUEST_UNIT_ICONS_BUCKET, isAttachmentKind, mapMember } from './helpers'
 import { defaultActionPermissions, defaultReadOnlyScreens, defaultScreenPermissions } from '@/lib/access-control'
+import { meetingArtifactKindFromName } from '@/lib/meeting-artifacts'
 
 export type BackendSnapshot = {
   user: User
@@ -72,6 +73,7 @@ async function mapAttachment(_supabase: SupabaseClient, row: any): Promise<Attac
     statusChangedAt: row.status_changed_at ?? undefined,
     statusChangedBy: row.status_changed_by ?? undefined,
     messageGroupId: row.message_group_id ?? undefined,
+    meetingArtifactKind: meetingArtifactKindFromName(row.name),
   }
 }
 
@@ -737,7 +739,7 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
       service_request_participants(user_id),
       service_request_messages(id,request_id,author_id,content,mentions,created_at,edited_at),
       service_request_events(id,request_id,actor_id,event_type,title,description,from_status,to_status,created_at),
-      service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,source_type,external_url,uploaded_by,created_at)
+      service_request_attachments(id,request_id,message_id,category,name,mime_type,size_bytes,kind,storage_path,source_type,external_url,uploaded_by,active,status_changed_at,status_changed_by,created_at)
     `)
     .eq('workspace_id', workspaceId)
     .order('updated_at', { ascending: false })
@@ -758,6 +760,10 @@ export async function loadServiceRequests(supabase: SupabaseClient, workspaceId:
       externalUrl: item.external_url ?? undefined,
       uploadedBy: item.uploaded_by,
       createdAt: item.created_at,
+      active: item.active !== false,
+      statusChangedAt: item.status_changed_at ?? undefined,
+      statusChangedBy: item.status_changed_by ?? undefined,
+      meetingArtifactKind: meetingArtifactKindFromName(item.name),
     }))
     return {
       id: row.id,

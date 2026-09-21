@@ -131,6 +131,7 @@ export type AttachmentEntry = {
   textContent?: string
   statusChangedAt?: string
   statusChangedBy?: string
+  meetingArtifactKind?: "recording" | "transcript"
 }
 
 export type AttachmentUploadInput = Pick<
@@ -469,6 +470,10 @@ export type ServiceRequestAttachment = {
   externalUrl?: string
   uploadedBy: string
   createdAt: string
+  active: boolean
+  statusChangedAt?: string
+  statusChangedBy?: string
+  meetingArtifactKind?: "recording" | "transcript"
 }
 
 export type ServiceRequestMessage = {

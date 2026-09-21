@@ -46,6 +46,7 @@ import { primeIdleDetectionPermission } from "@/lib/idle-detection"
 import { FOLLOW_UP_UNREAD_NOTIFICATION_TYPES } from "@/lib/follow-up-unread"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { canPerformAction, canWriteScreen, screenAccessForPath } from "@/lib/access-control"
+import { meetingArtifactKindFromName } from "@/lib/meeting-artifacts"
 import { TimerStartConflictDialog, type TimerStartConflict } from "@/components/timer-start-conflict-dialog"
 import type {
   AccessRole,
@@ -140,9 +141,10 @@ const TYPE_TABLES = new Set(["work_item_types"])
 const REQUEST_TABLES = new Set(["service_requests", "service_request_participants", "service_request_messages", "service_request_events", "service_request_attachments"])
 const REQUEST_UNIT_TABLES = new Set(["service_request_units"])
 
-const REALTIME_CONNECTION_ERROR =
-  "A conexão em tempo real foi interrompida. O TaskBoard continuará tentando reconectar automaticamente."
+export const REALTIME_CONNECTION_ERROR =
+  "Conexão em tempo real indisponível. Continuaremos tentando reconectar."
 
+const REALTIME_SILENT_RETRY_LIMIT = 3
 const REALTIME_RECONNECT_DELAYS = [800, 1500, 3000, 5000, 8000, 12000, 18000, 30000] as const
 
 function realtimeReconnectDelay(attempt: number) {
@@ -544,6 +546,7 @@ function realtimeAttachmentEntry(row: any, existing?: AttachmentEntry): Attachme
     statusChangedAt: typeof row.status_changed_at === "string" ? row.status_changed_at : existing?.statusChangedAt,
     statusChangedBy: typeof row.status_changed_by === "string" ? row.status_changed_by : existing?.statusChangedBy,
     messageGroupId: typeof row.message_group_id === "string" ? row.message_group_id : existing?.messageGroupId,
+    meetingArtifactKind: meetingArtifactKindFromName(typeof row.name === "string" ? row.name : existing?.name),
   } as AttachmentEntry
 }
 
@@ -1143,7 +1146,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       errorTimer = window.setTimeout(() => {
         errorTimer = null
         if (!disposed && !subscribed) setLastError(REALTIME_CONNECTION_ERROR)
-      }, 9000)
+      }, 1200)
     }
 
     const attachDatabaseListeners = (nextChannel: ReturnType<typeof supabase.channel>) => {
@@ -1209,7 +1212,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (disposed) return
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         subscribed = false
-        showReconnectErrorLater()
+        reconnectAttempt += 1
+        if (reconnectAttempt > REALTIME_SILENT_RETRY_LIMIT) showReconnectErrorLater()
+        if (reconnectTimer === null) {
+          const delay = realtimeReconnectDelay(reconnectAttempt)
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            void connectRealtime("retry")
+          }, delay)
+        }
         return
       }
 
@@ -1251,7 +1262,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
         subscribed = false
         reconnectAttempt += 1
-        if (reconnectAttempt >= 2) showReconnectErrorLater()
+        if (reconnectAttempt > REALTIME_SILENT_RETRY_LIMIT) showReconnectErrorLater()
 
         // O client do Supabase já tenta recuperar o websocket, mas recriar o
         // canal aqui cobre sessões renovadas, suspensão do PWA e redes que

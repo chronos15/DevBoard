@@ -265,7 +265,7 @@ export function AttachmentDialog({
   /** Incrementar a cada novo lote recebido para permitir o mesmo arquivo novamente. */
   incomingVersion?: number
 }) {
-  const { members } = useStore()
+  const { members, currentUserRole } = useStore()
   const supabase = React.useMemo(() => createClient(), [])
   const [internalOpen, setInternalOpen] = React.useState(false)
   const open = controlledOpen ?? internalOpen
@@ -289,9 +289,13 @@ export function AttachmentDialog({
   const inputRef = React.useRef<HTMLInputElement>(null)
   const lastIncomingVersionRef = React.useRef(0)
 
+  const visibleAttachments = React.useMemo(
+    () => attachments.filter((attachment) => currentUserRole === "admin" || !(attachment.meetingArtifactKind && !attachment.active)),
+    [attachments, currentUserRole],
+  )
   const sorted = React.useMemo(
-    () => [...attachments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [attachments],
+    () => [...visibleAttachments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [visibleAttachments],
   )
 
   const filtered = React.useMemo(
@@ -299,9 +303,9 @@ export function AttachmentDialog({
     [sorted, filter],
   )
 
-  const activeCount = attachments.filter((attachment) => attachment.active).length
-  const inactiveCount = attachments.length - activeCount
-  const selectedBase = attachments.find((attachment) => attachment.id === selectedId) ?? filtered[0]
+  const activeCount = visibleAttachments.filter((attachment) => attachment.active).length
+  const inactiveCount = visibleAttachments.length - activeCount
+  const selectedBase = visibleAttachments.find((attachment) => attachment.id === selectedId) ?? filtered[0]
   const selected = selectedBase
     ? {
         ...selectedBase,
@@ -541,15 +545,15 @@ export function AttachmentDialog({
         >
           <Paperclip className="size-3.5" />
           {compact ? (
-            attachments.length > 0 && (
-              <span className="font-mono text-[0.62rem] tabular-nums">{attachments.length}</span>
+            visibleAttachments.length > 0 && (
+              <span className="font-mono text-[0.62rem] tabular-nums">{visibleAttachments.length}</span>
             )
           ) : (
             <>
               <span>{buttonLabel}</span>
-              {attachments.length > 0 && (
+              {visibleAttachments.length > 0 && (
                 <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
-                  {attachments.length}
+                  {visibleAttachments.length}
                 </span>
               )}
             </>
@@ -577,7 +581,7 @@ export function AttachmentDialog({
                 {([
                   ["active", `Ativos ${activeCount}`],
                   ["inactive", `Inativos ${inactiveCount}`],
-                  ["all", `Todos ${attachments.length}`],
+                  ["all", `Todos ${visibleAttachments.length}`],
                 ] as const).map(([key, label]) => (
                   <button
                     key={key}
@@ -719,10 +723,10 @@ export function AttachmentDialog({
                 <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border px-5 text-center">
                   <Paperclip className="size-5 text-muted-foreground/45" />
                   <p className="mt-3 text-sm font-medium">
-                    {attachments.length === 0 ? "Nenhum arquivo ainda" : "Nenhum arquivo neste filtro"}
+                    {visibleAttachments.length === 0 ? "Nenhum arquivo ainda" : "Nenhum arquivo neste filtro"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {attachments.length === 0
+                    {visibleAttachments.length === 0
                       ? "Qualquer usuário pode adicionar documentação, SQL e mídias."
                       : "Altere o filtro para visualizar os outros anexos."}
                   </p>
@@ -785,6 +789,11 @@ export function AttachmentDialog({
                         )}>
                           {selected.active ? "Ativo" : "Inativo"}
                         </span>
+                        {selected.meetingArtifactKind && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.62rem] font-medium text-primary">
+                            {selected.meetingArtifactKind === "recording" ? "Gravação de reunião" : "PDF da reunião"}
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 max-w-full break-words text-xs leading-relaxed text-muted-foreground">
                         {kindLabel(selected.kind)} · {formatBytes(selected.size)} · enviado em {formatDate(selected.createdAt)}
@@ -801,22 +810,26 @@ export function AttachmentDialog({
                           Baixar
                         </a>
                       )}
-                      <Button
-                        type="button"
-                        size="lg"
-                        variant={selected.active ? "outline" : "default"}
-                        onClick={() => {
-                          if (statusSavingId) return
-                          setStatusSavingId(selected.id)
-                          void Promise.resolve(onSetActive(selected.id, !selected.active)).finally(() => setStatusSavingId(null))
-                        }}
-                        loading={statusSavingId === selected.id}
-                        loadingText={selected.active ? "Inativando..." : "Reativando..."}
-                        className="gap-1.5"
-                      >
-                        {selected.active ? <CircleOff className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
-                        {selected.active ? "Marcar inativo" : "Reativar"}
-                      </Button>
+                      {(!selected.meetingArtifactKind || currentUserRole === "admin") && (
+                        <Button
+                          type="button"
+                          size="lg"
+                          variant={selected.active ? "outline" : "default"}
+                          onClick={() => {
+                            if (statusSavingId) return
+                            setStatusSavingId(selected.id)
+                            void Promise.resolve(onSetActive(selected.id, !selected.active)).finally(() => setStatusSavingId(null))
+                          }}
+                          loading={statusSavingId === selected.id}
+                          loadingText={selected.active ? "Ocultando..." : "Exibindo..."}
+                          className="gap-1.5"
+                        >
+                          {selected.active ? <CircleOff className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
+                          {selected.meetingArtifactKind
+                            ? selected.active ? "Ocultar registro" : "Exibir registro"
+                            : selected.active ? "Marcar inativo" : "Reativar"}
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -841,7 +854,11 @@ export function AttachmentDialog({
                         </span>
                       )}
                     </div>
-                    <p className="mt-1.5">O histórico é preservado: não existe ação de exclusão para anexos.</p>
+                    <p className="mt-1.5">{selected.meetingArtifactKind
+                      ? currentUserRole === "admin"
+                        ? "Registro protegido da reunião: o arquivo não é apagado; o ADMIN pode apenas ocultar ou exibir sua visualização."
+                        : "Registro protegido da reunião: gravação e PDF não podem ser excluídos ou ocultados por usuários comuns."
+                      : "O histórico é preservado: não existe ação de exclusão para anexos."}</p>
                   </div>
                 </div>
               ) : (

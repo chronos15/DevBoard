@@ -2828,6 +2828,7 @@ export function ProjectFollowUp({
 
   function canDeleteAttachment(attachment: AttachmentEntry) {
     if (selectedDeveloperObserver) return false
+    if (attachment.meetingArtifactKind) return false
     if (currentUserRole === "admin") return true
     if (attachment.uploadedBy !== currentUserId) return false
     return clockNow - new Date(attachment.createdAt).getTime() <= 30 * 60 * 1000

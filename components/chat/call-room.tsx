@@ -2463,6 +2463,15 @@ export function CallRoom({
     if (!open || !meeting || currentMeetingState?.status !== "joined" || mediaReadyMeetingId !== meeting.id) return
     let disposed = false
     let channel: RealtimeChannel | null = null
+    let realtimeFailureCount = 0
+    let realtimeWarningTimer: number | null = null
+    const realtimeReconnectMessage = "A sala em tempo real está reconectando. A mídia atual será preservada enquanto possível."
+    const clearRealtimeWarningTimer = () => {
+      if (realtimeWarningTimer !== null) {
+        window.clearTimeout(realtimeWarningTimer)
+        realtimeWarningTimer = null
+      }
+    }
     const lifecycleId = `${meeting.id}:${sessionIdRef.current}`
     console.info("TaskBoard: sessão WebRTC iniciada", { meetingId: meeting.id, sessionId: sessionIdRef.current })
 
@@ -2661,15 +2670,28 @@ export function CallRoom({
           .subscribe((status, error) => {
             if (disposed) return
             if (status === "SUBSCRIBED") {
+              realtimeFailureCount = 0
+              clearRealtimeWarningTimer()
               realtimeSubscribedRef.current = true
-              setMediaError((current) => current.startsWith("Falha na sala") ? "" : current)
+              setMediaError((current) =>
+                current.startsWith("Falha na sala") || current === realtimeReconnectMessage ? "" : current,
+              )
               publishPresence()
               window.setTimeout(() => broadcastMediaStateBurst(), 120)
               if (meetingRecorderRef.current) window.setTimeout(() => void broadcastRecordingState("recording"), 180)
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
               realtimeSubscribedRef.current = false
-              console.warn("TaskBoard: Realtime channel", status, error)
-              setMediaError("A sala em tempo real está reconectando. A mídia atual será preservada enquanto possível.")
+              realtimeFailureCount += 1
+              console.warn("TaskBoard: Realtime channel", status, error, { realtimeFailureCount })
+
+              // O próprio Supabase Realtime tenta reentrar no canal. Mantemos as três
+              // primeiras falhas silenciosas para evitar falsos alertas em redes móveis.
+              if (realtimeFailureCount > 3 && realtimeWarningTimer === null) {
+                realtimeWarningTimer = window.setTimeout(() => {
+                  realtimeWarningTimer = null
+                  if (!disposed && !realtimeSubscribedRef.current) setMediaError(realtimeReconnectMessage)
+                }, 1000)
+              }
             }
           })
       } catch (error) {
@@ -2681,6 +2703,7 @@ export function CallRoom({
     return () => {
       console.info("TaskBoard: sessão WebRTC finalizada", { lifecycleId })
       disposed = true
+      clearRealtimeWarningTimer()
       realtimeSubscribedRef.current = false
       if (channel) {
         void channel.untrack()

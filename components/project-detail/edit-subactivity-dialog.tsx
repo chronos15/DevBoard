@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils"
 import { formatDecimalHoursAsHHMM, normalizeHHMMOnBlur, parseHHMMToDecimalHours } from "@/lib/duration-input"
 import { DurationField } from "@/components/ui/duration-field"
+import { normalizeSubactivityDescription } from "@/lib/subactivity-description"
 
 export function EditSubactivityDialog({
   subactivity,
@@ -139,7 +140,18 @@ export function EditSubactivityDialog({
 
         <form id={`edit-subactivity-${subactivity.id}`} onSubmit={submit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Descrição</label>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs font-medium text-muted-foreground">Descrição</label>
+              <button
+                type="button"
+                onClick={() => setTitle((current) => normalizeSubactivityDescription(current))}
+                disabled={!title.trim()}
+                className="rounded-md px-2 py-1 text-[0.64rem] font-medium text-primary transition-colors hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-40"
+                title="Converter o texto para frase normal, preservando trechos entre aspas"
+              >
+                Normalizar texto
+              </button>
+            </div>
             <textarea
               autoFocus
               rows={5}
@@ -148,6 +160,16 @@ export function EditSubactivityDialog({
               className="min-h-28 w-full resize-y rounded-xl border border-border bg-card px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors focus:border-ring sm:min-h-32"
               placeholder="Descreva o que precisa ser feito..."
             />
+            <div className="flex items-start justify-between gap-3 text-[0.64rem] leading-relaxed">
+              {title.length > 500 ? (
+                <p className="max-w-xl text-warning">
+                  Descrição longa ({title.length} caracteres). Para facilitar a leitura, prefira deixar um resumo aqui e publicar o detalhamento no corpo da subatividade. Você ainda pode salvar normalmente.
+                </p>
+              ) : (
+                <span className="text-muted-foreground">Use “Normalizar texto” se o conteúdo vier todo em CAIXA ALTA.</span>
+              )}
+              <span className="shrink-0 tabular-nums text-muted-foreground">{title.length}</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

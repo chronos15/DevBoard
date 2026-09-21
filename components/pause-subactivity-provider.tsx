@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { formatSubactivityDescription } from "@/lib/subactivity-description"
 
 const PAUSE_PRESETS = [
   { label: "Almoço", icon: Coffee },
@@ -61,6 +62,7 @@ export function PauseSubactivityProvider({ children }: { children: React.ReactNo
 
   const found = pending ? findSub(pending.subactivityId) : null
   const cleanReason = reason.trim()
+  const pauseSubactivityDescription = found ? formatSubactivityDescription(found.sub.title) : ""
 
   const confirmPause = React.useCallback(async () => {
     if (!pending || pausing || cleanReason.length < 2) return
@@ -83,26 +85,31 @@ export function PauseSubactivityProvider({ children }: { children: React.ReactNo
           if (!open && !pausing) close(false)
         }}
       >
-        <DialogContent className="w-[calc(100vw-1.5rem)] overflow-hidden p-0 sm:max-w-lg">
-          <DialogHeader className="border-b border-border px-4 pb-4 pt-5 sm:px-5">
+        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="shrink-0 border-b border-border px-4 pb-4 pt-5 sm:px-5">
             <div className="flex items-start gap-3 pr-7">
               <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Pause className="size-4" />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <DialogTitle>Pausar subatividade</DialogTitle>
                 <DialogDescription className="mt-1.5 leading-relaxed">
-                  {found ? (
-                    <>Informe o motivo da pausa em <strong className="font-medium text-foreground">“{found.sub.title}”</strong>. Ele ficará registrado no histórico.</>
-                  ) : (
-                    <>Informe o motivo da pausa. Ele ficará registrado no histórico.</>
-                  )}
+                  Informe o motivo da pausa. Ele ficará registrado no histórico.
                 </DialogDescription>
+                {found && (
+                  <div
+                    className="mt-2 line-clamp-3 break-words text-xs font-medium leading-5 text-foreground"
+                    title={pauseSubactivityDescription}
+                    aria-label={`Subatividade: ${pauseSubactivityDescription}`}
+                  >
+                    “{pauseSubactivityDescription}”
+                  </div>
+                )}
               </div>
             </div>
           </DialogHeader>
 
-          <div className="space-y-4 px-4 py-4 sm:px-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 [scrollbar-width:thin]">
             <div>
               <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Motivos rápidos</p>
               <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
@@ -155,7 +162,7 @@ export function PauseSubactivityProvider({ children }: { children: React.ReactNo
             </label>
           </div>
 
-          <DialogFooter className="mx-0 mb-0 rounded-none px-4 py-3 sm:px-5">
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t border-border px-4 py-3 sm:px-5">
             <Button type="button" variant="outline" onClick={() => close(false)} disabled={pausing}>
               Cancelar
             </Button>

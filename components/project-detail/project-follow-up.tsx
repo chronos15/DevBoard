@@ -106,6 +106,7 @@ import { MessageNarratorButton } from "@/components/messages/message-narrator"
 import { isSubactivityMeetingLog, meetingLogMeetingId, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { matchesSubactivityHeaderSearch } from "@/lib/subactivity-search"
+import { formatSubactivityDescription } from "@/lib/subactivity-description"
 import { toUserFacingError } from "@/lib/user-facing-error"
 import { createSubactivityHistoryPdf, downloadPdfBlob, safePdfFileName, type SubactivityPdfAttachment, type SubactivityPdfEntry } from "@/lib/subactivity-export-pdf"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
@@ -3903,7 +3904,7 @@ export function ProjectFollowUp({
                       )}
                     </div>
                     <ChevronRight className="hidden size-3 shrink-0 text-muted-foreground/60 lg:block" />
-                    <strong className="min-w-0 text-xs leading-tight sm:text-sm max-[760px]:line-clamp-2 min-[761px]:truncate">{selectedSub.title}</strong>
+                    <strong className="min-w-0 text-xs leading-tight sm:text-sm max-[760px]:line-clamp-2 min-[761px]:truncate">{formatSubactivityDescription(selectedSub.title)}</strong>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[0.6rem] text-muted-foreground min-[900px]:hidden">
                     <span className={cn("size-2.5 rounded-full shadow-sm ring-2 ring-background", FOLLOW_UP_STATUS_VISUAL[selectedSub.status].dotClassName)} />
@@ -4115,7 +4116,7 @@ export function ProjectFollowUp({
                           aria-controls={`subactivity-references-${selectedSub.id}`}
                           title={subactivityReferencesExpanded ? "Recolher referências da subatividade" : "Ver referências da subatividade"}
                         >
-                          <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{selectedSub.title}</h2>
+                          <h2 className="min-w-0 break-words text-base font-semibold leading-snug min-[761px]:text-lg">{formatSubactivityDescription(selectedSub.title)}</h2>
                           <ChevronDown className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground/55 transition-transform duration-200 group-hover:text-muted-foreground min-[761px]:mt-1", subactivityReferencesExpanded && "rotate-180")} />
                         </button>
 

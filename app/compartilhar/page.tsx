@@ -527,7 +527,7 @@ export default function ShareToDevboardPage() {
           : reason === "limite"
             ? "O anexo ultrapassou o limite temporário de recebimento."
             : "O arquivo chegou ao receptor, mas não pôde ser preservado antes de abrir a tela."
-      setError(`${reasonText} Diagnóstico V231: ${type} · ${sizeLabel}.`)
+      setError(`${reasonText} Diagnóstico V232: ${type} · ${sizeLabel}.`)
     } else if (params.get("erro") === "recebimento-v219") {
       const reason = params.get("motivo") || "desconhecido"
       const bytes = Number(params.get("bytes") || 0)

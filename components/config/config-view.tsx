@@ -1066,7 +1066,7 @@ function BrowserNotificationSettings() {
         resetBrowserNotificationPrompt(currentUserId)
         setDismissed(false)
         setShowHelp(false)
-        try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/devboard-sw.js?v=228") } catch {}
+        try { if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/devboard-sw.js?v=229") } catch {}
       } else {
         dismissBrowserNotificationPrompt(currentUserId)
         setDismissed(true)

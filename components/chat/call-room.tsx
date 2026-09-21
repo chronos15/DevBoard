@@ -1237,6 +1237,25 @@ export function CallRoom({
   const canEndMeeting = Boolean(
     meeting && (currentUserRole === "admin" || isMeetingOwner),
   )
+  const meetingContextInfo = React.useMemo(() => {
+    const project = findMeetingProject(projects, meetingWallContext)
+    const activity = project?.activities.find((item) =>
+      item.id === meetingWallContext?.activityId ||
+      item.subactivities.some((subactivity) => subactivity.id === meetingWallContext?.subactivityId),
+    ) ?? null
+    const subactivity = meetingWallContext?.subactivityId
+      ? activity?.subactivities.find((item) => item.id === meetingWallContext.subactivityId) ?? null
+      : null
+    const request = meetingWallContext?.requestId
+      ? serviceRequests.find((item) => item.id === meetingWallContext.requestId) ?? null
+      : null
+    const primaryTitle = activity?.title?.trim() || meeting?.title?.trim() || "Reunião"
+    const secondaryTitle = subactivity?.title?.trim() || request?.title?.trim() || ""
+    const displayTitle = secondaryTitle && secondaryTitle.toLocaleLowerCase("pt-BR") !== primaryTitle.toLocaleLowerCase("pt-BR")
+      ? `${primaryTitle} · ${secondaryTitle}`
+      : primaryTitle
+    return { project, activity, subactivity, request, displayTitle }
+  }, [meeting?.title, meetingWallContext, projects, serviceRequests])
   React.useLayoutEffect(() => {
     if (!open || !meeting || minimized || typeof document === "undefined") return
 
@@ -3231,7 +3250,7 @@ export function CallRoom({
       })
 
       const pdf = createMeetingTranscriptPdf({
-        meetingTitle: meeting.title,
+        meetingTitle: meetingContextInfo.displayTitle,
         startedAt: meeting.createdAt,
         endedAt,
         messages,
@@ -3239,7 +3258,7 @@ export function CallRoom({
       if (!pdf.size) throw new Error("O PDF do chat não pôde ser gerado.")
       if (pdf.size > 50 * 1024 * 1024) throw new Error("O histórico do chat excedeu o limite de 50 MB.")
 
-      const base = meetingRecordingBaseName(meeting.title)
+      const base = meetingRecordingBaseName(meetingContextInfo.displayTitle)
       const fileName = `Chat da reunião - ${base}.pdf`
       const path = context.requestId
         ? `${context.workspaceId}/${context.requestId}/${currentUserId}/meeting-${meeting.id}-${safeFileName(fileName)}`
@@ -3284,7 +3303,7 @@ export function CallRoom({
       }
       return false
     }
-  }, [currentUserId, meeting, members, refreshAll, supabase])
+  }, [currentUserId, meeting, meetingContextInfo.displayTitle, members, refreshAll, supabase])
 
   const finalizeAndPublishRecording = React.useCallback(async (options?: {
     context?: MeetingRecordingContext | null
@@ -3342,7 +3361,7 @@ export function CallRoom({
         if (!context.workspaceId || !context.projectId) throw new Error("O tópico de origem da reunião não pôde ser identificado.")
 
         const metadata: Array<{ name: string; mimeType: string; size: number; storagePath: string }> = []
-        const base = meetingRecordingBaseName(meeting.title)
+        const base = meetingRecordingBaseName(meetingContextInfo.displayTitle)
 
         for (let index = 0; index < segmentCount; index += 1) {
           const stored = await readMeetingRecordingSegment(meeting.id, index)
@@ -3424,7 +3443,7 @@ export function CallRoom({
     } finally {
       recordingFinalizePromiseRef.current = null
     }
-  }, [broadcastRecordingState, currentUserId, meeting?.createdBy, meeting?.id, meeting?.title, refreshAll, supabase])
+  }, [broadcastRecordingState, currentUserId, meeting?.createdBy, meeting?.id, meetingContextInfo.displayTitle, refreshAll, supabase])
 
   finalizeRecordingRef.current = finalizeAndPublishRecording
 
@@ -3605,7 +3624,7 @@ export function CallRoom({
 
   async function finishMeeting() {
     if (!meeting || !canEndMeeting || endingMeeting) return
-    if (!window.confirm(`Finalizar a reunião “${meeting.title}” para todos? A chamada será encerrada agora; gravação e PDF do chat continuarão sendo enviados em segundo plano.`)) return
+    if (!window.confirm(`Finalizar a reunião “${meetingContextInfo.displayTitle}” para todos? A chamada será encerrada agora; gravação e PDF do chat continuarão sendo enviados em segundo plano.`)) return
 
     setEndingMeeting(true)
     setMediaError("")
@@ -3667,14 +3686,9 @@ export function CallRoom({
     ? [...meetingMembers].sort((a, b) => Number(b.id === focusedMemberId) - Number(a.id === focusedMemberId))
     : meetingMembers
 
-  const wallProject = findMeetingProject(projects, meetingWallContext)
-  const wallActivity = wallProject?.activities.find((activity) =>
-    activity.id === meetingWallContext?.activityId ||
-    activity.subactivities.some((subactivity) => subactivity.id === meetingWallContext?.subactivityId),
-  ) ?? null
-  const wallSubactivity = meetingWallContext?.subactivityId
-    ? wallActivity?.subactivities.find((subactivity) => subactivity.id === meetingWallContext.subactivityId) ?? null
-    : null
+  const wallProject = meetingContextInfo.project
+  const wallActivity = meetingContextInfo.activity
+  const wallSubactivity = meetingContextInfo.subactivity
 
   const participantsPanel = (
     <div className="flex h-full min-h-0 w-full flex-col">
@@ -4005,7 +4019,7 @@ export function CallRoom({
   return (
     <div
       role="dialog"
-      aria-label={`Reunião ${meeting.title}`}
+      aria-label={`Reunião ${meetingContextInfo.displayTitle}`}
       className={cn(
         "fixed z-[80] overscroll-none transition-[inset,width,height,background-color,padding] duration-200",
         minimized
@@ -4033,7 +4047,7 @@ export function CallRoom({
           </Button>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <h2 className={cn("truncate font-semibold", minimized ? "text-xs" : "text-sm sm:text-base")}>{meeting.title}</h2>
+              <h2 className={cn("line-clamp-2 min-w-0 font-semibold leading-tight", minimized ? "text-xs" : "text-sm sm:text-base")} title={meetingContextInfo.displayTitle}>{meetingContextInfo.displayTitle}</h2>
               {!minimized && <span className="hidden shrink-0 rounded-md bg-success/12 px-2 py-1 text-[0.58rem] font-medium text-success sm:inline">EM ANDAMENTO</span>}
               {recordingActive && (
                 <span

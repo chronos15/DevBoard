@@ -1,4 +1,4 @@
-const TASKBOARD_SW_VERSION = "V228"
+const TASKBOARD_SW_VERSION = "V229"
 
 self.addEventListener("install", () => {
   self.skipWaiting()

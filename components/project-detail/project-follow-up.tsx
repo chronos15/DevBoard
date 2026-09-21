@@ -17,6 +17,7 @@ import {
   Eye,
   FileAudio,
   FileCode2,
+  FileDown,
   FileImage,
   FileText,
   FileVideo,
@@ -106,6 +107,7 @@ import { isSubactivityMeetingLog, meetingLogMeetingId, visibleMeetingLogDescript
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { matchesSubactivityHeaderSearch } from "@/lib/subactivity-search"
 import { toUserFacingError } from "@/lib/user-facing-error"
+import { createSubactivityHistoryPdf, downloadPdfBlob, safePdfFileName, type SubactivityPdfAttachment, type SubactivityPdfEntry } from "@/lib/subactivity-export-pdf"
 import { canPerformAction, canWriteScreen } from "@/lib/access-control"
 import { primeCallAudio } from "@/lib/webrtc/audio-playback"
 import { openMeetingRoom, requestFinishMeeting } from "@/lib/meeting-launcher"
@@ -1174,6 +1176,7 @@ export function ProjectFollowUp({
   const [headerActionsView, setHeaderActionsView] = React.useState<"main" | "status" | "pinned">("main")
   const [editSubactivityOpen, setEditSubactivityOpen] = React.useState(false)
   const [meetingStarting, setMeetingStarting] = React.useState(false)
+  const [pdfExporting, setPdfExporting] = React.useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = React.useState(false)
   const [statusMenuPosition, setStatusMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
   const [composerMultiline, setComposerMultiline] = React.useState(false)
@@ -1586,6 +1589,121 @@ export function ProjectFollowUp({
       if (ok) collapseSubactivityReferences()
     } finally {
       setReferenceSaving(false)
+    }
+  }
+
+  async function resolvePdfAttachment(attachment: AttachmentEntry): Promise<SubactivityPdfAttachment> {
+    let sourceUrl = attachment.dataUrl || resolvedUrls[attachment.id]
+    if (!sourceUrl && attachment.storagePath) {
+      const { data, error } = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(attachment.storagePath, 15 * 60)
+      if (!error && data?.signedUrl) sourceUrl = data.signedUrl
+    }
+
+    let textContent = attachment.textContent
+    if (attachment.kind === "text" && !textContent && sourceUrl) {
+      try {
+        const response = await fetch(sourceUrl)
+        if (response.ok) textContent = await response.text()
+      } catch {
+        // O arquivo continua listado no PDF mesmo se o preview textual não puder ser baixado.
+      }
+    }
+
+    return {
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      kind: attachment.kind,
+      sourceUrl,
+      textContent,
+    }
+  }
+
+  async function exportSelectedSubactivityPdf() {
+    if (!selectedActivity || !selectedSub || pdfExporting) return
+    setPdfExporting(true)
+    setComposerError("")
+    try {
+      const entryResults = await Promise.all(timeline.map(async (item): Promise<SubactivityPdfEntry | null> => {
+        if (item.kind === "pending-comment" || item.kind === "pending-attachment") return null
+        const authorName = item.authorId
+          ? members.find((member) => member.id === item.authorId)?.name ?? "Usuário"
+          : "Sistema"
+
+        if (item.kind === "comment") {
+          const related = item.comment.messageGroupId
+            ? (groupedAttachments.get(item.comment.messageGroupId) ?? [])
+            : []
+          return {
+            id: item.id,
+            kind: "message",
+            createdAt: item.createdAt,
+            authorName,
+            content: item.comment.content,
+            replyTo: item.comment.replyTo ? followUpReplySummary(item.comment.replyTo) : undefined,
+            attachments: related.length ? await Promise.all(related.map(resolvePdfAttachment)) : undefined,
+          }
+        }
+
+        if (item.kind === "attachment") {
+          return {
+            id: item.id,
+            kind: "attachment",
+            createdAt: item.createdAt,
+            authorName,
+            attachments: [await resolvePdfAttachment(item.attachment)],
+          }
+        }
+
+        if (item.kind === "session") {
+          return {
+            id: item.id,
+            kind: "session",
+            createdAt: item.createdAt,
+            authorName,
+            title: "Registro de trabalho",
+            durationLabel: `${formatHMS(item.durationSeconds)} trabalhados${item.endedAt ? ` · encerrado em ${new Date(item.endedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : " · em andamento"}`,
+          }
+        }
+
+        return {
+          id: item.id,
+          kind: "log",
+          createdAt: item.createdAt,
+          authorName,
+          title: item.title,
+          content: item.description,
+        }
+      }))
+      const entries = entryResults.filter((entry): entry is SubactivityPdfEntry => Boolean(entry))
+
+      const blob = await createSubactivityHistoryPdf({
+        projectName: project.name,
+        activityTitle: selectedActivity.title,
+        subactivityNumber: subactivitySequenceById.get(selectedSub.id),
+        subactivityTitle: selectedSub.title,
+        statusLabel: statusMeta[selectedSub.status].label,
+        assigneeName: members.find((member) => member.id === selectedSub.assigneeId)?.name,
+        trackedTime: formatHMS(selectedSub.trackedSeconds),
+        estimatedTime: selectedSub.estimatedHours > 0 ? formatHMS(Math.round(selectedSub.estimatedHours * 3600)) : "-",
+        linkedOs: selectedSub.linkedOs?.trim() || selectedActivity.linkedOs?.trim(),
+        build: selectedSub.build?.trim() || selectedActivity.build?.trim(),
+        createdAt: selectedSub.createdAt,
+        exportedAt: new Date().toISOString(),
+        notes: checklistItems.map((item) => ({ content: item.content, completed: Boolean(item.completedAt) })),
+        entries,
+      })
+      const number = subactivitySequenceById.get(selectedSub.id)
+      downloadPdfBlob(blob, safePdfFileName(`${project.name} - ${number ? `${number}. ` : ""}${selectedSub.title}`))
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+    } catch (error) {
+      setHeaderActionsOpen(false)
+      setHeaderActionsPosition(null)
+      setComposerError(toUserFacingError(error, "Não foi possível exportar o PDF desta subatividade"))
+    } finally {
+      setPdfExporting(false)
     }
   }
 
@@ -4808,6 +4926,15 @@ export function ProjectFollowUp({
                 <ListChecks className="size-4" />
                 <span className="min-w-0 flex-1">Anotações</span>
                 {checklistPendingCount > 0 && <span className="rounded-full bg-warning/15 px-1.5 py-0.5 font-mono text-[0.58rem] font-semibold text-warning">{checklistPendingCount > 9 ? "9+" : checklistPendingCount}</span>}
+              </button>
+              <button
+                type="button"
+                disabled={pdfExporting}
+                onClick={() => { void exportSelectedSubactivityPdf() }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              >
+                {pdfExporting ? <LoaderCircle className="size-4 animate-spin" /> : <FileDown className="size-4" />}
+                <span className="min-w-0 flex-1">{pdfExporting ? "Gerando PDF..." : "Exportar PDF"}</span>
               </button>
               <button
                 type="button"

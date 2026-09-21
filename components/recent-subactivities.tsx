@@ -21,6 +21,7 @@ type RecentItem = {
   status: Status
   trackedSeconds: number
   createdAt?: string
+  approvalRequesterName?: string
 }
 
 function formatWorkedTime(seconds: number) {
@@ -47,7 +48,7 @@ function formatCreatedAt(value?: string) {
 
 export function RecentSubactivities({ compact = false, popoverSide = "bottom" }: { compact?: boolean; popoverSide?: "bottom" | "right" }) {
   const router = useRouter()
-  const { projects, currentUserId, preferences, decideSubactivityApproval } = useStore()
+  const { projects, members, currentUserId, preferences, decideSubactivityApproval } = useStore()
   const [open, setOpen] = React.useState(false)
   const [decisionSaving, setDecisionSaving] = React.useState<{ id: string; approved: boolean } | null>(null)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
@@ -55,6 +56,7 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
 
   const items = React.useMemo<RecentItem[]>(() => {
     const result: RecentItem[] = []
+    const memberNames = new Map(members.map((member) => [member.id, member.name]))
 
     for (const project of projects) {
       for (const activity of project.activities) {
@@ -74,6 +76,9 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
             status: sub.status,
             trackedSeconds: sub.trackedSeconds,
             createdAt: isApproval ? (sub.approvalRequestedAt ?? sub.updatedAt ?? sub.createdAt) : sub.createdAt,
+            approvalRequesterName: isApproval && sub.approvalRequestedBy
+              ? (memberNames.get(sub.approvalRequestedBy) ?? "Usuário")
+              : undefined,
           })
         }
       }
@@ -85,7 +90,7 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
       return bTime - aTime
     })
-  }, [currentUserId, projects])
+  }, [currentUserId, members, projects])
 
   const approvalCount = items.filter((item) => item.kind === "approval").length
   const approvalItems = items.filter((item) => item.kind === "approval")
@@ -192,7 +197,8 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
                 </p>
               </div>
             ) : (
-              recentItems.map((item) => {
+              <div className="space-y-2.5">
+              {recentItems.map((item) => {
                 const meta = statusMeta[item.status]
                 const isApproval = item.kind === "approval"
                 const isSaving = decisionSaving?.id === item.subactivityId
@@ -253,8 +259,15 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
 
                     {isApproval && (
                       <div className="mx-3 flex items-center justify-between gap-3 border-t border-rose-300/10 pb-2.5 pt-2">
-                        <span className="min-w-0 text-[0.64rem] font-medium text-rose-100/65">
-                          Aguardando sua aprovação
+                        <span className="min-w-0">
+                          <span className="block text-[0.64rem] font-medium text-rose-100/70">
+                            Aguardando sua aprovação
+                          </span>
+                          {item.approvalRequesterName && (
+                            <span className="mt-0.5 block truncate text-[0.61rem] text-muted-foreground">
+                              Solicitado por <strong className="font-medium text-foreground/80">{item.approvalRequesterName}</strong>
+                            </span>
+                          )}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           <button
@@ -282,7 +295,8 @@ export function RecentSubactivities({ compact = false, popoverSide = "bottom" }:
                     )}
                   </div>
                 )
-              })
+              })}
+              </div>
             )}
           </div>
 

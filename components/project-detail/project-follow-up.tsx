@@ -1121,6 +1121,8 @@ export function ProjectFollowUp({
   const audioChunksRef = React.useRef<Blob[]>([])
   const recordingStartedAtRef = React.useRef<number>(0)
   const unmountedRef = React.useRef(false)
+  const approvalCardGestureRef = React.useRef<{ x: number; y: number; startedAt: number } | null>(null)
+  const approvalCardRestoreAfterRef = React.useRef(0)
 
   const [selectedSubId, setSelectedSubId] = React.useState<string | null>(initialSubactivityId ?? null)
   const [localMediaPreviewVersion, setLocalMediaPreviewVersion] = React.useState(0)
@@ -1169,6 +1171,7 @@ export function ProjectFollowUp({
   const [approvalRequestOpen, setApprovalRequestOpen] = React.useState(false)
   const [approvalRequestSaving, setApprovalRequestSaving] = React.useState(false)
   const [approvalDecisionSaving, setApprovalDecisionSaving] = React.useState(false)
+  const [approvalCardMinimized, setApprovalCardMinimized] = React.useState(false)
   const [brainstormSaving, setBrainstormSaving] = React.useState(false)
   const [focusSaving, setFocusSaving] = React.useState(false)
   const [headerActionsOpen, setHeaderActionsOpen] = React.useState(false)
@@ -1422,7 +1425,17 @@ export function ProjectFollowUp({
     setApprovalRequestOpen(false)
     setApprovalRequestSaving(false)
     setApprovalDecisionSaving(false)
+    setApprovalCardMinimized(false)
+    approvalCardGestureRef.current = null
+    approvalCardRestoreAfterRef.current = 0
   }, [selectedSub?.id])
+
+  React.useEffect(() => {
+    if (selectedSub?.status === "waiting" && selectedSub.approvalUserId === currentUserId) return
+    setApprovalCardMinimized(false)
+    approvalCardGestureRef.current = null
+    approvalCardRestoreAfterRef.current = 0
+  }, [currentUserId, selectedSub?.approvalUserId, selectedSub?.status])
 
   const unreadFollowUpNotifications = React.useMemo(
     () => notifications.filter((notification) => isFollowUpUnreadNotification(notification, currentUserId)),
@@ -1527,6 +1540,10 @@ export function ProjectFollowUp({
   }, [markFollowUpContextRead, project.id, selectedActivity, selectedSub, selectedUnreadIdsKey])
 
   const selectedRunning = Boolean(selectedSub && runningSubIds.includes(selectedSub.id))
+  const selectedApprovalPending = Boolean(
+    selectedSub?.status === "waiting" && selectedSub.approvalUserId === currentUserId,
+  )
+  const showSelectedApprovalCard = selectedApprovalPending && !approvalCardMinimized
   const selectedCanManage = Boolean(selectedSub && canManageSubactivity(selectedSub))
   const selectedIsParticipant = Boolean(
     selectedSub && (
@@ -2632,6 +2649,45 @@ export function ProjectFollowUp({
     return alias ? localMediaPreviewCacheRef.current.get(alias) : undefined
   }
 
+  function minimizeSelectedApprovalCard() {
+    if (!selectedApprovalPending) return
+    approvalCardRestoreAfterRef.current = Date.now() + 420
+    setApprovalCardMinimized(true)
+  }
+
+  function restoreSelectedApprovalCardOnMuralMovement() {
+    if (!approvalCardMinimized || !selectedApprovalPending) return
+    if (Date.now() < approvalCardRestoreAfterRef.current) return
+    setApprovalCardMinimized(false)
+  }
+
+  function handleApprovalCardTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement
+    if (target.closest("button, a, input, textarea, select, [role='button']")) {
+      approvalCardGestureRef.current = null
+      return
+    }
+    const touch = event.touches[0]
+    if (!touch) return
+    approvalCardGestureRef.current = { x: touch.clientX, y: touch.clientY, startedAt: Date.now() }
+  }
+
+  function handleApprovalCardTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    const start = approvalCardGestureRef.current
+    approvalCardGestureRef.current = null
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    const horizontalSwipe = Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.05
+    const upwardSwipe = dy <= -36 && Math.abs(dy) > Math.abs(dx) * 0.72
+    const elapsed = Date.now() - start.startedAt
+
+    // Evita que um toque curto ou um arraste muito lento recolha o aviso por engano.
+    if (elapsed <= 900 && (horizontalSwipe || upwardSwipe)) minimizeSelectedApprovalCard()
+  }
+
   function scrollTimelineToBottom(behavior: ScrollBehavior = "auto") {
     const viewport = timelineViewportRef.current
     if (viewport) {
@@ -2660,6 +2716,11 @@ export function ProjectFollowUp({
       window.clearTimeout(bottomLockTimerRef.current)
       bottomLockTimerRef.current = null
     }
+  }
+
+  function handleTimelineUserMovement() {
+    releaseInitialBottomLock()
+    restoreSelectedApprovalCardOnMuralMovement()
   }
 
   function handleTimelineMediaReady() {
@@ -3946,9 +4007,15 @@ export function ProjectFollowUp({
               )}
 
               <div className="relative min-h-0 flex-1">
-              {selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId && (
+              {showSelectedApprovalCard && (
                 <div className="pointer-events-none absolute inset-x-2.5 top-2.5 z-30 sm:inset-x-4 lg:inset-x-5">
-                  <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-500/[0.09] px-3 py-2 shadow-lg shadow-rose-950/10 backdrop-blur-md ring-1 ring-inset ring-rose-500/[0.04] dark:border-rose-400/20 dark:bg-rose-500/[0.10]">
+                  <div
+                    className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 touch-pan-y select-none items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-500/[0.09] px-3 py-2 shadow-lg shadow-rose-950/10 backdrop-blur-md ring-1 ring-inset ring-rose-500/[0.04] transition-[opacity,transform] duration-150 dark:border-rose-400/20 dark:bg-rose-500/[0.10]"
+                    onTouchStart={handleApprovalCardTouchStart}
+                    onTouchEnd={handleApprovalCardTouchEnd}
+                    onTouchCancel={() => { approvalCardGestureRef.current = null }}
+                    title="Deslize para esquerda, direita ou para cima para recolher temporariamente"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[0.72rem] font-semibold text-foreground/90">Aguardando sua aprovação</p>
                       <p className="mt-0.5 truncate text-[0.6rem] text-muted-foreground">Aprove para concluir ou devolva para Backlog.</p>
@@ -3983,7 +4050,7 @@ export function ProjectFollowUp({
               {selectedLiveMeeting && !meetingEmbedded && (
                 <div className={cn(
                   "pointer-events-none absolute inset-x-2.5 z-30 sm:inset-x-4 lg:inset-x-5",
-                  selectedSub.status === "waiting" && selectedSub.approvalUserId === currentUserId ? "top-[74px]" : "top-2.5",
+                  showSelectedApprovalCard ? "top-[74px]" : "top-2.5",
                 )}>
                   <div className="pointer-events-auto mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 rounded-xl border border-primary/15 bg-card/95 px-2.5 py-2 shadow-lg shadow-black/5 backdrop-blur-md ring-1 ring-inset ring-primary/[0.04]">
                     <button
@@ -4022,8 +4089,8 @@ export function ProjectFollowUp({
                 ref={timelineViewportRef}
                 className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 [scrollbar-width:thin]"
                 onScroll={handleTimelineScroll}
-                onWheel={releaseInitialBottomLock}
-                onTouchMove={releaseInitialBottomLock}
+                onWheel={handleTimelineUserMovement}
+                onTouchMove={handleTimelineUserMovement}
                 onPointerDown={(event) => {
                   if (event.pointerType === "mouse" && event.button !== 0) return
                   releaseInitialBottomLock()

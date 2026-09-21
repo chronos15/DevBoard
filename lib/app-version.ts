@@ -5,7 +5,7 @@
  * A data/hora da build continua sendo injetada pelo next.config.mjs em
  * NEXT_PUBLIC_TASKBOARD_BUILD_DATE.
  */
-export const TASKBOARD_VERSION = "V226"
+export const TASKBOARD_VERSION = "V227"
 
 export const TASKBOARD_BUILD_DATE =
   process.env.NEXT_PUBLIC_TASKBOARD_BUILD_DATE?.trim()

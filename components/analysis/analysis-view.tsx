@@ -64,6 +64,8 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { canWriteScreen } from "@/lib/access-control"
 
@@ -1131,8 +1133,24 @@ export function AnalysisView() {
                                 <RichMessageText content={item.comment.content} mentions={item.comment.mentions} className="mt-1 text-sm leading-relaxed text-foreground/90" />
                               )}
                             </div>
-                            {!moduleReadOnly && item.comment.authorId === currentUserId && editingCommentId !== item.comment.id && (
-                              <button type="button" onClick={() => setEditingCommentId(item.comment.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>
+                            {editingCommentId !== item.comment.id && (
+                              <>
+                                <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 text-muted-foreground opacity-0 shadow-sm transition-all sm:flex sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                                  <MessageNarratorButton messageId={`aqs:${item.comment.id}`} text={item.comment.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem da análise AQS"} />
+                                  {!moduleReadOnly && item.comment.authorId === currentUserId && (
+                                    <button type="button" onClick={() => setEditingCommentId(item.comment.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>
+                                  )}
+                                </div>
+                                <div className="absolute right-2 top-2 sm:hidden">
+                                  <MessageNarratorMobileMenu messageId={`aqs:${item.comment.id}`} text={item.comment.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem da análise AQS"}>
+                                    {!moduleReadOnly && item.comment.authorId === currentUserId ? (
+                                      <DropdownMenuItem onClick={() => setEditingCommentId(item.comment.id)}>
+                                        <Pencil className="size-4" /> Editar mensagem
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                  </MessageNarratorMobileMenu>
+                                </div>
+                              </>
                             )}
                           </article>
                         )

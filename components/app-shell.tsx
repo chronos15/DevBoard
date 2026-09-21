@@ -25,6 +25,7 @@ import { TimerIdleGuard } from "@/components/timer-idle-guard"
 import { DevboardLogo } from "@/components/devboard-logo"
 import { FocusedRunningTimer } from "@/components/focused-running-timer"
 import { PauseSubactivityProvider } from "@/components/pause-subactivity-provider"
+import { MessageNarratorProvider } from "@/components/messages/message-narrator"
 
 
 function canAccessPath(role: AccessRole, policy: MemberAccessPolicy, pathname: string) {
@@ -317,7 +318,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
-    void navigator.serviceWorker.register("/devboard-sw.js?v=225", { updateViaCache: "none" })
+    void navigator.serviceWorker.register("/devboard-sw.js?v=227", { updateViaCache: "none" })
       .then((registration) => registration.update().catch(() => undefined))
       .catch(() => undefined)
   }, [])
@@ -329,12 +330,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <StoreProvider>
       <PauseSubactivityProvider>
-        <MemberProfileProvider>
-          <PrimaryColorSync />
-          <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
-            {children}
-          </AppShellContent>
-        </MemberProfileProvider>
+        <MessageNarratorProvider>
+          <MemberProfileProvider>
+            <PrimaryColorSync />
+            <AppShellContent menuOpen={menuOpen} setMenuOpen={setMenuOpen}>
+              {children}
+            </AppShellContent>
+          </MemberProfileProvider>
+        </MessageNarratorProvider>
       </PauseSubactivityProvider>
     </StoreProvider>
   )

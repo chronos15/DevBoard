@@ -59,6 +59,8 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { AnchoredTimelineViewport } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { canWriteScreen } from "@/lib/access-control"
 
 function formatDateTime(value: string) {
@@ -697,11 +699,30 @@ export function RequestDetail({ requestId, embedded = false, backHref = "/solici
                   ))}
                   {item.message.attachments.length > 0 && <div className="mt-2 flex flex-wrap items-start gap-2">{item.message.attachments.map((attachment) => <RequestAttachmentLink key={attachment.id} attachment={attachment} compact inlineImage onSendEditedImage={requestReadOnly ? undefined : sendEditedImageToRequest} />)}</div>}
                 </div>
-                {item.message.authorId === currentUserId && item.message.content.trim() && editingMessageId !== item.message.id && (
-                  <button type="button" onClick={() => setEditingMessageId(item.message.id)} className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-all hover:text-primary sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-visible:opacity-100" title="Editar mensagem" aria-label="Editar mensagem">
-                    <Pencil className="size-3.5" />
-                  </button>
-                )}
+                {item.message.content.trim() && editingMessageId !== item.message.id && (() => {
+                  const author = members.find((member) => member.id === item.message.authorId)
+                  return (
+                    <>
+                      <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 text-muted-foreground opacity-0 shadow-sm transition-all sm:flex sm:group-hover/message:opacity-100 sm:focus-within:opacity-100">
+                        <MessageNarratorButton messageId={`request:${item.message.id}`} text={item.message.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem da solicitação"} />
+                        {item.message.authorId === currentUserId && (
+                          <button type="button" onClick={() => setEditingMessageId(item.message.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem">
+                            <Pencil className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="absolute right-2 top-2 sm:hidden">
+                        <MessageNarratorMobileMenu messageId={`request:${item.message.id}`} text={item.message.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem da solicitação"}>
+                          {item.message.authorId === currentUserId ? (
+                            <DropdownMenuItem onClick={() => setEditingMessageId(item.message.id)}>
+                              <Pencil className="size-4" /> Editar mensagem
+                            </DropdownMenuItem>
+                          ) : null}
+                        </MessageNarratorMobileMenu>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
               )
             })())}

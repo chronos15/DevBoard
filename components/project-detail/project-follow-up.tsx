@@ -101,6 +101,7 @@ import { InlineMessageEditor } from "@/components/comments/inline-message-editor
 import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
+import { MessageNarratorButton } from "@/components/messages/message-narrator"
 import { isSubactivityMeetingLog, meetingLogMeetingId, visibleMeetingLogDescription } from "@/lib/work-meetings"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -4186,6 +4187,7 @@ export function ProjectFollowUp({
                                 {renderReactionSummary(item)}
                               </div>
                               <div className="absolute right-2 top-2 hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity min-[761px]:flex min-[761px]:group-hover/message:opacity-100 min-[761px]:group-focus-within/message:opacity-100">
+                                <MessageNarratorButton messageId={`followup:${comment.id}`} text={comment.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem do acompanhamento"} />
                                 <button type="button" onClick={(event) => toggleReactionPicker(item.id, event.currentTarget)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                 <button type="button" onClick={() => setReplyingTo(replyReferenceFromTimelineItem(item))} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                 {comment.authorId === currentUserId && <button type="button" onClick={() => setEditingCommentId(comment.id)} className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>}
@@ -4214,6 +4216,7 @@ export function ProjectFollowUp({
                                 </button>
                                 {compactActionsItemId === item.id && (
                                   <div className="absolute right-0 top-[calc(100%+0.25rem)] z-40 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-xl">
+                                    <MessageNarratorButton messageId={`followup:${comment.id}`} text={comment.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem do acompanhamento"} className="size-8" />
                                     <button type="button" onClick={(event) => { setCompactActionsItemId(null); toggleReactionPicker(item.id, event.currentTarget) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" data-followup-reaction-trigger title="Adicionar reação" aria-label="Adicionar reação"><SmilePlus className="size-3.5" /></button>
                                     <button type="button" onClick={() => { setCompactActionsItemId(null); setReplyingTo(replyReferenceFromTimelineItem(item)); messageRef.current?.focus() }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Responder" aria-label="Responder mensagem"><Reply className="size-3.5" /></button>
                                     {comment.authorId === currentUserId && <button type="button" onClick={() => { setCompactActionsItemId(null); setEditingCommentId(comment.id) }} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary" title="Editar mensagem" aria-label="Editar mensagem"><Pencil className="size-3.5" /></button>}

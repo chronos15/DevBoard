@@ -31,6 +31,7 @@ import { ImageEditorDialog } from "@/components/media/image-editor-dialog"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { toUserFacingError } from "@/lib/user-facing-error"
@@ -704,6 +705,14 @@ export function MeetingChatPanel({ meeting, active = true }: { meeting: ChatMeet
                           )
                         })}
 
+                        {item.content.trim() && (
+                          <>
+                            <MessageNarratorButton messageId={`meeting-chat:${item.id}`} text={item.content} label={sender?.name ? `Mensagem de ${sender.name}` : "Mensagem da reunião"} className="hidden size-6 sm:flex" iconClassName="size-3" />
+                            <span className="sm:hidden">
+                              <MessageNarratorMobileMenu messageId={`meeting-chat:${item.id}`} text={item.content} label={sender?.name ? `Mensagem de ${sender.name}` : "Mensagem da reunião"} triggerClassName="size-6" />
+                            </span>
+                          </>
+                        )}
                         <button type="button" onClick={() => setReplyingTo(messageReplyReference(item))} className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" title="Responder">
                           <Reply className="size-3" />
                         </button>

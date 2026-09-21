@@ -43,6 +43,7 @@ import { TimelineJumpToLatest } from "@/components/chat/use-anchored-timeline"
 import { InlineMessageEditor } from "@/components/comments/inline-message-editor"
 import { RichMessageText } from "@/components/text/rich-message-text"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AppLoadingSkeleton } from "@/components/app-loading-skeleton"
@@ -1479,9 +1480,12 @@ export function ChatView({
                                 <div
                                   className={cn(
                                     "absolute top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 text-muted-foreground opacity-0 shadow-sm transition-all group-hover/message:opacity-100 focus-within:opacity-100 md:flex",
-                                    alignOwn ? "-left-[4.5rem]" : "-right-[2.5rem]",
+                                    alignOwn ? "-left-[6.5rem]" : "-right-[4.5rem]",
                                   )}
                                 >
+                                  {item.content.trim() && (
+                                    <MessageNarratorButton messageId={`chat:${item.id}`} text={item.content} label={sender?.name ? `Mensagem de ${sender.name}` : "Mensagem do chat"} />
+                                  )}
                                   <button
                                     type="button"
                                     onPointerDown={(event) => event.stopPropagation()}
@@ -1579,6 +1583,11 @@ export function ChatView({
                                     minute: "2-digit",
                                   })}
                                 </time>
+                                {item.content.trim() && (
+                                  <span className="ml-0.5 md:hidden">
+                                    <MessageNarratorMobileMenu messageId={`chat:${item.id}`} text={item.content} label={sender?.name ? `Mensagem de ${sender.name}` : "Mensagem do chat"} triggerClassName="size-6" />
+                                  </span>
+                                )}
                                 {own && !item.deliveryStatus && !commandMessage && item.type !== "audio" && item.type !== "media" && item.content.trim() && (
                                   <button type="button" onClick={() => setEditingMessageId(item.id)} className="ml-1 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary md:hidden" title="Editar mensagem" aria-label="Editar mensagem">
                                     <Pencil className="size-3" />

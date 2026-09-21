@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
 import { RichMessageComposer } from "@/components/text/rich-message-composer"
 import { mentionCandidates as buildMentionCandidates, mentionTokenForCandidate, mentionsForCandidate, mergeMentions, isUserMentioned, type MentionCandidate } from "@/lib/mention-groups"
 import { canWriteScreen, screenAccessForPath } from "@/lib/access-control"
@@ -191,7 +192,7 @@ export function CommentDialog({
                   const own = comment.authorId === currentUserId
                   const mentionedCurrentUser = !own && isUserMentioned(comment.mentions, currentUserId)
                   return (
-                    <article key={comment.id} className={cn("flex gap-2.5", own && "flex-row-reverse")}>
+                    <article key={comment.id} className={cn("group/comment flex gap-2.5", own && "flex-row-reverse")}>
                       <MemberAvatar member={author} className="mt-0.5 size-8 ring-0" />
                       <div className={cn("min-w-0 max-w-[82%]", own && "text-right")}>
                         <div className={cn("mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5", own && "justify-end")}>
@@ -210,6 +211,23 @@ export function CommentDialog({
                             mentionedCurrentUser && "tb-mentioned-bubble rounded-tl-md",
                           )}
                         />
+                        <div className={cn("mt-1 flex items-center", own ? "justify-end" : "justify-start")}>
+                          <MessageNarratorButton
+                            messageId={`comment-dialog:${comment.id}`}
+                            text={comment.content}
+                            label={author?.name ? `Mensagem de ${author.name}` : "Comentário"}
+                            className="hidden size-6 opacity-0 transition-opacity group-hover/comment:opacity-100 group-focus-within/comment:opacity-100 sm:flex"
+                            iconClassName="size-3"
+                          />
+                          <span className="sm:hidden">
+                            <MessageNarratorMobileMenu
+                              messageId={`comment-dialog:${comment.id}`}
+                              text={comment.content}
+                              label={author?.name ? `Mensagem de ${author.name}` : "Comentário"}
+                              triggerClassName={cn("size-6", own && "text-primary/80")}
+                            />
+                          </span>
+                        </div>
                       </div>
                     </article>
                   )

@@ -19,6 +19,7 @@ import { formatHMS } from "@/lib/project-utils"
 import { openProjectFollowUp } from "@/lib/follow-up-launcher"
 import { cn } from "@/lib/utils"
 import { RichMessageText } from "@/components/text/rich-message-text"
+import { MessageNarratorButton, MessageNarratorMobileMenu } from "@/components/messages/message-narrator"
 import { logReferencesSubactivityTitle } from "@/lib/subactivity-log-reference"
 
 function formatMoment(value: string) {
@@ -157,7 +158,7 @@ export function SubactivityInlineSummary({
             {visibleTimeline.map((item) => {
               const author = item.authorId ? members.find((member) => member.id === item.authorId) : undefined
               return (
-                <div key={item.id} className="flex min-w-0 gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/35">
+                <div key={item.id} className="group/summary flex min-w-0 gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/35">
                   <div className="mt-0.5 shrink-0">
                     {item.kind === "log" ? (
                       <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -171,7 +172,15 @@ export function SubactivityInlineSummary({
                     <div className="flex min-w-0 items-center gap-1.5 text-[0.65rem]">
                       {item.kind !== "log" && <span className="truncate font-semibold"><MemberName member={author} /></span>}
                       {item.kind === "log" && <span className="truncate font-semibold">{item.title}</span>}
-                      <span className="ml-auto shrink-0 font-mono text-[0.58rem] text-muted-foreground">{formatMoment(item.createdAt)}</span>
+                      {item.kind === "comment" && (
+                        <>
+                          <MessageNarratorButton messageId={`summary:${item.id}`} text={item.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem"} className="ml-auto hidden size-6 opacity-0 group-hover/summary:opacity-100 group-focus-within/summary:opacity-100 sm:flex" iconClassName="size-3" />
+                          <span className="ml-auto sm:hidden">
+                            <MessageNarratorMobileMenu messageId={`summary:${item.id}`} text={item.content} label={author?.name ? `Mensagem de ${author.name}` : "Mensagem"} triggerClassName="size-6" />
+                          </span>
+                        </>
+                      )}
+                      <span className={cn("shrink-0 font-mono text-[0.58rem] text-muted-foreground", item.kind !== "comment" && "ml-auto")}>{formatMoment(item.createdAt)}</span>
                     </div>
 
                     {item.kind === "comment" && (

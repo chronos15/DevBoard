@@ -233,22 +233,76 @@ function findMeetingProject(projects: Project[], context: MeetingWallContext | n
 }
 
 class MeetingWallErrorBoundary extends React.Component<
-  { children: React.ReactNode; fallback: React.ReactNode },
-  { failed: boolean }
+  { children: React.ReactNode; resetKey: string },
+  { failed: boolean; attempts: number }
 > {
-  state = { failed: false }
+  state = { failed: false, attempts: 0 }
+  private retryTimer: number | null = null
 
   static getDerivedStateFromError() {
     return { failed: true }
   }
 
   componentDidCatch(error: unknown, info: React.ErrorInfo) {
-    console.error("TaskBoard: falha no mural completo da reunião; usando mural seguro", error, info)
+    const attempts = this.state.attempts + 1
+    console.error(`TaskBoard: falha no mural completo da reunião (tentativa ${attempts})`, error, info)
+    this.setState({ attempts })
+
+    // O mural da reunião deve ser sempre o Acompanhamento completo. Erros transitórios
+    // de montagem (mais comuns no mobile ao alternar painéis) são recuperados sem cair
+    // na antiga superfície resumida. Depois de duas recuperações automáticas, mantemos
+    // a chamada ativa e oferecemos uma nova tentativa explícita ao usuário.
+    if (attempts <= 2 && typeof window !== "undefined") {
+      this.retryTimer = window.setTimeout(() => {
+        this.retryTimer = null
+        this.setState({ failed: false })
+      }, attempts * 350)
+    }
+  }
+
+  componentDidUpdate(prevProps: Readonly<{ children: React.ReactNode; resetKey: string }>) {
+    if (prevProps.resetKey !== this.props.resetKey && (this.state.failed || this.state.attempts)) {
+      if (this.retryTimer !== null && typeof window !== "undefined") window.clearTimeout(this.retryTimer)
+      this.retryTimer = null
+      this.setState({ failed: false, attempts: 0 })
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.retryTimer !== null && typeof window !== "undefined") window.clearTimeout(this.retryTimer)
+  }
+
+  private retry = () => {
+    if (this.retryTimer !== null && typeof window !== "undefined") window.clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    this.setState({ failed: false, attempts: 0 })
   }
 
   render() {
-    if (this.state.failed) return this.props.fallback
-    return this.props.children
+    if (!this.state.failed) return this.props.children
+
+    if (this.state.attempts <= 2) {
+      return (
+        <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
+          <div className="max-w-sm">
+            <div className="mx-auto size-7 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-primary" />
+            <p className="mt-3 text-sm font-medium">Recuperando mural completo...</p>
+            <p className="mt-1 text-xs text-muted-foreground">A reunião continua ativa enquanto o Acompanhamento é remontado.</p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
+        <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <FileText className="mx-auto size-6 text-muted-foreground" />
+          <p className="mt-3 text-sm font-semibold">Não foi possível montar o mural completo</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">A chamada continua normalmente. Tente reabrir somente o mural, sem trocar para uma versão resumida.</p>
+          <Button type="button" size="sm" className="mt-4" onClick={this.retry}>Tentar novamente</Button>
+        </div>
+      </div>
+    )
   }
 }
 
@@ -1238,13 +1292,25 @@ export function CallRoom({
     meeting && (currentUserRole === "admin" || isMeetingOwner),
   )
   const meetingContextInfo = React.useMemo(() => {
-    const project = findMeetingProject(projects, meetingWallContext)
-    const activity = project?.activities.find((item) =>
-      item.id === meetingWallContext?.activityId ||
-      item.subactivities.some((subactivity) => subactivity.id === meetingWallContext?.subactivityId),
+    const review = meetingWallContext?.aqsReviewId
+      ? aqsReviews.find((item) => item.id === meetingWallContext.aqsReviewId) ?? null
+      : null
+    const effectiveProjectId = meetingWallContext?.projectId || review?.projectId || null
+    const effectiveActivityId = meetingWallContext?.activityId || review?.activityId || null
+    const effectiveSubactivityId = meetingWallContext?.subactivityId || review?.subactivityId || null
+    const project = projects.find((item) =>
+      item.id === effectiveProjectId ||
+      item.activities.some((activity) =>
+        activity.id === effectiveActivityId ||
+        activity.subactivities.some((subactivity) => subactivity.id === effectiveSubactivityId),
+      ),
     ) ?? null
-    const subactivity = meetingWallContext?.subactivityId
-      ? activity?.subactivities.find((item) => item.id === meetingWallContext.subactivityId) ?? null
+    const activity = project?.activities.find((item) =>
+      item.id === effectiveActivityId ||
+      item.subactivities.some((subactivity) => subactivity.id === effectiveSubactivityId),
+    ) ?? null
+    const subactivity = effectiveSubactivityId
+      ? activity?.subactivities.find((item) => item.id === effectiveSubactivityId) ?? null
       : null
     const request = meetingWallContext?.requestId
       ? serviceRequests.find((item) => item.id === meetingWallContext.requestId) ?? null
@@ -1254,8 +1320,8 @@ export function CallRoom({
     const displayTitle = secondaryTitle && secondaryTitle.toLocaleLowerCase("pt-BR") !== primaryTitle.toLocaleLowerCase("pt-BR")
       ? `${primaryTitle} · ${secondaryTitle}`
       : primaryTitle
-    return { project, activity, subactivity, request, displayTitle }
-  }, [meeting?.title, meetingWallContext, projects, serviceRequests])
+    return { project, activity, subactivity, request, review, effectiveSubactivityId, displayTitle }
+  }, [aqsReviews, meeting?.title, meetingWallContext, projects, serviceRequests])
   React.useLayoutEffect(() => {
     if (!open || !meeting || minimized || typeof document === "undefined") return
 
@@ -4135,29 +4201,36 @@ export function CallRoom({
           )}>
             {presentationMode && hasWallContext && !minimized ? (
               <div className="h-full min-h-0 w-full overflow-hidden bg-background">
-                {wallProject && wallActivity && wallSubactivity ? (
-                  <MeetingWallErrorBoundary
-                    fallback={
-                      <MeetingWallSurface
-                        loading={meetingWallLoading}
-                        error={meetingWallError}
-                        context={meetingWallContext}
-                        projects={projects}
-                        serviceRequests={serviceRequests}
-                        aqsReviews={aqsReviews}
-                        members={members}
+                {meetingContextInfo.effectiveSubactivityId ? (
+                  wallProject && wallActivity && wallSubactivity ? (
+                    <MeetingWallErrorBoundary
+                      resetKey={`${meeting.id}:${wallProject.id}:${wallActivity.id}:${wallSubactivity.id}`}
+                    >
+                      <ProjectFollowUp
+                        key={`meeting-wall:${meeting.id}:${wallSubactivity.id}`}
+                        project={wallProject}
+                        availableProjects={[wallProject]}
+                        initialActivityId={wallActivity.id}
+                        initialSubactivityId={wallSubactivity.id}
+                        discordEmbedded
+                        meetingEmbedded
                       />
-                    }
-                  >
-                    <ProjectFollowUp
-                      project={wallProject}
-                      availableProjects={[wallProject]}
-                      initialActivityId={wallActivity.id}
-                      initialSubactivityId={wallSubactivity.id}
-                      discordEmbedded
-                      meetingEmbedded
-                    />
-                  </MeetingWallErrorBoundary>
+                    </MeetingWallErrorBoundary>
+                  ) : (
+                    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
+                      <div className="max-w-sm">
+                        {meetingWallLoading ? (
+                          <div className="mx-auto size-7 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-primary" />
+                        ) : (
+                          <FileText className="mx-auto size-6 text-muted-foreground" />
+                        )}
+                        <p className="mt-3 text-sm font-medium">{meetingWallLoading ? "Carregando mural completo..." : "Mural completo indisponível"}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {meetingWallError || "A reunião continua ativa. Feche e abra o Mural novamente para recarregar os dados da subatividade."}
+                        </p>
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <MeetingWallSurface
                     loading={meetingWallLoading}

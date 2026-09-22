@@ -61,7 +61,7 @@ func collectAgentDiagnostics() agentDiagnostics {
 		TrayOK:     trayIsReady(),
 		AutoUpdate: true,
 	}
-	if pwa, ok := findInstalledDevboardPWA(); ok {
+	if pwa, ok := findInstalledTaskBoardPWA(); ok {
 		result.PWAInstalled = true
 		result.PWABrowser = pwa.Browser
 		result.PWAShortcut = pwa.ShortcutPath

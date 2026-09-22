@@ -8,6 +8,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const CONFIG_MARKER = "\nDEVBOARD_AGENT_CONFIG_V1\n"
+const CANONICAL_TASKBOARD_ORIGIN = "https://taskboard.softworksistema.com.br"
+const LEGACY_TASKBOARD_HOSTS = new Set(["swdevboard.vercel.app", "www.swdevboard.vercel.app"])
 
 function normalizeOrigin(value: string | null | undefined): string | null {
   if (!value) return null
@@ -15,6 +17,7 @@ function normalizeOrigin(value: string | null | undefined): string | null {
   try {
     const url = new URL(value.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return null
+    if (LEGACY_TASKBOARD_HOSTS.has(url.hostname.toLowerCase())) return CANONICAL_TASKBOARD_ORIGIN
     return `${url.protocol}//${url.host}`
   } catch {
     return null

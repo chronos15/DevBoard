@@ -5,8 +5,8 @@ Agente nativo pequeno usado pelo Painel Dev para:
 - iniciar automaticamente com a sessão do Windows;
 - registrar `Ctrl + Shift + 7` como atalho global;
 - usar automaticamente um hook global como fallback quando outro aplicativo já reservou o atalho;
-- abrir o Devboard diretamente em `/dev#dev-session`, mesmo com o navegador fechado;
-- priorizar automaticamente a PWA do Devboard que já estiver instalada no Windows, seja Chrome ou Edge;
+- abrir o TaskBoard diretamente em `/dev#dev-session`, mesmo com o navegador fechado;
+- priorizar automaticamente somente a PWA atual do TaskBoard já instalada no Windows, seja Chrome ou Edge;
 - se houver mais de uma PWA instalada, usar a instalação detectada mais recente, sem preferência fixa por navegador;
 - enviar heartbeat para o Supabase para o Painel Dev mostrar o estado real da integração;
 - verificar novas versões automaticamente em segundo plano, baixar somente do próprio Devboard, validar SHA-256 e atualizar sem reinstalação manual;
@@ -107,3 +107,12 @@ para medir a inatividade do Windows, avisa aos 4 minutos e solicita a pausa aos 
 Atividades/subatividades com tipo `intermittent=true` são ignoradas. A RPC revalida usuário,
 sessão aberta e tipo no banco antes de pausar, portanto a automação não depende do estado local
 do frontend e é segura contra uma sessão antiga/stale do Agent.
+
+
+## v0.6.1
+
+- migra automaticamente `app_url` legado de `swdevboard.vercel.app` para `https://taskboard.softworksistema.com.br`;
+- o menu da bandeja passa a exibir **Abrir TaskBoard**;
+- atalhos PWA legados chamados `Devboard` deixam de ser reutilizados, evitando que o Chromium abra o app-id do domínio antigo;
+- `Painel Dev` e `Diagnóstico do Agent` usam sempre a origem atual do TaskBoard após a migração;
+- instaladores novos também normalizam qualquer configuração de origem legada para o domínio atual.

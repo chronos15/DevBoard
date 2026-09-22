@@ -20,14 +20,15 @@ import (
 )
 
 const (
-	agentVersion = "0.6.0"
-	configMarker = "\nDEVBOARD_AGENT_CONFIG_V1\n"
-	hotkeyID     = 0xDB01
-	wmHotkey     = 0x0312
-	modControl   = 0x0002
-	modShift     = 0x0004
-	modNoRepeat  = 0x4000
-	vk7          = 0x37
+	agentVersion             = "0.6.1"
+	configMarker             = "\nDEVBOARD_AGENT_CONFIG_V1\n"
+	canonicalTaskBoardAppURL = "https://taskboard.softworksistema.com.br"
+	hotkeyID                 = 0xDB01
+	wmHotkey                 = 0x0312
+	modControl               = 0x0002
+	modShift                 = 0x0004
+	modNoRepeat              = 0x4000
+	vk7                      = 0x37
 )
 
 type agentConfig struct {
@@ -86,6 +87,10 @@ func main() {
 	if err != nil {
 		return
 	}
+	// Migra automaticamente instalações antigas que ainda carregam a origem
+	// swdevboard.vercel.app embutida no executável. O restante da configuração
+	// (agent_id/secret/Supabase) é preservado.
+	cfg.AppURL = normalizeAgentAppURL(cfg.AppURL)
 
 	installedExe, err := installedExecutablePath()
 	if err != nil {
@@ -138,6 +143,22 @@ func hasArg(value string) bool {
 
 func samePath(a, b string) bool {
 	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+func normalizeAgentAppURL(appURL string) string {
+	value := strings.TrimSpace(appURL)
+	if value == "" {
+		return canonicalTaskBoardAppURL
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return canonicalTaskBoardAppURL
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "swdevboard.vercel.app" || host == "www.swdevboard.vercel.app" {
+		return canonicalTaskBoardAppURL
+	}
+	return strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/")
 }
 
 func readEmbeddedConfig() (agentConfig, error) {
@@ -468,17 +489,17 @@ func openDevboardPath(appURL, relative string) {
 	}
 	target := strings.TrimRight(appURL, "/") + relative
 
-	// 1) Sempre prioriza uma instalação PWA REAL já existente no Windows.
-	// Não existe preferência fixa por Edge ou Chrome: usamos o Devboard que o
-	// usuário já instalou. Se houver mais de uma instalação válida, a mais recente
-	// é escolhida. Isso preserva o perfil/cookies/sessão daquela PWA.
-	if pwa, ok := findInstalledDevboardPWA(); ok {
+	// 1) Prioriza somente uma PWA atual do TaskBoard. Não reutilizamos atalhos
+	// legados chamados "Devboard": o app-id deles pertence ao antigo
+	// swdevboard.vercel.app e o Chromium pode ignorar a nova URL e abrir o app velho.
+	// Se não houver PWA TaskBoard válida, usamos o fallback --app=<URL nova>.
+	if pwa, ok := findInstalledTaskBoardPWA(); ok {
 		if launchInstalledPWA(pwa, target) == nil {
 			return
 		}
 	}
 
-	// 2) Se nenhuma PWA do Devboard estiver instalada, abre em app-mode.
+	// 2) Se nenhuma PWA atual do TaskBoard estiver instalada, abre em app-mode.
 	// Chrome vem antes somente neste fallback, sem interferir em PWAs existentes.
 	if exe := findBrowserExecutable([]string{
 		filepath.Join(os.Getenv("ProgramFiles"), "Google", "Chrome", "Application", "chrome.exe"),
@@ -510,7 +531,7 @@ func openDevboardPath(appURL, relative string) {
 	_ = cmd.Start()
 }
 
-func findInstalledDevboardPWA() (installedPWA, bool) {
+func findInstalledTaskBoardPWA() (installedPWA, bool) {
 	var best installedPWA
 	found := false
 
@@ -552,7 +573,7 @@ func findInstalledDevboardPWA() (installedPWA, bool) {
 				return nil
 			}
 			shortcutName := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-			if !strings.Contains(shortcutName, "devboard") {
+			if !strings.Contains(shortcutName, "taskboard") {
 				return nil
 			}
 

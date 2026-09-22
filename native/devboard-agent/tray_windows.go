@@ -93,12 +93,12 @@ func trayIsReady() bool { return trayReady && trayHWND != 0 }
 
 func startTray(appURL string) bool {
 	trayAppURL = appURL
-	className, _ := syscall.UTF16PtrFromString("DevboardAgentTrayWindow")
+	className, _ := syscall.UTF16PtrFromString("TaskBoardAgentTrayWindow")
 	trayWndProc = syscall.NewCallback(trayWindowProc)
 	instance, _, _ := procGetModuleHandleW.Call(0)
 	wc := wndClassEx{CbSize: uint32(unsafe.Sizeof(wndClassEx{})), LpfnWndProc: trayWndProc, HInstance: instance, LpszClassName: className}
 	_, _, _ = procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-	windowName, _ := syscall.UTF16PtrFromString("Devboard Agent")
+	windowName, _ := syscall.UTF16PtrFromString("TaskBoard Agent")
 	hwnd, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(windowName)), 0, 0, 0, 0, 0, 0, 0, instance, 0)
 	if hwnd == 0 {
 		return false
@@ -106,7 +106,7 @@ func startTray(appURL string) bool {
 	trayHWND = hwnd
 	icon, _, _ := procLoadIconW.Call(0, idiApplication)
 	data := notifyIconData{CbSize: uint32(unsafe.Sizeof(notifyIconData{})), HWnd: hwnd, UID: 1, UFlags: nifMessage | nifIcon | nifTip, UCallbackMessage: wmTrayCallback, HIcon: icon}
-	copy(data.SzTip[:], syscall.StringToUTF16("Devboard Agent"))
+	copy(data.SzTip[:], syscall.StringToUTF16("TaskBoard Agent"))
 	ok, _, _ := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&data)))
 	trayReady = ok != 0
 	return trayReady
@@ -165,7 +165,7 @@ func showTrayMenu(hwnd uintptr) {
 		appendTrayItem(menu, mfSeparator, 0, "")
 	}
 
-	appendTrayItem(menu, mfString, trayCmdOpenHome, "Abrir Devboard")
+	appendTrayItem(menu, mfString, trayCmdOpenHome, "Abrir TaskBoard")
 	appendTrayItem(menu, mfString, trayCmdOpenDev, "Painel Dev")
 	if runtimeHasActiveProcess() {
 		appendTrayItem(menu, mfString, trayCmdStopRuntime, "Parar processos iniciados pelo Agent")
